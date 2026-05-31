@@ -53,7 +53,7 @@ by the catalog example:
 | 1 | Library: base model + tags | ☑ done | `STATUS-01.md` |
 | 2 | Library: locking repo + CRUD service | ☑ done | `STATUS-02.md` |
 | 3 | Example: schema + entity adoption | ☑ done | `STATUS-03.md` |
-| 4 | Example: `ProductService` + concurrency proof | ☐ not started | `STATUS-04.md` |
+| 4 | Example: `ProductService` + concurrency proof | ☑ done | `STATUS-04.md` |
 | 5 | E2E suite + docs | ☐ not started | `STATUS-05.md` |
 
 ## Critical path
