@@ -12,8 +12,14 @@ client ─▶ APISIX :9085 ─▶ OPA decision (allow-all) ─▶ catalog-1..N �
                    Jaeger (UI :26686, Badger storage)
 ```
 
-There is **no real auth yet**: the OPA `gateway` policy is allow-all. It's wired so the whole
-topology is in place and traced end to end; a real ABAC policy replaces it later.
+**Two-layer authorization is now live** (see [`docs/architecture/TWO-LAYER-AUTHORIZATION.md`](../docs/architecture/TWO-LAYER-AUTHORIZATION.md)):
+
+- **Gateway (coarse):** APISIX validates the OIDC token and forwards the Bearer; the OPA `gateway`
+  policy is still the coarse allow-all placeholder for the route layer.
+- **App (fine-grained):** with `ENABLE_OIDC=1`, the catalog app does real ABAC via the library —
+  `AbacFilter` extracts the subject, `@OpaPreAuthorize` asks OPA against **per-type** policies
+  (`opa/policies/{catalog,category,product}.rego`, role-definition-driven). The demo Lua enricher has
+  been **retired**; the app does identity extraction natively.
 
 Tracing/OPA are on by default; run a bare Phase-A rig with `ENABLE_TRACING=0 ENABLE_OPA=0 ./deploy.sh up`.
 

@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/spring-security
@@ -9,10 +9,11 @@ tags:
 
 # Library spine — OPA client, extraction, role-definition-driven `@OpaPreAuthorize`
 
-> **Status:** Planned — design + decomposition complete; not yet implemented. The work runs on
-> `feature/void3110/library-spine` via the [[AUTONOMOUS-IMPLEMENTATION-PROMPT]].
+> **✅ Shipped (2026-06-01).** All 7 tickets implemented, tested, and committed on
+> `feature/void3110/library-spine` via the [[AUTONOMOUS-IMPLEMENTATION-PROMPT]]. The e2e allow/deny
+> matrix is green through the gateway (viewer reads 200 / viewer writes 403 / editor writes succeed).
 > Second load-bearing slice of [[POC-ROADMAP]] **Phase 3 (library spine)**, after
-> [[DOMAIN-MODEL-FOUNDATION]].
+> [[DOMAIN-MODEL-FOUNDATION]] — moved here to `implemented/` on ship.
 
 This folder is the full work package for the **authorization spine**: the library pieces that turn a
 Keycloak-authenticated request into a real, fine-grained ABAC decision made by OPA — and the example
@@ -69,7 +70,7 @@ HttpOpaClient (JDK HttpClient + Jackson, in opa-abac-core, Spring-free, fail-clo
 | 4 | Starter: auto-configuration (conditional + overridable) | ✅ done | `STATUS-04.md` |
 | 5 | Example: security chain, demo role defs, annotations, per-type rego, retire enricher | ✅ done | `STATUS-05.md` |
 | 6 | Infra: realm users + roles for the allow/deny matrix | ✅ done | `STATUS-06.md` |
-| 7 | E2E (allow/deny matrix) + docs + roadmap/Mulch | ☐ planned | `STATUS-07.md` |
+| 7 | E2E (allow/deny matrix) + docs + roadmap/Mulch | ✅ done | `STATUS-07.md` |
 
 ## Critical path
 

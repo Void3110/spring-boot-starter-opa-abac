@@ -37,9 +37,12 @@ request asserts the status code and field-level response shape.
 > in the environment would shadow the captured collection value and every downstream URL would render
 > with an empty id (`/catalogs//categories/…`). Keep them out of the environment.
 
-> **Authz depth today.** OPA runs an allow-all placeholder and the service does no service-side
-> ABAC yet, so the suite proves *plumbing*, not fine-grained decisions. A viewer-vs-editor matrix
-> gets added when `@OpaPreAuthorize` + a real policy land in a later Phase-3 slice.
+> **Two suites now.** The original `catalog-e2e` collection proves the *plumbing* (the create→read→
+> update→delete chain through the gateway). The **ABAC allow/deny matrix** (`catalog-abac-matrix`,
+> run via `run-matrix.sh`) proves *fine-grained decisions*: the library spine is live —
+> `@OpaPreAuthorize` → role-definition-driven OPA — so a **viewer** token reads (200) but cannot write
+> (**403**), and an **editor** token writes (201/200/204). It mints **both** the `viewer` and `editor`
+> realm tokens in-network and injects `viewer_token` + `editor_token`. See "Running it" below.
 
 ## Prerequisites
 
@@ -86,10 +89,21 @@ the in-network token directly.
 ```bash
 cd scripts/postman
 cp local.postman_environment.example.json local.postman_environment.json   # first time
+
+# plumbing suite (single token, happy-path CRUD chain)
 ./run-tests.sh                 # full suite
 ./run-tests.sh --folder Product   # one folder
 ./run-tests.sh --verbose
+
+# ABAC allow/deny matrix (mints viewer + editor tokens, proves 200/403/204)
+./run-matrix.sh
+./run-matrix.sh --verbose
 ```
+
+`run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
+`viewer_token` + `editor_token`. Expected: editor seeds a catalog/category/product (201), viewer reads
+them (200), viewer writes are denied (**403**), editor updates/deletes (200/204). 12 requests, all
+green; stable across reruns.
 
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.
