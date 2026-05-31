@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/spring-data
   - area/abac
@@ -9,8 +9,9 @@ tags:
 
 # Domain-model foundation
 
-> **Status:** Planning — design + decomposition complete, implementation not started.
-> First load-bearing slice of [[POC-ROADMAP]] **Phase 3 (library spine)**.
+> **✅ Shipped (2026-05-31).** All 5 tickets implemented, tested, and committed on
+> `feature/void3110/domain-model-foundation`. First load-bearing slice of [[POC-ROADMAP]]
+> **Phase 3 (library spine)** — moved here to `implemented/` on ship.
 
 This folder is the full work package for the **foundational domain-model layer**: the reusable
 base entity stack that everything else in Phase 3 builds on. It is written to be **implemented
@@ -50,11 +51,11 @@ by the catalog example:
 
 | # | Ticket | Status | Status note |
 |---|--------|--------|-------------|
-| 1 | Library: base model + tags | ☐ not started | `STATUS-01.md` |
-| 2 | Library: locking repo + CRUD service | ☐ not started | `STATUS-02.md` |
-| 3 | Example: schema + entity adoption | ☐ not started | `STATUS-03.md` |
-| 4 | Example: `ProductService` + concurrency proof | ☐ not started | `STATUS-04.md` |
-| 5 | E2E suite + docs | ☐ not started | `STATUS-05.md` |
+| 1 | Library: base model + tags | ☑ done | `STATUS-01.md` |
+| 2 | Library: locking repo + CRUD service | ☑ done | `STATUS-02.md` |
+| 3 | Example: schema + entity adoption | ☑ done | `STATUS-03.md` |
+| 4 | Example: `ProductService` + concurrency proof | ☑ done | `STATUS-04.md` |
+| 5 | E2E suite + docs | ☑ done | `STATUS-05.md` |
 
 ## Critical path
 

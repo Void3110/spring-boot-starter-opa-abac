@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.catalog.web;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
+import dev.dmitriikonovalov.example.catalog.domain.ProductService;
 import dev.dmitriikonovalov.example.catalog.openapi.api.ProductApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Product;
 import dev.dmitriikonovalov.example.catalog.openapi.model.ProductRequest;
@@ -16,10 +17,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController implements ProductApi {
 
     private final ProductRepository products;
+    private final ProductService productService;
     private final CategoryRepository categories;
 
-    public ProductController(ProductRepository products, CategoryRepository categories) {
+    public ProductController(ProductRepository products, ProductService productService,
+                             CategoryRepository categories) {
         this.products = products;
+        this.productService = productService;
         this.categories = categories;
     }
 
@@ -54,14 +58,19 @@ public class ProductController implements ProductApi {
 
     @Override
     public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UUID productId, ProductRequest request) {
+        // Scope the product to its category/catalog (404 if it doesn't belong) before mutating.
         requireCategory(catalogId, categoryId);
-        var entity = requireProduct(categoryId, productId);
-        entity.setName(request.getName());
-        entity.setDescription(request.getDescription());
-        entity.setSku(request.getSku());
-        entity.setPriceCents(request.getPriceCents());
-        entity.setCurrency(request.getCurrency());
-        return ResponseEntity.ok(CatalogMapper.toDto(products.save(entity)));
+        requireProduct(categoryId, productId);
+        // mutate() locks the row for update, applies the change, and saves in one transaction, so
+        // concurrent updates of the same product serialize instead of racing on a stale @Version.
+        var updated = productService.mutate(productId, entity -> {
+            entity.setName(request.getName());
+            entity.setDescription(request.getDescription());
+            entity.setSku(request.getSku());
+            entity.setPriceCents(request.getPriceCents());
+            entity.setCurrency(request.getCurrency());
+        });
+        return ResponseEntity.ok(CatalogMapper.toDto(updated));
     }
 
     @Override

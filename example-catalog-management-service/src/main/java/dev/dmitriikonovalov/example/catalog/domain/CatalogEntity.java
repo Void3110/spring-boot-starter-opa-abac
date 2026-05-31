@@ -1,21 +1,20 @@
 package dev.dmitriikonovalov.example.catalog.domain;
 
+import dev.dmitriikonovalov.opaabac.data.model.AbstractSecuredEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.OffsetDateTime;
 import java.util.UUID;
-import org.hibernate.annotations.TimeZoneStorage;
-import org.hibernate.annotations.TimeZoneStorageType;
 
+/**
+ * A product catalog — the root of the resource hierarchy. Extends the secure base, so it carries
+ * audit columns, an optimistic-lock version, and ABAC tags, and is authorizable as resource type
+ * {@code "catalog"}. The id/created-at/version/tags are inherited; {@code createdAt} is now
+ * populated by Spring Data auditing rather than supplied by the caller.
+ */
 @Entity
 @Table(name = "catalog")
-public class CatalogEntity {
-
-    @Id
-    @Column(nullable = false, updatable = false)
-    private UUID id;
+public class CatalogEntity extends AbstractSecuredEntity {
 
     @Column(nullable = false)
     private String name;
@@ -23,25 +22,19 @@ public class CatalogEntity {
     @Column
     private String description;
 
-    // Liquibase creates this column as `timestamptz`; NATIVE storage makes Hibernate
-    // expect (and use) a real `timestamp with time zone` rather than UTC-normalized timestamp.
-    @Column(name = "created_at", nullable = false, updatable = false)
-    @TimeZoneStorage(TimeZoneStorageType.NATIVE)
-    private OffsetDateTime createdAt;
-
     protected CatalogEntity() {
         // JPA
     }
 
-    public CatalogEntity(UUID id, String name, String description, OffsetDateTime createdAt) {
-        this.id = id;
+    public CatalogEntity(UUID id, String name, String description) {
+        super(id);
         this.name = name;
         this.description = description;
-        this.createdAt = createdAt;
     }
 
-    public UUID getId() {
-        return id;
+    @Override
+    public String abacResourceType() {
+        return "catalog";
     }
 
     public String getName() {
@@ -58,9 +51,5 @@ public class CatalogEntity {
 
     public void setDescription(String description) {
         this.description = description;
-    }
-
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
     }
 }

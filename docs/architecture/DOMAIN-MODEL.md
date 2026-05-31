@@ -12,7 +12,7 @@ tags:
 > tags "for free," and become authorizable with almost no per-entity code. The base classes
 > live in the `opa-abac-spring-data` library and are demonstrated by the catalog example.
 >
-> Planning + decomposition for the first implementation: [[DOMAIN-MODEL-FOUNDATION]].
+> Decomposition + status for the first implementation (shipped): [[DOMAIN-MODEL-FOUNDATION]].
 > The write-side concurrency story has its own guide: [[CONCURRENCY-AND-LOCKING]].
 
 ## Why a base layer at all
@@ -130,6 +130,13 @@ The app enables `@EnableJpaAuditing` and provides an `AuditorAware<UUID>` bean. 
 **fixed demo principal**; a later Phase-3 slice wires it to the real authenticated principal (so
 `created_by`/`last_modified_by` reflect who actually acted). The base classes need no change for that
 — only the bean does.
+
+> **`OffsetDateTime` needs an explicit `DateTimeProvider`.** Spring Data's default auditing date
+> source produces a `LocalDateTime`, which it then **cannot convert** to the `OffsetDateTime` the base
+> timestamps use — it throws *"Cannot convert unsupported date type java.time.LocalDateTime to
+> java.time.OffsetDateTime"* on the first save. Supply a `DateTimeProvider` bean that returns an
+> `OffsetDateTime` and reference it via `@EnableJpaAuditing(dateTimeProviderRef = "…")`; auditing then
+> uses it as-is. The example does exactly this in `AuditingConfig`.
 
 ## Schema contract (`ddl-auto: validate`)
 

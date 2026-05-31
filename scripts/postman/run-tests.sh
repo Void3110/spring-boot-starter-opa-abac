@@ -28,7 +28,7 @@ PASSWORD="${KC_PASSWORD:-demo}"
 REPORT_DIR="${REPORT_DIR:-build/reports/postman}"
 
 # A run id for isolating report output (no Math.random / Date needed — use the PID + epoch).
-RUN_ID="${SSS_RUN_ID:-$(date +%s)-$$}"
+RUN_ID="${E2E_RUN_ID:-$(date +%s)-$$}"
 
 # --- args --------------------------------------------------------------------
 FOLDER=""
