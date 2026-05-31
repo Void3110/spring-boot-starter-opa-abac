@@ -49,8 +49,28 @@ echo "  upstream 'catalog-pool' -> $DEFAULT_NODE (deploy.sh republishes with all
 #   - opa: call OPA for a decision (allow-all policy for now). Gracefully skipped if OPA is
 #     down only when ENABLE_OPA is unset; by default we wire it so the topology is traced.
 #
-# ENABLE_OPA / ENABLE_TRACING let deploy.sh add these only once Jaeger/OPA are actually up.
+# ENABLE_OPA / ENABLE_TRACING / ENABLE_OIDC let deploy.sh add each plugin only once its
+# backing service (OPA / Jaeger / Keycloak) is actually up.
 PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
+
+# openid-connect FIRST (authenticate before authorize). Terminates Keycloak OIDC at the
+# gateway: bearer tokens are validated against the realm JWKS; browser flows redirect to
+# login. The validated access token is forwarded upstream (Authorization: Bearer ...), so
+# OPA and the app *could* read identity — but the service does no JWT check yet (Phase 2).
+if [ "${ENABLE_OIDC:-0}" = "1" ]; then
+  PLUGINS="$PLUGINS,\"openid-connect\":{\
+\"client_id\":\"catalog-gateway\",\
+\"client_secret\":\"catalog-gateway-secret\",\
+\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
+\"realm\":\"catalog-demo\",\
+\"scope\":\"openid profile email\",\
+\"bearer_only\":false,\
+\"use_jwks\":true,\
+\"unauth_action\":\"auth\",\
+\"set_access_token_header\":true,\
+\"access_token_in_authorization_header\":true,\
+\"ssl_verify\":false}"
+fi
 if [ "${ENABLE_TRACING:-1}" = "1" ]; then
   PLUGINS="$PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
 fi
@@ -69,5 +89,5 @@ curl -sf -o /dev/null -X PUT \
     \"status\": 1,
     \"plugins\": { $PLUGINS }
   }"
-echo "  route 'catalog-all' (/*) -> catalog-pool  [tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
+echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
 echo "==> APISIX ready: proxy at http://localhost:9085"

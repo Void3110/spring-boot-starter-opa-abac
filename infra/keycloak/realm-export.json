@@ -1,0 +1,49 @@
+{
+  "realm": "catalog-demo",
+  "enabled": true,
+  "displayName": "Catalog Demo Realm",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 1800,
+  "roles": {
+    "realm": [
+      { "name": "catalog-viewer", "description": "Can read catalog resources" },
+      { "name": "catalog-editor", "description": "Can modify catalog resources" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "catalog-gateway",
+      "name": "Catalog API Gateway (APISIX)",
+      "description": "Confidential client used by APISIX openid-connect at the gateway.",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "catalog-gateway-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:9085/*", "/*"],
+      "webOrigins": ["*"],
+      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "demo@example.com",
+      "firstName": "Demo",
+      "lastName": "User",
+      "credentials": [
+        { "type": "password", "value": "demo", "temporary": false }
+      ],
+      "realmRoles": ["catalog-viewer", "catalog-editor"]
+    }
+  ]
+}

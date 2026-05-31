@@ -17,6 +17,33 @@ topology is in place and traced end to end; a real ABAC policy replaces it later
 
 Tracing/OPA are on by default; run a bare Phase-A rig with `ENABLE_TRACING=0 ENABLE_OPA=0 ./deploy.sh up`.
 
+## Gateway auth (Keycloak OIDC) — opt-in
+
+Off by default. Turn it on with `ENABLE_OIDC=1 ./deploy.sh up` to add Keycloak and terminate
+OIDC **at the gateway** (the service still does no JWT validation — that comes with the library).
+
+```bash
+ENABLE_OIDC=1 ./deploy.sh up --pods 2
+# realm catalog-demo, client catalog-gateway, user demo/demo — imported from
+# infra/keycloak/realm-export.json. Keycloak UI: http://localhost:28888 (admin/admin)
+
+# no token -> 302 redirect to Keycloak login (unauth_action: auth)
+curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 302
+
+# get a token IN-NETWORK (issuer must match what APISIX validates against), then call:
+TOKEN=$(docker run --rm --network opa-abac-example_default curlimages/curl -s \
+  -X POST http://keycloak:8888/realms/catalog-demo/protocol/openid-connect/token \
+  -d client_id=catalog-gateway -d client_secret=catalog-gateway-secret \
+  -d grant_type=password -d username=demo -d password=demo | sed 's/.*"access_token":"//;s/".*//')
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" localhost:9085/actuator/health  # 200
+```
+
+> **Issuer gotcha:** Keycloak is hostname-aware. In-network it issues/advertises
+> `http://keycloak:8888`; from the host it advertises `http://localhost:28888`. APISIX discovers
+> + validates in-network, so a token used through the gateway must be **minted in-network**
+> (issuer `keycloak:8888`) or via the real browser redirect flow — a token minted against
+> `localhost:28888` has a mismatched issuer and APISIX rejects it.
+
 ## Quick start
 
 ```bash
@@ -50,8 +77,9 @@ done | sort | uniq -c
 | `compose.apisix.yaml` | APISIX + etcd (shares the `opa-abac-example` compose project/network with Postgres). |
 | `compose.jaeger.yaml` + `jaeger/jaeger-config.yaml` | Jaeger v2 with embedded Badger persistent trace storage. |
 | `compose.opa.yaml` + `opa/policies/gateway.rego` | OPA with an allow-all gateway policy; exports its own spans to Jaeger. |
-| `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa). |
-| `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds opentelemetry + opa plugins (toggleable). |
+| `compose.keycloak.yaml` + `keycloak/realm-export.json` | Keycloak (opt-in); imports the `catalog-demo` realm/client/user on startup. |
+| `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa, openid-connect). |
+| `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds openid-connect + opentelemetry + opa plugins (toggleable). |
 
 ## Ports (and why these, not the defaults)
 
@@ -64,6 +92,7 @@ done | sort | uniq -c
 | `26686` | Jaeger UI | **not 16686** (held by portal podman-machine) |
 | `24317/24318` | Jaeger OTLP gRPC/HTTP (host) | **not 4317/4318** (held). In-network everything uses `opa-abac-jaeger:4318` |
 | `28181` | OPA data API (host) | **not 8181** (held). In-network APISIX calls `http://opa:8181` |
+| `28888` | Keycloak (host, opt-in) | **not 8888** (held). In-network APISIX discovers `http://keycloak:8888` |
 
 > All the `2xxxx` remaps are only for **host** access — inside the shared Docker network the
 > containers talk by DNS name on the original ports, so the remaps don't affect the topology.

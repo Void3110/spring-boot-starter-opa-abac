@@ -45,6 +45,7 @@ plugins:
   - response-rewrite   # echoes the served upstream node in a response header (load-balance visibility)
   - opentelemetry      # Phase B: export gateway spans to Jaeger
   - opa                # Phase B: call OPA for an (allow-all, for now) decision per request
+  - openid-connect     # Phase 2 (identity): terminate Keycloak OIDC at the gateway
 
 # opentelemetry plugin: where APISIX ships its spans. The plugin must also be enabled
 # per-route (see infra/apisix/init-routes.sh).

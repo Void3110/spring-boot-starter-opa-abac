@@ -1,0 +1,46 @@
+# Keycloak (identity) for the local example rig — completes Phase 2 (gateway OIDC).
+#
+# Runs in dev mode and imports infra/keycloak/realm-export.json on startup, so the
+# realm + client + test user are reproducible from a clean clone (no manual clicking).
+# Exports its own spans to Jaeger (Keycloak 26+ has built-in OTEL).
+#
+# Joins the shared opa-abac-example network; reachable in-network as "keycloak".
+#
+# IMPORTANT issuer note: APISIX (in-network) discovers Keycloak at http://keycloak:8888,
+# but tokens are issued with that same issuer. We pin KC_HOSTNAME_URL to the in-network
+# address so APISIX's discovery and the token issuer agree. Browser-based login flows use
+# the host port 28888; for pure bearer-token testing (direct grant) the in-network issuer
+# is what matters and APISIX validates against the matching JWKS.
+
+name: opa-abac-example
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.2
+    container_name: opa-abac-keycloak
+    command: ["start-dev", "--import-realm", "--http-port=8888"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      # Keep the token issuer stable and equal to APISIX's in-network discovery URL.
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_URL: "http://keycloak:8888"
+      KC_HOSTNAME_ADMIN_URL: "http://localhost:28888"
+      # Tracing -> Jaeger (built-in OTEL).
+      KC_TRACING_ENABLED: "true"
+      KC_TRACING_ENDPOINT: "http://opa-abac-jaeger:4318"
+      KC_TRACING_PROTOCOL: "http/protobuf"
+      KC_TRACING_SAMPLER_RATIO: "1.0"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "28888:8888"   # host access to the Keycloak UI/issuer (admin/admin)
+    healthcheck:
+      # Keycloak 26 has /health on the management port (9000); the image ships curl-less,
+      # so probe via the bundled `kc.sh` readiness is awkward — use a TCP check on 8888.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8888 && echo ok >&3 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s

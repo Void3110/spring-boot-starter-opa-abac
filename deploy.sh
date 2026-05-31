@@ -29,13 +29,16 @@ APP_DIR="$SCRIPT_DIR/example-catalog-management-service"
 APISIX_COMPOSE="$SCRIPT_DIR/infra/compose.apisix.yaml"
 JAEGER_COMPOSE="$SCRIPT_DIR/infra/compose.jaeger.yaml"
 OPA_COMPOSE="$SCRIPT_DIR/infra/compose.opa.yaml"
+KEYCLOAK_COMPOSE="$SCRIPT_DIR/infra/compose.keycloak.yaml"
 GEN_COMPOSE="$SCRIPT_DIR/build/compose.pods.generated.yaml"
 STATE_FILE="$SCRIPT_DIR/build/.deploy.state"
 IMAGE="opa-abac-catalog:local"
 
-# Phase B tracing/authz toggles (on by default; set =0 to run the bare Phase A rig).
+# Feature toggles. Tracing + OPA on by default (Phase B). OIDC off by default — opt in with
+# ENABLE_OIDC=1 ./deploy.sh up  (Phase 2 gateway auth; needs Keycloak, slower to start).
 ENABLE_TRACING="${ENABLE_TRACING:-1}"
 ENABLE_OPA="${ENABLE_OPA:-1}"
+ENABLE_OIDC="${ENABLE_OIDC:-0}"
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -135,6 +138,21 @@ app_compose() { docker compose -p "$PROJECT" -f "$GEN_COMPOSE" "$@"; }
 apisix_compose() { docker compose -p "$PROJECT" -f "$APISIX_COMPOSE" "$@"; }
 jaeger_compose() { docker compose -p "$PROJECT" -f "$JAEGER_COMPOSE" "$@"; }
 opa_compose() { docker compose -p "$PROJECT" -f "$OPA_COMPOSE" "$@"; }
+keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
+
+# Wait for Keycloak's realm discovery doc to be served (import + boot can take 30-60s).
+wait_keycloak() {
+  echo "==> Waiting for Keycloak realm 'catalog-demo' to be ready..."
+  local deadline=$(( SECONDS + 120 ))
+  while (( SECONDS < deadline )); do
+    if curl -sf -o /dev/null "http://localhost:28888/realms/catalog-demo/.well-known/openid-configuration" 2>/dev/null; then
+      echo "   Keycloak realm ready."; return 0
+    fi
+    sleep 4
+  done
+  echo "   WARN: Keycloak realm not ready in time (route's openid-connect may 503 until it is)." >&2
+  return 1
+}
 
 # --- APISIX upstream sync ---------------------------------------------------
 # Republish catalog-pool to round-robin over the N running pods (host ports 18081..).
@@ -206,14 +224,19 @@ case "$CMD" in
     if [ "$ENABLE_OPA" = "1" ]; then
       echo "==> Starting OPA (allow-all policy)..."; opa_compose up -d
     fi
+    if [ "$ENABLE_OIDC" = "1" ]; then
+      echo "==> Starting Keycloak (realm import)..."; keycloak_compose up -d
+    fi
     echo "==> Starting APISIX + etcd..."
     apisix_compose up -d
     generate_compose "$n"
     echo "==> Starting $n app pod(s)..."
     app_compose up -d
     wait_pods_healthy "$n" || true
+    # OIDC route needs Keycloak's discovery doc reachable before APISIX validates tokens.
+    [ "$ENABLE_OIDC" = "1" ] && wait_keycloak || true
     # Seed route (idempotent) then sync upstream to the real pod set.
-    ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
+    ENABLE_OIDC="$ENABLE_OIDC" ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
       APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$API_KEY" \
       bash "$SCRIPT_DIR/infra/apisix/init-routes.sh"
     apisix_sync_upstream "$n"
@@ -221,6 +244,7 @@ case "$CMD" in
     echo "==> Up. Gateway: http://localhost:9085   (e.g. curl http://localhost:9085/actuator/health)"
     [ "$ENABLE_TRACING" = "1" ] && echo "    Jaeger UI: http://localhost:26686"
     [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
+    [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
     ;;
 
@@ -238,8 +262,9 @@ case "$CMD" in
     if [ -f "$GEN_COMPOSE" ]; then app_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true; fi
     apisix_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     opa_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    keycloak_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
-    echo "==> Pool + APISIX + OPA + Jaeger down. (Postgres left running — ./profile.sh down to stop it.)"
+    echo "==> Pool + APISIX + OPA + Keycloak + Jaeger down. (Postgres left running — ./profile.sh down to stop it.)"
     ;;
 
   status)
