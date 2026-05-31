@@ -1,0 +1,293 @@
+{
+  "info": {
+    "name": "Catalog E2E (via gateway)",
+    "description": "End-to-end CRUD over Catalog -> Category -> Product through APISIX, authenticated with a Keycloak token. Skeleton: the auth + happy-path chain works; the autonomous run (ticket 5) adds richer assertions and negative cases. See docs/guides/E2E-TESTING.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "catalog_id", "value": "" },
+    { "key": "category_id", "value": "" },
+    { "key": "product_id", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "1. Auth",
+      "description": "Obtain a Keycloak access token. run-tests.sh normally injects access_token (minted in-network); this request documents the grant and works when newman runs on the compose network. See the in-network token caveat in docs/guides/E2E-TESTING.md.",
+      "item": [
+        {
+          "name": "Get token (password grant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// If access_token was already injected by run-tests.sh, this folder is optional.",
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.test('access_token present', () => pm.expect(json).to.have.property('access_token'));",
+                  "  pm.collectionVariables.set('access_token', json.access_token);",
+                  "} else {",
+                  "  console.log('Token endpoint not reachable from host (expected: issuer is in-network). Using injected access_token.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "{{client_secret}}" },
+                { "key": "username", "value": "{{username}}" },
+                { "key": "password", "value": "{{password}}" }
+              ]
+            },
+            "url": { "raw": "{{keycloak_token_url}}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Catalog",
+      "item": [
+        {
+          "name": "Create catalog",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json();",
+                  "pm.test('has id', () => pm.expect(c).to.have.property('id'));",
+                  "pm.collectionVariables.set('catalog_id', c.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"E2E Catalog\",\n  \"description\": \"created by the e2e suite\"\n}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs"]
+            }
+          }
+        },
+        {
+          "name": "Get catalog",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('id matches', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('catalog_id')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Category",
+      "item": [
+        {
+          "name": "Create category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const cat = pm.response.json();",
+                  "pm.test('catalogId matches', () => pm.expect(cat.catalogId).to.eql(pm.collectionVariables.get('catalog_id')));",
+                  "pm.collectionVariables.set('category_id', cat.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Electronics\",\n  \"description\": \"root category\"\n}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Product",
+      "item": [
+        {
+          "name": "Create product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json();",
+                  "pm.test('categoryId matches', () => pm.expect(p.categoryId).to.eql(pm.collectionVariables.get('category_id')));",
+                  "pm.collectionVariables.set('product_id', p.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Laptop\",\n  \"description\": \"demo product\",\n  \"sku\": \"LAP-001\",\n  \"priceCents\": 129900,\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products"]
+            }
+          }
+        },
+        {
+          "name": "Get product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('id matches', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('product_id')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Update product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('price updated', () => pm.expect(pm.response.json().priceCents).to.eql(99900));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Laptop\",\n  \"description\": \"on sale\",\n  \"sku\": \"LAP-001\",\n  \"priceCents\": 99900,\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"]
+            }
+          }
+        },
+        {
+          "name": "List products in category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().map(p => p.id);",
+                  "pm.test('created product present', () => pm.expect(ids).to.include(pm.collectionVariables.get('product_id')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Cleanup",
+      "item": [
+        {
+          "name": "Delete catalog (cascade)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

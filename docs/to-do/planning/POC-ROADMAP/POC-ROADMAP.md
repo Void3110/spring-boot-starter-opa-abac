@@ -93,6 +93,9 @@ Keycloak (identity) → APISIX [ openid-connect → demo identity-enricher → O
   Phase 3 moves real ABAC into the app via the library.
 
 **Next:** Phase 3 — build the library spine and have the catalog app consume identity for real.
+Its first, load-bearing slice is the **domain-model foundation** (base/secure entities, tags,
+locking, base service) — fully decomposed with an autonomous-implementation prompt in
+[[DOMAIN-MODEL-FOUNDATION]] (ready to implement; not started).
 
 ## Phases
 
@@ -104,7 +107,7 @@ Keycloak (identity) → APISIX [ openid-connect → demo identity-enricher → O
 | **0** | Catalog CRUD (done) | Runnable catalog app, Postgres + Liquibase, no auth. | ✅ already in repo |
 | **1** | **Restructure** | Flatten `example/` → `example-catalog-management-service`; settings + paths updated; build green. | ✅ **done** (commit `0ce6026`). |
 | **2** | Infra: identity + gateway | Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger. | ✅ **done** — full rig via `deploy.sh`; see `infra/README.md`. |
-| **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ◀ **NEXT.** The core generalization work. Replaces the demo gateway enricher with Spring-native extraction. |
+| **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ◀ **NEXT.** The core generalization work. Replaces the demo gateway enricher with Spring-native extraction. First slice decomposed + ready to implement: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service). |
 | **4** | **user-management-service** | New example app: users/teams/roles + dynamic tag dictionary; feeds ABAC attributes. | See [[USER-MANAGEMENT-SERVICE]]. Can begin design in parallel with Phase 3. |
 | **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. |
 | **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |

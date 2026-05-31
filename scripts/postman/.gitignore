@@ -1,0 +1,5 @@
+# Local Postman environment (copied from the .example template; may hold local overrides).
+local.postman_environment.json
+
+# Newman report output (also covered by the repo-root build/ rule, kept here for clarity).
+build/
