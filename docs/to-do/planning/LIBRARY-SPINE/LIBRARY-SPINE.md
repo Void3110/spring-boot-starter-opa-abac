@@ -64,7 +64,7 @@ HttpOpaClient (JDK HttpClient + Jackson, in opa-abac-core, Spring-free, fail-clo
 | # | Ticket | Status | Status note |
 |---|--------|--------|-------------|
 | 1 | Core: `HttpOpaClient` + `RoleDefinition`/SPI + policy-path resolver | ✅ done | `STATUS-01.md` |
-| 2 | Security: `AbacSubjectExtractor` + `AbacFilter` + `AbacAuthentication` | ☐ planned | `STATUS-02.md` |
+| 2 | Security: `AbacSubjectExtractor` + `AbacFilter` + `AbacAuthentication` | ✅ done | `STATUS-02.md` |
 | 3 | Security: `@OpaPreAuthorize` + authorization manager + role-def wiring | ☐ planned | `STATUS-03.md` |
 | 4 | Starter: auto-configuration (conditional + overridable) | ☐ planned | `STATUS-04.md` |
 | 5 | Example: security chain, demo role defs, annotations, per-type rego, retire enricher | ☐ planned | `STATUS-05.md` |

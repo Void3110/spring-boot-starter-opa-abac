@@ -1,12 +1,19 @@
 /**
  * Spring Security integration for OPA-backed ABAC.
  *
- * <p>Planned surface (built up in later phases):
+ * <p>Identity extraction (this module):
  * <ul>
- *   <li>{@code OpaAuthorizationManager} — {@code AuthorizationManager<RequestAuthorizationContext>}</li>
- *   <li>{@code @OpaPreAuthorize} — method-level pre-authorization</li>
- *   <li>{@code AbacContextExtractor} — pluggable JWT/token → {@code AbacContext} extraction</li>
- *   <li>{@code AbacFilter} — populates the request-scoped ABAC context</li>
+ *   <li>{@link dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor} — pluggable token/request →
+ *       {@code AbacContext.Subject} extraction, with {@code JwtClaimsSubjectExtractor} as the default
+ *       (gateway-trusted, no signature verification)</li>
+ *   <li>{@link dev.dmitriikonovalov.opaabac.security.AbacAuthentication} — an
+ *       {@code AbstractAuthenticationToken} carrying the subject; authorities {@code ROLE_<role>}</li>
+ *   <li>{@link dev.dmitriikonovalov.opaabac.security.AbacFilter} — populates the
+ *       {@code SecurityContextHolder} from the request</li>
  * </ul>
+ *
+ * <p>Enforcement (added in the next ticket): {@code @OpaPreAuthorize} +
+ * {@code OpaPreAuthorizeAuthorizationManager}, plus an opt-in request-level
+ * {@code OpaAuthorizationManager}.
  */
 package dev.dmitriikonovalov.opaabac.security;
