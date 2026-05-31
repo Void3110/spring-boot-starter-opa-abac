@@ -1,0 +1,201 @@
+{
+  "info": {
+    "name": "Catalog ABAC allow/deny matrix",
+    "description": "Proves the library-spine authorization end to end through the gateway: a viewer token can read but not write, an editor token can write. Decisions are role-definition-driven, enforced by @OpaPreAuthorize -> OPA. run-tests.sh mints BOTH tokens in-network and injects viewer_token + editor_token; the editor folder chains created ids in COLLECTION scope.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "catalog_id", "value": "" },
+    { "key": "category_id", "value": "" },
+    { "key": "product_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Editor seeds a catalog+category+product (writes allowed)",
+      "item": [
+        {
+          "name": "Editor create catalog",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{editor_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Electronics\",\n  \"description\": \"editor-seeded\"\n}" },
+            "url": { "raw": "{{collection_base_url}}/catalogs", "host": ["{{collection_base_url}}"], "path": ["catalogs"] }
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('editor create catalog -> 201', () => pm.response.to.have.status(201));",
+              "const id = pm.response.json().id;",
+              "pm.collectionVariables.set('catalog_id', id);"
+            ] } }
+          ]
+        },
+        {
+          "name": "Editor create category",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{editor_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Laptops\"\n}" },
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories"] }
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('editor create category -> 201', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('category_id', pm.response.json().id);"
+            ] } }
+          ]
+        },
+        {
+          "name": "Editor create product",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{editor_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"UltraBook 14\",\n  \"description\": \"demo product\",\n  \"sku\": \"UB-14\",\n  \"priceCents\": 129900,\n  \"currency\": \"USD\"\n}" },
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products"] }
+          },
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('editor create product -> 201', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('product_id', pm.response.json().id);"
+            ] } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Viewer reads allowed (GET -> 200)",
+      "item": [
+        {
+          "name": "Viewer list catalogs",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{viewer_token}}" } ],
+            "url": { "raw": "{{collection_base_url}}/catalogs", "host": ["{{collection_base_url}}"], "path": ["catalogs"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('viewer list catalogs -> 200', () => pm.response.to.have.status(200));"
+          ] } } ]
+        },
+        {
+          "name": "Viewer get catalog",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{viewer_token}}" } ],
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('viewer get catalog -> 200', () => pm.response.to.have.status(200));"
+          ] } } ]
+        },
+        {
+          "name": "Viewer get product",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{viewer_token}}" } ],
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('viewer get product -> 200', () => pm.response.to.have.status(200));"
+          ] } } ]
+        }
+      ]
+    },
+    {
+      "name": "3. Viewer writes denied (-> 403)",
+      "item": [
+        {
+          "name": "Viewer create catalog DENIED",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{viewer_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"ShouldNotExist\"\n}" },
+            "url": { "raw": "{{collection_base_url}}/catalogs", "host": ["{{collection_base_url}}"], "path": ["catalogs"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('viewer create catalog -> 403', () => pm.response.to.have.status(403));"
+          ] } } ]
+        },
+        {
+          "name": "Viewer update product DENIED",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{viewer_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Hacked\",\n  \"sku\": \"UB-14\",\n  \"priceCents\": 1,\n  \"currency\": \"USD\"\n}" },
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('viewer update product -> 403', () => pm.response.to.have.status(403));"
+          ] } } ]
+        },
+        {
+          "name": "Viewer delete product DENIED",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{viewer_token}}" } ],
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('viewer delete product -> 403', () => pm.response.to.have.status(403));"
+          ] } } ]
+        }
+      ]
+    },
+    {
+      "name": "4. Editor writes allowed (update + delete) then cleanup",
+      "item": [
+        {
+          "name": "Editor update product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{editor_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"UltraBook 14 Pro\",\n  \"sku\": \"UB-14\",\n  \"priceCents\": 139900,\n  \"currency\": \"USD\"\n}" },
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('editor update product -> 200', () => pm.response.to.have.status(200));",
+            "pm.test('name updated', () => pm.expect(pm.response.json().name).to.eql('UltraBook 14 Pro'));"
+          ] } } ]
+        },
+        {
+          "name": "Editor delete product",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{editor_token}}" } ],
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('editor delete product -> 204', () => pm.response.to.have.status(204));"
+          ] } } ]
+        },
+        {
+          "name": "Editor delete catalog (cleanup)",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{editor_token}}" } ],
+            "url": { "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}", "host": ["{{collection_base_url}}"], "path": ["catalogs", "{{catalog_id}}"] }
+          },
+          "event": [ { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('editor delete catalog -> 204', () => pm.response.to.have.status(204));"
+          ] } } ]
+        }
+      ]
+    }
+  ]
+}

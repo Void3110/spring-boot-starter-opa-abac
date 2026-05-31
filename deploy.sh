@@ -95,6 +95,17 @@ HEADER
 
     for i in $(seq 1 "$n"); do
       local host_port=$((BASE_PORT + i))
+      # ABAC enforcement in the app. Only enabled when OIDC is on — without a forwarded token there is
+      # no subject to authorize, so every request would (correctly) fail closed. The policy prefix is
+      # empty: the per-type resolver posts to /v1/data/{catalog,category,product}.
+      local abac_env=""
+      if [ "$ENABLE_OIDC" = "1" ] && [ "$ENABLE_OPA" = "1" ]; then
+        abac_env="      OPA_ABAC_ENABLED: \"true\"
+      OPA_ABAC_BASE_URL: \"http://opa:8181\"
+      OPA_ABAC_POLICY_PREFIX: \"\""
+      else
+        abac_env="      OPA_ABAC_ENABLED: \"false\""
+      fi
       local otel_env=""
       if [ "$ENABLE_TRACING" = "1" ]; then
         otel_env="      OTEL_SERVICE_NAME: \"catalog-management-service\"
@@ -117,6 +128,7 @@ HEADER
       SPRING_DATASOURCE_USERNAME: "catalog"
       SPRING_DATASOURCE_PASSWORD: "catalog"
       JAVA_OPTS: "$java_opts"
+$abac_env
 $otel_env
     ports:
       - "$host_port:8080"

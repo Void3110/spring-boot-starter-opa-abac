@@ -10,8 +10,8 @@
 
 set -euo pipefail
 
-# This script's own directory (infra/apisix), and the repo root two levels up — used to locate
-# the enricher helper regardless of where the script is invoked from.
+# This script's own directory (infra/apisix), and the repo root two levels up — resolved so the
+# script works regardless of where it is invoked from.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 
@@ -77,16 +77,11 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
 \"access_token_in_authorization_header\":true,\
 \"ssl_verify\":false}"
 fi
-# DEMO identity enricher (only with OIDC). A small serverless-pre-function in the `access`
-# phase, AFTER openid-connect has validated the token: it decodes the JWT payload (already
-# verified upstream) and injects X-User-Id / X-Username headers so you can SEE identity
-# reaching OPA + the app today. THROWAWAY: once the library does Spring-native AbacContext
-# extraction (Phase 3), this gateway-side enricher goes away — it's the "mediator" style we
-# intend to move past. The Lua is built by a Python helper to avoid bash/JSON escaping pain.
-if [ "${ENABLE_OIDC:-0}" = "1" ]; then
-  ENRICHER=$("${PYTHON:-python3}" "$SELF_DIR/enricher-plugin.py" 2>/dev/null || true)
-  [ -n "$ENRICHER" ] && PLUGINS="$PLUGINS,$ENRICHER"
-fi
+# NOTE: the demo identity enricher was RETIRED in the library-spine slice (Phase 3). The gateway no
+# longer injects X-User-Id / X-Username via a serverless-pre-function — `openid-connect` validates the
+# token and forwards the Bearer, and the application now does Spring-native AbacContext extraction
+# itself (opa-abac-spring-security's AbacFilter). The gateway stays coarse (authn + a coarse OPA route
+# check); fine-grained, role-definition-driven ABAC lives in the app via the library.
 if [ "${ENABLE_TRACING:-1}" = "1" ]; then
   PLUGINS="$PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
 fi
@@ -112,5 +107,5 @@ if [ "$route_code" != "200" ] && [ "$route_code" != "201" ]; then
   echo "  ERROR: route PUT failed ($route_code): $(printf '%s' "$route_resp" | head -n1)" >&2
   exit 1
 fi
-echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} enrich=${ENABLE_OIDC:-0} tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
+echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} (app does extraction) tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
 echo "==> APISIX ready: proxy at http://localhost:9085"

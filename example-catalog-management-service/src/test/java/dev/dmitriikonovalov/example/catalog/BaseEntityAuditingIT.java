@@ -8,11 +8,18 @@ import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
+import dev.dmitriikonovalov.example.catalog.support.PermissiveSecurityTestConfig;
+import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.data.model.ResourceTags;
+import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Proves the base-entity adoption against real Postgres: the app boots under
@@ -25,9 +32,9 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 class BaseEntityAuditingIT extends AbstractPostgresIT {
 
-    /** Mirrors the fixed demo auditor in {@code AuditingConfig.DEMO_PRINCIPAL}. */
-    private static final UUID DEMO_PRINCIPAL =
-            UUID.fromString("00000000-0000-0000-0000-00000000de70");
+    /** The principal the auditor should record — these tests persist directly (no HTTP filter), so we
+     * set the same editor authentication the permissive web filter would. */
+    private static final UUID EXPECTED_PRINCIPAL = PermissiveSecurityTestConfig.TEST_PRINCIPAL;
 
     @Autowired
     CatalogRepository catalogs;
@@ -37,6 +44,18 @@ class BaseEntityAuditingIT extends AbstractPostgresIT {
 
     @Autowired
     ProductRepository products;
+
+    @BeforeEach
+    void authenticate() {
+        AbacContext.Subject subject = new AbacContext.Subject(
+                EXPECTED_PRINCIPAL.toString(), List.of("catalog-editor"), Map.of("username", "it-editor"));
+        SecurityContextHolder.getContext().setAuthentication(new AbacAuthentication(subject));
+    }
+
+    @AfterEach
+    void clearAuth() {
+        SecurityContextHolder.clearContext();
+    }
 
     /** Persist a catalog + category and return a (transient) product under that category. */
     private ProductEntity newProductUnderFreshCategory() {
@@ -55,7 +74,7 @@ class BaseEntityAuditingIT extends AbstractPostgresIT {
 
         assertThat(saved.getVersion()).isZero();
         assertThat(saved.getCreatedAt()).isNotNull();
-        assertThat(saved.getCreatedBy()).isEqualTo(DEMO_PRINCIPAL);
+        assertThat(saved.getCreatedBy()).isEqualTo(EXPECTED_PRINCIPAL);
         assertThat(saved.getLastModifiedAt()).isNotNull();
         assertThat(saved.getTags().isEmpty()).isTrue();
     }

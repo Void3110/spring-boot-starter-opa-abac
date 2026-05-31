@@ -7,6 +7,7 @@ import dev.dmitriikonovalov.example.catalog.domain.ProductService;
 import dev.dmitriikonovalov.example.catalog.openapi.api.ProductApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Product;
 import dev.dmitriikonovalov.example.catalog.openapi.model.ProductRequest;
+import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "product:read", resourceType = "'product'")
     public ResponseEntity<List<Product>> listProducts(UUID catalogId, UUID categoryId) {
         requireCategory(catalogId, categoryId);
         var result = products.findByCategoryId(categoryId).stream().map(CatalogMapper::toDto).toList();
@@ -35,6 +37,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "product:write", resourceType = "'product'")
     public ResponseEntity<Product> createProduct(UUID catalogId, UUID categoryId, ProductRequest request) {
         requireCategory(catalogId, categoryId);
         var entity = new ProductEntity(
@@ -50,6 +53,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "product:read", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Product> getProduct(UUID catalogId, UUID categoryId, UUID productId) {
         requireCategory(catalogId, categoryId);
         var entity = requireProduct(categoryId, productId);
@@ -57,6 +61,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "product:write", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UUID productId, ProductRequest request) {
         // Scope the product to its category/catalog (404 if it doesn't belong) before mutating.
         requireCategory(catalogId, categoryId);
@@ -74,6 +79,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "product:write", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Void> deleteProduct(UUID catalogId, UUID categoryId, UUID productId) {
         requireCategory(catalogId, categoryId);
         var entity = requireProduct(categoryId, productId);
