@@ -9,9 +9,9 @@ tags:
 
 # Domain-model foundation
 
-> **Status:** Done — all 5 tickets implemented, tested, and committed on
-> `feature/void3110/domain-model-foundation` (not pushed; the maintainer pushes).
-> First load-bearing slice of [[POC-ROADMAP]] **Phase 3 (library spine)**.
+> **✅ Shipped (2026-05-31).** All 5 tickets implemented, tested, and committed on
+> `feature/void3110/domain-model-foundation`. First load-bearing slice of [[POC-ROADMAP]]
+> **Phase 3 (library spine)** — moved here to `implemented/` on ship.
 
 This folder is the full work package for the **foundational domain-model layer**: the reusable
 base entity stack that everything else in Phase 3 builds on. It is written to be **implemented

@@ -9,7 +9,7 @@ tags:
 
 > How the library keeps concurrent writers from corrupting each other, and why `mutate(id, fn)` is
 > the write path you should reach for first. The entities these operate on are described in
-> [[DOMAIN-MODEL]]; the first implementation is planned in [[DOMAIN-MODEL-FOUNDATION]].
+> [[DOMAIN-MODEL]]; the first implementation shipped in [[DOMAIN-MODEL-FOUNDATION]].
 
 ## The failure this prevents
 

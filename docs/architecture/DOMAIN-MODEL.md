@@ -12,7 +12,7 @@ tags:
 > tags "for free," and become authorizable with almost no per-entity code. The base classes
 > live in the `opa-abac-spring-data` library and are demonstrated by the catalog example.
 >
-> Planning + decomposition for the first implementation: [[DOMAIN-MODEL-FOUNDATION]].
+> Decomposition + status for the first implementation (shipped): [[DOMAIN-MODEL-FOUNDATION]].
 > The write-side concurrency story has its own guide: [[CONCURRENCY-AND-LOCKING]].
 
 ## Why a base layer at all
