@@ -8,8 +8,14 @@
   "accessTokenLifespan": 1800,
   "roles": {
     "realm": [
-      { "name": "catalog-viewer", "description": "Can read catalog resources" },
-      { "name": "catalog-editor", "description": "Can modify catalog resources" }
+      {
+        "name": "catalog-viewer",
+        "description": "Can read catalog resources"
+      },
+      {
+        "name": "catalog-editor",
+        "description": "Can modify catalog resources"
+      }
     ]
   },
   "clients": [
@@ -24,9 +30,19 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:9085/*", "/*"],
-      "webOrigins": ["*"],
-      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "redirectUris": [
+        "http://localhost:9085/*",
+        "/*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ],
       "attributes": {
         "post.logout.redirect.uris": "+"
       },
@@ -53,9 +69,53 @@
       "firstName": "Demo",
       "lastName": "User",
       "credentials": [
-        { "type": "password", "value": "demo", "temporary": false }
+        {
+          "type": "password",
+          "value": "demo",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["catalog-viewer", "catalog-editor"]
+      "realmRoles": [
+        "catalog-viewer",
+        "catalog-editor"
+      ]
+    },
+    {
+      "username": "viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "viewer@example.com",
+      "firstName": "Viewer",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-viewer"
+      ]
+    },
+    {
+      "username": "editor",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "editor@example.com",
+      "firstName": "Editor",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "editor",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor",
+        "catalog-viewer"
+      ]
     }
   ]
 }
