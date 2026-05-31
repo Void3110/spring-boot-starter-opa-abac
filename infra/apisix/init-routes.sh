@@ -10,6 +10,11 @@
 
 set -euo pipefail
 
+# This script's own directory (infra/apisix), and the repo root two levels up — used to locate
+# the enricher helper regardless of where the script is invoked from.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
+
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 # Default single node — the first app pod publishes on host port 28081 (see deploy.sh BASE_PORT).
@@ -59,6 +64,7 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 # OPA and the app *could* read identity — but the service does no JWT check yet (Phase 2).
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   PLUGINS="$PLUGINS,\"openid-connect\":{\
+\"_meta\":{\"priority\":2599},\
 \"client_id\":\"catalog-gateway\",\
 \"client_secret\":\"catalog-gateway-secret\",\
 \"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
@@ -71,14 +77,26 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
 \"access_token_in_authorization_header\":true,\
 \"ssl_verify\":false}"
 fi
+# DEMO identity enricher (only with OIDC). A small serverless-pre-function in the `access`
+# phase, AFTER openid-connect has validated the token: it decodes the JWT payload (already
+# verified upstream) and injects X-User-Id / X-Username headers so you can SEE identity
+# reaching OPA + the app today. THROWAWAY: once the library does Spring-native AbacContext
+# extraction (Phase 3), this gateway-side enricher goes away — it's the "mediator" style we
+# intend to move past. The Lua is built by a Python helper to avoid bash/JSON escaping pain.
+if [ "${ENABLE_OIDC:-0}" = "1" ]; then
+  ENRICHER=$("${PYTHON:-python3}" "$SELF_DIR/enricher-plugin.py" 2>/dev/null || true)
+  [ -n "$ENRICHER" ] && PLUGINS="$PLUGINS,$ENRICHER"
+fi
 if [ "${ENABLE_TRACING:-1}" = "1" ]; then
   PLUGINS="$PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
 fi
 if [ "${ENABLE_OPA:-1}" = "1" ]; then
-  PLUGINS="$PLUGINS,\"opa\":{\"host\":\"http://opa:8181\",\"policy\":\"gateway\",\"response_allow_field\":\"result.allow\"}"
+  PLUGINS="$PLUGINS,\"opa\":{\"_meta\":{\"priority\":2000},\"host\":\"http://opa:8181\",\"policy\":\"gateway\",\"response_allow_field\":\"result.allow\"}"
 fi
 
-curl -sf -o /dev/null -X PUT \
+# Note: use -s (not -sf) and inspect the body — a -f swallows APISIX's 400 error messages
+# (e.g. "unknown plugin [...]" when a plugin isn't enabled in config.yaml).
+route_resp=$(curl -s -w "\n%{http_code}" -X PUT \
   -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
   "$APISIX_ADMIN/apisix/admin/routes/catalog-all" \
   -d "{
@@ -88,6 +106,11 @@ curl -sf -o /dev/null -X PUT \
     \"upstream_id\": \"catalog-pool\",
     \"status\": 1,
     \"plugins\": { $PLUGINS }
-  }"
-echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
+  }")
+route_code=$(printf '%s' "$route_resp" | tail -n1)
+if [ "$route_code" != "200" ] && [ "$route_code" != "201" ]; then
+  echo "  ERROR: route PUT failed ($route_code): $(printf '%s' "$route_resp" | head -n1)" >&2
+  exit 1
+fi
+echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} enrich=${ENABLE_OIDC:-0} tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
 echo "==> APISIX ready: proxy at http://localhost:9085"
