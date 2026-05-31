@@ -6,6 +6,7 @@ import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.openapi.api.CategoryApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Category;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryRequest;
+import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -24,6 +25,7 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "category:read", resourceType = "'category'")
     public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) {
         requireCatalog(catalogId);
         var entities = (parentId == null)
@@ -33,6 +35,7 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "category:write", resourceType = "'category'")
     public ResponseEntity<Category> createCategory(UUID catalogId, CategoryRequest request) {
         requireCatalog(catalogId);
         if (request.getParentId() != null) {
@@ -52,12 +55,14 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "category:read", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> getCategory(UUID catalogId, UUID categoryId) {
         var entity = requireCategory(catalogId, categoryId);
         return ResponseEntity.ok(CatalogMapper.toDto(entity));
     }
 
     @Override
+    @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> updateCategory(UUID catalogId, UUID categoryId, CategoryRequest request) {
         var entity = requireCategory(catalogId, categoryId);
         if (request.getParentId() != null) {
@@ -72,6 +77,7 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Void> deleteCategory(UUID catalogId, UUID categoryId) {
         var entity = requireCategory(catalogId, categoryId);
         categories.delete(entity);

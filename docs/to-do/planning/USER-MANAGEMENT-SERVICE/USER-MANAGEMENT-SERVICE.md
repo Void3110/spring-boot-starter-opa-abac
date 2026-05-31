@@ -95,4 +95,7 @@ Likely we demonstrate **(3) as the primary path** (it exercises the starter best
 - Overall roadmap: [[POC-ROADMAP]]
 - Resource-side counterpart: `example-catalog-management-service` (currently
   `example/catalog-management-service` — see [[POC-ROADMAP]] Phase 1 rename).
+- Research carried over from the Phase-3 planning (auto-tagging, the dynamic tag dictionary, and the
+  Phase-5 list filtering): [[RESEARCH-AUTOTAG-AND-FILTERING]]. This service provides the real
+  HTTP-backed `RoleDefinitionSupplier` that the [[LIBRARY-SPINE]] slice stubs with a demo supplier.
 - IP boundary: root `CLAUDE.md` → "IP Boundary".
