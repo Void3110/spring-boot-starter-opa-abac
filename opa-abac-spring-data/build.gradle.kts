@@ -14,10 +14,13 @@ dependencyManagement {
 dependencies {
     api(project(":opa-abac-core"))
 
-    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    // `api`, not `implementation`: the base entities and CRUD service expose JPA/Spring Data types
+    // (jakarta.persistence, JpaRepository, AbacDataObject), so consumers inherit JPA on their compile
+    // classpath. Jackson (used by ResourceTagsConverter) comes transitively via this starter.
+    api("org.springframework.boot:spring-boot-starter-data-jpa")
 
-    testImplementation("com.h2database:h2")
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.mockito.core)
 }
