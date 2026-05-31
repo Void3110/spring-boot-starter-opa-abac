@@ -66,4 +66,12 @@ No new open question. Design decisions were already captured pre-implementation 
 surfaced. (Mulch re-checked; skipped per "skip if nothing non-obvious".)
 
 ## Commit
-`feat(domain-model): add library base/secure entities, tags, and JSONB converter` — hash filled at commit.
+`feat(domain-model): add library base/secure entities, tags, and JSONB converter` — `9b17572`.
+
+## Note for the maintainer (out of ticket scope)
+Pre-existing repo-hygiene debt spotted while staging: Eclipse/VS Code build outputs are **tracked**
+in git — `**/bin/` (compiled `.class` + copied resources) and `opa-abac-spring-boot-starter/.factorypath`
+(which contains a local `/Users/...` path). `.gitignore` covers `build/` and `.settings/` but not
+`bin/`/`.factorypath`. I deliberately scoped this commit to ticket-1 source/test/docs and did **not**
+sweep these in. Recommend a separate housekeeping commit: `git rm -r --cached **/bin **/.factorypath`
++ add them to `.gitignore`. Not done here to keep the ticket commit focused.
