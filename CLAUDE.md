@@ -39,7 +39,7 @@ Java 21 · Spring Boot 3.4 · Gradle 8.12 (wrapper) · vanilla `org.openapi.gene
 ./gradlew build        # all library modules + example app + OpenAPI codegen + integration tests
 ./gradlew test         # integration tests only
 ./profile.sh up        # start Postgres (Docker/podman) on host port 5433
-./gradlew :example:catalog-management-service:bootRun   # run the example app
+./gradlew :example-catalog-management-service:bootRun   # run the example app
 ./profile.sh down      # stop infra
 ```
 
@@ -59,7 +59,7 @@ opa-abac-core/                  # framework-agnostic ABAC model + OPA client (no
 opa-abac-spring-security/       # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
 opa-abac-spring-data/           # partial-eval → JPA Specification data filtering
 opa-abac-spring-boot-starter/   # auto-configuration (the published starter)
-example/catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
+example-catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
 compose.yaml · profile.sh       # local infra (Postgres now; Keycloak/APISIX/OPA/Jaeger added incrementally)
 docs/                           # Obsidian vault — see docs/README.md
 .claude/skills/                 # rego-skill, mulch, deep-review

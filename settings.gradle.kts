@@ -9,8 +9,9 @@ include(
 )
 
 // --- Example applications (NOT published) ---
-// Built up step by step to demonstrate the full concept:
-//   Keycloak + APISIX (OIDC, OPA, tracing) -> catalog-management-service (ABAC checks)
+// Flat root modules with an `example-` prefix; built up step by step to demonstrate the
+// full concept: Keycloak + APISIX (OIDC, OPA, tracing) -> example-catalog-management-service
+// (ABAC checks). A future example-user-management-service will join as a sibling.
 include(
-    "example:catalog-management-service",
+    "example-catalog-management-service",
 )

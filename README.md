@@ -73,7 +73,7 @@ schema managed by Liquibase. **No authentication yet** — this is the insecure 
 
 ```bash
 ./profile.sh up        # start Postgres (Docker), host port 5433
-./gradlew :example:catalog-management-service:bootRun
+./gradlew :example-catalog-management-service:bootRun
 # Swagger UI at http://localhost:8080/swagger-ui.html
 ./profile.sh down      # stop & remove
 ```
