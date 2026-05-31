@@ -68,10 +68,11 @@ surfaced. (Mulch re-checked; skipped per "skip if nothing non-obvious".)
 ## Commit
 `feat(domain-model): add library base/secure entities, tags, and JSONB converter` — `9b17572`.
 
-## Note for the maintainer (out of ticket scope)
-Pre-existing repo-hygiene debt spotted while staging: Eclipse/VS Code build outputs are **tracked**
+## Note for the maintainer (out of ticket scope) — ✅ RESOLVED
+Pre-existing repo-hygiene debt spotted while staging: Eclipse/VS Code build outputs were **tracked**
 in git — `**/bin/` (compiled `.class` + copied resources) and `opa-abac-spring-boot-starter/.factorypath`
-(which contains a local `/Users/...` path). `.gitignore` covers `build/` and `.settings/` but not
-`bin/`/`.factorypath`. I deliberately scoped this commit to ticket-1 source/test/docs and did **not**
-sweep these in. Recommend a separate housekeeping commit: `git rm -r --cached **/bin **/.factorypath`
-+ add them to `.gitignore`. Not done here to keep the ticket commit focused.
+(which contained a local `/Users/...` path). I deliberately scoped the ticket-1 commit to
+source/test/docs and did **not** sweep these in, flagging it as a separate housekeeping task instead.
+
+**Resolved** in its own change: those paths are now untracked and `.gitignore` covers `bin/` and
+`*.factorypath` (lines 18–19). No action remaining.
