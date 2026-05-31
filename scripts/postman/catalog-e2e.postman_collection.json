@@ -22,17 +22,30 @@
           "name": "Get token (password grant)",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// run-tests.sh mints the token in-network and injects access_token, so this request",
+                  "// is normally redundant. When a token is already present, skip the HTTP call entirely",
+                  "// (the in-network issuer isn't reachable from the host anyway).",
+                  "if (pm.variables.get('access_token')) {",
+                  "  console.log('access_token already injected by run-tests.sh; skipping the token request.');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// If access_token was already injected by run-tests.sh, this folder is optional.",
-                  "if (pm.response.code === 200) {",
+                  "// Only reached when newman runs ON the compose network (no pre-injected token).",
+                  "if (pm.response && pm.response.code === 200) {",
                   "  const json = pm.response.json();",
                   "  pm.test('access_token present', () => pm.expect(json).to.have.property('access_token'));",
                   "  pm.collectionVariables.set('access_token', json.access_token);",
-                  "} else {",
-                  "  console.log('Token endpoint not reachable from host (expected: issuer is in-network). Using injected access_token.');",
                   "}"
                 ]
               }
@@ -54,7 +67,10 @@
                 { "key": "password", "value": "{{password}}" }
               ]
             },
-            "url": { "raw": "{{keycloak_token_url}}" }
+            "url": {
+              "raw": "{{keycloak_token_url}}",
+              "host": ["{{keycloak_token_url}}"]
+            }
           }
         }
       ]
@@ -194,7 +210,15 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('id matches', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('product_id')));"
+                  "const p = pm.response.json();",
+                  "pm.test('id matches', () => pm.expect(p.id).to.eql(pm.collectionVariables.get('product_id')));",
+                  "pm.test('fields match what was created', () => {",
+                  "  pm.expect(p.name).to.eql('Laptop');",
+                  "  pm.expect(p.sku).to.eql('LAP-001');",
+                  "  pm.expect(p.priceCents).to.eql(129900);",
+                  "  pm.expect(p.currency).to.eql('USD');",
+                  "  pm.expect(p.categoryId).to.eql(pm.collectionVariables.get('category_id'));",
+                  "});"
                 ]
               }
             }
@@ -217,7 +241,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('price updated', () => pm.expect(pm.response.json().priceCents).to.eql(99900));"
+                  "const p = pm.response.json();",
+                  "pm.test('changed fields reflected', () => {",
+                  "  pm.expect(p.priceCents).to.eql(99900);",
+                  "  pm.expect(p.description).to.eql('on sale');",
+                  "});",
+                  "pm.test('id unchanged', () => pm.expect(p.id).to.eql(pm.collectionVariables.get('product_id')));"
                 ]
               }
             }
@@ -257,6 +286,50 @@
               "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products",
               "host": ["{{collection_base_url}}"],
               "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products"]
+            }
+          }
+        },
+        {
+          "name": "Delete product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get product after delete (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{category_id}}/products/{{product_id}}",
+              "host": ["{{collection_base_url}}"],
+              "path": ["catalogs", "{{catalog_id}}", "categories", "{{category_id}}", "products", "{{product_id}}"]
             }
           }
         }

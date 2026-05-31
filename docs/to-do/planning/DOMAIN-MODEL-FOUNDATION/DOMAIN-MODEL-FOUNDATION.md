@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/spring-data
   - area/abac
@@ -9,7 +9,8 @@ tags:
 
 # Domain-model foundation
 
-> **Status:** Planning — design + decomposition complete, implementation not started.
+> **Status:** Done — all 5 tickets implemented, tested, and committed on
+> `feature/void3110/domain-model-foundation` (not pushed; the maintainer pushes).
 > First load-bearing slice of [[POC-ROADMAP]] **Phase 3 (library spine)**.
 
 This folder is the full work package for the **foundational domain-model layer**: the reusable
@@ -54,7 +55,7 @@ by the catalog example:
 | 2 | Library: locking repo + CRUD service | ☑ done | `STATUS-02.md` |
 | 3 | Example: schema + entity adoption | ☑ done | `STATUS-03.md` |
 | 4 | Example: `ProductService` + concurrency proof | ☑ done | `STATUS-04.md` |
-| 5 | E2E suite + docs | ☐ not started | `STATUS-05.md` |
+| 5 | E2E suite + docs | ☑ done | `STATUS-05.md` |
 
 ## Critical path
 
