@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
+import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -8,6 +9,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.auditing.DateTimeProvider;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Enables Spring Data JPA auditing so the base entities' {@code @CreatedBy}/{@code @LastModifiedBy}
@@ -19,21 +22,30 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
  * {@link DateTimeProvider} that returns an {@code OffsetDateTime} directly — auditing then uses it
  * as-is, no conversion. Referenced via {@code dateTimeProviderRef}.
  *
- * <p><b>Auditor.</b> For now a <strong>fixed demo principal</strong>: the gateway terminates identity
- * but the service does no JWT extraction yet (that lands with the security library). A later
- * Phase-3 slice replaces this bean with one that reads the authenticated principal; the base classes
- * need no change for that — only this bean does.
+ * <p><b>Auditor.</b> The real principal: the {@code sub} (a {@code UUID}) of the current
+ * {@link AbacAuthentication}, populated by the library's {@code AbacFilter} from the forwarded JWT.
+ * {@link Optional#empty()} when unauthenticated (or when the subject id is not a UUID), which leaves
+ * the audit columns null rather than guessing.
  */
 @Configuration
 @EnableJpaAuditing(dateTimeProviderRef = "auditingDateTimeProvider")
 public class AuditingConfig {
 
-    /** A stable, recognizable demo principal id used until real identity extraction lands. */
-    static final UUID DEMO_PRINCIPAL = UUID.fromString("00000000-0000-0000-0000-00000000de70");
-
     @Bean
     AuditorAware<UUID> auditorAware() {
-        return () -> Optional.of(DEMO_PRINCIPAL);
+        return () -> currentPrincipalId();
+    }
+
+    private static Optional<UUID> currentPrincipalId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof AbacAuthentication abac && abac.isAuthenticated()) {
+            try {
+                return Optional.of(UUID.fromString(abac.getSubject().id()));
+            } catch (IllegalArgumentException e) {
+                return Optional.empty(); // subject id is not a UUID — don't guess
+            }
+        }
+        return Optional.empty();
     }
 
     @Bean

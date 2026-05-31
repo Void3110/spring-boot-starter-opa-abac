@@ -9,6 +9,7 @@ import dev.dmitriikonovalov.opaabac.security.JwtClaimsSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.OpaMethodSecurityConfiguration;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorizeAuthorizationManager;
 import dev.dmitriikonovalov.opaabac.security.SubjectClaimsConfig;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,11 +31,12 @@ public class OpaAbacSecurityBeans {
 
     @Bean
     @ConditionalOnMissingBean
-    public AbacSubjectExtractor abacSubjectExtractor(ObjectMapper objectMapper, OpaAbacProperties properties) {
+    public AbacSubjectExtractor abacSubjectExtractor(
+            ObjectProvider<ObjectMapper> objectMapper, OpaAbacProperties properties) {
         OpaAbacProperties.Subject s = properties.getSubject();
         SubjectClaimsConfig claims = new SubjectClaimsConfig(
                 s.getIdClaim(), s.getRolesClaim(), s.getUsernameClaim(), s.getAttributeClaims(), s.isValidateExpiry());
-        return new JwtClaimsSubjectExtractor(objectMapper, claims);
+        return new JwtClaimsSubjectExtractor(objectMapper.getIfAvailable(ObjectMapper::new), claims);
     }
 
     @Bean
