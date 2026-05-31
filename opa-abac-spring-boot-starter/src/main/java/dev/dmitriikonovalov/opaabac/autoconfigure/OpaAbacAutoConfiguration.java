@@ -8,6 +8,7 @@ import dev.dmitriikonovalov.opaabac.core.OpaClientConfig;
 import dev.dmitriikonovalov.opaabac.core.PerTypePolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -35,12 +36,6 @@ public class OpaAbacAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ObjectMapper opaAbacObjectMapper() {
-        return new ObjectMapper();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public PolicyPathResolver policyPathResolver(OpaAbacProperties properties) {
         return new PerTypePolicyPathResolver(properties.getPolicyPrefix());
     }
@@ -48,10 +43,16 @@ public class OpaAbacAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public OpaClient opaClient(
-            ObjectMapper objectMapper, PolicyPathResolver policyPathResolver, OpaAbacProperties properties) {
+            ObjectProvider<ObjectMapper> objectMapper,
+            PolicyPathResolver policyPathResolver,
+            OpaAbacProperties properties) {
+        // Reuse the application's ObjectMapper if present; otherwise a private one. The starter must NOT
+        // register a primary ObjectMapper bean — that would suppress Boot's Jackson auto-configuration
+        // (e.g. JSR-310 date support) for the whole app.
+        ObjectMapper mapper = objectMapper.getIfAvailable(ObjectMapper::new);
         OpaClientConfig config = new OpaClientConfig(
                 properties.getBaseUrl(), properties.getTimeout(), properties.getDecisionField());
-        return new HttpOpaClient(objectMapper, policyPathResolver, config);
+        return new HttpOpaClient(mapper, policyPathResolver, config);
     }
 
     /**

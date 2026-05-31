@@ -1,6 +1,8 @@
 package dev.dmitriikonovalov.example.catalog;
 
+import dev.dmitriikonovalov.example.catalog.support.PermissiveSecurityTestConfig;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -11,9 +13,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * {@code postgres:16-alpine} container (shared across subclasses via the static field +
  * Testcontainers reuse) and points Spring's datasource at it. Liquibase runs the real
  * Postgres-dialect changelog, so these tests exercise the actual schema we deploy.
+ *
+ * <p>Imports {@link PermissiveSecurityTestConfig} so these persistence/concurrency tests pass through
+ * the real (now secured) chain without a token — authorization is covered elsewhere.
  */
 @SpringBootTest
 @Testcontainers
+@Import(PermissiveSecurityTestConfig.class)
 abstract class AbstractPostgresIT {
 
     @SuppressWarnings("resource")
