@@ -14,6 +14,11 @@ tasks.named("jar") { enabled = false }
 val generatedSourcesDir = layout.buildDirectory.dir("generated/openapi")
 
 dependencies {
+    // The starter's Spring Data layer: base/secure entities, tags, locking repo + CRUD service.
+    // It exposes spring-boot-starter-data-jpa as `api`, so the explicit data-jpa dep below is
+    // redundant but kept for clarity that this app is a JPA app in its own right.
+    implementation(project(":opa-abac-spring-data"))
+
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")

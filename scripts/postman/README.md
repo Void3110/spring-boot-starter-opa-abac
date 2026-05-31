@@ -41,6 +41,12 @@ it to newman as `access_token`. Full explanation in
 
 ## Status
 
-This is a **working skeleton** (auth + happy-path chain with id-chaining and status/shape
-assertions). Richer assertions and negative/authz cases are added when service-side ABAC lands — see
-the `DOMAIN-MODEL-FOUNDATION` plan, ticket 5.
+**Working suite** — auth + the full Catalog → Category → Product lifecycle (create → get → update →
+list → delete → 404-after-delete) with id-chaining and field-level assertions, then a cascade
+cleanup. Runs green against the local rig.
+
+The **authz** depth is still shallow on purpose: OPA runs an allow-all placeholder and the service
+does no JWT/ABAC check yet, so the suite proves the *plumbing* (a Keycloak-authenticated identity
+reaches the app and CRUD works through the gateway), not fine-grained decisions. The viewer-vs-editor
+matrix is added when `@OpaPreAuthorize` + a real policy land in a later Phase-3 slice — see the
+`DOMAIN-MODEL-FOUNDATION` plan, ticket 5, and `10-QA-TEST-CASES.md` (E9+).

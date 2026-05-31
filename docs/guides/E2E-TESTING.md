@@ -19,14 +19,23 @@ The collection exercises the **whole request path** — APISIX (OIDC + OPA + tra
 obtained from Keycloak, presented to the gateway, validated, and CRUD over the resource hierarchy
 succeeds. Folders:
 
-1. **Auth** — Keycloak password-grant → capture `access_token`.
-2. **Catalog** — create / get / list; capture `catalogId`.
-3. **Category** — create under the catalog; capture `categoryId`.
-4. **Product** — create / get / update / list under the category; capture `productId`.
-5. **Cleanup** — delete the catalog (cascade removes category + product).
+1. **Auth** — Keycloak password-grant → capture `access_token`. Auto-skips when `run-tests.sh` has
+   already injected a token (a prerequest `pm.execution.skipRequest()` guard), so the host path
+   doesn't try to reach the in-network issuer.
+2. **Catalog** — create → get; capture `catalog_id`.
+3. **Category** — create under the catalog; capture `category_id`.
+4. **Product** — create → get (field-level assertions) → update → list → delete → get-after-delete
+   (404); capture `product_id`.
+5. **Cleanup** — delete the catalog (cascade removes category + any product).
 
-Requests chain via collection variables (`catalogId` → `categoryId` → `productId`). Each request
-asserts the status code and the response shape.
+Requests chain via **collection** variables (`catalog_id` → `category_id` → `product_id`). Each
+request asserts the status code and field-level response shape.
+
+> **Variable-scope gotcha:** the chained ids live in the *collection* scope (set by each folder's
+> test script), and are deliberately **not** declared in the environment file. Newman resolves
+> `{{var}}` with environment scope winning over collection scope — so an empty `catalog_id` declared
+> in the environment would shadow the captured collection value and every downstream URL would render
+> with an empty id (`/catalogs//categories/…`). Keep them out of the environment.
 
 > **Authz depth today.** OPA runs an allow-all placeholder and the service does no service-side
 > ABAC yet, so the suite proves *plumbing*, not fine-grained decisions. A viewer-vs-editor matrix
