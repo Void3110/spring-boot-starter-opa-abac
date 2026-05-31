@@ -1,0 +1,455 @@
+openapi: 3.0.3
+info:
+  title: Catalog Management Service API
+  description: >
+    E-commerce product catalog management. Resources form a hierarchy —
+    Catalog → Category (self-referencing tree) → Product — which is exactly the
+    shape attribute-based access control (ABAC) is designed for. This baseline
+    has no authentication; auth is layered on in later phases.
+  version: 0.1.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local
+
+tags:
+  - name: Catalog
+    description: Top-level catalogs
+  - name: Category
+    description: Hierarchical categories within a catalog
+  - name: Product
+    description: Products within a category
+
+paths:
+  # ---------------------------------------------------------------- Catalogs
+  /api/v1/catalogs:
+    get:
+      tags: [Catalog]
+      summary: List catalogs
+      operationId: listCatalogs
+      responses:
+        '200':
+          description: Catalogs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Catalog'
+    post:
+      tags: [Catalog]
+      summary: Create a catalog
+      operationId: createCatalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalog'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/catalogs/{catalogId}:
+    parameters:
+      - $ref: '#/components/parameters/CatalogId'
+    get:
+      tags: [Catalog]
+      summary: Get a catalog
+      operationId: getCatalog
+      responses:
+        '200':
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalog'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Catalog]
+      summary: Update a catalog
+      operationId: updateCatalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalog'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Catalog]
+      summary: Delete a catalog
+      operationId: deleteCatalog
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # -------------------------------------------------------------- Categories
+  /api/v1/catalogs/{catalogId}/categories:
+    parameters:
+      - $ref: '#/components/parameters/CatalogId'
+    get:
+      tags: [Category]
+      summary: List categories in a catalog
+      operationId: listCategories
+      parameters:
+        - name: parentId
+          in: query
+          description: When set, returns only direct children of this category.
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+    post:
+      tags: [Category]
+      summary: Create a category
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/catalogs/{catalogId}/categories/{categoryId}:
+    parameters:
+      - $ref: '#/components/parameters/CatalogId'
+      - $ref: '#/components/parameters/CategoryId'
+    get:
+      tags: [Category]
+      summary: Get a category
+      operationId: getCategory
+      responses:
+        '200':
+          description: Category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Category]
+      summary: Update a category
+      operationId: updateCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Category]
+      summary: Delete a category
+      operationId: deleteCategory
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Products
+  /api/v1/catalogs/{catalogId}/categories/{categoryId}/products:
+    parameters:
+      - $ref: '#/components/parameters/CatalogId'
+      - $ref: '#/components/parameters/CategoryId'
+    get:
+      tags: [Product]
+      summary: List products in a category
+      operationId: listProducts
+      responses:
+        '200':
+          description: Products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    post:
+      tags: [Product]
+      summary: Create a product
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/catalogs/{catalogId}/categories/{categoryId}/products/{productId}:
+    parameters:
+      - $ref: '#/components/parameters/CatalogId'
+      - $ref: '#/components/parameters/CategoryId'
+      - $ref: '#/components/parameters/ProductId'
+    get:
+      tags: [Product]
+      summary: Get a product
+      operationId: getProduct
+      responses:
+        '200':
+          description: Product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Product]
+      summary: Update a product
+      operationId: updateProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Product]
+      summary: Delete a product
+      operationId: deleteProduct
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    CatalogId:
+      name: catalogId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    Catalog:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    CatalogRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+
+    Category:
+      type: object
+      required: [id, catalogId, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        catalogId:
+          type: string
+          format: uuid
+          readOnly: true
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Parent category id; null for a root category.
+        name:
+          type: string
+        description:
+          type: string
+
+    CategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Parent category id; omit/null for a root category.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+
+    Product:
+      type: object
+      required: [id, categoryId, name, priceCents, currency]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        categoryId:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+        sku:
+          type: string
+        priceCents:
+          type: integer
+          format: int64
+          description: Price in minor units (e.g. cents).
+        currency:
+          type: string
+          description: ISO 4217 currency code.
+          example: USD
+
+    ProductRequest:
+      type: object
+      required: [name, priceCents, currency]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        sku:
+          type: string
+          maxLength: 64
+        priceCents:
+          type: integer
+          format: int64
+          minimum: 0
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+
+    ApiError:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: integer
+          format: int32
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: catalog-management-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/catalog}
+    username: ${SPRING_DATASOURCE_USERNAME:catalog}
+    password: ${SPRING_DATASOURCE_PASSWORD:catalog}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+server:
+  port: ${SERVER_PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+# Actuator: this is the demo app, so a broad set of endpoints is exposed over HTTP for local
+# debugging. Note this is NOT a production-safe set — env/configprops/beans can leak config, and
+# heapdump/threaddump are intentionally omitted here. Narrow this before any real deployment.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,env,beans,mappings,loggers,metrics,liquibase,conditions
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+
+logging:
+  level:
+    dev.dmitriikonovalov: INFO
