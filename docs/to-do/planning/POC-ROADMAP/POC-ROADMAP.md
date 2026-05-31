@@ -98,8 +98,10 @@ library stack lives in `opa-abac-spring-data`, the catalog example adopts it (00
 JSONB tags + optimistic version), `ProductService.mutate()` proves concurrent writers serialize, and
 an e2e Postman/Newman suite runs green through the gateway. See [[DOMAIN-MODEL-FOUNDATION]].
 
-**Next:** the OPA-client / `AbacContext` extraction / `OpaAuthorizationManager` / `@OpaPreAuthorize`
-slice (each its own folder), replacing the demo gateway enricher with Spring-native extraction.
+**Next (planned, decomposed):** the **library spine** — `HttpOpaClient` → `AbacContext` extraction →
+role-definition-driven `@OpaPreAuthorize` → starter wiring → catalog adoption, replacing the demo
+gateway enricher with Spring-native extraction. Design + tickets + autonomous prompt are ready in
+[[LIBRARY-SPINE]]. (Batch evaluation + partial-eval → JPA data filtering remain Phase 5.)
 
 ## Phases
 
@@ -111,7 +113,7 @@ slice (each its own folder), replacing the demo gateway enricher with Spring-nat
 | **0** | Catalog CRUD (done) | Runnable catalog app, Postgres + Liquibase, no auth. | ✅ already in repo |
 | **1** | **Restructure** | Flatten `example/` → `example-catalog-management-service`; settings + paths updated; build green. | ✅ **done** (commit `0ce6026`). |
 | **2** | Infra: identity + gateway | Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger. | ✅ **done** — full rig via `deploy.sh`; see `infra/README.md`. |
-| **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ◀ **IN PROGRESS.** The core generalization work. First slice **done**: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service, e2e suite). Next: OPA client + `AbacContext` extraction + `OpaAuthorizationManager` + `@OpaPreAuthorize`, replacing the demo gateway enricher. |
+| **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ◀ **IN PROGRESS.** The core generalization work. First slice **done**: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service, e2e suite). Second slice **planned + decomposed**: [[LIBRARY-SPINE]] (HttpOpaClient + extraction + role-definition-driven `@OpaPreAuthorize` + starter wiring + catalog adoption, retiring the demo gateway enricher). |
 | **4** | **user-management-service** | New example app: users/teams/roles + dynamic tag dictionary; feeds ABAC attributes. | See [[USER-MANAGEMENT-SERVICE]]. Can begin design in parallel with Phase 3. |
 | **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. |
 | **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |
