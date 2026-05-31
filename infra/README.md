@@ -24,8 +24,13 @@ OIDC **at the gateway** (the service still does no JWT validation — that comes
 
 ```bash
 ENABLE_OIDC=1 ./deploy.sh up --pods 2
-# realm catalog-demo, client catalog-gateway, user demo/demo — imported from
+# realm catalog-demo, client catalog-gateway — imported from
 # infra/keycloak/realm-export.json. Keycloak UI: http://localhost:28888 (admin/admin)
+#
+# Users (for the ABAC allow/deny matrix):
+#   demo/demo     -> catalog-viewer + catalog-editor (back-compat; holds BOTH roles)
+#   viewer/viewer -> catalog-viewer only  (reads allowed, writes 403)
+#   editor/editor -> catalog-editor (+viewer)  (reads + writes allowed)
 
 # no token -> 302 redirect to Keycloak login (unauth_action: auth)
 curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 302
