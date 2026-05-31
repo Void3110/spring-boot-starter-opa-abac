@@ -74,6 +74,26 @@ attributes that protect it.
   → `example-catalog-management-service` and update `settings.gradle.kts`, package paths, and any
   references. Tracked as Phase 1 below. *(Not yet executed — separate confirmed step.)*
 
+## Current state (snapshot)
+
+Phases 0–2 are **done**. The example rig runs end to end via `./deploy.sh` (see
+[`infra/README.md`](../../../infra/README.md)):
+
+```
+Keycloak (identity) → APISIX [ openid-connect → demo identity-enricher → OPA decision → tracing ]
+                        → round-robin over N catalog pods → Postgres
+```
+
+- **Load balancing**: APISIX round-robins over N app pods (`./deploy.sh up --pods N`).
+- **Tracing**: Jaeger + Badger; 5 services traced (apisix, keycloak, opa, catalog app, jaeger).
+- **Authz**: OPA called per request — **allow-all placeholder** policy (`infra/opa/policies/gateway.rego`).
+- **Identity**: Keycloak realm `catalog-demo` (user `demo/demo`), gateway OIDC; a **demo** Lua
+  enricher injects `X-User-Id`/`X-Username` — **throwaway**, replaced by Spring-native extraction in Phase 3.
+- The **service itself does no auth yet** — all enforcement is at the gateway. That's intentional;
+  Phase 3 moves real ABAC into the app via the library.
+
+**Next:** Phase 3 — build the library spine and have the catalog app consume identity for real.
+
 ## Phases
 
 > Phases 2–5 layer the library onto the catalog app incrementally (mirrors the CLAUDE.md
@@ -82,9 +102,9 @@ attributes that protect it.
 | # | Phase | Outcome | Notes |
 |---|-------|---------|-------|
 | **0** | Catalog CRUD (done) | Runnable catalog app, Postgres + Liquibase, no auth. | ✅ already in repo |
-| **1** | **Restructure** | Flatten `example/` → `example-catalog-management-service`; settings + paths updated; build green. | Prerequisite for adding a second example cleanly. |
-| **2** | Infra: identity + gateway | `compose.yaml` gains Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger, added one at a time. | Each addition verified before the next. |
-| **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | The core generalization work. |
+| **1** | **Restructure** | Flatten `example/` → `example-catalog-management-service`; settings + paths updated; build green. | ✅ **done** (commit `0ce6026`). |
+| **2** | Infra: identity + gateway | Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger. | ✅ **done** — full rig via `deploy.sh`; see `infra/README.md`. |
+| **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ◀ **NEXT.** The core generalization work. Replaces the demo gateway enricher with Spring-native extraction. |
 | **4** | **user-management-service** | New example app: users/teams/roles + dynamic tag dictionary; feeds ABAC attributes. | See [[USER-MANAGEMENT-SERVICE]]. Can begin design in parallel with Phase 3. |
 | **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. |
 | **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |
