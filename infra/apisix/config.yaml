@@ -1,0 +1,46 @@
+# APISIX standalone-ish config for the local example rig.
+#
+# Phase A (now): plain reverse proxy + load balancing in front of the catalog app pool.
+#   No auth, no OPA, no tracing — the point is to put a round-robin upstream over N app
+#   pods so we can exercise concurrency.
+# Phase B (later): enable the `opentelemetry` plugin (-> Jaeger) and the `opa` plugin here.
+#
+# Mounted read-only by infra/compose.apisix.yaml. Restart APISIX after editing.
+
+apisix:
+  node_listen: 9080
+  enable_admin: true
+  enable_dev_mode: false
+  enable_reuseport: true
+  enable_ipv6: false
+  proxy_mode: http
+  router:
+    http: radixtree_host_uri
+
+deployment:
+  role: traditional
+  role_traditional:
+    config_provider: etcd
+  # APISIX 3.x: etcd lives under deployment.etcd (a top-level `etcd:` key is ignored).
+  etcd:
+    host:
+      - http://etcd:2379
+    prefix: /apisix
+    timeout: 30
+  admin:
+    # Local-only rig: a fixed admin key is fine. Do not reuse anywhere real.
+    admin_key:
+      - name: admin
+        key: edd1c9f034335f136f87ad84b625c8f1
+        role: admin
+    admin_listen:
+      ip: 0.0.0.0
+      port: 9180
+    allow_admin:
+      - 0.0.0.0/0
+
+# Only enable the plugins we actually use in Phase A. Phase B adds opentelemetry + opa.
+plugins:
+  - prometheus
+  - proxy-rewrite
+  - response-rewrite   # used to echo the served upstream node in a response header (load-balance visibility)

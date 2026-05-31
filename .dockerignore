@@ -1,0 +1,11 @@
+# Keep build context small and reproducible — exclude build output, caches, IDE, docs.
+**/build/
+.gradle/
+.git/
+.idea/
+.mulch/
+docs/
+*.md
+infra/
+.github/
+CLAUDE.local.md
