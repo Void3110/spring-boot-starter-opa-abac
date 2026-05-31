@@ -28,8 +28,7 @@ services:
     # APISIX opa plugin reaches OPA as http://opa:8181, unaffected by this host remap.
     ports:
       - "28181:8181"  # OPA REST/data API on the host (for poking with curl)
-    healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8181/health >/dev/null 2>&1 || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
+    # No healthcheck: the openpolicyagent/opa image is distroless (no shell, no wget/curl),
+    # so a CMD-based check can't run. Readiness is implied — deploy.sh confirms the gateway
+    # serves 200 (which requires the OPA decision call to succeed). Probe from the host with:
+    #   curl -s localhost:28181/health    ->   {}

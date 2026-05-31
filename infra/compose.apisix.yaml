@@ -43,8 +43,6 @@ services:
     # On Linux, deploy.sh adds the host-gateway mapping; here we declare it for portability.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9080 -o /dev/null || curl -sf http://localhost:9180/apisix/admin/routes -H 'X-API-KEY: edd1c9f034335f136f87ad84b625c8f1' -o /dev/null || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+    # No healthcheck: the apache/apisix image has no curl/wget/nc for a CMD probe. deploy.sh
+    # instead polls the Admin API from the host (curl localhost:9180/...) before seeding routes,
+    # which is the real readiness signal.
