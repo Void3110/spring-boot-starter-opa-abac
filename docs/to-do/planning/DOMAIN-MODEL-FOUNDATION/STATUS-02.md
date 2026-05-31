@@ -63,4 +63,4 @@ logic); the lock seam stays behind one private `lockable()` (DIP).
 Mulch: nothing non-obvious beyond `mx-fe5c67`; no new record (skip per the "non-obvious only" rule).
 
 ## Commit
-`feat(domain-model): add LockableJpaRepository and AbstractCrudService with mutate()` — hash at commit.
+`feat(domain-model): add LockableJpaRepository and AbstractCrudService with mutate()` — `3ac05e3`.

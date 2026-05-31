@@ -1,0 +1,127 @@
+databaseChangeLog:
+  # Adopt the opa-abac-spring-data base-entity stack on the three catalog tables:
+  # optimistic-lock version, audit columns, and a JSONB `tags` column (resource attributes).
+  # The entity mappings (AbstractAuditableEntity / AbstractSecuredEntity) must match these
+  # columns exactly — the app boots with ddl-auto: validate, so a clean boot is the proof.
+
+  - changeSet:
+      id: 0002-base-columns-catalog
+      author: catalog-management-service
+      changes:
+        # `created_at` already exists on catalog (0001); only the new base columns are added here.
+        - addColumn:
+            tableName: catalog
+            columns:
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+              - column:
+                  name: tags
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_catalog_tags
+            tableName: catalog
+            using: gin
+            columns:
+              - column:
+                  name: tags
+
+  - changeSet:
+      id: 0002-base-columns-category
+      author: catalog-management-service
+      changes:
+        - addColumn:
+            tableName: category
+            columns:
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              # category had no created_at in 0001 — add it (now auditing-managed).
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+              - column:
+                  name: tags
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_category_tags
+            tableName: category
+            using: gin
+            columns:
+              - column:
+                  name: tags
+
+  - changeSet:
+      id: 0002-base-columns-product
+      author: catalog-management-service
+      changes:
+        - addColumn:
+            tableName: product
+            columns:
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+              - column:
+                  name: tags
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_product_tags
+            tableName: product
+            using: gin
+            columns:
+              - column:
+                  name: tags

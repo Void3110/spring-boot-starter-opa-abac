@@ -5,7 +5,6 @@ import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.openapi.api.CatalogApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Catalog;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CatalogRequest;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -32,8 +31,7 @@ public class CatalogController implements CatalogApi {
         var entity = new CatalogEntity(
                 UUID.randomUUID(),
                 request.getName(),
-                request.getDescription(),
-                OffsetDateTime.now());
+                request.getDescription());
         var saved = catalogs.save(entity);
         return ResponseEntity.status(HttpStatus.CREATED).body(CatalogMapper.toDto(saved));
     }

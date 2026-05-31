@@ -1,18 +1,20 @@
 package dev.dmitriikonovalov.example.catalog.domain;
 
+import dev.dmitriikonovalov.opaabac.data.model.AbstractSecuredEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
+/**
+ * A product within a category. Extends the secure base — authorizable as resource type
+ * {@code "product"}, with audit columns, version, and tags inherited.
+ */
 @Entity
 @Table(name = "product")
-public class ProductEntity {
-
-    @Id
-    @Column(nullable = false, updatable = false)
-    private UUID id;
+public class ProductEntity extends AbstractSecuredEntity {
 
     @Column(name = "category_id", nullable = false, updatable = false)
     private UUID categoryId;
@@ -38,7 +40,7 @@ public class ProductEntity {
 
     public ProductEntity(UUID id, UUID categoryId, String name, String description,
                          String sku, Long priceCents, String currency) {
-        this.id = id;
+        super(id);
         this.categoryId = categoryId;
         this.name = name;
         this.description = description;
@@ -47,8 +49,22 @@ public class ProductEntity {
         this.currency = currency;
     }
 
-    public UUID getId() {
-        return id;
+    @Override
+    public String abacResourceType() {
+        return "product";
+    }
+
+    /**
+     * Tags plus the intrinsic {@code categoryId}, so a policy can authorize a product relative to its
+     * category (e.g. hierarchical inheritance) without a separate lookup.
+     */
+    @Override
+    public Map<String, Object> abacAttributes() {
+        Map<String, Object> attributes = new HashMap<>(getTags().asMap());
+        if (categoryId != null) {
+            attributes.put("categoryId", categoryId.toString());
+        }
+        return attributes;
     }
 
     public UUID getCategoryId() {

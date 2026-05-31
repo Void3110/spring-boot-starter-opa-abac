@@ -131,6 +131,13 @@ The app enables `@EnableJpaAuditing` and provides an `AuditorAware<UUID>` bean. 
 `created_by`/`last_modified_by` reflect who actually acted). The base classes need no change for that
 — only the bean does.
 
+> **`OffsetDateTime` needs an explicit `DateTimeProvider`.** Spring Data's default auditing date
+> source produces a `LocalDateTime`, which it then **cannot convert** to the `OffsetDateTime` the base
+> timestamps use — it throws *"Cannot convert unsupported date type java.time.LocalDateTime to
+> java.time.OffsetDateTime"* on the first save. Supply a `DateTimeProvider` bean that returns an
+> `OffsetDateTime` and reference it via `@EnableJpaAuditing(dateTimeProviderRef = "…")`; auditing then
+> uses it as-is. The example does exactly this in `AuditingConfig`.
+
 ## Schema contract (`ddl-auto: validate`)
 
 The app boots with `spring.jpa.hibernate.ddl-auto: validate`, so **the entity mappings and the
