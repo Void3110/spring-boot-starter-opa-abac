@@ -40,5 +40,14 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+
+        // Surface test execution in the build output (local and CI). The default is
+        // near-silent — only failures. Showing passed/skipped/failed makes the
+        // Postgres-backed integration tests visible when they run (e.g. on CI).
+        testLogging {
+            events("passed", "skipped", "failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showStandardStreams = false
+        }
     }
 }
