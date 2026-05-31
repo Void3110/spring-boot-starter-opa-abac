@@ -59,4 +59,4 @@ Catalog→Category→Product works against the migrated schema. Two real e2e bug
 - `ml doctor` clean (see commit checkpoint).
 
 ## Commit
-`feat(domain-model): flesh out e2e suite (green through gateway) + finalize docs` — hash at commit.
+`feat(domain-model): flesh out e2e suite (green through gateway) + finalize docs` — `1ef7cc3`.

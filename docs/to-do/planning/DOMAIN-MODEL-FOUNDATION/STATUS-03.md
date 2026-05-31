@@ -66,4 +66,4 @@ not refactors:
   are safe) while auditing sets it on new rows. GIN index on `tags` kept (cheap; future partial-eval).
 
 ## Commit
-`feat(domain-model): adopt base/secure entities in the catalog example + 0002 schema` — hash at commit.
+`feat(domain-model): adopt base/secure entities in the catalog example + 0002 schema` — `6ad767b`.

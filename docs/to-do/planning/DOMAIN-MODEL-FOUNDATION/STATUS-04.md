@@ -58,4 +58,4 @@ Concurrency design behaves exactly as `mx-fe5c67` predicted (`mutate` as the saf
 serialization). Nothing non-obvious beyond it surfaced — no new Mulch record (skip per the rule).
 
 ## Commit
-`feat(domain-model): add ProductService and prove mutate() serializes concurrent writers` — hash at commit.
+`feat(domain-model): add ProductService and prove mutate() serializes concurrent writers` — `b71c525`.
