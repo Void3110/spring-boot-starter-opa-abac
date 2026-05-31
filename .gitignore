@@ -1,0 +1,50 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA / JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Eclipse / VS Code
+.vscode/
+.settings/
+.project
+.classpath
+
+# Editor scratch
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+*.asc
+signing.properties
+local.properties
+
+# Env / local overrides (committed templates use *.example)
+.env
+.env.*
+!.env.example
+
+# Docker / compose local volumes
+example/**/pgdata/
+
+# Obsidian vault config (docs/ is an Obsidian vault; keep notes, not the workspace config)
+.obsidian/
+
+# Claude Code local-only files (committed: CLAUDE.md, .claude/settings.json)
+CLAUDE.local.md
+.claude/settings.local.json
+# Skills are local-only — they reference internal projects; kept out of the public repo.
+.claude/skills/
+
+# Mulch session (keep the expertise store, ignore the ephemeral session dir)
+.mulch/.session/
