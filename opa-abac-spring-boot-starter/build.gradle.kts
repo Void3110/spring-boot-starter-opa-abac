@@ -20,9 +20,18 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.springframework.boot:spring-boot-autoconfigure")
 
+    // Security + web types are referenced by the security auto-config (AbacFilter extends
+    // OncePerRequestFilter; conditions on SecurityFilterChain). The consuming app supplies them at
+    // runtime; here they are compile-only so the starter stays usable in a non-web/non-security app
+    // (the security beans simply back off via @ConditionalOnClass).
+    compileOnly("org.springframework.boot:spring-boot-starter-security")
+    compileOnly("org.springframework.boot:spring-boot-starter-web")
+
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-security")
+    testImplementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
