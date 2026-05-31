@@ -1,0 +1,16 @@
+version: '1'
+domains:
+  opa-abac: {}
+  rego-policy: {}
+  spring-security-integration: {}
+  spring-data-filtering: {}
+  api-design: {}
+  code-review-process: {}
+governance:
+  max_entries: 100
+  warn_entries: 150
+  hard_limit: 200
+classification_defaults:
+  shelf_life:
+    tactical: 14
+    observational: 30
