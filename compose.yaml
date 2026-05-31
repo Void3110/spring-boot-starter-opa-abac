@@ -1,0 +1,56 @@
+# Local infrastructure for the spring-boot-starter-opa-abac example apps.
+#
+# Phase 0 (now): just Postgres for catalog-management-service.
+# Later phases add: keycloak, apisix, opa, jaeger (see commented stubs below) so the
+# full topology — APISIX (OIDC + OPA + tracing) -> catalog-management-service -> Postgres —
+# can be brought up incrementally.
+#
+# Managed via ./profile.sh (up / down / health / logs / status / psql).
+
+name: opa-abac-example
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: opa-abac-postgres
+    environment:
+      POSTGRES_DB: catalog
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog
+    # Host port 5433 to avoid colliding with a podman/other Postgres on 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalog -d catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Added in later phases (kept here as a documented roadmap) ---
+  #
+  # keycloak:
+  #   image: quay.io/keycloak/keycloak:26.1
+  #   command: ["start-dev"]
+  #   environment:
+  #     KC_BOOTSTRAP_ADMIN_USERNAME: admin
+  #     KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+  #   ports: ["8888:8080"]
+  #
+  # opa:
+  #   image: openpolicyagent/opa:latest
+  #   command: ["run", "--server", "--watch", "/policies"]
+  #   volumes: ["./opa-policies:/policies"]
+  #   ports: ["8181:8181"]
+  #
+  # apisix:
+  #   image: apache/apisix:latest
+  #   ports: ["9080:9080", "9180:9180"]
+  #
+  # jaeger:
+  #   image: jaegertracing/all-in-one:latest
+  #   ports: ["16686:16686", "4317:4317"]
+
+volumes:
+  pgdata:
