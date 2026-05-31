@@ -25,10 +25,15 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
+# OpenTelemetry Java agent — baked into the image so pods can enable tracing with no network
+# at run time. deploy.sh adds -javaagent:/opt/otel/agent.jar + OTEL_* env when tracing is on.
+ARG OTEL_AGENT_VERSION=2.11.0
+ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar /opt/otel/agent.jar
+
 COPY --from=build /workspace/example-catalog-management-service/build/libs/*.jar /app/app.jar
 
 EXPOSE 8080
 
-# JAVA_OPTS is injected per-pod by deploy.sh (heap limits, and later the OTEL Java agent).
+# JAVA_OPTS is injected per-pod by deploy.sh (heap limits + optional OTEL agent).
 ENV JAVA_OPTS=""
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

@@ -1,0 +1,33 @@
+# Jaeger (v2 + Badger) for the local example rig — collects spans from APISIX, OPA, and the
+# app pods (OTEL Java agent). Joins the shared opa-abac-example project network so the other
+# containers can reach it by DNS name "jaeger".
+
+name: opa-abac-example
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.17.0
+    container_name: opa-abac-jaeger
+    user: "0:0"
+    restart: unless-stopped
+    command:
+      - --config=/etc/jaeger/jaeger-config.yaml
+    volumes:
+      - ./jaeger/jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml:ro
+      - jaeger-badger:/badger
+    # Host ports remapped to the 2xxxx range — a running portal podman-machine (gvproxy) holds
+    # 16686/4317/4318. These host ports are only for external access/UI; inside the shared
+    # network everything reaches Jaeger by DNS (opa-abac-jaeger:4318), unaffected by this.
+    ports:
+      - "24317:4317"   # OTLP gRPC  (OPA exports here, in-network)
+      - "24318:4318"   # OTLP HTTP  (APISIX + app OTEL agent export here, in-network)
+      - "26686:16686"  # Web UI -> http://localhost:26686
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:13133/status >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  jaeger-badger:
+    driver: local

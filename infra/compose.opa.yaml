@@ -1,0 +1,35 @@
+# OPA (Open Policy Agent) for the local example rig.
+#
+# Phase B: stands up OPA with an allow-all gateway policy so the APISIX `opa` plugin has
+# something to call — the point is to wire + trace the topology, not to enforce yet.
+# OPA exports its own spans to Jaeger (OTLP gRPC :4317) so the decision call shows up in
+# the trace alongside the APISIX and app spans.
+#
+# Joins the shared opa-abac-example network; reachable by other containers as "opa".
+
+name: opa-abac-example
+
+services:
+  opa:
+    image: openpolicyagent/opa:1.10.1
+    container_name: opa-abac-opa
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - --set=distributed_tracing.type=grpc
+      - --set=distributed_tracing.address=jaeger:4317
+      - --set=distributed_tracing.service_name=opa
+      - /policies
+    volumes:
+      - ./opa/policies:/policies:ro
+    # Host port 28181 (not 8181) — a running portal podman-machine holds :8181. In-network the
+    # APISIX opa plugin reaches OPA as http://opa:8181, unaffected by this host remap.
+    ports:
+      - "28181:8181"  # OPA REST/data API on the host (for poking with curl)
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8181/health >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12

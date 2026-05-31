@@ -1,0 +1,54 @@
+# Jaeger v2 with embedded Badger persistent storage.
+#
+# Badger is a Go-based embedded KV store — no extra container, and traces survive Jaeger
+# restarts via a named volume on /badger. (We use Badger rather than Elasticsearch/OpenSearch
+# because their JREs SIGILL on aarch64 container VMs — Apple Silicon. Badger has no JVM.)
+#
+# OTLP in on 4317 (gRPC) / 4318 (HTTP); UI on 16686. Mounted by infra/compose.jaeger.yaml.
+
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    logs:
+      level: INFO
+
+extensions:
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+
+  jaeger_query:
+    storage:
+      traces: badger_main
+
+  jaeger_storage:
+    backends:
+      badger_main:
+        badger:
+          ephemeral: false
+          directories:
+            keys: /badger/keys
+            values: /badger/values
+          ttl:
+            spans: 168h   # 7-day retention
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: badger_main

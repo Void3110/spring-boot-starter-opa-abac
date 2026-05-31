@@ -42,23 +42,32 @@ curl -sf -o /dev/null -X PUT \
   }"
 echo "  upstream 'catalog-pool' -> $DEFAULT_NODE (deploy.sh republishes with all pods)"
 
-# Route: everything to the catalog pool. No auth in Phase A.
-# response-rewrite echoes the served upstream node in X-Upstream-Addr so you can see the
-# load balancer spreading traffic:  curl -sD - localhost:9085/actuator/health | grep -i upstream
+# Route: everything to the catalog pool.
+#   - response-rewrite: echo the served pod in X-Upstream-Addr (load-balance visibility):
+#       curl -sD - localhost:9085/actuator/health | grep -i upstream
+#   - opentelemetry: emit a gateway span per request -> Jaeger.
+#   - opa: call OPA for a decision (allow-all policy for now). Gracefully skipped if OPA is
+#     down only when ENABLE_OPA is unset; by default we wire it so the topology is traced.
+#
+# ENABLE_OPA / ENABLE_TRACING let deploy.sh add these only once Jaeger/OPA are actually up.
+PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
+if [ "${ENABLE_TRACING:-1}" = "1" ]; then
+  PLUGINS="$PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
+fi
+if [ "${ENABLE_OPA:-1}" = "1" ]; then
+  PLUGINS="$PLUGINS,\"opa\":{\"host\":\"http://opa:8181\",\"policy\":\"gateway\",\"response_allow_field\":\"result.allow\"}"
+fi
+
 curl -sf -o /dev/null -X PUT \
   -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
   "$APISIX_ADMIN/apisix/admin/routes/catalog-all" \
-  -d '{
-    "name": "catalog-all",
-    "uri": "/*",
-    "methods": ["GET","POST","PUT","DELETE","OPTIONS","PATCH","HEAD"],
-    "upstream_id": "catalog-pool",
-    "status": 1,
-    "plugins": {
-      "response-rewrite": {
-        "headers": { "set": { "X-Upstream-Addr": "$upstream_addr" } }
-      }
-    }
-  }'
-echo "  route 'catalog-all' (/*) -> catalog-pool"
+  -d "{
+    \"name\": \"catalog-all\",
+    \"uri\": \"/*\",
+    \"methods\": [\"GET\",\"POST\",\"PUT\",\"DELETE\",\"OPTIONS\",\"PATCH\",\"HEAD\"],
+    \"upstream_id\": \"catalog-pool\",
+    \"status\": 1,
+    \"plugins\": { $PLUGINS }
+  }"
+echo "  route 'catalog-all' (/*) -> catalog-pool  [tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
 echo "==> APISIX ready: proxy at http://localhost:9085"

@@ -27,9 +27,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="opa-abac-example"
 APP_DIR="$SCRIPT_DIR/example-catalog-management-service"
 APISIX_COMPOSE="$SCRIPT_DIR/infra/compose.apisix.yaml"
+JAEGER_COMPOSE="$SCRIPT_DIR/infra/compose.jaeger.yaml"
+OPA_COMPOSE="$SCRIPT_DIR/infra/compose.opa.yaml"
 GEN_COMPOSE="$SCRIPT_DIR/build/compose.pods.generated.yaml"
 STATE_FILE="$SCRIPT_DIR/build/.deploy.state"
 IMAGE="opa-abac-catalog:local"
+
+# Phase B tracing/authz toggles (on by default; set =0 to run the bare Phase A rig).
+ENABLE_TRACING="${ENABLE_TRACING:-1}"
+ENABLE_OPA="${ENABLE_OPA:-1}"
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -79,8 +85,24 @@ name: $PROJECT
 
 services:
 HEADER
+    # When tracing is on, prepend the OTEL Java agent (baked into the image). Computed
+    # per-pod inside the loop (each pod gets its own pod.name resource attribute).
+    local java_opts="-Xms256m -Xmx512m -XX:+UseG1GC"
+    [ "$ENABLE_TRACING" = "1" ] && java_opts="-javaagent:/opt/otel/agent.jar $java_opts"
+
     for i in $(seq 1 "$n"); do
       local host_port=$((BASE_PORT + i))
+      local otel_env=""
+      if [ "$ENABLE_TRACING" = "1" ]; then
+        otel_env="      OTEL_SERVICE_NAME: \"catalog-management-service\"
+      OTEL_RESOURCE_ATTRIBUTES: \"pod.name=catalog-$i\"
+      OTEL_EXPORTER_OTLP_ENDPOINT: \"http://opa-abac-jaeger:4318\"
+      OTEL_EXPORTER_OTLP_PROTOCOL: \"http/protobuf\"
+      OTEL_TRACES_SAMPLER: \"always_on\"
+      OTEL_TRACES_EXPORTER: \"otlp\"
+      OTEL_METRICS_EXPORTER: \"none\"
+      OTEL_LOGS_EXPORTER: \"none\""
+      fi
       cat <<POD
   catalog-$i:
     image: $IMAGE
@@ -91,7 +113,8 @@ HEADER
       SPRING_DATASOURCE_URL: "jdbc:postgresql://opa-abac-postgres:5432/catalog"
       SPRING_DATASOURCE_USERNAME: "catalog"
       SPRING_DATASOURCE_PASSWORD: "catalog"
-      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+      JAVA_OPTS: "$java_opts"
+$otel_env
     ports:
       - "$host_port:8080"
     healthcheck:
@@ -110,6 +133,8 @@ POD
 
 app_compose() { docker compose -p "$PROJECT" -f "$GEN_COMPOSE" "$@"; }
 apisix_compose() { docker compose -p "$PROJECT" -f "$APISIX_COMPOSE" "$@"; }
+jaeger_compose() { docker compose -p "$PROJECT" -f "$JAEGER_COMPOSE" "$@"; }
+opa_compose() { docker compose -p "$PROJECT" -f "$OPA_COMPOSE" "$@"; }
 
 # --- APISIX upstream sync ---------------------------------------------------
 # Republish catalog-pool to round-robin over the N running pods (host ports 18081..).
@@ -175,6 +200,12 @@ case "$CMD" in
     n="$(resolve_pods)"; save_pods "$n"
     require_postgres
     image_exists || build_image
+    if [ "$ENABLE_TRACING" = "1" ]; then
+      echo "==> Starting Jaeger (traces)..."; jaeger_compose up -d
+    fi
+    if [ "$ENABLE_OPA" = "1" ]; then
+      echo "==> Starting OPA (allow-all policy)..."; opa_compose up -d
+    fi
     echo "==> Starting APISIX + etcd..."
     apisix_compose up -d
     generate_compose "$n"
@@ -182,10 +213,14 @@ case "$CMD" in
     app_compose up -d
     wait_pods_healthy "$n" || true
     # Seed route (idempotent) then sync upstream to the real pod set.
-    APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$API_KEY" bash "$SCRIPT_DIR/infra/apisix/init-routes.sh"
+    ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
+      APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$API_KEY" \
+      bash "$SCRIPT_DIR/infra/apisix/init-routes.sh"
     apisix_sync_upstream "$n"
     echo ""
     echo "==> Up. Gateway: http://localhost:9085   (e.g. curl http://localhost:9085/actuator/health)"
+    [ "$ENABLE_TRACING" = "1" ] && echo "    Jaeger UI: http://localhost:26686"
+    [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
     ;;
 
@@ -202,12 +237,14 @@ case "$CMD" in
   down)
     if [ -f "$GEN_COMPOSE" ]; then app_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true; fi
     apisix_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
-    echo "==> Pool + APISIX down. (Postgres left running — ./profile.sh down to stop it.)"
+    opa_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    echo "==> Pool + APISIX + OPA + Jaeger down. (Postgres left running — ./profile.sh down to stop it.)"
     ;;
 
   status)
     echo "=== containers ==="
-    docker ps --filter "name=catalog-" --filter "name=opa-abac-apisix" --filter "name=opa-abac-etcd" \
+    docker ps --filter "name=catalog-" --filter "name=opa-abac-" \
       --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
     echo "=== APISIX upstream catalog-pool ==="
     curl -s -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams/catalog-pool" 2>/dev/null \

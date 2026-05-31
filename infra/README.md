@@ -1,12 +1,21 @@
-# Local container-pool rig (Phase A)
+# Local container-pool rig (Phase A + B)
 
 Run the catalog example app as **N replicas behind an APISIX round-robin upstream**, so we can
-exercise concurrency / load balancing locally. **No auth, no OPA, no tracing yet** — that's
-intentional for this phase (Phase B adds Jaeger tracing + the OPA plugin).
+exercise concurrency / load balancing locally — now with **distributed tracing** (Jaeger) and
+an **OPA** decision in the gateway path.
 
 ```
-client ─▶ APISIX :9085 (round-robin) ─▶ catalog-1..N (host :28081..2808N) ─▶ Postgres :5433
+client ─▶ APISIX :9085 ─▶ OPA decision (allow-all) ─▶ catalog-1..N ─▶ Postgres :5433
+            │  (round-robin over pods, host :28081..)
+            └─ spans ─┐        ┌─ spans (OTEL Java agent)
+                      ▼        ▼
+                   Jaeger (UI :26686, Badger storage)
 ```
+
+There is **no real auth yet**: the OPA `gateway` policy is allow-all. It's wired so the whole
+topology is in place and traced end to end; a real ABAC policy replaces it later.
+
+Tracing/OPA are on by default; run a bare Phase-A rig with `ENABLE_TRACING=0 ENABLE_OPA=0 ./deploy.sh up`.
 
 ## Quick start
 
@@ -39,8 +48,10 @@ done | sort | uniq -c
 | `../deploy.sh` | Build the app image; generate the N-pod compose; start pods; sync the APISIX `catalog-pool` upstream to round-robin over all running pods. |
 | `../example-catalog-management-service/Dockerfile` | Multi-stage build (Gradle bootJar → JRE runtime). |
 | `compose.apisix.yaml` | APISIX + etcd (shares the `opa-abac-example` compose project/network with Postgres). |
-| `apisix/config.yaml` | APISIX static config (Phase A plugins: prometheus, proxy-rewrite, response-rewrite). |
-| `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent). |
+| `compose.jaeger.yaml` + `jaeger/jaeger-config.yaml` | Jaeger v2 with embedded Badger persistent trace storage. |
+| `compose.opa.yaml` + `opa/policies/gateway.rego` | OPA with an allow-all gateway policy; exports its own spans to Jaeger. |
+| `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa). |
+| `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds opentelemetry + opa plugins (toggleable). |
 
 ## Ports (and why these, not the defaults)
 
@@ -50,6 +61,26 @@ done | sort | uniq -c
 | `9085` | APISIX proxy | **not 9080** — a podman-machine `gvproxy` holds `:9080` on this host |
 | `9180` | APISIX admin API | `deploy.sh`/`init-routes.sh` write upstream + route here |
 | `28081..` | app pods (host) | **not the 18081 range** — a running portal podman-machine forwards `18081/18082` |
+| `26686` | Jaeger UI | **not 16686** (held by portal podman-machine) |
+| `24317/24318` | Jaeger OTLP gRPC/HTTP (host) | **not 4317/4318** (held). In-network everything uses `opa-abac-jaeger:4318` |
+| `28181` | OPA data API (host) | **not 8181** (held). In-network APISIX calls `http://opa:8181` |
+
+> All the `2xxxx` remaps are only for **host** access — inside the shared Docker network the
+> containers talk by DNS name on the original ports, so the remaps don't affect the topology.
+
+## Tracing (verifying the chain)
+
+Generate traffic, then open Jaeger at **http://localhost:26686** and pick service `apisix`:
+
+```bash
+for i in $(seq 1 30); do curl -s -o /dev/null localhost:9085/actuator/health; done
+curl -s localhost:26686/api/services        # -> apisix, catalog-management-service, opa, jaeger
+```
+
+A single APISIX trace correlates the gateway span → the app's `GET /...` span → its JPA/DB
+span (trace context propagated by the OTEL Java agent baked into the app image). OPA emits its
+own `v1/data` decision spans (the APISIX `opa` plugin doesn't propagate trace context into the
+OPA call, so OPA spans are a separate service rather than nested — expected).
 
 ## Notes / gotchas (learned the hard way)
 
@@ -57,9 +88,13 @@ done | sort | uniq -c
   `quay.io/coreos/etcd` (official) with explicit `--listen/--advertise-client-urls`.
 - **APISIX 3.x etcd config** lives under `deployment.etcd`, **not** a top-level `etcd:` key —
   a top-level key is silently ignored and APISIX falls back to `127.0.0.1:2379`.
-- **Shared network**: all three composes use `name: opa-abac-example`, so they share the
-  auto-created `opa-abac-example_default` network; pods reach Postgres by its DNS name
-  `opa-abac-postgres`. Don't `compose down --remove-orphans` on one file — it'll delete the
-  others' containers.
+- **Shared network (by design)**: all composes use `name: opa-abac-example`, so Docker
+  Compose auto-creates **one** network `opa-abac-example_default` and joins every container to
+  it; they reach each other by container/service DNS name (`opa-abac-postgres`, `jaeger`,
+  `opa`). We deliberately do **not** use an explicit pre-created `external: true` network
+  (the way a larger multi-project podman setup might) — for a single self-contained example
+  rig the shared project network is simpler and needs no `network create` step. Trade-off: a
+  container started *outside* this compose project would need a manual `docker network connect`.
+  Don't `compose down --remove-orphans` on one file — it'll delete the others' containers.
 - **No upstream health-checks in Phase A**: if a pod dies, APISIX keeps round-robining to it
   (you'll see some 5xx) until you rescale. Active health-checking can be added later.

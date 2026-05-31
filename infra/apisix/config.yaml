@@ -39,8 +39,27 @@ deployment:
     allow_admin:
       - 0.0.0.0/0
 
-# Only enable the plugins we actually use in Phase A. Phase B adds opentelemetry + opa.
 plugins:
   - prometheus
   - proxy-rewrite
-  - response-rewrite   # used to echo the served upstream node in a response header (load-balance visibility)
+  - response-rewrite   # echoes the served upstream node in a response header (load-balance visibility)
+  - opentelemetry      # Phase B: export gateway spans to Jaeger
+  - opa                # Phase B: call OPA for an (allow-all, for now) decision per request
+
+# opentelemetry plugin: where APISIX ships its spans. The plugin must also be enabled
+# per-route (see infra/apisix/init-routes.sh).
+plugin_attr:
+  opentelemetry:
+    resource:
+      service.name: apisix
+    collector:
+      address: jaeger:4318      # OTLP HTTP ingest on the Jaeger container
+      request_timeout: 3
+    batch_span_processor:
+      max_queue_size: 1024
+      batch_timeout: 2
+      inactive_timeout: 1
+      max_export_batch_size: 16
+    # always mint a trace id so even unauthenticated probes produce a root span
+    trace_id_source: random
+    set_ngx_var: false
