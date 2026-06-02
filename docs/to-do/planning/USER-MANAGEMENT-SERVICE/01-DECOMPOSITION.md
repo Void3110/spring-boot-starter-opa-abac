@@ -18,6 +18,30 @@ authorization (no ReBAC-in-Rego, no tag dictionary in this slice). `opa-abac-cor
 Critical path **T1 → T2 → T3 → {T4, T5} → T6 → T7 → T8 → T9**. T4 and T5 are parallelizable once T3
 lands. T1–T7 build + validate the service in isolation (no rig); T8 wires the catalog; T9 is the rig + e2e.
 
+### Internal structure (decided — see [[00-DESIGN]] "Module placement")
+
+The service follows the catalog app's conventions with **one deliberate divergence**: a dedicated
+**`service/` layer**, because Phase 4's invariants are inherently cross-entity and transactional (the
+catalog had none of these, so it stayed flat). Package layout:
+
+```
+…usermgmt.config/    OpaAbac wiring, SecurityConfig, AuditingConfig, seed
+…usermgmt.domain/    entities (User/Team/RoleDefinition/TeamMembership) + *Repository
+…usermgmt.service/   TeamService · RoleDefinitionService · MembershipService · EffectiveRoleResolver
+                     — @Transactional; the owner-on-create / transfer / subset-rule / resolve logic lives here
+…usermgmt.web/       controllers (impl OpenAPI *Api) + a hand-written UserMgmtMapper + ApiExceptionHandler
+```
+
+- **Service layer = yes (mandatory here).** Controllers stay thin and delegate; every multi-entity
+  invariant (owner-on-create, transfer-ownership, the subset rule, effective-role resolution) is a
+  `@Transactional` service method, never controller logic.
+- **Mapping = hand-written**, a static `UserMgmtMapper` mirroring the catalog's `CatalogMapper`. **No
+  MapStruct** — keeps the two example services consistent, avoids a third codegen stage alongside the
+  OpenAPI generator, and the ~4 flat DTOs don't justify it.
+- **No facade layer.** Correct overkill for a single multi-aggregate read (effective-role resolution) —
+  the `service/` layer *is* that orchestration point. Keep it clean so a facade is a trivial later
+  insertion if Phase 5 needs read-side orchestration; build the seam, not the layer.
+
 ---
 
 ## Ticket 1 — Scaffold `example-user-management-service`
@@ -64,7 +88,10 @@ lands. T1–T7 build + validate the service in isolation (no rig); T8 wires the 
   a Liquibase data changeset with stable UUIDs/codes.
 - Repositories + read-only CRUD controllers for `User` (create/list/get) and `Team` (list/get) — enough
   to exercise persistence. (Team *creation* is T3; membership/role-def management are T4/T5.)
-- A mapper layer (entity ↔ OpenAPI DTO) like the catalog `CatalogMapper`.
+- A **hand-written** static `UserMgmtMapper` (entity ↔ OpenAPI DTO) mirroring the catalog `CatalogMapper`
+  — no MapStruct (see the "Internal structure" note above). The `service/` package is introduced in T3
+  (the first ticket with cross-entity transactional logic); T2's read-only controllers may call
+  repositories directly, catalog-style.
 
 **Acceptance**
 - `./gradlew :example-user-management-service:build` green; `ddl-auto: validate` boots clean against the
@@ -87,7 +114,10 @@ lands. T1–T7 build + validate the service in isolation (no rig); T8 wires the 
   user (from the authenticated subject). In **one `@Transactional`**: create the `Team`, then create the
   `owner` `TeamMembership` for the creator (resolve the seeded `owner` `RoleDefinition`).
 - A `TeamService.createWithOwner(creatorUserId, name, targetType, targetId)` that encapsulates the atomic
-  bootstrap; rolls back fully on any failure (no orphan team, no grant-less target).
+  bootstrap; rolls back fully on any failure (no orphan team, no grant-less target). **This ticket
+  introduces the `…usermgmt.service/` package** (see "Internal structure"); the controller delegates,
+  the `@Transactional` logic lives in the service. Subsequent tickets add `MembershipService` (T4),
+  `RoleDefinitionService` (T5), transfer in `TeamService` (T6), `EffectiveRoleResolver` (T7).
 - Idempotency/uniqueness guard: one team per `(targetType,targetId)` (or document the chosen policy).
 
 **Acceptance**

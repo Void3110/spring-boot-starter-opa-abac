@@ -158,6 +158,25 @@ enforced by the same `@OpaPreAuthorize` mechanism.
 | **Dynamic tag dictionary in this slice** | Large machinery orthogonal to the team/role core; split to Phase 4.5 so the centerpiece ships first. |
 | **Multi-role-per-team membership** | Unneeded complexity for the demo; `(team,user)` unique with one role is enough and is additive to extend. |
 | **Custom roles at any scope** | Like GCP (custom roles only at project/org, not folders), we restrict custom roles to **team scope** — system roles cover the global ladder. Keeps governance simple and the subset rule local. |
+| **MapStruct for entity↔DTO mapping** | Diverges from the catalog's hand-written `CatalogMapper`, adds a third codegen stage alongside the OpenAPI generator, and the ~4 flat DTOs don't justify it. Hand-written `UserMgmtMapper` instead (see "Internal structure"). |
+| **A facade layer** | Pure-delegation over the single multi-aggregate read; the `service/` layer is already that orchestration point. Deferred as a trivial later insertion if Phase 5 needs read-side orchestration. |
+| **Flat structure like the catalog (no `service/`)** | The catalog has no cross-entity transactional logic; the user-service's invariants (owner-on-create, transfer, subset rule, resolve) demand a `@Transactional` service layer. Mixing them into `domain/` would hide the orchestration. |
+
+## Internal structure (layered, deliberately)
+
+The catalog app is intentionally **flat** (`config` · `domain` · `web`; controllers call repositories
+directly; one `ProductService` exists only for the optimistic-locking demo) — it teaches "you don't need
+ceremony to use the starter." The user-service makes **one deliberate divergence**: a dedicated
+**`service/` layer**, because — unlike the catalog — its core operations are inherently **cross-entity and
+transactional**. That divergence is justified by the domain, not by taste:
+
+| Layer | Decision | Why |
+|-------|----------|-----|
+| **`service/`** | **Add it.** `TeamService`, `RoleDefinitionService`, `MembershipService`, `EffectiveRoleResolver` — `@Transactional`, controllers stay thin. | Owner-on-create (Team + membership in one tx), transfer-ownership (atomic up/down), the subset rule (read actor's effective role → validate target → write), effective-role resolution (the membership walk) are all multi-entity units of work. They *cannot* live in a controller without becoming a design smell. |
+| **Mapping** | **Hand-written** static `UserMgmtMapper`, like the catalog's `CatalogMapper`. **No MapStruct.** | Sibling-consistency in a repo meant to be *read*; avoids a third codegen stage next to the OpenAPI generator; the ~4 flat DTOs don't earn MapStruct's nesting/bulk-copy strengths; keeps the low-ceremony adoption story honest. |
+| **Facade** | **None.** | Correct overkill for a single multi-aggregate read (effective-role resolution) — the `service/` layer already *is* that orchestration point. A facade would be a pure-delegation layer (lasagna). Keep the service clean so a facade is a trivial later insertion **if** Phase 5 brings read-side orchestration (batch eval / list filtering). Build the seam, not the layer. |
+
+Package layout (vs the catalog's `config`/`domain`/`web`): adds exactly **one** package, `service/`.
 
 ## Module placement
 
