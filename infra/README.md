@@ -37,6 +37,7 @@ ENABLE_OIDC=1 ./deploy.sh up --pods 2
 #   demo/demo     -> catalog-viewer + catalog-editor (back-compat; holds BOTH roles)
 #   viewer/viewer -> catalog-viewer only  (reads allowed, writes 403)
 #   editor/editor -> catalog-editor (+viewer)  (reads + writes allowed)
+#   outsider/outsider -> catalog-viewer  (a non-member, for the team matrix's "no team -> deny" case)
 
 # no token -> 302 redirect to Keycloak login (unauth_action: auth)
 curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 302
@@ -54,6 +55,32 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 > + validates in-network, so a token used through the gateway must be **minted in-network**
 > (issuer `keycloak:8888`) or via the real browser redirect flow — a token minted against
 > `localhost:28888` has a mismatched issuer and APISIX rejects it.
+
+## User-management service (app-resolved roles) — opt-in
+
+Off by default. `ENABLE_USER_SERVICE=1 ./deploy.sh up` adds the `user-management-service` (the ABAC
+**attribute source**) + its own Postgres, and points the catalog pods at it
+(`CATALOG_ROLE_SOURCE=http`, base URL `http://usermgmt:8080`). The catalog then resolves the caller's
+effective role from **real team membership** instead of the static demo supplier — the Phase-4
+app-resolved path.
+
+```bash
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+# user-mgmt at http://localhost:28090 (its own DB on :5434); resolve API at /internal/effective-role.
+
+# The team-based allow/deny matrix (mints in-network tokens, bootstraps the team data, asserts):
+cd scripts/postman && ./run-team-matrix.sh
+```
+
+The matrix proves, through the gateway: the catalog owner writes; a viewer-member cannot; a member with
+a team-scoped custom editor role can; a non-member is denied — all with the role coming from the
+user-service. It also dogfoods the user-service's own management API (owner manages, member 403). See
+[[TEAM-BASED-AUTHORIZATION]] for the model and [[E2E-TESTING]] for the in-network token caveat.
+
+> The `team.rego` policy the user-service dogfoods is served by the shared OPA container — it lives in
+> both `../example-user-management-service/src/main/resources/opa/policies/` (the source of truth) and
+> `opa/policies/` (mounted into the rig's OPA). Restart OPA after editing it (`docker restart
+> opa-abac-opa`) — `--watch` doesn't always reload.
 
 ## Quick start
 
@@ -89,6 +116,8 @@ done | sort | uniq -c
 | `compose.jaeger.yaml` + `jaeger/jaeger-config.yaml` | Jaeger v2 with embedded Badger persistent trace storage. |
 | `compose.opa.yaml` + `opa/policies/gateway.rego` | OPA with an allow-all gateway policy; exports its own spans to Jaeger. |
 | `compose.keycloak.yaml` + `keycloak/realm-export.json` | Keycloak (opt-in); imports the `catalog-demo` realm/client/user on startup. |
+| `compose.usermgmt.yaml` + `../example-user-management-service/Dockerfile` | The user-management service + its own Postgres (opt-in via `ENABLE_USER_SERVICE=1`); the app-resolved role source for the catalog. |
+| `opa/policies/team.rego` | The team-management policy the user-service dogfoods (a copy of the service's source policy, mounted into the rig's OPA). |
 | `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa, openid-connect). |
 | `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds openid-connect + opentelemetry + opa plugins (toggleable). |
 
