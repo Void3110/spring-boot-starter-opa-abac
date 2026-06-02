@@ -1,0 +1,2 @@
+databaseChangeLog:
+  # Ticket 1: empty — the team/role schema (0001) and seeds land in ticket 2.
