@@ -170,12 +170,51 @@ prior slices:
   "system roles can't be edited."
 - Does **transfer-ownership** need an accept step, or is it a direct owner action for the demo?
 
+## This package (design → autonomous-implement → track)
+
+This folder is the full work package for Phase 4, written to be **implemented autonomously** — the
+same shape as the shipped [[LIBRARY-SPINE]] slice. The design, the work breakdown, and a self-contained
+[[AUTONOMOUS-IMPLEMENTATION-PROMPT]] are all here.
+
+| File | Role |
+|------|------|
+| `USER-MANAGEMENT-SERVICE.md` | This note — the index: purpose, the team abstraction, the integration point, the build sequence. |
+| [`00-DESIGN.md`](00-DESIGN.md) | The design: the entity model (`role ≠ grant`), system + team-scoped custom roles, owner-on-create, transfer-ownership, the no-self-escalation rule, the effective-role resolve API, the app-resolved `HttpRoleDefinitionSupplier`, dogfooding the starter, considered-&-rejected. |
+| [`01-DECOMPOSITION.md`](01-DECOMPOSITION.md) | The ordered tickets — each Goal / Deliverables / Acceptance / What-NOT-to-touch. **The implementer's work list.** |
+| [`AUTONOMOUS-IMPLEMENTATION-PROMPT.md`](AUTONOMOUS-IMPLEMENTATION-PROMPT.md) | Self-contained prompt to implement this package autonomously, ticket by ticket, with a review gate + checkpoints. |
+| [`10-QA-TEST-CASES.md`](10-QA-TEST-CASES.md) | The unit / integration / policy / e2e cases the work must satisfy. |
+| `STATUS-01.md` … `STATUS-09.md` | One per ticket — filled in at each checkpoint during the run. |
+| [`RESEARCH-AUTOTAG-AND-FILTERING.md`](RESEARCH-AUTOTAG-AND-FILTERING.md) | Carried-over study notes for the **Phase-4.5** tag dictionary + the Phase-5 list filtering (not this slice). |
+
+### Tickets (status)
+
+| # | Ticket | Status | Note |
+|---|--------|--------|------|
+| 1 | Scaffold `example-user-management-service` (module, Postgres, Liquibase, base-entity stack) | ☐ planned | `STATUS-01.md` |
+| 2 | Core domain — `User` / `Team` / `TeamMembership` / `RoleDefinition` (system + team-scoped), seed system roles | ☐ planned | `STATUS-02.md` |
+| 3 | Owner-on-create (atomic team-target + owner membership) | ☐ planned | `STATUS-03.md` |
+| 4 | Team-management API (membership add/remove/update + assign role; subset rule; authorize the actor) | ☐ planned | `STATUS-04.md` |
+| 5 | Role-def management API (team-scoped custom roles; subset-of-own guard) | ☐ planned | `STATUS-05.md` |
+| 6 | Transfer-ownership | ☐ planned | `STATUS-06.md` |
+| 7 | Effective-role resolve API (`/effective-role`) | ☐ planned | `STATUS-07.md` |
+| 8 | Catalog adoption — `HttpRoleDefinitionSupplier` swaps the demo one | ☐ planned | `STATUS-08.md` |
+| 9 | Infra (second service in the rig) + e2e matrix + docs/roadmap/Mulch | ☐ planned | `STATUS-09.md` |
+
+### Workflow-as-artifact
+Like the prior slices, the verbatim [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] + the `STATUS-0N.md` notes are
+**deliberate deliverables** — a studyable record of the plan→autonomous-implement→test→review workflow.
+On ship the folder moves to `docs/to-do/implemented/` with a "Shipped" banner, alongside
+[[DOMAIN-MODEL-FOUNDATION]] and [[LIBRARY-SPINE]].
+
 ## Related
 
 - Overall roadmap: [[POC-ROADMAP]]
-- Resource-side counterpart: `example-catalog-management-service` (currently
-  `example/catalog-management-service` — see [[POC-ROADMAP]] Phase 1 rename).
-- Research carried over from the Phase-3 planning (auto-tagging, the dynamic tag dictionary, and the
-  Phase-5 list filtering): [[RESEARCH-AUTOTAG-AND-FILTERING]]. This service provides the real
-  HTTP-backed `RoleDefinitionSupplier` that the [[LIBRARY-SPINE]] slice stubs with a demo supplier.
+- Resource-side counterpart: `example-catalog-management-service` (the catalog app this service feeds).
+- Prior slice this builds on: [[LIBRARY-SPINE]] — ships `RoleDefinition` + the `RoleDefinitionSupplier`
+  SPI (demo supplier); this service provides the real HTTP-backed supplier (a single-bean swap).
+- Cross-platform team-access research (AWS/Heroku/GitHub/GCP/K8s/OpenFGA): Mulch reference
+  *"Team-based resource access models across cloud platforms"* — the basis for the entity model + the
+  hard rules.
+- Follow-on: [[RESEARCH-AUTOTAG-AND-FILTERING]] — the **Phase-4.5** dynamic tag dictionary + the Phase-5
+  list filtering (not this slice).
 - IP boundary: root `CLAUDE.md` → "IP Boundary".
