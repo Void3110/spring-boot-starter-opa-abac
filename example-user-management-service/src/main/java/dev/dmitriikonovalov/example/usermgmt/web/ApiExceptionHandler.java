@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.ApiError;
+import dev.dmitriikonovalov.example.usermgmt.service.TeamTargetExistsException;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(NotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(TeamTargetExistsException.class)
+    public ResponseEntity<ApiError> handleConflict(TeamTargetExistsException ex) {
+        return error(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiError> handleBadRequest(IllegalArgumentException ex) {
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
