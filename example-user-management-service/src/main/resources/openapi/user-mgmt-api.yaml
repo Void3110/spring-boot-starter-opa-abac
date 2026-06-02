@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: User Management Service API
+  description: >
+    The ABAC attribute source: teams, role definitions, and grants (team memberships).
+    It owns the subject side of the demo and resolves a caller's effective role for a resource,
+    feeding the catalog spine's role-definition supplier.
+
+    Ticket 1 (this revision): a minimal ping so OpenAPI codegen runs. The teams / role-definitions /
+    memberships / effective-role surface is added incrementally in later tickets.
+  version: 0.1.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local
+
+tags:
+  - name: Meta
+    description: Service metadata
+
+paths:
+  /api/v1/ping:
+    get:
+      tags: [Meta]
+      summary: Liveness ping
+      operationId: ping
+      responses:
+        '200':
+          description: The service is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pong'
+
+components:
+  schemas:
+    Pong:
+      type: object
+      required: [service, status]
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          example: UP
+
+    ApiError:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: integer
+          format: int32
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

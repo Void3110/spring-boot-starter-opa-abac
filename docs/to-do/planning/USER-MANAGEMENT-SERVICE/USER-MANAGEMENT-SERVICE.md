@@ -190,7 +190,7 @@ same shape as the shipped [[LIBRARY-SPINE]] slice. The design, the work breakdow
 
 | # | Ticket | Status | Note |
 |---|--------|--------|------|
-| 1 | Scaffold `example-user-management-service` (module, Postgres, Liquibase, base-entity stack) | ☐ planned | `STATUS-01.md` |
+| 1 | Scaffold `example-user-management-service` (module, Postgres, Liquibase, base-entity stack) | ✅ done | `STATUS-01.md` |
 | 2 | Core domain — `User` / `Team` / `TeamMembership` / `RoleDefinition` (system + team-scoped), seed system roles | ☐ planned | `STATUS-02.md` |
 | 3 | Owner-on-create (atomic team-target + owner membership) | ☐ planned | `STATUS-03.md` |
 | 4 | Team-management API (membership add/remove/update + assign role; subset rule; authorize the actor) | ☐ planned | `STATUS-04.md` |
