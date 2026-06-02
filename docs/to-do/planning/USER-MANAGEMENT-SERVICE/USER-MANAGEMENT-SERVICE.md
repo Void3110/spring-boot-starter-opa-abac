@@ -197,7 +197,7 @@ same shape as the shipped [[LIBRARY-SPINE]] slice. The design, the work breakdow
 | 5 | Role-def management API (team-scoped custom roles; subset-of-own guard) | ✅ done | `STATUS-05.md` |
 | 6 | Transfer-ownership | ✅ done | `STATUS-06.md` |
 | 7 | Effective-role resolve API (`/effective-role`) | ✅ done | `STATUS-07.md` |
-| 8 | Catalog adoption — `HttpRoleDefinitionSupplier` swaps the demo one | ☐ planned | `STATUS-08.md` |
+| 8 | Catalog adoption — `HttpRoleDefinitionSupplier` swaps the demo one | ✅ done | `STATUS-08.md` |
 | 9 | Infra (second service in the rig) + e2e matrix + docs/roadmap/Mulch | ☐ planned | `STATUS-09.md` |
 
 ### Workflow-as-artifact
