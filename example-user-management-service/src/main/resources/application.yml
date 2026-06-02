@@ -19,6 +19,14 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+# OPA ABAC: the user-service dogfoods the starter to secure its own management API. The team policy
+# document is served at /v1/data/team; per-type resolution maps resource type "team" -> "team".
+opa:
+  abac:
+    enabled: ${OPA_ABAC_ENABLED:false}
+    base-url: ${OPA_ABAC_BASE_URL:http://localhost:8181}
+    policy-prefix: ${OPA_ABAC_POLICY_PREFIX:}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

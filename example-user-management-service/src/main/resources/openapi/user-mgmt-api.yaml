@@ -24,6 +24,8 @@ tags:
     description: User identities (profiles linked to the IdP subject)
   - name: Team
     description: Teams (the durable owner of a resource via its team-target)
+  - name: Membership
+    description: Team membership — the grant binding a user to a role on a team
 
 paths:
   /api/v1/ping:
@@ -149,6 +151,88 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # -------------------------------------------------------------- Memberships
+  /api/v1/teams/{teamId}/members:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Membership]
+      summary: List team members
+      operationId: listMembers
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Membership'
+    post:
+      tags: [Membership]
+      summary: Add a member (owner/administrator; subject to the subset rule)
+      operationId: addMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemberRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/teams/{teamId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/UserId'
+    put:
+      tags: [Membership]
+      summary: Change a member's role (owner/administrator; subject to the subset rule)
+      operationId: changeMemberRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRoleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    delete:
+      tags: [Membership]
+      summary: Remove a member (owner/administrator) — revokes derived access
+      operationId: removeMember
+      responses:
+        '204':
+          description: Removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   parameters:
     UserId:
@@ -181,6 +265,18 @@ components:
             $ref: '#/components/schemas/ApiError'
     Conflict:
       description: Conflict with the current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: The caller is not authorized for this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    UnprocessableEntity:
+      description: The request violates a domain rule (e.g. the subset rule)
       content:
         application/json:
           schema:
@@ -264,6 +360,58 @@ components:
           description: >
             Explicit creator fallback used until token-derived identity is wired (ticket 4). When the
             request is authenticated, the creator is the subject and this field is ignored.
+
+    Membership:
+      type: object
+      required: [id, teamId, userId, roleCode]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        teamId:
+          type: string
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          format: uuid
+        roleCode:
+          type: string
+          description: The code of the bound role definition (e.g. "owner", "member", or a custom role).
+
+    AddMemberRequest:
+      type: object
+      required: [userId, roleCode]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        roleCode:
+          type: string
+          minLength: 1
+          maxLength: 100
+        actorUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Explicit actor fallback used until token-derived identity is wired (ticket 4). When the
+            request is authenticated, the actor is the subject and this field is ignored.
+
+    ChangeRoleRequest:
+      type: object
+      required: [roleCode]
+      properties:
+        roleCode:
+          type: string
+          minLength: 1
+          maxLength: 100
+        actorUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Explicit actor fallback (see AddMemberRequest).
 
     ApiError:
       type: object

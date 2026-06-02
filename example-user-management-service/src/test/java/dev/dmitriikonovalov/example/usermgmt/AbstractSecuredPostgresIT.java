@@ -9,21 +9,15 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Base for integration tests that need a real Postgres. Spins up a single
- * {@code postgres:16-alpine} container (shared across subclasses via the static field) and points
- * Spring's datasource at it. Liquibase runs the real Postgres-dialect changelog, so these tests
- * exercise the actual schema we deploy — and {@code ddl-auto: validate} proves the JPA mappings
- * match it.
- *
- * <p>Imports {@link AbacTestConfig} so the <em>real</em> {@code SecurityConfig} chain is exercised
- * (one chain everywhere — no second test chain). Subclasses that hit authenticated endpoints attach
- * the {@link AbacTestConfig#SUBJECT_HEADER} header to authenticate; the dogfooded authorization
- * decisions are covered by the secured ITs (see {@link AbstractSecuredPostgresIT}).
+ * Base for ITs that exercise the <em>real</em> secured chain + the dogfooded {@code @OpaPreAuthorize}
+ * path. Imports {@link AbacTestConfig} (a controllable subject extractor + an in-process OPA client
+ * mirroring {@code team.rego}) so the genuine role-resolution + policy logic runs against a real
+ * Postgres without an OPA container. Tests switch the acting identity with {@code AbacTestConfig.actAs}.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @Import(AbacTestConfig.class)
-abstract class AbstractPostgresIT {
+abstract class AbstractSecuredPostgresIT {
 
     @SuppressWarnings("resource")
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -40,8 +34,8 @@ abstract class AbstractPostgresIT {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
-        // Wire the starter on so the real security beans (AbacFilter, the @OpaPreAuthorize advisor)
-        // are present; AbacTestConfig's @Primary OpaClient + extractor override the HTTP ones.
+        // Turn the starter's OPA wiring on so the real @OpaPreAuthorize advisor is active; the
+        // AbacTestConfig OpaClient overrides the HTTP one, so no container is needed.
         registry.add("opa.abac.enabled", () -> "true");
     }
 }
