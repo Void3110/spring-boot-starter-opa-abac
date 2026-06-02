@@ -4,8 +4,10 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.openapi.api.TeamApi;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.CreateTeamRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.Team;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.TransferOwnershipRequest;
 import dev.dmitriikonovalov.example.usermgmt.service.CallerIdentity;
 import dev.dmitriikonovalov.example.usermgmt.service.TeamService;
+import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -51,5 +53,13 @@ public class TeamController implements TeamApi {
         var entity = teams.findById(teamId)
                 .orElseThrow(() -> new NotFoundException("Team not found: " + teamId));
         return ResponseEntity.ok(UserMgmtMapper.toDto(entity));
+    }
+
+    @Override
+    @OpaPreAuthorize(
+            action = "team:transfer-ownership", resourceType = "'team'", resourceId = "#teamId")
+    public ResponseEntity<Void> transferOwnership(UUID teamId, TransferOwnershipRequest request) {
+        teamService.transferOwnership(teamId, request.getNewOwnerUserId());
+        return ResponseEntity.noContent().build();
     }
 }

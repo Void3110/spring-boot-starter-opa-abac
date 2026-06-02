@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.usermgmt.service;
 
+import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.SystemRoles;
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
@@ -65,5 +66,42 @@ public class TeamService {
         memberships.save(new TeamMembership(
                 UUID.randomUUID(), team.getId(), creatorUserId, ownerRole.getId()));
         return team;
+    }
+
+    /**
+     * Transfer ownership (the GitHub-style first-class operation). In <b>one transaction</b>: the new
+     * owner's membership becomes {@code owner} and the current owner is downgraded to
+     * {@code administrator} — so a resource is never orphaned and there is always exactly one owner.
+     * Owner-only at the API ({@code @OpaPreAuthorize}); the new owner must already be a team member.
+     *
+     * @throws IllegalArgumentException     if the team does not exist
+     * @throws MembershipNotFoundException  if the new owner is not a member of the team
+     */
+    @Transactional
+    public void transferOwnership(UUID teamId, UUID newOwnerUserId) {
+        if (!teams.existsById(teamId)) {
+            throw new IllegalArgumentException("Team not found: " + teamId);
+        }
+        TeamMembership newOwnerMembership = memberships.findByTeamIdAndUserId(teamId, newOwnerUserId)
+                .orElseThrow(() -> new MembershipNotFoundException(teamId, newOwnerUserId));
+
+        RoleDefinitionEntity ownerRole = systemRole(SystemRoles.OWNER);
+        RoleDefinitionEntity adminRole = systemRole(SystemRoles.ADMINISTRATOR);
+
+        // Downgrade every current owner to administrator (there should be exactly one, but be safe).
+        for (TeamMembership m : memberships.findByTeamId(teamId)) {
+            if (m.getRoleDefinitionId().equals(ownerRole.getId())
+                    && !m.getUserId().equals(newOwnerUserId)) {
+                m.setRoleDefinitionId(adminRole.getId());
+                memberships.save(m);
+            }
+        }
+        newOwnerMembership.setRoleDefinitionId(ownerRole.getId());
+        memberships.save(newOwnerMembership);
+    }
+
+    private RoleDefinitionEntity systemRole(String code) {
+        return roles.findBySystemTrueAndCode(code)
+                .orElseThrow(() -> new IllegalStateException("System role '" + code + "' is not seeded"));
     }
 }

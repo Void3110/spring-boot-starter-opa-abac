@@ -196,6 +196,27 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
+  /api/v1/teams/{teamId}/transfer-ownership:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    post:
+      tags: [Team]
+      summary: Transfer ownership (owner only) — new owner promoted, old owner downgraded
+      operationId: transferOwnership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+      responses:
+        '204':
+          description: Transferred
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ----------------------------------------------------------- Role definitions
   /api/v1/teams/{teamId}/role-definitions:
     parameters:
@@ -506,6 +527,15 @@ components:
           format: uuid
           nullable: true
           description: Explicit actor fallback (see AddMemberRequest).
+
+    TransferOwnershipRequest:
+      type: object
+      required: [newOwnerUserId]
+      properties:
+        newOwnerUserId:
+          type: string
+          format: uuid
+          description: The team member to promote to owner.
 
     RoleDefinition:
       type: object
