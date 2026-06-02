@@ -166,6 +166,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   grant, never the service identity.
 - **`role ≠ grant`** — keep `RoleDefinition` and `TeamMembership` as separate entities; "team-scoped" is
   the membership's scope, not a role per team.
+- **Layering (decided — see [[01-DECOMPOSITION]] "Internal structure" / [[00-DESIGN]]).** Use a dedicated
+  `…usermgmt.service/` package (`@Transactional`; all cross-entity invariants live there; controllers stay
+  thin). Mapping is a **hand-written** static `UserMgmtMapper` like the catalog's `CatalogMapper` — **do
+  NOT add MapStruct**. **No facade layer.** Do not flatten the service logic into controllers or `domain/`.
 - **`ddl-auto: validate` must pass** — Liquibase owns the new service's schema; a clean boot is the proof.
 - **Do NOT push, open PRs, or touch `main`.** Local + this branch only. Report at checkpoints; the
   maintainer pushes.
