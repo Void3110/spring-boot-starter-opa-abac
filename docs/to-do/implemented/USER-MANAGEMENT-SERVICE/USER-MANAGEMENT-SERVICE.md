@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/user-service
   - area/abac
@@ -8,10 +8,22 @@ tags:
 
 # user-management-service (example)
 
-> **Status:** Planning — **direction decided** (teams + role-defs core, app-resolved authorization,
-> fixed system roles + team-scoped custom roles); not yet decomposed into tickets. Part of the
-> [[POC-ROADMAP]] (Phase 4). The **team abstraction** is the centerpiece of this phase. The dynamic tag
-> dictionary is split to Phase 4.5; a ReBAC-in-Rego demonstration is a new Phase 7.
+> ## ✅ Shipped
+> **Phase 4 is complete.** All nine tickets (T1–T9) landed on
+> `feature/void3110/user-management-service`: the team/role-def core, owner-on-create, the team- and
+> role-def management APIs (the service **dogfooding** the starter), the no-self-escalation subset rule,
+> transfer-ownership, the `/internal/effective-role` resolve API, the catalog
+> `HttpRoleDefinitionSupplier` swap, the second service in the rig, and a **green e2e team matrix**
+> (owner writes / viewer-member denied / custom-editor writes / non-member denied — through the gateway,
+> roles from real membership) plus the dogfood management path. Guide:
+> [[TEAM-BASED-AUTHORIZATION]]. The dynamic tag dictionary is Phase 4.5; ReBAC-in-Rego is Phase 7.
+>
+> The verbatim [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] + the per-ticket `STATUS-0N.md` notes are preserved
+> as a studyable record of the plan→autonomous-implement→test→review workflow.
+
+> **Direction (as decided):** teams + role-defs core, app-resolved authorization, fixed system roles +
+> team-scoped custom roles. Part of the [[POC-ROADMAP]] (Phase 4). The **team abstraction** is the
+> centerpiece. The dynamic tag dictionary is split to Phase 4.5; a ReBAC-in-Rego demonstration is Phase 7.
 
 ## Purpose
 
@@ -198,7 +210,7 @@ same shape as the shipped [[LIBRARY-SPINE]] slice. The design, the work breakdow
 | 6 | Transfer-ownership | ✅ done | `STATUS-06.md` |
 | 7 | Effective-role resolve API (`/effective-role`) | ✅ done | `STATUS-07.md` |
 | 8 | Catalog adoption — `HttpRoleDefinitionSupplier` swaps the demo one | ✅ done | `STATUS-08.md` |
-| 9 | Infra (second service in the rig) + e2e matrix + docs/roadmap/Mulch | ☐ planned | `STATUS-09.md` |
+| 9 | Infra (second service in the rig) + e2e matrix + docs/roadmap/Mulch | ✅ done | `STATUS-09.md` |
 
 ### Workflow-as-artifact
 Like the prior slices, the verbatim [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] + the `STATUS-0N.md` notes are

@@ -106,14 +106,19 @@ gateway (viewer reads 200 / viewer writes 403 / editor writes succeed). See [[LI
 **Phase 3 is complete.** Both slices are merged; the catalog app does real, fine-grained,
 role-definition-driven ABAC end to end.
 
-**Next: Phase 4 — `user-management-service` (teams + role-defs).** The `RoleDefinitionSupplier` SPI built
-in Phase 3 (demo supplier today) gets its real, HTTP-backed implementation: the user-service owns
-**teams** (members + role hierarchy), **role definitions** (fixed system roles + owner-defined
-team-scoped custom roles), and **team-scoped grants**, and resolves the caller's effective role *for a
-resource* by walking team membership — the portal-style **app-resolved** path. The team abstraction
-(owner-on-create, transfer-ownership, the no-self-escalation rule) is the centerpiece; the **dynamic tag
-dictionary** is split to Phase 4.5, and a **ReBAC-in-Rego** demonstration is a new Phase 7. See
-[[USER-MANAGEMENT-SERVICE]]. (Batch eval + partial-eval → JPA data filtering remain Phase 5.)
+**Phase 4 is complete.** The `user-management-service` ships: it owns **teams**, **role definitions**
+(fixed system roles + owner-defined team-scoped custom roles), and **team-scoped grants**, and resolves
+the caller's effective role *for a resource* by walking team membership — the **app-resolved** path. The
+catalog's HTTP-backed `RoleDefinitionSupplier` swaps the demo one (a single-bean change). The team
+abstraction (owner-on-create, transfer-ownership, the no-self-escalation subset rule) is enforced and
+tested; the service **dogfoods** the starter to secure its own management API. The e2e team matrix is
+green through the gateway with roles from real membership. See the shipped slice
+[[USER-MANAGEMENT-SERVICE]] and the guide [[TEAM-BASED-AUTHORIZATION]].
+
+**Next: Phase 4.5 — the dynamic tag dictionary** (subject/resource tag keys + validation, the source
+platform's hardcoded tags done properly; [[RESEARCH-AUTOTAG-AND-FILTERING]]), then **Phase 5** (batch
+eval + partial-eval → JPA data filtering) and **Phase 7** (ReBAC-in-Rego — the team-grant join in the
+policy, to compare against the app-resolved path shipped here).
 
 ## Phases
 
@@ -126,7 +131,7 @@ dictionary** is split to Phase 4.5, and a **ReBAC-in-Rego** demonstration is a n
 | **1** | **Restructure** | Flatten `example/` → `example-catalog-management-service`; settings + paths updated; build green. | ✅ **done** (commit `0ce6026`). |
 | **2** | Infra: identity + gateway | Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger. | ✅ **done** — full rig via `deploy.sh`; see `infra/README.md`. |
 | **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ✅ **DONE** (on a feature branch). The core generalization work. First slice: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service, e2e suite). Second slice: [[LIBRARY-SPINE]] (HttpOpaClient + extraction + role-definition-driven `@OpaPreAuthorize` + starter wiring + catalog adoption; the demo gateway enricher retired; e2e allow/deny matrix green). |
-| **4** | **user-management-service (teams + role-defs)** | New example app: users, **teams** (members + a role hierarchy), **role definitions** (fixed system roles + owner-defined team-scoped custom roles), **team-scoped grants**, owner-on-create + transfer-ownership. The HTTP-backed `RoleDefinitionSupplier` resolves the caller's effective role *for a resource* by walking team membership server-side and feeds it to the catalog spine (a single-bean swap of the demo supplier). **Authorization is app-resolved** (the portal-style path): the service resolves the role, the catalog still passes `role_definition` in OPA `input`. | See [[USER-MANAGEMENT-SERVICE]]. The **dynamic tag dictionary** is deferred to its own follow-on (Phase 4.5) as an ABAC extension. |
+| **4** | **user-management-service (teams + role-defs)** | New example app: users, **teams** (members + a role hierarchy), **role definitions** (fixed system roles + owner-defined team-scoped custom roles), **team-scoped grants**, owner-on-create + transfer-ownership. The HTTP-backed `RoleDefinitionSupplier` resolves the caller's effective role *for a resource* by walking team membership server-side and feeds it to the catalog spine (a single-bean swap of the demo supplier). **Authorization is app-resolved**: the service resolves the role, the catalog still passes `role_definition` in OPA `input`. | ✅ **DONE.** Shipped slice [[USER-MANAGEMENT-SERVICE]] (T1–T9): the team/role-def core, owner-on-create, the subset rule, transfer-ownership, the `/internal/effective-role` resolve API, the catalog `HttpRoleDefinitionSupplier` swap, the second service in the rig, and a green e2e team matrix through the gateway. The service **dogfoods** the starter. Guide: [[TEAM-BASED-AUTHORIZATION]]. The **dynamic tag dictionary** is deferred to Phase 4.5. |
 | **4.5** | **Dynamic tag dictionary (ABAC extension)** | Runtime-editable tag dictionary (subject vs resource tag keys + validation rules) layered onto the user-service; tags become subject/resource attributes the policies read. | Split out so Phase 4 ships the team/role core first. See [[RESEARCH-AUTOTAG-AND-FILTERING]]. |
 | **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. |
 | **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |
