@@ -28,18 +28,21 @@ public class MembershipService {
     private final UserRepository users;
     private final RoleDefinitionRepository roles;
     private final EffectiveRoleService effectiveRoles;
+    private final SubsetGuard subsetGuard;
 
     public MembershipService(
             TeamMembershipRepository memberships,
             TeamRepository teams,
             UserRepository users,
             RoleDefinitionRepository roles,
-            EffectiveRoleService effectiveRoles) {
+            EffectiveRoleService effectiveRoles,
+            SubsetGuard subsetGuard) {
         this.memberships = memberships;
         this.teams = teams;
         this.users = users;
         this.roles = roles;
         this.effectiveRoles = effectiveRoles;
+        this.subsetGuard = subsetGuard;
     }
 
     @Transactional(readOnly = true)
@@ -63,7 +66,7 @@ public class MembershipService {
                     "User " + userId + " is already a member of team " + teamId);
         }
         RoleDefinitionEntity role = resolveAssignableRole(teamId, roleCode);
-        requireSubsetOfActor(actorUserId, teamId, role);
+        subsetGuard.requireWithinActorPermissions(actorUserId, teamId, role.getPermissions());
         var saved = memberships.save(new TeamMembership(UUID.randomUUID(), teamId, userId, role.getId()));
         return new MembershipView(saved, role.getCode());
     }
@@ -75,7 +78,7 @@ public class MembershipService {
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
         RoleDefinitionEntity role = resolveAssignableRole(teamId, roleCode);
-        requireSubsetOfActor(actorUserId, teamId, role);
+        subsetGuard.requireWithinActorPermissions(actorUserId, teamId, role.getPermissions());
         membership.setRoleDefinitionId(role.getId());
         return new MembershipView(memberships.save(membership), role.getCode());
     }
@@ -105,21 +108,5 @@ public class MembershipService {
                 .or(() -> roles.findByTeamIdAndCode(teamId, roleCode))
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Role '" + roleCode + "' is not a system role or a custom role of team " + teamId));
-    }
-
-    /**
-     * The subset rule: the candidate role's permissions must not exceed the actor's own effective
-     * permissions on the team. An actor with no membership has no permissions → cannot assign anything.
-     */
-    private void requireSubsetOfActor(UUID actorUserId, UUID teamId, RoleDefinitionEntity candidate) {
-        var actorPerms = effectiveRoles.membership(teamId, actorUserId)
-                .map(effectiveRoles::roleOf)
-                .map(RoleDefinitionEntity::getPermissions)
-                .orElseThrow(() -> new SubsetRuleViolationException(
-                        "Actor has no membership on team " + teamId + " and cannot assign roles"));
-        if (!PermissionSubset.isSubset(candidate.getPermissions(), actorPerms)) {
-            throw new SubsetRuleViolationException(
-                    "Role '" + candidate.getCode() + "' exceeds the actor's own permissions (subset rule)");
-        }
     }
 }
