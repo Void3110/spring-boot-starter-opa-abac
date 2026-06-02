@@ -2,8 +2,12 @@ package dev.dmitriikonovalov.example.usermgmt.service;
 
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionRepository;
+import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembershipRepository;
+import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
+import dev.dmitriikonovalov.example.usermgmt.domain.User;
+import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import java.util.List;
 import java.util.Map;
@@ -36,11 +40,21 @@ public class EffectiveRoleService {
 
     private final TeamMembershipRepository memberships;
     private final RoleDefinitionRepository roles;
+    private final TeamRepository teams;
+    private final UserRepository users;
+    private final TeamTargetMatcher targetMatcher;
 
     public EffectiveRoleService(
-            TeamMembershipRepository memberships, RoleDefinitionRepository roles) {
+            TeamMembershipRepository memberships,
+            RoleDefinitionRepository roles,
+            TeamRepository teams,
+            UserRepository users,
+            TeamTargetMatcher targetMatcher) {
         this.memberships = memberships;
         this.roles = roles;
+        this.teams = teams;
+        this.users = users;
+        this.targetMatcher = targetMatcher;
     }
 
     /** The caller's membership on a team, if any (the binding everything re-derives from). */
@@ -70,6 +84,33 @@ public class EffectiveRoleService {
                     role.getAttributes(),
                     Map.of("team", TeamRoleCapabilities.forCode(role.getCode())));
         });
+    }
+
+    /**
+     * Resolve the <b>effective resource role</b> a subject holds on a specific resource — the contract
+     * the catalog's {@code HttpRoleDefinitionSupplier} consumes. Walks:
+     * {@code subject → user → memberships → team matched by the TeamTargetMatcher → bound role}, and
+     * returns that role as a {@code core.RoleDefinition} (with {@code "*"} expanded to the resource
+     * type). Empty — never an error — when the subject maps to no user, or no membership's team governs
+     * the resource (so the catalog policy default-denies). Always re-derived from live membership, so a
+     * removed member resolves empty (revocation propagates).
+     *
+     * @param subject the IdP subject ({@code sub}) the catalog forwards (not the internal user id)
+     */
+    @Transactional(readOnly = true)
+    public Optional<RoleDefinition> resolveForResource(
+            String subject, String resourceType, UUID resourceId) {
+        Optional<User> user = users.findBySubject(subject);
+        if (user.isEmpty()) {
+            return Optional.empty();
+        }
+        for (TeamMembership m : memberships.findByUserId(user.get().getId())) {
+            Optional<Team> team = teams.findById(m.getTeamId());
+            if (team.isPresent() && targetMatcher.matches(team.get(), resourceType, resourceId)) {
+                return Optional.of(resourceRole(m, resourceType));
+            }
+        }
+        return Optional.empty();
     }
 
     /**
