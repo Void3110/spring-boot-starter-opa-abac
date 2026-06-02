@@ -1,6 +1,8 @@
 package dev.dmitriikonovalov.example.usermgmt;
 
+import dev.dmitriikonovalov.example.usermgmt.support.PermissiveSecurityTestConfig;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -12,9 +14,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * Spring's datasource at it. Liquibase runs the real Postgres-dialect changelog, so these tests
  * exercise the actual schema we deploy — and {@code ddl-auto: validate} proves the JPA mappings
  * match it.
+ *
+ * <p>Imports {@link PermissiveSecurityTestConfig} so persistence tests can hit the controllers
+ * without a token (the production security chain + the service's own ABAC land in ticket 4).
  */
 @SpringBootTest
 @Testcontainers
+@Import(PermissiveSecurityTestConfig.class)
 abstract class AbstractPostgresIT {
 
     @SuppressWarnings("resource")

@@ -1,0 +1,296 @@
+databaseChangeLog:
+  # The team + role-def core. New (greenfield) tables, so the opa-abac-spring-data base-entity
+  # columns (version / audit / tags) are declared inline rather than added by a later alter — the
+  # entity mappings must match these columns exactly, and the app boots with ddl-auto: validate.
+
+  # ----------------------------------------------------------------- app_user
+  - changeSet:
+      id: 0001-create-app-user
+      author: user-management-service
+      changes:
+        - createTable:
+            tableName: app_user
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: subject
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_app_user_subject
+              - column:
+                  name: display_name
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              # base-entity columns (AbstractAuditableEntity)
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+
+  # --------------------------------------------------------------------- team
+  - changeSet:
+      id: 0001-create-team
+      author: user-management-service
+      changes:
+        - createTable:
+            tableName: team
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_type
+                  type: varchar(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              # base-entity columns (AbstractSecuredEntity = auditable + tags)
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+              - column:
+                  name: tags
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+        # one team per team-target (resource→team indirection; owner-on-create guard, ticket 3)
+        - addUniqueConstraint:
+            constraintName: uq_team_target
+            tableName: team
+            columnNames: target_type, target_id
+        - createIndex:
+            indexName: idx_team_tags
+            tableName: team
+            using: gin
+            columns:
+              - column:
+                  name: tags
+
+  # ---------------------------------------------------------- role_definition
+  - changeSet:
+      id: 0001-create-role-definition
+      author: user-management-service
+      changes:
+        - createTable:
+            tableName: role_definition
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: code
+                  type: varchar(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_system
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: team_id
+                  type: uuid
+              - column:
+                  name: attributes
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: permissions
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              # base-entity columns (AbstractAuditableEntity)
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+        - addForeignKeyConstraint:
+            constraintName: fk_role_definition_team
+            baseTableName: role_definition
+            baseColumnNames: team_id
+            referencedTableName: team
+            referencedColumnNames: id
+            onDelete: CASCADE
+        # A code is unique within its scope: globally for system roles, per-team for custom roles.
+        # Two partial unique indexes (Postgres) keyed on whether team_id is null.
+        - sql:
+            splitStatements: true
+            sql: >-
+              CREATE UNIQUE INDEX uq_role_definition_system_code
+                ON role_definition (code) WHERE team_id IS NULL;
+              CREATE UNIQUE INDEX uq_role_definition_team_code
+                ON role_definition (team_id, code) WHERE team_id IS NOT NULL;
+        - createIndex:
+            indexName: idx_role_definition_team
+            tableName: role_definition
+            columns:
+              - column:
+                  name: team_id
+
+  # ---------------------------------------------------------- team_membership
+  - changeSet:
+      id: 0001-create-team-membership
+      author: user-management-service
+      changes:
+        - createTable:
+            tableName: team_membership
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: team_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role_definition_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              # base-entity columns (AbstractAuditableEntity)
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+        - addUniqueConstraint:
+            constraintName: uq_team_membership_team_user
+            tableName: team_membership
+            columnNames: team_id, user_id
+        - addForeignKeyConstraint:
+            constraintName: fk_team_membership_team
+            baseTableName: team_membership
+            baseColumnNames: team_id
+            referencedTableName: team
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_team_membership_user
+            baseTableName: team_membership
+            baseColumnNames: user_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_team_membership_role
+            baseTableName: team_membership
+            baseColumnNames: role_definition_id
+            referencedTableName: role_definition
+            referencedColumnNames: id
+        - createIndex:
+            indexName: idx_team_membership_team
+            tableName: team_membership
+            columns:
+              - column:
+                  name: team_id
+        - createIndex:
+            indexName: idx_team_membership_user
+            tableName: team_membership
+            columns:
+              - column:
+                  name: user_id

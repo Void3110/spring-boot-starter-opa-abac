@@ -1,0 +1,68 @@
+databaseChangeLog:
+  # Seed the four immutable system roles (the global ladder). Stable ids + codes — application code
+  # (SystemRoles) and tests rely on them. system = true, team_id = null.
+  #
+  # Permissions use the wildcard resource type "*": system roles are team-target-type-agnostic (a team
+  # can govern a catalog, a product, anything), so the effective-role resolver (ticket 7) expands "*"
+  # to the concrete team-target type before returning the role to OPA. Verbs match 00-DESIGN.md:
+  #   owner/administrator -> read + write ; member/viewer -> read.
+
+  - changeSet:
+      id: 0002-seed-system-role-owner
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: role_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-000000000001"}
+              - column: {name: code, value: owner}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: team_id, value: null}
+              - column: {name: attributes, value: "{\"role_level\": 40}"}
+              - column: {name: permissions, value: "{\"*\": [\"read\", \"write\"]}"}
+              - column: {name: version, valueNumeric: 0}
+
+  - changeSet:
+      id: 0002-seed-system-role-administrator
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: role_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-000000000002"}
+              - column: {name: code, value: administrator}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: team_id, value: null}
+              - column: {name: attributes, value: "{\"role_level\": 30}"}
+              - column: {name: permissions, value: "{\"*\": [\"read\", \"write\"]}"}
+              - column: {name: version, valueNumeric: 0}
+
+  - changeSet:
+      id: 0002-seed-system-role-member
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: role_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-000000000003"}
+              - column: {name: code, value: member}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: team_id, value: null}
+              - column: {name: attributes, value: "{\"role_level\": 20}"}
+              - column: {name: permissions, value: "{\"*\": [\"read\"]}"}
+              - column: {name: version, valueNumeric: 0}
+
+  - changeSet:
+      id: 0002-seed-system-role-viewer
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: role_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-000000000004"}
+              - column: {name: code, value: viewer}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: team_id, value: null}
+              - column: {name: attributes, value: "{\"role_level\": 10}"}
+              - column: {name: permissions, value: "{\"*\": [\"read\"]}"}
+              - column: {name: version, valueNumeric: 0}
