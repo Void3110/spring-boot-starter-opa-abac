@@ -98,11 +98,22 @@ library stack lives in `opa-abac-spring-data`, the catalog example adopts it (00
 JSONB tags + optimistic version), `ProductService.mutate()` proves concurrent writers serialize, and
 an e2e Postman/Newman suite runs green through the gateway. See [[DOMAIN-MODEL-FOUNDATION]].
 
-**Second slice done:** the **library spine** — `HttpOpaClient` → `AbacContext` extraction →
-role-definition-driven `@OpaPreAuthorize` → starter wiring → catalog adoption — **shipped** on a feature
-branch, replacing the demo gateway enricher with Spring-native extraction. The e2e allow/deny matrix is
-green through the gateway (viewer reads 200 / viewer writes 403 / editor writes succeed). See
-[[LIBRARY-SPINE]]. (Batch evaluation + partial-eval → JPA data filtering remain Phase 5.)
+**Second slice done (merged to `main`, PR #4):** the **library spine** — `HttpOpaClient` → `AbacContext`
+extraction → role-definition-driven `@OpaPreAuthorize` → starter wiring → catalog adoption — replacing
+the demo gateway enricher with Spring-native extraction. The e2e allow/deny matrix is green through the
+gateway (viewer reads 200 / viewer writes 403 / editor writes succeed). See [[LIBRARY-SPINE]].
+
+**Phase 3 is complete.** Both slices are merged; the catalog app does real, fine-grained,
+role-definition-driven ABAC end to end.
+
+**Next: Phase 4 — `user-management-service` (teams + role-defs).** The `RoleDefinitionSupplier` SPI built
+in Phase 3 (demo supplier today) gets its real, HTTP-backed implementation: the user-service owns
+**teams** (members + role hierarchy), **role definitions** (fixed system roles + owner-defined
+team-scoped custom roles), and **team-scoped grants**, and resolves the caller's effective role *for a
+resource* by walking team membership — the portal-style **app-resolved** path. The team abstraction
+(owner-on-create, transfer-ownership, the no-self-escalation rule) is the centerpiece; the **dynamic tag
+dictionary** is split to Phase 4.5, and a **ReBAC-in-Rego** demonstration is a new Phase 7. See
+[[USER-MANAGEMENT-SERVICE]]. (Batch eval + partial-eval → JPA data filtering remain Phase 5.)
 
 ## Phases
 
@@ -115,9 +126,11 @@ green through the gateway (viewer reads 200 / viewer writes 403 / editor writes 
 | **1** | **Restructure** | Flatten `example/` → `example-catalog-management-service`; settings + paths updated; build green. | ✅ **done** (commit `0ce6026`). |
 | **2** | Infra: identity + gateway | Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger. | ✅ **done** — full rig via `deploy.sh`; see `infra/README.md`. |
 | **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ✅ **DONE** (on a feature branch). The core generalization work. First slice: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service, e2e suite). Second slice: [[LIBRARY-SPINE]] (HttpOpaClient + extraction + role-definition-driven `@OpaPreAuthorize` + starter wiring + catalog adoption; the demo gateway enricher retired; e2e allow/deny matrix green). |
-| **4** | **user-management-service** | New example app: users/teams/roles + dynamic tag dictionary; feeds ABAC attributes. | See [[USER-MANAGEMENT-SERVICE]]. Can begin design in parallel with Phase 3. |
+| **4** | **user-management-service (teams + role-defs)** | New example app: users, **teams** (members + a role hierarchy), **role definitions** (fixed system roles + owner-defined team-scoped custom roles), **team-scoped grants**, owner-on-create + transfer-ownership. The HTTP-backed `RoleDefinitionSupplier` resolves the caller's effective role *for a resource* by walking team membership server-side and feeds it to the catalog spine (a single-bean swap of the demo supplier). **Authorization is app-resolved** (the portal-style path): the service resolves the role, the catalog still passes `role_definition` in OPA `input`. | See [[USER-MANAGEMENT-SERVICE]]. The **dynamic tag dictionary** is deferred to its own follow-on (Phase 4.5) as an ABAC extension. |
+| **4.5** | **Dynamic tag dictionary (ABAC extension)** | Runtime-editable tag dictionary (subject vs resource tag keys + validation rules) layered onto the user-service; tags become subject/resource attributes the policies read. | Split out so Phase 4 ships the team/role core first. See [[RESEARCH-AUTOTAG-AND-FILTERING]]. |
 | **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. |
 | **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |
+| **7** | **ReBAC-in-Rego (team grants, in-policy)** | Push the team/membership/grant graph into OPA `data` and express the "subject member-of team **and** team has-role-on resource" join *in Rego* (Zanzibar-style userset), as an alternative to the Phase-4 app-resolved path. Demonstrates RBAC vs ABAC vs ReBAC expression in one OPA policy. | New item from the team-abstraction analysis. The strongest "stands out vs naive OPA" piece; deferred so the app-resolved path ships first. |
 
 ## Guiding principle
 
