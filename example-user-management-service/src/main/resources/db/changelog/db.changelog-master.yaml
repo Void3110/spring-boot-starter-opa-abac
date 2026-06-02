@@ -1,2 +1,5 @@
 databaseChangeLog:
-  # Ticket 1: empty — the team/role schema (0001) and seeds land in ticket 2.
+  - include:
+      file: db/changelog/changes/0001-create-usermgmt-schema.yaml
+  - include:
+      file: db/changelog/changes/0002-seed-system-roles.yaml
