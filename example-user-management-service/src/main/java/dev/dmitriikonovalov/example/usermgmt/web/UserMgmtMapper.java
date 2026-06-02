@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
+import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 
 /**
@@ -26,5 +27,18 @@ public final class UserMgmtMapper {
                 .name(e.getName())
                 .targetType(e.getTargetType())
                 .targetId(e.getTargetId());
+    }
+
+    /**
+     * A membership carries a {@code roleDefinitionId}; the DTO exposes the human-readable
+     * {@code roleCode}, so the caller resolves the bound role's code and passes it in.
+     */
+    public static dev.dmitriikonovalov.example.usermgmt.openapi.model.Membership toDto(
+            TeamMembership e, String roleCode) {
+        return new dev.dmitriikonovalov.example.usermgmt.openapi.model.Membership()
+                .id(e.getId())
+                .teamId(e.getTeamId())
+                .userId(e.getUserId())
+                .roleCode(roleCode);
     }
 }

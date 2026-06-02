@@ -1,6 +1,9 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.ApiError;
+import dev.dmitriikonovalov.example.usermgmt.service.MembershipConflictException;
+import dev.dmitriikonovalov.example.usermgmt.service.MembershipNotFoundException;
+import dev.dmitriikonovalov.example.usermgmt.service.SubsetRuleViolationException;
 import dev.dmitriikonovalov.example.usermgmt.service.TeamTargetExistsException;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpStatus;
@@ -12,14 +15,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
-    @ExceptionHandler(NotFoundException.class)
-    public ResponseEntity<ApiError> handleNotFound(NotFoundException ex) {
+    @ExceptionHandler({NotFoundException.class, MembershipNotFoundException.class})
+    public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
-    @ExceptionHandler(TeamTargetExistsException.class)
-    public ResponseEntity<ApiError> handleConflict(TeamTargetExistsException ex) {
+    @ExceptionHandler({TeamTargetExistsException.class, MembershipConflictException.class})
+    public ResponseEntity<ApiError> handleConflict(RuntimeException ex) {
         return error(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(SubsetRuleViolationException.class)
+    public ResponseEntity<ApiError> handleSubsetRule(SubsetRuleViolationException ex) {
+        return error(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
