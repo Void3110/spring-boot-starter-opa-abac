@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
+import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
@@ -40,5 +41,15 @@ public final class UserMgmtMapper {
                 .teamId(e.getTeamId())
                 .userId(e.getUserId())
                 .roleCode(roleCode);
+    }
+
+    public static dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition toDto(
+            RoleDefinitionEntity e) {
+        return new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition()
+                .code(e.getCode())
+                .system(e.isSystem())
+                .teamId(e.getTeamId())
+                .attributes(e.getAttributes())
+                .permissions(e.getPermissions());
     }
 }

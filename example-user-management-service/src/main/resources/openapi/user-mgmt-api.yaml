@@ -26,6 +26,8 @@ tags:
     description: Teams (the durable owner of a resource via its team-target)
   - name: Membership
     description: Team membership — the grant binding a user to a role on a team
+  - name: RoleDefinition
+    description: Role definitions — system roles + team-scoped custom roles
 
 paths:
   /api/v1/ping:
@@ -193,6 +195,98 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+
+  # ----------------------------------------------------------- Role definitions
+  /api/v1/teams/{teamId}/role-definitions:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [RoleDefinition]
+      summary: List a team's roles (system + this team's custom roles)
+      operationId: listRoleDefinitions
+      responses:
+        '200':
+          description: Roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [RoleDefinition]
+      summary: Define a team-scoped custom role (owner; subject to the subset rule)
+      operationId: createRoleDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleDefinitionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleDefinition'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/teams/{teamId}/role-definitions/{code}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [RoleDefinition]
+      summary: Update a team-scoped custom role (owner; subset rule; system roles immutable)
+      operationId: updateRoleDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleDefinitionUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    delete:
+      tags: [RoleDefinition]
+      summary: Delete a team-scoped custom role (owner; system roles immutable)
+      operationId: deleteRoleDefinition
+      responses:
+        '204':
+          description: Deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /api/v1/teams/{teamId}/members/{userId}:
     parameters:
@@ -412,6 +506,63 @@ components:
           format: uuid
           nullable: true
           description: Explicit actor fallback (see AddMemberRequest).
+
+    RoleDefinition:
+      type: object
+      required: [code, system, permissions]
+      properties:
+        code:
+          type: string
+        system:
+          type: boolean
+          description: True for the immutable global ladder; false for team-scoped custom roles.
+        teamId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for system roles; set for team-scoped custom roles.
+        attributes:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: resourceType -> [allowed action verbs].
+
+    RoleDefinitionRequest:
+      type: object
+      required: [code, permissions]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 100
+        attributes:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    RoleDefinitionUpdate:
+      type: object
+      required: [permissions]
+      properties:
+        attributes:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
 
     ApiError:
       type: object

@@ -3,7 +3,10 @@ package dev.dmitriikonovalov.example.usermgmt.web;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.ApiError;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipNotFoundException;
+import dev.dmitriikonovalov.example.usermgmt.service.RoleConflictException;
+import dev.dmitriikonovalov.example.usermgmt.service.RoleNotFoundException;
 import dev.dmitriikonovalov.example.usermgmt.service.SubsetRuleViolationException;
+import dev.dmitriikonovalov.example.usermgmt.service.SystemRoleImmutableException;
 import dev.dmitriikonovalov.example.usermgmt.service.TeamTargetExistsException;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpStatus;
@@ -15,12 +18,21 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
-    @ExceptionHandler({NotFoundException.class, MembershipNotFoundException.class})
+    @ExceptionHandler({
+        NotFoundException.class,
+        MembershipNotFoundException.class,
+        RoleNotFoundException.class
+    })
     public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
-    @ExceptionHandler({TeamTargetExistsException.class, MembershipConflictException.class})
+    @ExceptionHandler({
+        TeamTargetExistsException.class,
+        MembershipConflictException.class,
+        RoleConflictException.class,
+        SystemRoleImmutableException.class
+    })
     public ResponseEntity<ApiError> handleConflict(RuntimeException ex) {
         return error(HttpStatus.CONFLICT, ex.getMessage());
     }
