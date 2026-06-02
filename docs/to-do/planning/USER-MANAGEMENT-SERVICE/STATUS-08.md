@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/user-service
   - area/catalog-service
@@ -8,24 +8,62 @@ tags:
 
 # STATUS — Ticket 08: Catalog adoption: HttpRoleDefinitionSupplier swaps the demo one
 
-> To be filled in at the ticket-08 checkpoint. See [[01-DECOMPOSITION]] ticket 8.
+> Filled in at the ticket-08 checkpoint. See [[01-DECOMPOSITION]] ticket 8.
 
-**Status:** ☐ planned
+**Status:** ✅ done
 
 ## What shipped
-_(classes/files created or changed; the concrete shape that landed)_
+
+The catalog resolves real roles via the user-service — a single-bean swap, **app code only** (the
+library SPI is unchanged).
+
+- `HttpRoleDefinitionSupplier` (catalog `config/`) — `implements RoleDefinitionSupplier`; calls
+  `GET <base>/internal/effective-role?userId&resourceType&resourceId` on the JDK `HttpClient` + Jackson
+  (no Feign/RestTemplate/WebClient). **Fails closed**: a non-200 (incl. the 204 no-match), a timeout, a
+  connection refused, or a malformed body → `Optional.empty()` → the policy default-denies. Logs status
+  only, never the token. `userId` is the forwarded IdP subject.
+- `@ConditionalOnProperty(name="catalog.role-source", havingValue="http")` on the HTTP supplier;
+  `DemoRoleDefinitionSupplier` gains `havingValue="demo", matchIfMissing=true` — so `demo` stays the
+  default and the two are mutually exclusive. Base URL + timeout via `catalog.user-service.*`.
+- `application.yml` documents the toggle (`CATALOG_ROLE_SOURCE`, `CATALOG_USER_SERVICE_BASE_URL`,
+  `CATALOG_USER_SERVICE_TIMEOUT_MS`).
 
 ## Tests
-_(unit / integration / policy / e2e run + result; the cases covered)_
+
+`:example-catalog-management-service:test` → **green (14)**. New `HttpRoleDefinitionSupplierTest`
+(in-process `com.sun.net.httpserver.HttpServer` stub, no WireMock — mirroring `HttpOpaClientTest`):
+- **H1** resolve round-trip (`200 {RoleDefinition}` → `Optional.of`, code + permissions intact);
+- **H2** no-match (`204`) → `Optional.empty()`;
+- **H3** fail-closed on 500 / malformed body / connection-refused → `Optional.empty()`;
+- **H4** the request URL shape (`/internal/effective-role?userId&resourceType&resourceId`).
+- **H5/H6** the existing `CatalogCrudIT` / `ProductConcurrencyIT` / `BaseEntityAuditingIT` stay green
+  under the default (`demo`) profile — the swap is opt-in and changes nothing by default.
+
+`./gradlew build` (whole repo) → green.
 
 ## Architecture review + refactor
-_(what the review gate checked against the design + the hard rules; any refactor applied and re-tested; or "nothing substantive" — no invented churn)_
+
+- **Fail-closed** ✅ — six tests cover every failure path → empty → deny.
+- **Library API unchanged** ✅ — the HTTP supplier is **catalog app code** implementing the existing
+  SPI; the diff touches only the two example apps, no library module (boundary check confirmed).
+- **Single-bean swap** ✅ — mutually-exclusive `@ConditionalOnProperty`; `demo` default keeps existing
+  ITs intact.
+- **No Feign/RestTemplate/WebClient** ✅ — JDK `HttpClient` + Jackson, matching `HttpOpaClient`.
+- **`userId` = subject** ✅ — forwarded straight to the resolve API (matches the user-service's E*).
+
+**No refactor applied** — the supplier is focused and mirrors `HttpOpaClient`'s structure; no invented
+churn.
 
 ## Integration / e2e
-_(the heavier validation for this ticket, if any: gradle build, ITs, opa test, the rig + newman)_
+
+Unit-level here (the `HttpServer` stub); the full two-service path through the gateway (the catalog
+pointed at a live user-service) is proven in T9.
 
 ## Decisions recorded
-_(any decision resolved this ticket; Mulch records written, with mx-ids)_
+
+Nothing non-obvious beyond the already-recorded patterns (the app-resolved HTTP supplier + the
+demo→http swap are covered by `mx-723b5c` / `mx-360261`). No Mulch record — no ritual filler.
 
 ## Commit
-_(the conventional-subject commit + hash)_
+
+`feat(example): catalog HttpRoleDefinitionSupplier swaps the demo one (T8)` — code + tests + this note.

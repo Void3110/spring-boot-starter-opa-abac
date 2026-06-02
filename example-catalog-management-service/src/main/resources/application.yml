@@ -19,6 +19,16 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+# Role-definition source for ABAC decisions:
+#   demo (default) — the static DemoRoleDefinitionSupplier (Keycloak realm roles -> role definition)
+#   http           — HttpRoleDefinitionSupplier, resolving the caller's effective role from the
+#                    user-management service (the Phase-4 single-bean swap; fails closed on any error)
+catalog:
+  role-source: ${CATALOG_ROLE_SOURCE:demo}
+  user-service:
+    base-url: ${CATALOG_USER_SERVICE_BASE_URL:http://localhost:8080}
+    timeout-ms: ${CATALOG_USER_SERVICE_TIMEOUT_MS:2000}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
