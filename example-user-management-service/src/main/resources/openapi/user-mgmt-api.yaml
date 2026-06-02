@@ -106,6 +106,31 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Team'
+    post:
+      tags: [Team]
+      summary: Create a team-target (owner-on-create)
+      description: >
+        Creates a team for the given team-target and, atomically, makes the creator its owner. The
+        creator is taken from the authenticated subject when present; `creatorUserId` is accepted as
+        an explicit fallback until token-derived identity is wired.
+      operationId: createTeam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /api/v1/teams/{teamId}:
     parameters:
@@ -150,6 +175,12 @@ components:
             $ref: '#/components/schemas/ApiError'
     NotFound:
       description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Conflict with the current state
       content:
         application/json:
           schema:
@@ -210,6 +241,29 @@ components:
           type: string
           format: uuid
           description: The team-target's resource id.
+
+    CreateTeamRequest:
+      type: object
+      required: [name, targetType, targetId]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        targetType:
+          type: string
+          minLength: 1
+          maxLength: 100
+        targetId:
+          type: string
+          format: uuid
+        creatorUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Explicit creator fallback used until token-derived identity is wired (ticket 4). When the
+            request is authenticated, the creator is the subject and this field is ignored.
 
     ApiError:
       type: object
