@@ -26,8 +26,10 @@ token in-network).
 
 | File | Role |
 |------|------|
-| `run-tests.sh` | Runner: mints an in-network Keycloak token, injects it, runs newman. |
-| `catalog-e2e.postman_collection.json` | The collection: Auth → Catalog → Category → Product → Cleanup. |
+| `run-tests.sh` | Runner: mints an in-network Keycloak token, injects it, runs the lifecycle collection. |
+| `catalog-e2e.postman_collection.json` | The lifecycle collection: Auth → Catalog → Category → Product → Cleanup. |
+| `run-matrix.sh` + `catalog-abac-matrix.postman_collection.json` | The **role-based** allow/deny matrix (viewer reads / can't write; editor writes) — Phase 3. |
+| `run-team-matrix.sh` + `team-abac-matrix.postman_collection.json` | The **team-based** allow/deny matrix (Phase 4): roles resolved from real team membership in the user-service. Mints four tokens, bootstraps the team data via the user-service internal API, then asserts owner-writes / viewer-denied / custom-editor-writes / non-member-denied through the gateway + the dogfood management path. |
 | `local.postman_environment.example.json` | Committed env template (copy to `local.postman_environment.json`). |
 | `local.postman_environment.json` | Your local copy — **gitignored**. |
 

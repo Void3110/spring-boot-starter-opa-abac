@@ -1,0 +1,135 @@
+{
+  "info": {
+    "name": "Team-based ABAC matrix (app-resolved roles via the user-service)",
+    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "gateway", "value": "http://localhost:9085"},
+    {"key": "user_service", "value": "http://localhost:28090"},
+    {"key": "catalog_id", "value": ""},
+    {"key": "team_id", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "1. Owner writes (update the owned catalog) -> 200",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{owner_token}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
+        "body": {"mode": "raw", "raw": "{\"name\":\"Owner-updated catalog\"}"}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('owner may write (role resolved = owner)', function () { pm.response.to.have.status(200); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "2. Owner reads -> 200",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{owner_token}}"}],
+        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('owner may read', function () { pm.response.to.have.status(200); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "3. Viewer-member reads -> 200",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{viewer_token}}"}],
+        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('viewer-member may read', function () { pm.response.to.have.status(200); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "4. Viewer-member writes -> 403",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{viewer_token}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
+        "body": {"mode": "raw", "raw": "{\"name\":\"Viewer-attempted update\"}"}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('viewer-member may NOT write (resolved viewer lacks write)', function () { pm.response.to.have.status(403); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "5. Custom-editor member writes -> 200",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{editor_token}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
+        "body": {"mode": "raw", "raw": "{\"name\":\"Custom-editor update\"}"}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('custom-editor member may write (team-scoped custom role grants write)', function () { pm.response.to.have.status(200); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "6. Non-member writes -> 403",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key": "Authorization", "value": "Bearer {{nonmember_token}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
+        "body": {"mode": "raw", "raw": "{\"name\":\"Non-member update\"}"}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('non-member may NOT write (no team -> empty role -> default deny)', function () { pm.response.to.have.status(403); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "7. Dogfood: owner manages the user-service's own API -> 200",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{owner_token}}"}],
+        "url": {"raw": "{{user_service}}/api/v1/teams/{{team_id}}/members", "host": ["{{user_service}}"], "path": ["api", "v1", "teams", "{{team_id}}", "members"]}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('owner may manage the team (dogfooded @OpaPreAuthorize)', function () { pm.response.to.have.status(200); });"
+        ], "type": "text/javascript"}}
+      ]
+    },
+    {
+      "name": "8. Dogfood: viewer-member cannot manage -> 403",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{viewer_token}}"}],
+        "url": {"raw": "{{user_service}}/api/v1/teams/{{team_id}}/members", "host": ["{{user_service}}"], "path": ["api", "v1", "teams", "{{team_id}}", "members"]}
+      },
+      "event": [
+        {"listen": "test", "script": {"exec": [
+          "pm.test('viewer-member may NOT manage (dogfooded deny)', function () { pm.response.to.have.status(403); });"
+        ], "type": "text/javascript"}}
+      ]
+    }
+  ]
+}

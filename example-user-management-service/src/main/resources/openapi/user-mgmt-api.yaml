@@ -1,0 +1,608 @@
+openapi: 3.0.3
+info:
+  title: User Management Service API
+  description: >
+    The ABAC attribute source: teams, role definitions, and grants (team memberships).
+    It owns the subject side of the demo and resolves a caller's effective role for a resource,
+    feeding the catalog spine's role-definition supplier.
+
+    Ticket 2: User + Team read surface. Owner-on-create, membership/role-def management, transfer,
+    and the effective-role resolve API are added in later tickets.
+  version: 0.1.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local
+
+tags:
+  - name: Meta
+    description: Service metadata
+  - name: User
+    description: User identities (profiles linked to the IdP subject)
+  - name: Team
+    description: Teams (the durable owner of a resource via its team-target)
+  - name: Membership
+    description: Team membership — the grant binding a user to a role on a team
+  - name: RoleDefinition
+    description: Role definitions — system roles + team-scoped custom roles
+
+paths:
+  /api/v1/ping:
+    get:
+      tags: [Meta]
+      summary: Liveness ping
+      operationId: ping
+      responses:
+        '200':
+          description: The service is up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pong'
+
+  # ------------------------------------------------------------------- Users
+  /api/v1/users:
+    get:
+      tags: [User]
+      summary: List users
+      operationId: listUsers
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+    post:
+      tags: [User]
+      summary: Create a user
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [User]
+      summary: Get a user
+      operationId: getUser
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ------------------------------------------------------------------- Teams
+  /api/v1/teams:
+    get:
+      tags: [Team]
+      summary: List teams
+      operationId: listTeams
+      responses:
+        '200':
+          description: Teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+    post:
+      tags: [Team]
+      summary: Create a team-target (owner-on-create)
+      description: >
+        Creates a team for the given team-target and, atomically, makes the creator its owner. The
+        creator is taken from the authenticated subject when present; `creatorUserId` is accepted as
+        an explicit fallback until token-derived identity is wired.
+      operationId: createTeam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Team]
+      summary: Get a team
+      operationId: getTeam
+      responses:
+        '200':
+          description: Team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # -------------------------------------------------------------- Memberships
+  /api/v1/teams/{teamId}/members:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [Membership]
+      summary: List team members
+      operationId: listMembers
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Membership'
+    post:
+      tags: [Membership]
+      summary: Add a member (owner/administrator; subject to the subset rule)
+      operationId: addMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemberRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/teams/{teamId}/transfer-ownership:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    post:
+      tags: [Team]
+      summary: Transfer ownership (owner only) — new owner promoted, old owner downgraded
+      operationId: transferOwnership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+      responses:
+        '204':
+          description: Transferred
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ----------------------------------------------------------- Role definitions
+  /api/v1/teams/{teamId}/role-definitions:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [RoleDefinition]
+      summary: List a team's roles (system + this team's custom roles)
+      operationId: listRoleDefinitions
+      responses:
+        '200':
+          description: Roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [RoleDefinition]
+      summary: Define a team-scoped custom role (owner; subject to the subset rule)
+      operationId: createRoleDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleDefinitionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleDefinition'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/teams/{teamId}/role-definitions/{code}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [RoleDefinition]
+      summary: Update a team-scoped custom role (owner; subset rule; system roles immutable)
+      operationId: updateRoleDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleDefinitionUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    delete:
+      tags: [RoleDefinition]
+      summary: Delete a team-scoped custom role (owner; system roles immutable)
+      operationId: deleteRoleDefinition
+      responses:
+        '204':
+          description: Deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/teams/{teamId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/UserId'
+    put:
+      tags: [Membership]
+      summary: Change a member's role (owner/administrator; subject to the subset rule)
+      operationId: changeMemberRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRoleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    delete:
+      tags: [Membership]
+      summary: Remove a member (owner/administrator) — revokes derived access
+      operationId: removeMember
+      responses:
+        '204':
+          description: Removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Conflict with the current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: The caller is not authorized for this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    UnprocessableEntity:
+      description: The request violates a domain rule (e.g. the subset rule)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    Pong:
+      type: object
+      required: [service, status]
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          example: UP
+
+    User:
+      type: object
+      required: [id, subject, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        subject:
+          type: string
+          description: The IdP subject (Keycloak `sub`) this profile links to.
+        displayName:
+          type: string
+
+    UserRequest:
+      type: object
+      required: [subject, displayName]
+      properties:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    Team:
+      type: object
+      required: [id, name, targetType, targetId]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+        targetType:
+          type: string
+          description: The team-target's resource type, e.g. "catalog".
+        targetId:
+          type: string
+          format: uuid
+          description: The team-target's resource id.
+
+    CreateTeamRequest:
+      type: object
+      required: [name, targetType, targetId]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        targetType:
+          type: string
+          minLength: 1
+          maxLength: 100
+        targetId:
+          type: string
+          format: uuid
+        creatorUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Explicit creator fallback used until token-derived identity is wired (ticket 4). When the
+            request is authenticated, the creator is the subject and this field is ignored.
+
+    Membership:
+      type: object
+      required: [id, teamId, userId, roleCode]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        teamId:
+          type: string
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          format: uuid
+        roleCode:
+          type: string
+          description: The code of the bound role definition (e.g. "owner", "member", or a custom role).
+
+    AddMemberRequest:
+      type: object
+      required: [userId, roleCode]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        roleCode:
+          type: string
+          minLength: 1
+          maxLength: 100
+        actorUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Explicit actor fallback used until token-derived identity is wired (ticket 4). When the
+            request is authenticated, the actor is the subject and this field is ignored.
+
+    ChangeRoleRequest:
+      type: object
+      required: [roleCode]
+      properties:
+        roleCode:
+          type: string
+          minLength: 1
+          maxLength: 100
+        actorUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Explicit actor fallback (see AddMemberRequest).
+
+    TransferOwnershipRequest:
+      type: object
+      required: [newOwnerUserId]
+      properties:
+        newOwnerUserId:
+          type: string
+          format: uuid
+          description: The team member to promote to owner.
+
+    RoleDefinition:
+      type: object
+      required: [code, system, permissions]
+      properties:
+        code:
+          type: string
+        system:
+          type: boolean
+          description: True for the immutable global ladder; false for team-scoped custom roles.
+        teamId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for system roles; set for team-scoped custom roles.
+        attributes:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: resourceType -> [allowed action verbs].
+
+    RoleDefinitionRequest:
+      type: object
+      required: [code, permissions]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 100
+        attributes:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    RoleDefinitionUpdate:
+      type: object
+      required: [permissions]
+      properties:
+        attributes:
+          type: object
+          additionalProperties: true
+        permissions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    ApiError:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: integer
+          format: int32
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time

@@ -6,6 +6,7 @@ import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -14,9 +15,10 @@ import org.springframework.stereotype.Component;
  * roles to a {@link RoleDefinition} whose {@code permissions} the OPA policy decides on.
  *
  * <p>This is the clean stand-in for a real authority: it overrides the starter's
- * {@code NoOpRoleDefinitionSupplier} (the starter backs off via {@code @ConditionalOnMissingBean}). A
- * later phase swaps in an HTTP-backed supplier (calling a user-management service) — a single-bean
- * change, because everything downstream depends only on the {@link RoleDefinitionSupplier} interface.
+ * {@code NoOpRoleDefinitionSupplier} (the starter backs off via {@code @ConditionalOnMissingBean}).
+ * Phase 4 swaps in {@link HttpRoleDefinitionSupplier} (calling the user-management service) — a single
+ * bean change, selected by the {@code catalog.role-source} property: {@code demo} (default, this bean)
+ * vs {@code http}. Everything downstream depends only on the {@link RoleDefinitionSupplier} interface.
  *
  * <ul>
  *   <li>{@code catalog-viewer} → read on catalog/category/product</li>
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Component;
  * </ul>
  */
 @Component
+@ConditionalOnProperty(name = "catalog.role-source", havingValue = "demo", matchIfMissing = true)
 public class DemoRoleDefinitionSupplier implements RoleDefinitionSupplier {
 
     private static final List<String> TYPES = List.of("catalog", "category", "product");

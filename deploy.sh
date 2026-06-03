@@ -26,19 +26,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="opa-abac-example"
 APP_DIR="$SCRIPT_DIR/example-catalog-management-service"
+USERMGMT_DIR="$SCRIPT_DIR/example-user-management-service"
 APISIX_COMPOSE="$SCRIPT_DIR/infra/compose.apisix.yaml"
 JAEGER_COMPOSE="$SCRIPT_DIR/infra/compose.jaeger.yaml"
 OPA_COMPOSE="$SCRIPT_DIR/infra/compose.opa.yaml"
 KEYCLOAK_COMPOSE="$SCRIPT_DIR/infra/compose.keycloak.yaml"
+USERMGMT_COMPOSE="$SCRIPT_DIR/infra/compose.usermgmt.yaml"
 GEN_COMPOSE="$SCRIPT_DIR/build/compose.pods.generated.yaml"
 STATE_FILE="$SCRIPT_DIR/build/.deploy.state"
 IMAGE="opa-abac-catalog:local"
+USERMGMT_IMAGE="opa-abac-usermgmt:local"
 
 # Feature toggles. Tracing + OPA on by default (Phase B). OIDC off by default — opt in with
 # ENABLE_OIDC=1 ./deploy.sh up  (Phase 2 gateway auth; needs Keycloak, slower to start).
 ENABLE_TRACING="${ENABLE_TRACING:-1}"
 ENABLE_OPA="${ENABLE_OPA:-1}"
 ENABLE_OIDC="${ENABLE_OIDC:-0}"
+# Phase 4: run the user-management-service alongside the catalog pool and resolve roles from it
+# (the app-resolved path). Off by default — opt in with ENABLE_USER_SERVICE=1 ./deploy.sh up.
+# When on, the catalog pods get CATALOG_ROLE_SOURCE=http pointed at http://usermgmt:8080.
+ENABLE_USER_SERVICE="${ENABLE_USER_SERVICE:-0}"
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -106,6 +113,13 @@ HEADER
       else
         abac_env="      OPA_ABAC_ENABLED: \"false\""
       fi
+      # Phase 4: resolve role definitions from the user-management service (the app-resolved path)
+      # instead of the static demo supplier. The user-service is reachable in-network as 'usermgmt'.
+      local role_source_env=""
+      if [ "$ENABLE_USER_SERVICE" = "1" ]; then
+        role_source_env="      CATALOG_ROLE_SOURCE: \"http\"
+      CATALOG_USER_SERVICE_BASE_URL: \"http://usermgmt:8080\""
+      fi
       local otel_env=""
       if [ "$ENABLE_TRACING" = "1" ]; then
         otel_env="      OTEL_SERVICE_NAME: \"catalog-management-service\"
@@ -129,6 +143,7 @@ HEADER
       SPRING_DATASOURCE_PASSWORD: "catalog"
       JAVA_OPTS: "$java_opts"
 $abac_env
+$role_source_env
 $otel_env
     ports:
       - "$host_port:8080"
@@ -151,6 +166,26 @@ apisix_compose() { docker compose -p "$PROJECT" -f "$APISIX_COMPOSE" "$@"; }
 jaeger_compose() { docker compose -p "$PROJECT" -f "$JAEGER_COMPOSE" "$@"; }
 opa_compose() { docker compose -p "$PROJECT" -f "$OPA_COMPOSE" "$@"; }
 keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
+usermgmt_compose() { docker compose -p "$PROJECT" -f "$USERMGMT_COMPOSE" "$@"; }
+
+build_usermgmt_image() {
+  echo "==> Building user-management image $USERMGMT_IMAGE (Gradle bootJar inside the image)..."
+  docker build -t "$USERMGMT_IMAGE" -f "$USERMGMT_DIR/Dockerfile" "$SCRIPT_DIR"
+}
+usermgmt_image_exists() { docker image inspect "$USERMGMT_IMAGE" >/dev/null 2>&1; }
+
+wait_usermgmt_healthy() {
+  echo "==> Waiting for the user-management service to become healthy..."
+  local deadline=$(( SECONDS + 180 ))
+  while (( SECONDS < deadline )); do
+    if curl -sf "http://localhost:28090/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
+      echo "   user-management service healthy."; return 0
+    fi
+    sleep 3
+  done
+  echo "   WARN: the user-management service did not become healthy in time." >&2
+  return 1
+}
 
 # Wait for Keycloak's realm discovery doc to be served (import + boot can take 30-60s).
 wait_keycloak() {
@@ -239,11 +274,17 @@ case "$CMD" in
     if [ "$ENABLE_OIDC" = "1" ]; then
       echo "==> Starting Keycloak (realm import)..."; keycloak_compose up -d
     fi
+    if [ "$ENABLE_USER_SERVICE" = "1" ]; then
+      usermgmt_image_exists || build_usermgmt_image
+      echo "==> Starting the user-management service + its Postgres..."
+      usermgmt_compose up -d
+    fi
     echo "==> Starting APISIX + etcd..."
     apisix_compose up -d
     generate_compose "$n"
     echo "==> Starting $n app pod(s)..."
     app_compose up -d
+    [ "$ENABLE_USER_SERVICE" = "1" ] && wait_usermgmt_healthy || true
     wait_pods_healthy "$n" || true
     # OIDC route needs Keycloak's discovery doc reachable before APISIX validates tokens.
     [ "$ENABLE_OIDC" = "1" ] && wait_keycloak || true
@@ -257,6 +298,7 @@ case "$CMD" in
     [ "$ENABLE_TRACING" = "1" ] && echo "    Jaeger UI: http://localhost:26686"
     [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
+    [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: http://localhost:28090  (resolve API at /internal/effective-role; catalog uses role-source=http)"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
     ;;
 
@@ -275,8 +317,9 @@ case "$CMD" in
     apisix_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     opa_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     keycloak_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    usermgmt_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
-    echo "==> Pool + APISIX + OPA + Keycloak + Jaeger down. (Postgres left running — ./profile.sh down to stop it.)"
+    echo "==> Pool + APISIX + OPA + Keycloak + user-mgmt + Jaeger down. (Base Postgres left running — ./profile.sh down to stop it.)"
     ;;
 
   status)
