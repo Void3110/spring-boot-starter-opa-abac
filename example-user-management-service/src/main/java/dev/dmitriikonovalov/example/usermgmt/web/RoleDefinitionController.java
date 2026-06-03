@@ -48,7 +48,8 @@ public class RoleDefinitionController implements RoleDefinitionApi {
             UUID teamId, RoleDefinitionRequest request) {
         UUID actor = actor();
         var created = roleDefinitions.create(
-                actor, teamId, request.getCode(), request.getAttributes(), request.getPermissions());
+                actor, teamId, request.getCode(), request.getAttributes(), request.getPermissions(),
+                request.getRequiredTags(), matchModeOf(request.getMatchMode()));
         return ResponseEntity.status(HttpStatus.CREATED).body(UserMgmtMapper.toDto(created));
     }
 
@@ -58,8 +59,17 @@ public class RoleDefinitionController implements RoleDefinitionApi {
             UUID teamId, String code, RoleDefinitionUpdate request) {
         UUID actor = actor();
         var updated = roleDefinitions.update(
-                actor, teamId, code, request.getAttributes(), request.getPermissions());
+                actor, teamId, code, request.getAttributes(), request.getPermissions(),
+                request.getRequiredTags(), matchModeOf(request.getMatchMode()));
         return ResponseEntity.ok(UserMgmtMapper.toDto(updated));
+    }
+
+    private static String matchModeOf(RoleDefinitionRequest.MatchModeEnum e) {
+        return e == null ? null : e.getValue();
+    }
+
+    private static String matchModeOf(RoleDefinitionUpdate.MatchModeEnum e) {
+        return e == null ? null : e.getValue();
     }
 
     @Override

@@ -9,6 +9,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
+import dev.dmitriikonovalov.opaabac.core.TagMatchMode;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -121,7 +122,23 @@ public class EffectiveRoleService {
     public RoleDefinition resourceRole(TeamMembership membership, String targetType) {
         RoleDefinitionEntity role = roleOf(membership);
         return new RoleDefinition(
-                role.getCode(), role.getAttributes(), expandWildcard(role.getPermissions(), targetType));
+                role.getCode(),
+                role.getAttributes(),
+                expandWildcard(role.getPermissions(), targetType),
+                role.getRequiredTags(),
+                parseMatchMode(role.getMatchMode()));
+    }
+
+    /** A stored {@code match_mode} string → the enum; null/blank/unknown → null (no requirement / default). */
+    private static TagMatchMode parseMatchMode(String matchMode) {
+        if (matchMode == null || matchMode.isBlank()) {
+            return null;
+        }
+        try {
+            return TagMatchMode.valueOf(matchMode);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static Map<String, List<String>> expandWildcard(

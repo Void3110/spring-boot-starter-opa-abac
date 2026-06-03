@@ -698,6 +698,18 @@ components:
             items:
               type: string
           description: resourceType -> [allowed action verbs].
+        requiredTags:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Optional tag requirement — tagKey -> [acceptable values]. Empty = no requirement.
+        matchMode:
+          type: string
+          enum: [ANY_OF, ALL_OF]
+          nullable: true
+          description: How required keys combine; null when there is no tag requirement.
 
     RoleDefinitionRequest:
       type: object
@@ -716,6 +728,17 @@ components:
             type: array
             items:
               type: string
+        requiredTags:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Optional tag requirement — tagKey -> [acceptable values].
+        matchMode:
+          type: string
+          enum: [ANY_OF, ALL_OF]
+          nullable: true
 
     RoleDefinitionUpdate:
       type: object
@@ -730,6 +753,16 @@ components:
             type: array
             items:
               type: string
+        requiredTags:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        matchMode:
+          type: string
+          enum: [ANY_OF, ALL_OF]
+          nullable: true
 
     TagDefinition:
       type: object

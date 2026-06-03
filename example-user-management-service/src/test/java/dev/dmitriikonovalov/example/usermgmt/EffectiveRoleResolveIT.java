@@ -100,6 +100,36 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
         assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("read", "write"));
     }
 
+    @Test // RD2 — a role's requiredTags + matchMode ride through the resolve into the core.RoleDefinition
+    void resolvePassesThroughRequiredTags() {
+        UUID target = UUID.randomUUID();
+        Team team = teamFor(target);
+        User member = user("regional");
+        RoleDefinitionEntity custom = roles.save(new RoleDefinitionEntity(
+                UUID.randomUUID(),
+                "regional-reader",
+                false,
+                team.getId(),
+                Map.of(),
+                Map.of("catalog", List.of("read")),
+                Map.of("region", List.of("emea")),
+                "ALL_OF"));
+        grant(team, member, custom.getId());
+
+        var res = rest.getForEntity(url(member, "catalog", target), RoleDefinition.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isNotNull();
+        assertThat(res.getBody().requiredTags()).containsEntry("region", List.of("emea"));
+        assertThat(res.getBody().matchMode())
+                .isEqualTo(dev.dmitriikonovalov.opaabac.core.TagMatchMode.ALL_OF);
+
+        // And the wire shape now carries the snake_case fields.
+        var json = rest.getForEntity(url(member, "catalog", target), JsonNode.class).getBody();
+        assertThat(json).isNotNull();
+        assertThat(json.has("required_tags")).isTrue();
+        assertThat(json.get("match_mode").asText()).isEqualTo("ALL_OF");
+    }
+
     @Test
     void noMatchingTeamResolvesEmpty() {
         User stranger = user("stranger");

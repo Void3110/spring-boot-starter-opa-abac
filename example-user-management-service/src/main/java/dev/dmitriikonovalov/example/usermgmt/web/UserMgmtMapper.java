@@ -46,12 +46,19 @@ public final class UserMgmtMapper {
 
     public static dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition toDto(
             RoleDefinitionEntity e) {
-        return new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition()
+        var dto = new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition()
                 .code(e.getCode())
                 .system(e.isSystem())
                 .teamId(e.getTeamId())
                 .attributes(e.getAttributes())
-                .permissions(e.getPermissions());
+                .permissions(e.getPermissions())
+                .requiredTags(e.getRequiredTags());
+        if (e.getMatchMode() != null) {
+            dto.matchMode(
+                    dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition.MatchModeEnum
+                            .valueOf(e.getMatchMode()));
+        }
+        return dto;
     }
 
     public static dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition toDto(
