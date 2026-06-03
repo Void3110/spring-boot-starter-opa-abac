@@ -220,6 +220,11 @@ On ship the folder moves to `docs/to-do/implemented/` with a "Shipped" banner, a
 
 ## Related
 
+- **Architecture decision records:** [`docs/architecture/adr/`](../../../architecture/adr/) — the *why*
+  behind this service: [0001](../../../architecture/adr/0001-user-management-entity-graph.md) entity graph,
+  [0002](../../../architecture/adr/0002-team-and-team-target-indirection.md) team-target,
+  [0003](../../../architecture/adr/0003-role-definitions-role-not-grant.md) role definitions,
+  [0004](../../../architecture/adr/0004-dynamic-tag-dictionary.md) tag dictionary.
 - Overall roadmap: [[POC-ROADMAP]]
 - Resource-side counterpart: `example-catalog-management-service` (the catalog app this service feeds).
 - Prior slice this builds on: [[LIBRARY-SPINE]] — ships `RoleDefinition` + the `RoleDefinitionSupplier`

@@ -77,6 +77,20 @@ a team-scoped custom editor role can; a non-member is denied — all with the ro
 user-service. It also dogfoods the user-service's own management API (owner manages, member 403). See
 [[TEAM-BASED-AUTHORIZATION]] for the model and [[E2E-TESTING]] for the in-network token caveat.
 
+The **tag-based** matrix (Phase 4.5) extends this with grants driven by the *resource's tags*:
+
+```bash
+# The tag-based allow/deny matrix (seeds tag-gated roles + differently-tagged Categories, asserts):
+cd scripts/postman && ./run-tag-matrix.sh
+```
+
+It proves the decisive contrast — the **same** member with the **same** tag-gated role reads a
+matching-tag Category (200) and a non-matching one (403); plus ANY_OF/ALL_OF, the dictionary define
+dogfood (owner 201 / member 403), and an illegal assignment (422). A team tag key defined at runtime
+governs assignment + decisions immediately, no redeploy. See [[TAG-BASED-AUTHORIZATION]]. The updated
+`category.rego` (with the `tags_satisfied` match) is served by the shared OPA container — restart OPA
+after editing it.
+
 > The `team.rego` policy the user-service dogfoods is served by the shared OPA container — it lives in
 > both `../example-user-management-service/src/main/resources/opa/policies/` (the source of truth) and
 > `opa/policies/` (mounted into the rig's OPA). Restart OPA after editing it (`docker restart

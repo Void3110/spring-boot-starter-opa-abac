@@ -28,6 +28,8 @@ tags:
     description: Team membership — the grant binding a user to a role on a team
   - name: RoleDefinition
     description: Role definitions — system roles + team-scoped custom roles
+  - name: TagDefinition
+    description: The dynamic tag dictionary — global system keys + team-scoped custom keys
 
 paths:
   /api/v1/ping:
@@ -309,6 +311,141 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  # ----------------------------------------------------------- Tag definitions
+  /api/v1/tag-definitions:
+    get:
+      tags: [TagDefinition]
+      summary: List tag definitions (global keys, plus a team's keys when teamId is given)
+      operationId: listTagDefinitions
+      parameters:
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: When present, include this team's keys alongside the global keys.
+      responses:
+        '200':
+          description: Tag definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TagDefinition'
+
+  /api/v1/tag-definitions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [TagDefinition]
+      summary: Get a tag definition
+      operationId: getTagDefinition
+      responses:
+        '200':
+          description: Tag definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/teams/{teamId}/tag-definitions:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [TagDefinition]
+      summary: List a team's tag keys (global keys + this team's custom keys)
+      operationId: listTeamTagDefinitions
+      responses:
+        '200':
+          description: Tag definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TagDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [TagDefinition]
+      summary: Define a team-scoped tag key (owner/administrator)
+      operationId: createTeamTagDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagDefinitionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/teams/{teamId}/tag-definitions/{key}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [TagDefinition]
+      summary: Update a team-scoped tag key (owner/administrator; global/system keys immutable)
+      operationId: updateTeamTagDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagDefinitionUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    delete:
+      tags: [TagDefinition]
+      summary: Delete a team-scoped tag key (owner/administrator; global/system keys immutable)
+      operationId: deleteTeamTagDefinition
+      responses:
+        '204':
+          description: Deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /api/v1/teams/{teamId}/members/{userId}:
     parameters:
       - $ref: '#/components/parameters/TeamId'
@@ -561,6 +698,18 @@ components:
             items:
               type: string
           description: resourceType -> [allowed action verbs].
+        requiredTags:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Optional tag requirement — tagKey -> [acceptable values]. Empty = no requirement.
+        matchMode:
+          type: string
+          enum: [ANY_OF, ALL_OF]
+          nullable: true
+          description: How required keys combine; null when there is no tag requirement.
 
     RoleDefinitionRequest:
       type: object
@@ -579,6 +728,17 @@ components:
             type: array
             items:
               type: string
+        requiredTags:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Optional tag requirement — tagKey -> [acceptable values].
+        matchMode:
+          type: string
+          enum: [ANY_OF, ALL_OF]
+          nullable: true
 
     RoleDefinitionUpdate:
       type: object
@@ -593,6 +753,98 @@ components:
             type: array
             items:
               type: string
+        requiredTags:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        matchMode:
+          type: string
+          enum: [ANY_OF, ALL_OF]
+          nullable: true
+
+    TagDefinition:
+      type: object
+      required: [id, key, scope, valueType, cardinality, system]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        key:
+          type: string
+          description: The tag key, e.g. "sensitivity" or "region".
+        scope:
+          type: string
+          enum: [GLOBAL, TEAM]
+          description: GLOBAL for seeded system keys; TEAM for team-defined keys.
+        teamId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for GLOBAL keys; the owning team for TEAM keys.
+        valueType:
+          type: string
+          enum: [STRING, ENUM]
+        cardinality:
+          type: string
+          enum: [SINGLE, MULTI]
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: The closed set for an ENUM key; empty for a STRING key.
+        valuePattern:
+          type: string
+          nullable: true
+          description: An optional regex constraining a STRING value.
+        system:
+          type: boolean
+          description: True for the immutable global/system keys.
+
+    TagDefinitionRequest:
+      type: object
+      required: [key, valueType, cardinality]
+      properties:
+        key:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: The tag key (kebab-case recommended), e.g. "tier".
+        valueType:
+          type: string
+          enum: [STRING, ENUM]
+        cardinality:
+          type: string
+          enum: [SINGLE, MULTI]
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: Required (non-empty) for ENUM; omitted/empty for STRING.
+        valuePattern:
+          type: string
+          nullable: true
+          description: An optional regex for a STRING key.
+
+    TagDefinitionUpdate:
+      type: object
+      required: [valueType, cardinality]
+      properties:
+        valueType:
+          type: string
+          enum: [STRING, ENUM]
+        cardinality:
+          type: string
+          enum: [SINGLE, MULTI]
+        allowedValues:
+          type: array
+          items:
+            type: string
+        valuePattern:
+          type: string
+          nullable: true
 
     ApiError:
       type: object

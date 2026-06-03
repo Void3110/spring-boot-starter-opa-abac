@@ -373,6 +373,12 @@ components:
           type: string
         description:
           type: string
+        tags:
+          type: object
+          additionalProperties: true
+          description: >
+            Dictionary-validated tags on this category. Each value is a string (single-valued key) or
+            an array of strings (multi-valued key), per the tag definition.
 
     CategoryRequest:
       type: object
@@ -390,6 +396,13 @@ components:
         description:
           type: string
           maxLength: 2000
+        tags:
+          type: object
+          additionalProperties: true
+          description: >
+            Tags to assign, validated against the tag dictionary. Each value is a string (single-valued
+            key) or an array of strings (multi-valued key). An unknown key or illegal value is rejected
+            with 422; nothing is silently dropped.
 
     Product:
       type: object

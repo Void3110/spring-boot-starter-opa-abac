@@ -1,0 +1,102 @@
+databaseChangeLog:
+  # The dynamic tag dictionary. A tag_definition is a runtime-editable row defining a legal tag KEY,
+  # its scope (GLOBAL/TEAM), value type (STRING/ENUM), cardinality (SINGLE/MULTI), and (for ENUM) its
+  # allowed values. Modelled on role_definition: enums stored as strings, allowed_values as jsonb, and
+  # the same two-partial-unique-index trick so a key is unique among globals AND, independently, per team.
+
+  - changeSet:
+      id: 0003-create-tag-definition
+      author: user-management-service
+      changes:
+        - createTable:
+            tableName: tag_definition
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: key
+                  type: varchar(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scope
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: team_id
+                  type: uuid
+              - column:
+                  name: value_type
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: cardinality
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: allowed_values
+                  type: jsonb
+                  defaultValueComputed: "'[]'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: value_pattern
+                  type: varchar(500)
+              - column:
+                  name: is_system
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              # base-entity columns (AbstractAuditableEntity)
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+        - addForeignKeyConstraint:
+            constraintName: fk_tag_definition_team
+            baseTableName: tag_definition
+            baseColumnNames: team_id
+            referencedTableName: team
+            referencedColumnNames: id
+            onDelete: CASCADE
+        # A key is unique within its scope: globally for system keys, per-team for custom keys.
+        # Two partial unique indexes (Postgres) keyed on whether team_id is null — so a team may define
+        # `region` even if a global `region` exists (team key shadows the global for that team).
+        - sql:
+            splitStatements: true
+            sql: >-
+              CREATE UNIQUE INDEX uq_tag_def_global_key
+                ON tag_definition (key) WHERE team_id IS NULL;
+              CREATE UNIQUE INDEX uq_tag_def_team_key
+                ON tag_definition (team_id, key) WHERE team_id IS NOT NULL;
+        - createIndex:
+            indexName: idx_tag_definition_team
+            tableName: tag_definition
+            columns:
+              - column:
+                  name: team_id

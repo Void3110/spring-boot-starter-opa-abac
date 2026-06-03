@@ -8,13 +8,13 @@ import data.team
 owner_role_def := {
 	"code": "owner",
 	"attributes": {"role_level": 40},
-	"permissions": {"team": ["read", "manage", "define-roles", "transfer-ownership"]},
+	"permissions": {"team": ["read", "manage", "define-roles", "define-tags", "transfer-ownership"]},
 }
 
 administrator_role_def := {
 	"code": "administrator",
 	"attributes": {"role_level": 30},
-	"permissions": {"team": ["read", "manage"]},
+	"permissions": {"team": ["read", "manage", "define-tags"]},
 }
 
 member_role_def := {
@@ -51,10 +51,18 @@ test_owner_defines_roles if {
 	team.allow with input as team_input("team:define-roles", owner_role_def)
 }
 
-# --- administrator: manage, but NOT transfer / roledef:write ----------------
+test_owner_defines_tags if {
+	team.allow with input as team_input("team:define-tags", owner_role_def)
+}
+
+# --- administrator: manage + define-tags, but NOT transfer / define-roles ---
 
 test_administrator_manages if {
 	team.allow with input as team_input("team:manage", administrator_role_def)
+}
+
+test_administrator_defines_tags if {
+	team.allow with input as team_input("team:define-tags", administrator_role_def)
 }
 
 test_administrator_cannot_transfer_ownership if {
@@ -71,8 +79,16 @@ test_member_cannot_manage if {
 	not team.allow with input as team_input("team:manage", member_role_def)
 }
 
+test_member_cannot_define_tags if {
+	not team.allow with input as team_input("team:define-tags", member_role_def)
+}
+
 test_viewer_cannot_manage if {
 	not team.allow with input as team_input("team:manage", viewer_role_def)
+}
+
+test_viewer_cannot_define_tags if {
+	not team.allow with input as team_input("team:define-tags", viewer_role_def)
 }
 
 # --- default deny -----------------------------------------------------------

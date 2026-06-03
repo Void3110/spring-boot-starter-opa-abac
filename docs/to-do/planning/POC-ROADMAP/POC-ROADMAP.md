@@ -115,13 +115,18 @@ tested; the service **dogfoods** the starter to secure its own management API. T
 green through the gateway with roles from real membership. See the shipped slice
 [[USER-MANAGEMENT-SERVICE]] and the guide [[TEAM-BASED-AUTHORIZATION]].
 
-**Next: Phase 4.5 — the dynamic tag dictionary** (runtime tag *definitions* — global + team-scoped,
-value-type/cardinality/allowed-values — plus tag *assignment* to sub-resources and tag-based *grants*
-matched **in Rego** via `requiredTags` + ANY_OF/ALL_OF; the source platform's hardcoded tags done
-properly). **Planned in full:** [[TAG-DICTIONARY]] (design + decomposition + autonomous prompt + QA);
-background in [[RESEARCH-AUTOTAG-AND-FILTERING]]. Then **Phase 5** (batch eval + partial-eval → JPA data
-filtering) and **Phase 7** (ReBAC-in-Rego — the team-grant join in the policy, to compare against the
-app-resolved path shipped here).
+**Phase 4.5 — the dynamic tag dictionary — ✅ DONE.** A runtime-editable tag dictionary (global +
+team-scoped definitions: value-type/cardinality/allowed-values), tag *assignment* to sub-resources
+(validated against the dictionary, fail-closed), and tag-based *grants* matched **in Rego** via
+`requiredTags` + ANY_OF/ALL_OF (`some in`/`every`) — the source platform's hardcoded tags done properly.
+The one library change is the additive `RoleDefinition.requiredTags`/`matchMode`. The decisive demo is
+green through the gateway: the same role + permission, the grant flips on the resource's tags. Shipped
+slice [[TAG-DICTIONARY]]; guide [[TAG-BASED-AUTHORIZATION]].
+
+**Next: Phase 5** (batch eval + partial-eval → JPA data filtering — including the general
+per-instance/hierarchical authorization path the tag demo stubbed with a load-then-check), then **Phase
+7** (ReBAC-in-Rego — the team-grant join in the policy, to compare against the app-resolved path shipped
+here).
 
 ## Phases
 
@@ -135,7 +140,7 @@ app-resolved path shipped here).
 | **2** | Infra: identity + gateway | Keycloak (realm) → APISIX (OIDC route) → OPA → Jaeger. | ✅ **done** — full rig via `deploy.sh`; see `infra/README.md`. |
 | **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ✅ **DONE** (on a feature branch). The core generalization work. First slice: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service, e2e suite). Second slice: [[LIBRARY-SPINE]] (HttpOpaClient + extraction + role-definition-driven `@OpaPreAuthorize` + starter wiring + catalog adoption; the demo gateway enricher retired; e2e allow/deny matrix green). |
 | **4** | **user-management-service (teams + role-defs)** | New example app: users, **teams** (members + a role hierarchy), **role definitions** (fixed system roles + owner-defined team-scoped custom roles), **team-scoped grants**, owner-on-create + transfer-ownership. The HTTP-backed `RoleDefinitionSupplier` resolves the caller's effective role *for a resource* by walking team membership server-side and feeds it to the catalog spine (a single-bean swap of the demo supplier). **Authorization is app-resolved**: the service resolves the role, the catalog still passes `role_definition` in OPA `input`. | ✅ **DONE.** Shipped slice [[USER-MANAGEMENT-SERVICE]] (T1–T9): the team/role-def core, owner-on-create, the subset rule, transfer-ownership, the `/internal/effective-role` resolve API, the catalog `HttpRoleDefinitionSupplier` swap, the second service in the rig, and a green e2e team matrix through the gateway. The service **dogfoods** the starter. Guide: [[TEAM-BASED-AUTHORIZATION]]. The **dynamic tag dictionary** is deferred to Phase 4.5. |
-| **4.5** | **Dynamic tag dictionary (ABAC extension)** | A runtime-editable tag dictionary — **global + team-scoped** tag *definitions* (`valueType` STRING/ENUM, `cardinality` SINGLE/MULTI, optional `allowedValues`), tag *assignment* to sub-resources (validated against the dictionary), and tag-based *grants*: a role carries `requiredTags` + a `matchMode` and OPA grants when the resource's tags satisfy it — the **ANY_OF/ALL_OF match evaluated in Rego** (`some in`/`every`). The source platform hardcodes tag keys; this does it properly. | 📋 **PLANNED** — full work package: [[TAG-DICTIONARY]] (00-DESIGN / 01-DECOMPOSITION / AUTONOMOUS-IMPLEMENTATION-PROMPT / 10-QA / STATUS stubs), structural twin of [[USER-MANAGEMENT-SERVICE]]. Owner/admin **define** the dictionary (`team:define-tags`); members **assign** (a normal write). The one library change is the additive `RoleDefinition.requiredTags`/`matchMode`. Background: [[RESEARCH-AUTOTAG-AND-FILTERING]]. Lead-in to Phase 7 (match-in-policy). |
+| **4.5** | **Dynamic tag dictionary (ABAC extension)** | A runtime-editable tag dictionary — **global + team-scoped** tag *definitions* (`valueType` STRING/ENUM, `cardinality` SINGLE/MULTI, optional `allowedValues`), tag *assignment* to sub-resources (validated against the dictionary), and tag-based *grants*: a role carries `requiredTags` + a `matchMode` and OPA grants when the resource's tags satisfy it — the **ANY_OF/ALL_OF match evaluated in Rego** (`some in`/`every`). The source platform hardcodes tag keys; this does it properly. | ✅ **DONE** (T1–T6). Shipped slice [[TAG-DICTIONARY]]: the `TagDefinition` dictionary (global+team partial-unique, seeded system keys) + `team:define-tags` management; tag assignment on Category validated fail-closed against the dictionary; the **additive** `RoleDefinition.requiredTags`/`matchMode` (the one library change, whole-repo build green); the `category.rego` `tags_satisfied` match (`some in`/`every`, vacuous back-compat, fail-closed) — `opa test` 49/49; and a green tag matrix through the gateway (the decisive same-role/different-tags 200-vs-403 contrast). Owner/admin **define** (`team:define-tags`); members **assign** (a normal write). Guide: [[TAG-BASED-AUTHORIZATION]]. Background: [[RESEARCH-AUTOTAG-AND-FILTERING]]. Lead-in to Phase 7 (match-in-policy). |
 | **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. |
 | **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |
 | **7** | **ReBAC-in-Rego (team grants, in-policy)** | Push the team/membership/grant graph into OPA `data` and express the "subject member-of team **and** team has-role-on resource" join *in Rego* (Zanzibar-style userset), as an alternative to the Phase-4 app-resolved path. Demonstrates RBAC vs ABAC vs ReBAC expression in one OPA policy. | New item from the team-abstraction analysis. The strongest "stands out vs naive OPA" piece; deferred so the app-resolved path ships first. |

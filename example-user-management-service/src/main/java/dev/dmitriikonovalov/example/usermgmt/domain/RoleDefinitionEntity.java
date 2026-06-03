@@ -51,6 +51,18 @@ public class RoleDefinitionEntity extends AbstractAuditableEntity {
     @Column(name = "permissions", columnDefinition = "jsonb", nullable = false)
     private Map<String, List<String>> permissions = Map.of();
 
+    /**
+     * Optional tag requirement: {@code tagKey -> [acceptable values]}; never null (empty = no
+     * requirement). Carried verbatim into the resolved {@code core.RoleDefinition} (Phase 4.5).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "required_tags", columnDefinition = "jsonb", nullable = false)
+    private Map<String, List<String>> requiredTags = Map.of();
+
+    /** {@code ANY_OF} | {@code ALL_OF}; null when there is no tag requirement. */
+    @Column(name = "match_mode")
+    private String matchMode;
+
     protected RoleDefinitionEntity() {
         // JPA
     }
@@ -62,12 +74,26 @@ public class RoleDefinitionEntity extends AbstractAuditableEntity {
             UUID teamId,
             Map<String, Object> attributes,
             Map<String, List<String>> permissions) {
+        this(id, code, system, teamId, attributes, permissions, Map.of(), null);
+    }
+
+    public RoleDefinitionEntity(
+            UUID id,
+            String code,
+            boolean system,
+            UUID teamId,
+            Map<String, Object> attributes,
+            Map<String, List<String>> permissions,
+            Map<String, List<String>> requiredTags,
+            String matchMode) {
         super(id);
         this.code = code;
         this.system = system;
         this.teamId = teamId;
         this.attributes = attributes == null ? Map.of() : attributes;
         this.permissions = permissions == null ? Map.of() : permissions;
+        this.requiredTags = requiredTags == null ? Map.of() : requiredTags;
+        this.matchMode = matchMode;
     }
 
     public String getCode() {
@@ -108,5 +134,21 @@ public class RoleDefinitionEntity extends AbstractAuditableEntity {
 
     public void setPermissions(Map<String, List<String>> permissions) {
         this.permissions = permissions == null ? Map.of() : permissions;
+    }
+
+    public Map<String, List<String>> getRequiredTags() {
+        return requiredTags;
+    }
+
+    public void setRequiredTags(Map<String, List<String>> requiredTags) {
+        this.requiredTags = requiredTags == null ? Map.of() : requiredTags;
+    }
+
+    public String getMatchMode() {
+        return matchMode;
+    }
+
+    public void setMatchMode(String matchMode) {
+        this.matchMode = matchMode;
     }
 }
