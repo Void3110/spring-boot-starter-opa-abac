@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
+import dev.dmitriikonovalov.example.catalog.config.CategoryAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.TagAssignmentService;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
@@ -20,14 +21,17 @@ public class CategoryController implements CategoryApi {
     private final CategoryRepository categories;
     private final CatalogRepository catalogs;
     private final TagAssignmentService tagAssignment;
+    private final CategoryAuthorizer categoryAuthorizer;
 
     public CategoryController(
             CategoryRepository categories,
             CatalogRepository catalogs,
-            TagAssignmentService tagAssignment) {
+            TagAssignmentService tagAssignment,
+            CategoryAuthorizer categoryAuthorizer) {
         this.categories = categories;
         this.catalogs = catalogs;
         this.tagAssignment = tagAssignment;
+        this.categoryAuthorizer = categoryAuthorizer;
     }
 
     @Override
@@ -66,9 +70,12 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:read", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> getCategory(UUID catalogId, UUID categoryId) {
+        // Load-then-check: the Category's TAGS drive the decision, so we authorize the loaded instance
+        // (its tags reach OPA), resolving the role via the governing Catalog. This is the per-instance,
+        // tag-based grant — the pre-invocation @OpaPreAuthorize can't see the tags (Phase 4.5).
         var entity = requireCategory(catalogId, categoryId);
+        categoryAuthorizer.require("read", entity);
         return ResponseEntity.ok(CatalogMapper.toDto(entity));
     }
 

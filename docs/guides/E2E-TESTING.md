@@ -98,12 +98,37 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 # ABAC allow/deny matrix (mints viewer + editor tokens, proves 200/403/204)
 ./run-matrix.sh
 ./run-matrix.sh --verbose
+
+# Tag-based ABAC matrix (Phase 4.5 — requires the full rig WITH the user-service)
+#   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+./run-tag-matrix.sh
 ```
 
 `run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
 `viewer_token` + `editor_token`. Expected: editor seeds a catalog/category/product (201), viewer reads
 them (200), viewer writes are denied (**403**), editor updates/deletes (200/204). 12 requests, all
 green; stable across reruns.
+
+### Tag-based ABAC matrix (Phase 4.5)
+
+`run-tag-matrix.sh` proves **tag-based grants** end to end — a decision driven by the *resource's tags*
+matched against a role's `requiredTags`, in Rego. It needs the full rig **with the user-service**
+(`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`). At run time it mints in-network tokens,
+seeds a demo catalog as a team-target, bootstraps two tag-gated roles (a `regional-reader` requiring
+`region` ANY_OF `[emea]`, a `strict-reader` requiring `region:[emea]` **and** `sensitivity:[public,
+internal]` ALL_OF), and creates three differently-tagged Categories through the gateway. Then 7 requests:
+
+| # | Case | Expected |
+|---|------|----------|
+| 1 | gated member reads the `region=[emea]` Category | **200** |
+| 2 | **the SAME member reads the `region=[apac]` Category** | **403** — identical role; only the tags differ |
+| 3a / 3b | ALL_OF role: both keys satisfied / only one | **200** / **403** |
+| 4a / 4b | owner defines a team tag key / a member tries | **201** / **403** |
+| 5 | assigning a value outside the dictionary | **422** (never stored) |
+
+Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision. A team key
+defined at runtime governs assignment + decisions immediately — no redeploy. All 7 green; stable across
+reruns. Guide: [[TAG-BASED-AUTHORIZATION]].
 
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.
@@ -132,4 +157,5 @@ sensible follow-up, tracked separately.
 
 - The rig: [`infra/README.md`](../../infra/README.md)
 - The library being exercised: [[DOMAIN-MODEL]], [[CONCURRENCY-AND-LOCKING]]
+- Tag-based authorization (the tag matrix): [[TAG-BASED-AUTHORIZATION]]
 - Implementation plan (ticket 5 fleshes out the suite): [[DOMAIN-MODEL-FOUNDATION]]

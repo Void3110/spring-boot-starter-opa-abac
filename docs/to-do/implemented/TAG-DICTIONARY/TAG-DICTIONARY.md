@@ -1,12 +1,18 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/user-service
   - area/abac
 ---
 
 # Dynamic tag dictionary (example) — Phase 4.5
+
+> ✅ **SHIPPED** (T1–T6 complete). The dynamic tag dictionary, tag assignment, the additive
+> `RoleDefinition.requiredTags`/`matchMode`, the Rego `tags_satisfied` match, and a green tag matrix
+> through the gateway are all in on `feature/void3110/tag-dictionary`. Guide: [[TAG-BASED-AUTHORIZATION]].
+> This folder is the studyable plan→autonomous-implement→test→review record; the per-ticket `STATUS-0N.md`
+> notes capture each checkpoint.
 
 > **Direction (as decided with the maintainer):** a **runtime-editable** tag dictionary layered onto the
 > user-management-service — the source platform's hardcoded tag keys, **done properly**. Tag keys are
@@ -153,7 +159,7 @@ shipped [[USER-MANAGEMENT-SERVICE]] and [[LIBRARY-SPINE]] slices.
 | 3 | Tag assignment on the Category sub-resource (validated against the dictionary; stored in `ResourceTags`; member-with-write assigns) | ✅ done | `STATUS-03.md` |
 | 4 | `RoleDefinition` extension: `requiredTags` + `matchMode` (ANY_OF/ALL_OF) — additive core field + role-def management | ✅ done | `STATUS-04.md` |
 | 5 | Rego tag match (`some in` / `every`; OPA input carries resource tags + the role's required tags) | ✅ done | `STATUS-05.md` |
-| 6 | e2e matrix (tag-gated allow/deny through the gateway) + docs + roadmap/Mulch | ⬜ planned | `STATUS-06.md` |
+| 6 | e2e matrix (tag-gated allow/deny through the gateway) + docs + roadmap/Mulch | ✅ done | `STATUS-06.md` |
 
 Critical path **T1 → T2 → T3 → T4 → T5 → T6**. T2 (define) and T3 (assign) both depend on T1's entity;
 T4 (the role-side `requiredTags`) and T5 (the Rego match) are the **grant** half and depend on T3 having
