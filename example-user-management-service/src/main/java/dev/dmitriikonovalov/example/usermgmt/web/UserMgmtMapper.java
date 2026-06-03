@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
+import dev.dmitriikonovalov.example.usermgmt.domain.TagDefinition;
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
@@ -45,11 +46,37 @@ public final class UserMgmtMapper {
 
     public static dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition toDto(
             RoleDefinitionEntity e) {
-        return new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition()
+        var dto = new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition()
                 .code(e.getCode())
                 .system(e.isSystem())
                 .teamId(e.getTeamId())
                 .attributes(e.getAttributes())
-                .permissions(e.getPermissions());
+                .permissions(e.getPermissions())
+                .requiredTags(e.getRequiredTags());
+        if (e.getMatchMode() != null) {
+            dto.matchMode(
+                    dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition.MatchModeEnum
+                            .valueOf(e.getMatchMode()));
+        }
+        return dto;
+    }
+
+    public static dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition toDto(
+            TagDefinition e) {
+        return new dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition()
+                .id(e.getId())
+                .key(e.getKey())
+                .scope(dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition.ScopeEnum.valueOf(
+                        e.getScope().name()))
+                .teamId(e.getTeamId())
+                .valueType(
+                        dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition.ValueTypeEnum
+                                .valueOf(e.getValueType().name()))
+                .cardinality(
+                        dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition.CardinalityEnum
+                                .valueOf(e.getCardinality().name()))
+                .allowedValues(e.getAllowedValues())
+                .valuePattern(e.getValuePattern())
+                .system(e.isSystem());
     }
 }

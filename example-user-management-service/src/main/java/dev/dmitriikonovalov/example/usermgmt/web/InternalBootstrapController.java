@@ -68,16 +68,27 @@ public class InternalBootstrapController {
 
     /**
      * Idempotently ensure a team-scoped custom role exists; returns its id. {@code permissions} uses the
-     * {@code {resourceType:[verbs]}} shape.
+     * {@code {resourceType:[verbs]}} shape. Optionally carries a tag requirement
+     * ({@code requiredTags}/{@code matchMode}, Phase 4.5) so the matrix can seed a tag-gated role.
      */
     @PostMapping("/internal/bootstrap/custom-roles")
     @Transactional
     public ResponseEntity<Map<String, UUID>> ensureCustomRole(@RequestBody EnsureCustomRole body) {
+        Map<String, List<String>> requiredTags =
+                body.requiredTags() == null ? Map.of() : body.requiredTags();
+        String matchMode = requiredTags.isEmpty()
+                ? null
+                : (body.matchMode() == null ? "ANY_OF" : body.matchMode());
         UUID id = roles.findByTeamIdAndCode(body.teamId(), body.code())
+                .map(existing -> {
+                    existing.setPermissions(body.permissions());
+                    existing.setRequiredTags(requiredTags);
+                    existing.setMatchMode(matchMode);
+                    return roles.save(existing).getId();
+                })
                 .orElseGet(() -> roles.save(new RoleDefinitionEntity(
                         UUID.randomUUID(), body.code(), false, body.teamId(),
-                        Map.of(), body.permissions())))
-                .getId();
+                        Map.of(), body.permissions(), requiredTags, matchMode)).getId());
         return ResponseEntity.ok(Map.of("roleId", id));
     }
 
@@ -104,7 +115,12 @@ public class InternalBootstrapController {
     public record EnsureTeam(String name, String targetType, UUID targetId) {
     }
 
-    public record EnsureCustomRole(UUID teamId, String code, Map<String, List<String>> permissions) {
+    public record EnsureCustomRole(
+            UUID teamId,
+            String code,
+            Map<String, List<String>> permissions,
+            Map<String, List<String>> requiredTags,
+            String matchMode) {
     }
 
     public record EnsureMembership(UUID teamId, UUID userId, String roleCode) {

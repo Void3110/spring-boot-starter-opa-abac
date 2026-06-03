@@ -160,6 +160,61 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
         assertThat(update.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
+    @Test // RD1 — requiredTags + matchMode persist on a custom role and round-trip through the API
+    void customRoleCarriesRequiredTags() {
+        Team team = team();
+        User owner = user("owner");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        var create = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions",
+                HttpMethod.POST,
+                AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
+                        .code("regional-reader")
+                        .permissions(Map.of("catalog", List.of("read")))
+                        .requiredTags(Map.of("region", List.of("emea")))
+                        .matchMode(RoleDefinitionRequest.MatchModeEnum.ALL_OF)),
+                RoleDefinition.class,
+                team.getId());
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(create.getBody()).isNotNull();
+        assertThat(create.getBody().getRequiredTags()).containsEntry("region", List.of("emea"));
+        assertThat(create.getBody().getMatchMode())
+                .isEqualTo(RoleDefinition.MatchModeEnum.ALL_OF);
+
+        // Re-read via list to confirm it persisted.
+        var list = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions",
+                HttpMethod.GET,
+                AbacTestConfig.as(owner.getSubject()),
+                RoleDefinition[].class,
+                team.getId());
+        assertThat(list.getBody()).anyMatch(r ->
+                r.getCode().equals("regional-reader")
+                        && r.getRequiredTags().containsKey("region")
+                        && r.getMatchMode() == RoleDefinition.MatchModeEnum.ALL_OF);
+    }
+
+    @Test // RD3 — a role with no requiredTags keeps the prior shape (empty map, null mode)
+    void customRoleWithoutRequiredTagsHasEmptyRequirement() {
+        Team team = team();
+        User owner = user("owner");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        var create = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions",
+                HttpMethod.POST,
+                AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
+                        .code("plain-reader")
+                        .permissions(Map.of("catalog", List.of("read")))),
+                RoleDefinition.class,
+                team.getId());
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(create.getBody()).isNotNull();
+        assertThat(create.getBody().getRequiredTags()).isNullOrEmpty();
+        assertThat(create.getBody().getMatchMode()).isNull();
+    }
+
     @Test
     void listReturnsSystemAndCustomRoles() {
         Team team = team();

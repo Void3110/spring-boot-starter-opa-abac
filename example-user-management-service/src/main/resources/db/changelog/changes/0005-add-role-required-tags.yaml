@@ -1,0 +1,21 @@
+databaseChangeLog:
+  # Phase 4.5: a role definition may carry an optional tag requirement. Two additive columns on
+  # role_definition — required_tags (jsonb, default {}) + match_mode (varchar, nullable). Existing rows
+  # (the seeded system roles) get the empty default, so they resolve exactly as before.
+
+  - changeSet:
+      id: 0005-add-role-required-tags
+      author: user-management-service
+      changes:
+        - addColumn:
+            tableName: role_definition
+            columns:
+              - column:
+                  name: required_tags
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: match_mode
+                  type: varchar(10)

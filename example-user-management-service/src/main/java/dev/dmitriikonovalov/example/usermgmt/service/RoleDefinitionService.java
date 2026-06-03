@@ -52,7 +52,9 @@ public class RoleDefinitionService {
             UUID teamId,
             String code,
             Map<String, Object> attributes,
-            Map<String, List<String>> permissions) {
+            Map<String, List<String>> permissions,
+            Map<String, List<String>> requiredTags,
+            String matchMode) {
         requireTeam(teamId);
         if (roles.findBySystemTrueAndCode(code).isPresent()) {
             throw new RoleConflictException("'" + code + "' is a reserved system role code");
@@ -63,7 +65,8 @@ public class RoleDefinitionService {
         }
         subsetGuard.requireWithinActorPermissions(actorUserId, teamId, permissions);
         return roles.save(new RoleDefinitionEntity(
-                UUID.randomUUID(), code, false, teamId, attributes, permissions));
+                UUID.randomUUID(), code, false, teamId, attributes, permissions,
+                requiredTags, normalizeMatchMode(requiredTags, matchMode)));
     }
 
     /** Update a team-scoped custom role's attributes/permissions, subset-guarded. System roles are immutable. */
@@ -73,13 +76,31 @@ public class RoleDefinitionService {
             UUID teamId,
             String code,
             Map<String, Object> attributes,
-            Map<String, List<String>> permissions) {
+            Map<String, List<String>> permissions,
+            Map<String, List<String>> requiredTags,
+            String matchMode) {
         requireTeam(teamId);
         RoleDefinitionEntity role = requireCustomRole(teamId, code);
         subsetGuard.requireWithinActorPermissions(actorUserId, teamId, permissions);
         role.setAttributes(attributes);
         role.setPermissions(permissions);
+        role.setRequiredTags(requiredTags);
+        role.setMatchMode(normalizeMatchMode(requiredTags, matchMode));
         return roles.save(role);
+    }
+
+    /**
+     * {@code match_mode} is meaningful only with a tag requirement: default it to {@code ANY_OF} when
+     * required tags are present and none was given; clear it when there is no requirement. This mirrors
+     * the {@code core.RoleDefinition} normalization so the stored row and the resolved role agree.
+     */
+    private static String normalizeMatchMode(
+            Map<String, List<String>> requiredTags, String matchMode) {
+        boolean hasRequirement = requiredTags != null && !requiredTags.isEmpty();
+        if (!hasRequirement) {
+            return null;
+        }
+        return matchMode == null || matchMode.isBlank() ? "ANY_OF" : matchMode;
     }
 
     /** Delete a team-scoped custom role. System roles are immutable. */
