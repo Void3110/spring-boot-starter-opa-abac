@@ -9,10 +9,11 @@
 # Actions all share the "team:" prefix so the verb is a single clean token after the ":":
 #   "team:manage"             (add/remove/update members)
 #   "team:define-roles"       (define team-scoped custom role definitions)
+#   "team:define-tags"        (curate the team's tag dictionary)
 #   "team:transfer-ownership"
 # The capability ladder lives in the resolved role definition, not here:
-#   owner         -> ["read", "manage", "define-roles", "transfer-ownership"]
-#   administrator -> ["read", "manage"]
+#   owner         -> ["read", "manage", "define-roles", "define-tags", "transfer-ownership"]
+#   administrator -> ["read", "manage", "define-tags"]
 #   member/viewer -> ["read"]
 #
 # OPA 1.x: `if`/`in`/`contains` are built-in keywords — no imports needed. Default deny.

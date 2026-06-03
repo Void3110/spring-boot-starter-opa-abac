@@ -357,6 +357,95 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/teams/{teamId}/tag-definitions:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [TagDefinition]
+      summary: List a team's tag keys (global keys + this team's custom keys)
+      operationId: listTeamTagDefinitions
+      responses:
+        '200':
+          description: Tag definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TagDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [TagDefinition]
+      summary: Define a team-scoped tag key (owner/administrator)
+      operationId: createTeamTagDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagDefinitionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/teams/{teamId}/tag-definitions/{key}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [TagDefinition]
+      summary: Update a team-scoped tag key (owner/administrator; global/system keys immutable)
+      operationId: updateTeamTagDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagDefinitionUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagDefinition'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    delete:
+      tags: [TagDefinition]
+      summary: Delete a team-scoped tag key (owner/administrator; global/system keys immutable)
+      operationId: deleteTeamTagDefinition
+      responses:
+        '204':
+          description: Deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /api/v1/teams/{teamId}/members/{userId}:
     parameters:
       - $ref: '#/components/parameters/TeamId'
@@ -680,6 +769,49 @@ components:
         system:
           type: boolean
           description: True for the immutable global/system keys.
+
+    TagDefinitionRequest:
+      type: object
+      required: [key, valueType, cardinality]
+      properties:
+        key:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: The tag key (kebab-case recommended), e.g. "tier".
+        valueType:
+          type: string
+          enum: [STRING, ENUM]
+        cardinality:
+          type: string
+          enum: [SINGLE, MULTI]
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: Required (non-empty) for ENUM; omitted/empty for STRING.
+        valuePattern:
+          type: string
+          nullable: true
+          description: An optional regex for a STRING key.
+
+    TagDefinitionUpdate:
+      type: object
+      required: [valueType, cardinality]
+      properties:
+        valueType:
+          type: string
+          enum: [STRING, ENUM]
+        cardinality:
+          type: string
+          enum: [SINGLE, MULTI]
+        allowedValues:
+          type: array
+          items:
+            type: string
+        valuePattern:
+          type: string
+          nullable: true
 
     ApiError:
       type: object

@@ -1,12 +1,16 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.ApiError;
+import dev.dmitriikonovalov.example.usermgmt.service.InvalidTagDefinitionException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipNotFoundException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleNotFoundException;
 import dev.dmitriikonovalov.example.usermgmt.service.SubsetRuleViolationException;
 import dev.dmitriikonovalov.example.usermgmt.service.SystemRoleImmutableException;
+import dev.dmitriikonovalov.example.usermgmt.service.TagDefinitionImmutableException;
+import dev.dmitriikonovalov.example.usermgmt.service.TagDefinitionNotFoundException;
+import dev.dmitriikonovalov.example.usermgmt.service.TagKeyConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.TeamTargetExistsException;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpStatus;
@@ -21,7 +25,8 @@ public class ApiExceptionHandler {
     @ExceptionHandler({
         NotFoundException.class,
         MembershipNotFoundException.class,
-        RoleNotFoundException.class
+        RoleNotFoundException.class,
+        TagDefinitionNotFoundException.class
     })
     public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
@@ -31,14 +36,19 @@ public class ApiExceptionHandler {
         TeamTargetExistsException.class,
         MembershipConflictException.class,
         RoleConflictException.class,
-        SystemRoleImmutableException.class
+        SystemRoleImmutableException.class,
+        TagKeyConflictException.class,
+        TagDefinitionImmutableException.class
     })
     public ResponseEntity<ApiError> handleConflict(RuntimeException ex) {
         return error(HttpStatus.CONFLICT, ex.getMessage());
     }
 
-    @ExceptionHandler(SubsetRuleViolationException.class)
-    public ResponseEntity<ApiError> handleSubsetRule(SubsetRuleViolationException ex) {
+    @ExceptionHandler({
+        SubsetRuleViolationException.class,
+        InvalidTagDefinitionException.class
+    })
+    public ResponseEntity<ApiError> handleUnprocessable(RuntimeException ex) {
         return error(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 
