@@ -28,6 +28,8 @@ tags:
     description: Team membership — the grant binding a user to a role on a team
   - name: RoleDefinition
     description: Role definitions — system roles + team-scoped custom roles
+  - name: TagDefinition
+    description: The dynamic tag dictionary — global system keys + team-scoped custom keys
 
 paths:
   /api/v1/ping:
@@ -308,6 +310,52 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  # ----------------------------------------------------------- Tag definitions
+  /api/v1/tag-definitions:
+    get:
+      tags: [TagDefinition]
+      summary: List tag definitions (global keys, plus a team's keys when teamId is given)
+      operationId: listTagDefinitions
+      parameters:
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: When present, include this team's keys alongside the global keys.
+      responses:
+        '200':
+          description: Tag definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TagDefinition'
+
+  /api/v1/tag-definitions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [TagDefinition]
+      summary: Get a tag definition
+      operationId: getTagDefinition
+      responses:
+        '200':
+          description: Tag definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagDefinition'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/v1/teams/{teamId}/members/{userId}:
     parameters:
@@ -593,6 +641,45 @@ components:
             type: array
             items:
               type: string
+
+    TagDefinition:
+      type: object
+      required: [id, key, scope, valueType, cardinality, system]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        key:
+          type: string
+          description: The tag key, e.g. "sensitivity" or "region".
+        scope:
+          type: string
+          enum: [GLOBAL, TEAM]
+          description: GLOBAL for seeded system keys; TEAM for team-defined keys.
+        teamId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for GLOBAL keys; the owning team for TEAM keys.
+        valueType:
+          type: string
+          enum: [STRING, ENUM]
+        cardinality:
+          type: string
+          enum: [SINGLE, MULTI]
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: The closed set for an ENUM key; empty for a STRING key.
+        valuePattern:
+          type: string
+          nullable: true
+          description: An optional regex constraining a STRING value.
+        system:
+          type: boolean
+          description: True for the immutable global/system keys.
 
     ApiError:
       type: object

@@ -1,0 +1,41 @@
+databaseChangeLog:
+  # Seed two GLOBAL/system tag keys (the controlled vocabulary every team's resources may use). Stable
+  # ids + keys — the seed demo and the e2e matrix rely on them. scope = GLOBAL, team_id = null,
+  # is_system = true (immutable through the API).
+  #
+  #   sensitivity : ENUM / SINGLE / [public, internal, confidential]
+  #   region      : ENUM / MULTI  / [emea, amer, apac]
+
+  - changeSet:
+      id: 0004-seed-tag-sensitivity
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: tag_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-0000000000a1"}
+              - column: {name: key, value: sensitivity}
+              - column: {name: scope, value: GLOBAL}
+              - column: {name: team_id, value: null}
+              - column: {name: value_type, value: ENUM}
+              - column: {name: cardinality, value: SINGLE}
+              - column: {name: allowed_values, value: "[\"public\", \"internal\", \"confidential\"]"}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: version, valueNumeric: 0}
+
+  - changeSet:
+      id: 0004-seed-tag-region
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: tag_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-0000000000a2"}
+              - column: {name: key, value: region}
+              - column: {name: scope, value: GLOBAL}
+              - column: {name: team_id, value: null}
+              - column: {name: value_type, value: ENUM}
+              - column: {name: cardinality, value: MULTI}
+              - column: {name: allowed_values, value: "[\"emea\", \"amer\", \"apac\"]"}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: version, valueNumeric: 0}

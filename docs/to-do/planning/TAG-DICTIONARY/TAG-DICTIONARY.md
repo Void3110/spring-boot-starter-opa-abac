@@ -148,7 +148,7 @@ shipped [[USER-MANAGEMENT-SERVICE]] and [[LIBRARY-SPINE]] slices.
 
 | # | Ticket | Status | Note |
 |---|--------|--------|------|
-| 1 | Tag-definition domain (`TagDefinition`: scope/valueType/cardinality/allowedValues) + Liquibase + seed global system keys + read API | ⬜ planned | `STATUS-01.md` |
+| 1 | Tag-definition domain (`TagDefinition`: scope/valueType/cardinality/allowedValues) + Liquibase + seed global system keys + read API | ✅ done | `STATUS-01.md` |
 | 2 | Dictionary management API (owner/admin define team-scoped keys; `team:define-tags`; validation rules; system keys immutable) | ⬜ planned | `STATUS-02.md` |
 | 3 | Tag assignment on the Category sub-resource (validated against the dictionary; stored in `ResourceTags`; member-with-write assigns) | ⬜ planned | `STATUS-03.md` |
 | 4 | `RoleDefinition` extension: `requiredTags` + `matchMode` (ANY_OF/ALL_OF) — additive core field + role-def management | ⬜ planned | `STATUS-04.md` |
