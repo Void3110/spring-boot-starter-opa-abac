@@ -27,7 +27,8 @@ public final class CatalogMapper {
                 .catalogId(e.getCatalogId())
                 .parentId(e.getParentId())
                 .name(e.getName())
-                .description(e.getDescription());
+                .description(e.getDescription())
+                .tags(e.getTags().asMap());
     }
 
     public static Product toDto(ProductEntity e) {

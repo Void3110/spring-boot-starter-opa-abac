@@ -5,6 +5,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TagDefinition;
 import dev.dmitriikonovalov.example.usermgmt.domain.TagDefinitionRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.TagScope;
 import dev.dmitriikonovalov.example.usermgmt.domain.TagValueType;
+import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import java.util.List;
 import java.util.Optional;
@@ -40,10 +41,15 @@ public class TagDefinitionService {
 
     private final TagDefinitionRepository tagDefinitions;
     private final TeamRepository teams;
+    private final TeamTargetMatcher targetMatcher;
 
-    public TagDefinitionService(TagDefinitionRepository tagDefinitions, TeamRepository teams) {
+    public TagDefinitionService(
+            TagDefinitionRepository tagDefinitions,
+            TeamRepository teams,
+            TeamTargetMatcher targetMatcher) {
         this.tagDefinitions = tagDefinitions;
         this.teams = teams;
+        this.targetMatcher = targetMatcher;
     }
 
     /**
@@ -61,6 +67,32 @@ public class TagDefinitionService {
     @Transactional(readOnly = true)
     public Optional<TagDefinition> find(UUID id) {
         return tagDefinitions.findById(id);
+    }
+
+    /**
+     * The dictionary <b>applicable to a resource</b>: all global keys, plus the keys of the team whose
+     * team-target governs the resource (resolved via the same {@link TeamTargetMatcher} the effective-role
+     * resolve API uses). This is what the catalog validates assigned tags against (ticket 3). A resource
+     * with no governing team gets the globals only — never an error (the catalog still validates, so an
+     * illegal value is still rejected; the resource simply has no team-scoped keys available).
+     */
+    @Transactional(readOnly = true)
+    public List<TagDefinition> applicableForResource(String resourceType, UUID resourceId) {
+        if (resourceType == null || resourceId == null) {
+            return tagDefinitions.findByTeamIdIsNull();
+        }
+        return governingTeam(resourceType, resourceId)
+                .map(team -> tagDefinitions.findByTeamIdIsNullOrTeamId(team.getId()))
+                .orElseGet(tagDefinitions::findByTeamIdIsNull);
+    }
+
+    private Optional<Team> governingTeam(String resourceType, UUID resourceId) {
+        for (Team team : teams.findAll()) {
+            if (targetMatcher.matches(team, resourceType, resourceId)) {
+                return Optional.of(team);
+            }
+        }
+        return Optional.empty();
     }
 
     /** Define a team-scoped tag key ({@code scope=TEAM}, {@code system=false}), within the shape rules. */
