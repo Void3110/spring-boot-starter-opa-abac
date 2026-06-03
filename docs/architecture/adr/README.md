@@ -23,6 +23,24 @@ once `Accepted` — to change it, write a new ADR that supersedes it and flip th
 
 `Proposed` → `Accepted` → (`Superseded by [[NNNN-...]]` | `Deprecated`).
 
+## When to write one (the convention, going forward)
+
+ADRs are **part of the decomposition process**, not an afterthought. When planning a feature
+(`docs/to-do/planning/<FEATURE>/`), a **structural decision** gets an ADR — written *up front*, as the
+fork is decided, and linked from the feature's `00-DESIGN`. A decision is "structural" when it would be
+expensive to reverse or surprising to a future reader: a schema or authority shape, a module/service
+boundary, where a check is evaluated (app vs. policy), an additive-vs-breaking choice, a "we deliberately
+did **not** do X" with real alternatives weighed.
+
+Why up front, not after: a feature's `00-DESIGN`/`01-DECOMPOSITION` are *living* docs — they get
+rewritten and then `git mv`'d to `implemented/` on ship, so the rationale buried in them drifts or moves.
+An ADR is *immutable* — it pins the decision and its rejected alternatives at a point in time. Routine
+implementation choices (naming, file layout, which test library) do **not** need an ADR; reach for one
+only when you catch yourself writing a "considered & rejected" list worth keeping.
+
+> Records 0001–0004 were written **retroactively** for the Phase-4/4.5 user-management work (the decisions
+> were sound, the docs just hadn't been pinned). From here, the ADR is authored *with* the decomposition.
+
 ## Index
 
 | # | Title | Status | Area |

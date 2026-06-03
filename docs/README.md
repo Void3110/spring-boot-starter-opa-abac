@@ -35,6 +35,16 @@ Create a folder per feature (e.g. `to-do/planning/USER-SERVICE/`) and put its de
 decomposition, and progress notes inside. When it ships, `git mv` the folder to
 `implemented/` and add a one-line "Shipped (date)" banner at the top of its main note.
 
+**Decisions vs. designs.** A feature folder's `00-DESIGN` / `01-DECOMPOSITION` are *living*
+plans — they get rewritten as the work evolves. A **structural decision** taken during
+planning (a schema/authority shape, a module boundary, a "match here not there", an
+additive-vs-breaking choice) is *not* living: it gets its own **ADR** in
+[`architecture/adr/`](architecture/adr/) so the rationale and the rejected alternatives
+survive as a dated, supersede-able record. As a planning step, whenever a decomposition
+surfaces a fork worth defending later, write (or update) the ADR up front and link it from
+the design — don't leave the *why* buried in a decomposition that will be rewritten or moved
+to `implemented/`.
+
 ## Conventions
 
 - **Tags**: see [`TAG-SYSTEM.md`](TAG-SYSTEM.md). Every note carries `status/*` and `type/*` (+ `area/*`).
