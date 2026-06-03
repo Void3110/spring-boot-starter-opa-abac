@@ -1,0 +1,57 @@
+# The user-management-service (the ABAC attribute source) + its own Postgres, added to the rig when
+# ENABLE_USER_SERVICE=1 ./deploy.sh up. Shares the project network (opa-abac-example_default), so the
+# catalog pods reach it by DNS as http://usermgmt:8080/internal/effective-role.
+#
+# Its own DB (usermgmt-postgres) keeps the user-service schema isolated from the catalog's Postgres —
+# the two example services own their own data, as a real deployment would. Host port 5434 avoids the
+# base Postgres on 5433 and any host Postgres on 5432.
+
+name: opa-abac-example
+
+services:
+  usermgmt-postgres:
+    image: postgres:16-alpine
+    container_name: opa-abac-usermgmt-postgres
+    environment:
+      POSTGRES_DB: usermgmt
+      POSTGRES_USER: usermgmt
+      POSTGRES_PASSWORD: usermgmt
+    ports:
+      - "5434:5432"
+    volumes:
+      - usermgmtpgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usermgmt -d usermgmt"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  usermgmt:
+    image: opa-abac-usermgmt:local
+    container_name: usermgmt
+    hostname: usermgmt
+    depends_on:
+      usermgmt-postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8080"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://opa-abac-usermgmt-postgres:5432/usermgmt"
+      SPRING_DATASOURCE_USERNAME: "usermgmt"
+      SPRING_DATASOURCE_PASSWORD: "usermgmt"
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+      # The user-service dogfoods the starter (its own management API is @OpaPreAuthorize-secured),
+      # pointed at the same OPA that serves the team policy document.
+      OPA_ABAC_ENABLED: "true"
+      OPA_ABAC_BASE_URL: "http://opa:8181"
+      OPA_ABAC_POLICY_PREFIX: ""
+    ports:
+      - "28090:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+volumes:
+  usermgmtpgdata:
