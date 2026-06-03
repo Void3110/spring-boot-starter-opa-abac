@@ -152,7 +152,7 @@ shipped [[USER-MANAGEMENT-SERVICE]] and [[LIBRARY-SPINE]] slices.
 | 2 | Dictionary management API (owner/admin define team-scoped keys; `team:define-tags`; validation rules; system keys immutable) | ✅ done | `STATUS-02.md` |
 | 3 | Tag assignment on the Category sub-resource (validated against the dictionary; stored in `ResourceTags`; member-with-write assigns) | ✅ done | `STATUS-03.md` |
 | 4 | `RoleDefinition` extension: `requiredTags` + `matchMode` (ANY_OF/ALL_OF) — additive core field + role-def management | ✅ done | `STATUS-04.md` |
-| 5 | Rego tag match (`some in` / `every`; OPA input carries resource tags + the role's required tags) | ⬜ planned | `STATUS-05.md` |
+| 5 | Rego tag match (`some in` / `every`; OPA input carries resource tags + the role's required tags) | ✅ done | `STATUS-05.md` |
 | 6 | e2e matrix (tag-gated allow/deny through the gateway) + docs + roadmap/Mulch | ⬜ planned | `STATUS-06.md` |
 
 Critical path **T1 → T2 → T3 → T4 → T5 → T6**. T2 (define) and T3 (assign) both depend on T1's entity;
