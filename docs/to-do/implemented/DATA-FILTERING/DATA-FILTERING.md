@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/spring-data
   - area/abac
@@ -9,19 +9,20 @@ tags:
 
 # Data filtering — partial evaluation + batch evaluation
 
-> **Status: ✅ SHIPPED (T1–T7).** This folder is the full work package for [[POC-ROADMAP]] **Phase 5 — the
-> advanced library slice**: the two mechanisms that make this starter stand out against a naive
-> "call OPA per request" integration — **OPA partial evaluation → JPA `Specification`** row-level
-> filtering, and **batch evaluation** for the residual per-item allowlist. Implemented autonomously from
-> the self-contained [[AUTONOMOUS-IMPLEMENTATION-PROMPT]]; the per-ticket STATUS notes record the prompt +
-> outcomes (the workflow-as-artifact). Proven end to end: `opa test` 60/60, real-Postgres Testcontainers
-> ITs (two subjects → different row sets), and a green gateway filter matrix (16/16). Guide:
-> [[PARTIAL-EVALUATION-FILTERING]].
+> ✅ **SHIPPED (T1–T7), merged to `main` (PR #11, squash `473fde8`).** The full work package for
+> [[POC-ROADMAP]] **Phase 5 — the advanced library slice**: the two mechanisms that make this starter
+> stand out against a naive "call OPA per request" integration — **OPA partial evaluation → JPA
+> `Specification`** row-level filtering, and **batch evaluation** for the residual per-item allowlist.
+> Implemented autonomously from the self-contained [[AUTONOMOUS-IMPLEMENTATION-PROMPT]]; the per-ticket
+> `STATUS-0N.md` notes capture each checkpoint (what shipped · tests · the architecture-review-gate
+> findings · the commit) — the studyable plan→autonomous-implement→test→review record. Proven end to end:
+> `./gradlew build` + CI green, `opa test` 60/60, real-Postgres Testcontainers ITs (two subjects →
+> different row sets), and a green gateway filter matrix (16/16). Guide: [[PARTIAL-EVALUATION-FILTERING]].
 
 This package mirrors the four shipped slices ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
-[[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]]) 1:1 in structure. On ship the folder moves to
-`docs/to-do/implemented/DATA-FILTERING/` with a "Shipped" banner, keeping the prompt-and-results
-record intact for the workflow-as-artifact comparison across runs.
+[[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]]) 1:1 in structure. The folder lives under
+`docs/to-do/implemented/` with this banner, keeping the prompt-and-results record intact for the
+workflow-as-artifact comparison across runs.
 
 ## Why this slice
 
