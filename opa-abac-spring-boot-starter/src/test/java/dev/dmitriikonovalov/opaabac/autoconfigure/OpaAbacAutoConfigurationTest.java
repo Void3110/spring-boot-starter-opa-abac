@@ -8,6 +8,8 @@ import dev.dmitriikonovalov.opaabac.core.PerTypePolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
+import dev.dmitriikonovalov.opaabac.data.filter.ResidualSpecificationFactory;
 import dev.dmitriikonovalov.opaabac.security.AbacFilter;
 import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorizeAuthorizationManager;
@@ -18,6 +20,7 @@ import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.security.web.SecurityFilterChain;
 
 /** {@link ApplicationContextRunner} slice tests for the starter — QA cases U30–U34. */
@@ -100,6 +103,58 @@ class OpaAbacAutoConfigurationTest {
                 assertThat(context.getBean(RoleDefinitionSupplier.class)).isInstanceOf(NoOpRoleDefinitionSupplier.class));
     }
 
+    // --- data-filtering beans (T5) -------------------------------------------
+
+    @Test // I3 — JPA on classpath + enabled → the filtering beans are present
+    void dataFilteringBeansPresent_withJpa() {
+        runner.run(context -> {
+            assertThat(context).hasSingleBean(ResidualSpecificationFactory.class);
+            assertThat(context).hasSingleBean(AbacQueryService.class);
+        });
+    }
+
+    @Test // I4 — JPA absent → the filtering beans are absent (security/core unaffected)
+    void dataFilteringBeansAbsent_withoutJpa() {
+        runner.withClassLoader(new FilteredClassLoader(JpaSpecificationExecutor.class))
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(ResidualSpecificationFactory.class);
+                    assertThat(context).doesNotHaveBean(AbacQueryService.class);
+                    // the rest of the spine is unaffected
+                    assertThat(context).hasSingleBean(OpaClient.class);
+                });
+    }
+
+    @Test // I5 — a user-supplied factory / query service overrides the auto one
+    void userDataFilteringBeansWin() {
+        runner.withUserConfiguration(DataFilteringOverrides.class).run(context -> {
+            assertThat(context.getBean(ResidualSpecificationFactory.class))
+                    .isSameAs(DataFilteringOverrides.FACTORY);
+            assertThat(context.getBean(AbacQueryService.class))
+                    .isInstanceOf(StubQueryService.class);
+        });
+    }
+
+    @Test // I6 — partialEval properties bind
+    void partialEvalPropertiesBind() {
+        runner.withPropertyValues(
+                "opa.abac.partial-eval.enabled=false",
+                "opa.abac.partial-eval.allowlist-fallback=false")
+                .run(context -> {
+                    OpaAbacProperties props = context.getBean(OpaAbacProperties.class);
+                    assertThat(props.getPartialEval().isEnabled()).isFalse();
+                    assertThat(props.getPartialEval().isAllowlistFallback()).isFalse();
+                });
+    }
+
+    @Test // I6b — partialEval defaults are both on
+    void partialEvalDefaults_areOn() {
+        runner.run(context -> {
+            OpaAbacProperties props = context.getBean(OpaAbacProperties.class);
+            assertThat(props.getPartialEval().isEnabled()).isTrue();
+            assertThat(props.getPartialEval().isAllowlistFallback()).isTrue();
+        });
+    }
+
     // --- user overrides ------------------------------------------------------
 
     @Configuration(proxyBeanMethods = false)
@@ -120,12 +175,49 @@ class OpaAbacAutoConfigurationTest {
         public boolean allow(dev.dmitriikonovalov.opaabac.core.AbacContext context) {
             return true;
         }
+
+        @Override
+        public dev.dmitriikonovalov.opaabac.core.PartialResult compile(
+                dev.dmitriikonovalov.opaabac.core.AbacContext context) {
+            return dev.dmitriikonovalov.opaabac.core.PartialResult.denyAll();
+        }
+
+        @Override
+        public java.util.List<Boolean> allowAll(
+                java.util.List<dev.dmitriikonovalov.opaabac.core.AbacContext> contexts) {
+            return java.util.Collections.nCopies(contexts.size(), Boolean.FALSE);
+        }
     }
 
     static class StubSupplier implements RoleDefinitionSupplier {
         @Override
         public Optional<RoleDefinition> lookup(String userId, String resourceType, String resourceId) {
             return Optional.empty();
+        }
+    }
+
+    // --- data-filtering overrides (I5) ---------------------------------------
+
+    @Configuration(proxyBeanMethods = false)
+    static class DataFilteringOverrides {
+        static final ResidualSpecificationFactory FACTORY = new ResidualSpecificationFactory();
+
+        @Bean
+        ResidualSpecificationFactory residualSpecificationFactory() {
+            return FACTORY;
+        }
+
+        @Bean
+        AbacQueryService abacQueryService() {
+            return new StubQueryService();
+        }
+    }
+
+    /** A user-supplied AbacQueryService that must win over the starter's auto one. */
+    static class StubQueryService extends AbacQueryService {
+        StubQueryService() {
+            super(new StubOpaClient(), new ResidualSpecificationFactory(),
+                    AbacQueryService.PartialEvalSettings.defaults());
         }
     }
 }

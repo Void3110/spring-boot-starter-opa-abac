@@ -2,7 +2,9 @@ package dev.dmitriikonovalov.example.usermgmt.support;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,22 +60,40 @@ public class AbacTestConfig {
         };
     }
 
-    /** Mirrors team.rego: allow iff the action verb is granted for the resource type by the role def. */
+    /**
+     * Mirrors team.rego for the single-decision path: allow iff the action verb is granted for the
+     * resource type by the role def. The user-service has no list-filtering endpoints, so the
+     * data-filtering methods are conservative fail-closed stubs (deny-all / all-false) — they are never
+     * exercised here.
+     */
     @Bean
     @Primary
     OpaClient inProcessTeamOpaClient() {
-        return context -> {
-            var roleDefinition = context.roleDefinition();
-            if (roleDefinition == null) {
-                return false; // no role definition -> default deny (as in team.rego)
+        return new OpaClient() {
+            @Override
+            public boolean allow(AbacContext context) {
+                var roleDefinition = context.roleDefinition();
+                if (roleDefinition == null) {
+                    return false; // no role definition -> default deny (as in team.rego)
+                }
+                String verb = verbOf(context.action());
+                if (verb == null) {
+                    return false;
+                }
+                List<String> granted = roleDefinition.permissions()
+                        .getOrDefault(context.resource().type(), List.of());
+                return granted.contains(verb);
             }
-            String verb = verbOf(context.action());
-            if (verb == null) {
-                return false;
+
+            @Override
+            public PartialResult compile(AbacContext context) {
+                return PartialResult.denyAll(); // not used by the user-service; fail closed
             }
-            List<String> granted = roleDefinition.permissions()
-                    .getOrDefault(context.resource().type(), List.of());
-            return granted.contains(verb);
+
+            @Override
+            public List<Boolean> allowAll(List<AbacContext> contexts) {
+                return Collections.nCopies(contexts.size(), Boolean.FALSE); // not used; fail closed
+            }
         };
     }
 

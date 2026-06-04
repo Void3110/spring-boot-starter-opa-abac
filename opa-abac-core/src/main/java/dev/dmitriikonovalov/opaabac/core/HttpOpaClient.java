@@ -1,12 +1,15 @@
 package dev.dmitriikonovalov.opaabac.core;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -29,6 +32,9 @@ import org.slf4j.LoggerFactory;
 public final class HttpOpaClient implements OpaClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpOpaClient.class);
+
+    /** The single declared unknown for partial evaluation — the row being filtered. */
+    private static final List<String> UNKNOWNS = List.of("input.resource");
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -107,8 +113,137 @@ public final class HttpOpaClient implements OpaClient {
         }
     }
 
+    /**
+     * Partially evaluate the policy's {@code filter} rule with the resource declared unknown, returning
+     * the residual. POSTs to {@code <baseUrl>/v1/compile} with
+     * {@code {"query": "data.<path>.filter == true", "input": {…}, "unknowns": ["input.resource"]}}, the
+     * resource omitted from {@code input}. Fails closed to {@link PartialResult#denyAll()}.
+     */
+    @Override
+    public PartialResult compile(AbacContext context) {
+        String path = null;
+        try {
+            path = pathResolver.resolve(context);
+            String query = "data." + path.replace('/', '.') + ".filter == true";
+            URI uri = URI.create(config.baseUrl() + "/v1/compile");
+            byte[] body = objectMapper.writeValueAsBytes(new CompileRequest(query, new CompileInput(context), UNKNOWNS));
+
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .timeout(config.timeout())
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                    .build();
+
+            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            int status = response.statusCode();
+            if (status != 200) {
+                log.warn("OPA compile denied (fail-closed): non-200 status {} for path '{}'", status, path);
+                return PartialResult.denyAll();
+            }
+            String resourceType = context.resource() == null ? null : context.resource().type();
+            JsonNode root = objectMapper.readTree(response.body());
+            return new CompileResponseParser(resourceType).parse(root);
+        } catch (Exception e) {
+            // Fail-closed: a compile/transport/parse failure must never widen visibility.
+            log.warn("OPA compile denied (fail-closed): {} for path '{}'", e.getClass().getSimpleName(), path);
+            return PartialResult.denyAll();
+        }
+    }
+
+    /**
+     * Evaluate N decisions in one round-trip via the per-type {@code bulk} rule. POSTs
+     * {@code {"input": {"items": [<ctx>, …]}}} to {@code <baseUrl>/v1/data/<path>/bulk} and reads
+     * {@code result} as a boolean list of the same length. Fails closed to all-false on any error or a
+     * length mismatch; an empty input list returns an empty list with no HTTP call.
+     */
+    @Override
+    public List<Boolean> allowAll(List<AbacContext> contexts) {
+        if (contexts == null || contexts.isEmpty()) {
+            return List.of();
+        }
+        int n = contexts.size();
+        String path = null;
+        try {
+            // All contexts in a batch share a resource type (one list endpoint), so the first resolves the path.
+            path = pathResolver.resolve(contexts.get(0));
+            URI uri = URI.create(config.baseUrl() + "/v1/data/" + path + "/bulk");
+            byte[] body = objectMapper.writeValueAsBytes(new BulkInput(new BulkItems(contexts)));
+
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .timeout(config.timeout())
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                    .build();
+
+            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            int status = response.statusCode();
+            if (status != 200) {
+                log.warn("OPA bulk denied (fail-closed): non-200 status {} for path '{}'", status, path);
+                return allFalse(n);
+            }
+            return readBulkDecisions(response.body(), n, path);
+        } catch (Exception e) {
+            log.warn("OPA bulk denied (fail-closed): {} for path '{}'", e.getClass().getSimpleName(), path);
+            return allFalse(n);
+        }
+    }
+
+    private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode result = root.get("result");
+            if (result == null || !result.isArray() || result.size() != expected) {
+                log.warn("OPA bulk denied (fail-closed): result is not a boolean list of length {} for path '{}'",
+                        expected, path);
+                return allFalse(expected);
+            }
+            List<Boolean> decisions = new java.util.ArrayList<>(expected);
+            for (JsonNode element : result) {
+                if (!element.isBoolean()) {
+                    log.warn("OPA bulk denied (fail-closed): non-boolean element in result for path '{}'", path);
+                    return allFalse(expected);
+                }
+                decisions.add(element.asBoolean());
+            }
+            return List.copyOf(decisions);
+        } catch (Exception e) {
+            log.warn("OPA bulk denied (fail-closed): malformed response ({}) for path '{}'",
+                    e.getClass().getSimpleName(), path);
+            return allFalse(expected);
+        }
+    }
+
+    private static List<Boolean> allFalse(int n) {
+        Boolean[] values = new Boolean[n];
+        java.util.Arrays.fill(values, Boolean.FALSE);
+        return List.of(values);
+    }
+
     /** Explicit wrapper so the serialized request is {@code {"input": <context>}}. */
     private record OpaInput(AbacContext input) {}
+
+    /** The OPA Compile API request: {@code {"query": …, "input": …, "unknowns": […]}}. */
+    private record CompileRequest(String query, CompileInput input, List<String> unknowns) {}
+
+    /**
+     * The compile {@code input}: subject/action/role_definition are known; the <em>resource is omitted</em>
+     * (it is the unknown). Serializes the same {@link AbacContext} but suppresses {@code resource}.
+     */
+    private record CompileInput(
+            AbacContext.Subject subject,
+            String action,
+            @JsonProperty("role_definition") @JsonInclude(JsonInclude.Include.NON_NULL) RoleDefinition roleDefinition,
+            Map<String, Object> environment) {
+        CompileInput(AbacContext context) {
+            this(context.subject(), context.action(), context.roleDefinition(), context.environment());
+        }
+    }
+
+    /** The bulk request wrapper: {@code {"input": {"items": […]}}}. */
+    private record BulkInput(BulkItems input) {}
+
+    /** The bulk items list the {@code bulk} rule iterates: {@code {"items": [<ctx>, …]}}. */
+    private record BulkItems(List<AbacContext> items) {}
 
     /**
      * OPA's {@code POST /v1/data/<path>} response: {@code {"result": {...}}}. The decision field is

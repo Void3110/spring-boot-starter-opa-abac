@@ -107,3 +107,82 @@ tags_satisfied if {
 has_required_tags if {
 	count(input.role_definition.required_tags) > 0
 }
+
+# ---------------------------------------------------------------------------
+# Phase 5 — list filtering entrypoint (partial-evaluation friendly).
+#
+# `filter` is the rule the app's Compile API call partially-evaluates with the RESOURCE declared
+# unknown (unknowns=["input.resource"]), so OPA returns the residual conditions a row must satisfy —
+# which become a JPA Specification over the `tags` JSONB column.
+#
+# TWO deliberate differences from `allow`:
+#   1. ROLE-DEFINITION-ONLY — `filter` requires has_role_definition and has NO subject-roles fallback
+#      (unlike `allow`, which grants read from JWT roles when no role definition is present). A list
+#      request with no role definition therefore compiles to an UNSATISFIABLE residual -> DENY_ALL ->
+#      an EMPTY list, never the whole table. This is the fail-closed boundary (modeled on team.rego).
+#   2. PARTIAL-EVAL-FRIENDLY tag match — `filter_tags_satisfied` expresses the grant as a membership
+#      `v in input.resource.attributes[key]` so the residual reduces to a CLEAN predicate (eq / member)
+#      the residual translator supports, rather than the scalar-vs-array `resource_tag_values` normalize
+#      (is_array / set-comprehension) used by the single-decision `allow`, which does not reduce to SQL.
+#      The membership compiles to the `?` existence operator, which matches BOTH a scalar tag and an
+#      array tag — so the list and a single-GET agree on which rows are visible.
+#
+# Flat-verb only: `filter` matches the current `category:read` verb. Coarse category expansion
+# (READ/WRITE/TAG/GRANT) is a later, additive retrofit (ADR 0007 / Phase 6.5) — not anticipated here.
+
+default filter := false
+
+filter if {
+	has_role_definition
+	"read" in input.role_definition.permissions[input.resource.type]
+	filter_tags_satisfied
+}
+
+# No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).
+filter_tags_satisfied if {
+	not has_required_tags
+}
+
+# A required key is satisfied when an acceptable value matches the resource's tag — for a SCALAR tag by
+# equality, for an ARRAY tag by membership. Two bodies so BOTH cases hold concretely AND the residual is
+# a clean DNF: `(attr == v)`  ->  jsonb_extract_path_text(...) = v   (scalar);
+#              `v in attr`    ->  jsonb_exists(...) (the `?` op)      (array — also matches a scalar string).
+# Either branch alone matches what the single-decision `allow` matches, so list and single-GET agree.
+filter_key_satisfied(key, acceptable) if {
+	some v in acceptable
+	input.resource.attributes[key] == v
+}
+
+filter_key_satisfied(key, acceptable) if {
+	some v in acceptable
+	v in input.resource.attributes[key]
+}
+
+# ANY_OF: SOME required key is satisfied.
+filter_tags_satisfied if {
+	input.role_definition.match_mode == "ANY_OF"
+	some key, acceptable in input.role_definition.required_tags
+	filter_key_satisfied(key, acceptable)
+}
+
+# ALL_OF: every required key is satisfied.
+filter_tags_satisfied if {
+	input.role_definition.match_mode == "ALL_OF"
+	every key, acceptable in input.role_definition.required_tags {
+		filter_key_satisfied(key, acceptable)
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Phase 5 — bulk decision entrypoint (the post-fetch allowlist + the batch primitive).
+#
+# `bulk` evaluates `allow` for each item in a list input ({"input": {"items": [<ctx>, …]}}) and returns
+# a positional list of booleans. The same shared primitive backs the data-filtering allowlist finisher
+# and (later) action enrichment. Each item carries its own resource, so `allow` runs per item with the
+# full single-decision logic (incl. the tag match) — fail-closed per element.
+# ---------------------------------------------------------------------------
+
+bulk := [decision |
+	some item in input.items
+	decision := allow with input as item
+]

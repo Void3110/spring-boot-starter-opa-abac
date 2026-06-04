@@ -1,0 +1,171 @@
+{
+  "info": {
+    "name": "Data-filtering matrix (partial-eval list filtering)",
+    "description": "Proves OPA partial-evaluation list filtering through the gateway: two tag-gated readers hit the SAME list endpoint and get DIFFERENT row sets (filtered in SQL by the residual), an allow-all subject sees every row, and an empty-grant subject sees none. The decisive contrast is the row SET, not a single 200/403. Run via run-filter-matrix.sh, which mints tokens, bootstraps the team + tag-gated roles, and creates the differently-tagged Categories at run time.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:9085"
+    },
+    {
+      "key": "collection_base_url",
+      "value": "{{gateway}}/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Reader EMEA lists categories -> only the EMEA row",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.code === 200);",
+              "const ids = pm.response.json().map(c => c.id);",
+              "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
+              "pm.test('does NOT see the APAC category', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
+              "pm.test('does NOT see the AMER category', () => pm.expect(ids).to.not.include(pm.variables.get('amer_category_id')));",
+              "pm.test('the cut is in SQL: exactly one row', () => pm.expect(ids.length).to.eql(1));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reader APAC lists categories -> only the APAC row (different set, same endpoint)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_apac_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.code === 200);",
+              "const ids = pm.response.json().map(c => c.id);",
+              "pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
+              "pm.test('does NOT see the EMEA category', () => pm.expect(ids).to.not.include(pm.variables.get('emea_category_id')));",
+              "pm.test('exactly one row (a DIFFERENT set than reader EMEA)', () => pm.expect(ids.length).to.eql(1));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Owner (allow-all) lists categories -> ALL rows",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.code === 200);",
+              "const ids = pm.response.json().map(c => c.id);",
+              "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
+              "pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
+              "pm.test('sees the AMER category', () => pm.expect(ids).to.include(pm.variables.get('amer_category_id')));",
+              "pm.test('all three rows visible', () => pm.expect(ids.length).to.be.at.least(3));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stranger (no role definition) lists categories -> EMPTY (fail-closed, not the whole table)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{stranger_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK (the coarse type-level read gate passes; the residual empties the list)', () => pm.response.code === 200);",
+              "const ids = pm.response.json().map(c => c.id);",
+              "pm.test('the filter rule has no subject-roles fallback -> EMPTY list, never the whole table', () => pm.expect(ids.length).to.eql(0));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
