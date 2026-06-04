@@ -38,20 +38,34 @@ tags:
 - A small internal `CompileResponseParser` translating OPA AST terms (`eq`/`equal`/`internal.member_2`,
   operands referencing `input.resource.tags.*` or a known intrinsic) into `Condition`s; an unknown
   term → signal "unsupported" → `denyAll()`.
+- **⚠️ Build-breaker — convert the test-lambda `OpaClient`s.** Adding an abstract method makes `OpaClient`
+  **no longer a functional interface**, so every lambda impl stops compiling. Convert these to named or
+  anonymous classes implementing all methods (initially `compile` can `return PartialResult.denyAll()` and
+  `allowAll` an all-false list until T2/T3 give them real bodies): `StubOpaClient` in
+  `opa-abac-spring-boot-starter` `OpaAbacAutoConfigurationTest` (named class — just add the overrides), and
+  the two lambda beans `PermissiveSecurityTestConfig.allowAllOpaClient()` (catalog) and
+  `AbacTestConfig.inProcessTeamOpaClient()` (user-service). **`./gradlew build` is red until these three are
+  fixed** — do them in the same commit as the interface change.
 
-**Acceptance.** `./gradlew :opa-abac-core:test` green. In-process `HttpServer` stub proves: trivially-true
+**Acceptance.** `./gradlew :opa-abac-core:test` green **and `./gradlew build` green** (the three test
+impls compile against the widened interface). In-process `HttpServer` stub proves: trivially-true
 body→`ALLOW_ALL`; empty `queries`→`DENY_ALL`; single-condition + DNF bodies→expected `CONDITIONAL`;
 500 / refused / timeout / malformed / unparsable→`DENY_ALL`. One test pins the request shape
 (`unknowns:["input.resource"]`, no `resource` in `input`, the per-type query path).
 
 **What NOT to touch.** `allow` (unchanged). No Spring deps. No `Specification` here (that's T3). No
-example/infra. No batch (T2).
+example/infra. No batch *logic* (T2) — but the `allowAll` method **signature** is added here too if needed
+so the test impls compile once (otherwise add both methods in T1 and fill `allowAll`'s body in T2).
 
 ---
 
 ## T2 — Batch decision: `OpaClient.allowAll` (core, Spring-free) — parallel with T1
 
-**Goal.** One OPA round-trip for N contexts, for the post-fetch allowlist finisher.
+**Goal.** One OPA round-trip for N contexts, for the post-fetch allowlist finisher. **This is a shared
+primitive:** besides the Phase-5 allowlist, it backs Phase-6 action enrichment ([[ACTION-ENRICHMENT]]) —
+keep the signature **general** (a public `OpaClient.allowAll(List<AbacContext>) → List<Boolean>`, no
+filtering-specific coupling), and the `bulk` rego rule reusable. Building it general here avoids building
+batch twice (ADR [[0005-partial-eval-to-jpa-specification|0005]]).
 
 **Deliverables.**
 - `OpaClient.allowAll(List<AbacContext>) → List<Boolean>` (abstract; `result[i]` ↔ `contexts[i]`).
@@ -151,21 +165,39 @@ beans present with JPA on classpath + `enabled=true`; absent without JPA (`Filte
   build the query-context (subject from `SecurityContextHolder`, `action=<type>:read`, `resourceType`,
   resource **unknown**) and call `AbacQueryService.findAuthorized(repo, scope, ctx)` where `scope` is the
   existing path filter (`catalogId`/`categoryId`). The coarse `@OpaPreAuthorize(<type>:read)` stays as the
-  type-level gate; the residual is the which-rows layer inside it.
+  type-level gate; the residual is the which-rows layer inside it (this is **layer 3 of ADR
+  [[0006-three-layer-enforcement-model|0006]]**; the coarse gate is layer 2).
+  - **⚠️ AND, don't replace.** The residual `Specification` is **AND-ed with** the existing scoping (e.g.
+    `findByCategoryId(categoryId)` becomes `where(scopedToCategory).and(residual)`). Swapping the scoped
+    finder for a bare `findAll(residual)` would drop the path scoping and **leak cross-scope rows**.
+  - **Resolve the role on the governing parent** the same way the shipped `CategoryAuthorizer` does
+    (catalog→category), so the list and a single-GET agree on which rows are visible.
 - `infra/opa/policies/category.rego`: add a **`filter`** rule (partial-eval entrypoint) whose body
   expresses the tag grant while leaving `input.resource` symbolic — reuse the [[TAG-DICTIONARY]]
   `tags_satisfied` shape, written so `opa eval --partial --unknowns input.resource` returns row residuals.
-  Add a **`bulk`** rule (list input → `[allow per item]`) for `allowAll`. The `allow` rule is unchanged.
-  Mirror the policy into both source dirs (the service `resources/opa/policies/` source-of-truth + the
-  rig's `infra/opa/policies/`), restart OPA after editing (mx — `--watch` doesn't always reload).
-- `opa test`: keep all existing cases green; add `filter`/`bulk` cases incl. partial-eval assertions.
+  - **⚠️ Role-definition-only — drop the subject-roles fallback.** The `filter` rule must **not** inherit
+    the `allow` rule's `not has_role_definition → grant from JWT roles` fallback. A list request with no
+    role definition must compile to **`DENY_ALL` (empty list)**, never `ALLOW_ALL` (the whole table leaks).
+    Model `filter` on `team.rego` (which already dropped the fallback). Fail *closed*.
+  - **Flat-verb only (sequencing).** `filter` matches the **current flat `category:read` verb** — it is
+    **not** category-aware. Category expansion (`READ`/`WRITE`/`TAG`/`GRANT`, `expand-minus-deny`, table in
+    OPA `data`) is Phase 6.5 / ADR [[0007-coarse-grained-permission-categories|0007]], retrofit later
+    (additive — flat tokens keep deciding). Do not anticipate categories now.
+  Add a **`bulk`** rule (list input → `[allow per item]`) for `allowAll` (the shared primitive — see T2).
+  The `allow` rule is **unchanged**. Mirror the policy into both source dirs (the service
+  `resources/opa/policies/` source-of-truth + the rig's `infra/opa/policies/`), restart OPA after editing
+  (mx — `--watch` doesn't always reload).
+- `opa test`: keep all existing cases green; add `filter`/`bulk` cases incl. partial-eval assertions —
+  including a **no-role-definition → empty residual (fail-closed)** case for `filter`.
 
 **Acceptance.** `./gradlew build` green; `ddl-auto: validate` clean (no schema change — `tags` + GIN
 index already exist). `opa test` all green incl. new cases. With the rig up, a tag-gated subject's
-`GET …/categories` returns only matching-tag rows (manual check; automated in T7).
+`GET …/categories` returns only matching-tag rows (manual check; automated in T7); a no-role-def request
+returns `[]`, not the full list.
 
 **What NOT to touch.** DB columns/migrations (none); OpenAPI spec (the list response shape is unchanged —
-it returns fewer items, not a different schema); the single-decision policy rules; `gateway.rego`.
+it returns fewer items, not a different schema); the single-decision policy rules; `gateway.rego`. The
+`filter` rule is **flat-verb** — no category tokens (that's Phase 6.5).
 
 ---
 
@@ -201,10 +233,15 @@ and that the cut is in SQL. Then document and record.
 - `opa test` green (existing + new `filter`/`bulk` cases).
 - `ddl-auto: validate` clean — **no schema change** (the `tags` JSONB + GIN index already shipped).
 - **Fail-closed proven** at every layer: compile error → `DENY_ALL` → empty page; batch error → all-false;
-  unsupported residual → deny or exact batch re-check — **never "return everything"**.
+  unsupported residual → deny or exact batch re-check; **a list with no role definition → empty (the
+  `filter` rule has no subject-roles fallback)** — **never "return everything"**.
+- The residual `Specification` is **AND-ed with** the existing path scoping (never replaces the scoped
+  finder) — no cross-scope row leak.
 - **`opa-abac-core` stays Spring-free** (the residual model + Compile-API call carry no JPA/Spring import).
-- The single-decision `@OpaPreAuthorize` path is **byte-for-byte unchanged**; `compile`/`allowAll` are
-  purely additive to `OpaClient`.
+- The single-decision `@OpaPreAuthorize` path + the `allow` rego rule are **byte-for-byte unchanged**;
+  `compile`/`allowAll` are purely additive to `OpaClient` (the only mechanical cost is converting the three
+  test `OpaClient` impls — two are lambdas — to implement the widened interface; see T1).
+- The `filter` rego rule is **flat-verb** (no category tokens — category expansion is Phase 6.5 / ADR 0007).
 - **Clean-room scan clean** on all new code + docs — the project's standard scan (proprietary
   org/platform/package names, the corporate token prefix, local home paths, and source ticket-ids; the
   exact pattern is in the [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] hard rules and root `CLAUDE.md`) returns empty.

@@ -48,17 +48,23 @@ Implement the core work directly. Do not delegate the implementation to a sub-ag
    property, and considered-&-rejected.
 3. `01-DECOMPOSITION.md` — the seven tickets, each with Goal / Deliverables / Acceptance /
    What-NOT-to-touch. **This is your work list.**
-4. `10-QA-TEST-CASES.md` — the unit / integration / e2e cases your work must satisfy.
-5. **Context you will be checked against** in the review gate (step 5): the shipped
+4. **The pinned decisions** — `docs/architecture/adr/0005-partial-eval-to-jpa-specification.md` (the
+   canonical record of this slice's central fork) and `0006-three-layer-enforcement-model.md` (this slice
+   is the **DB layer / layer 3**; the `filter` rule's *no-fallback, fail-closed* posture follows from it).
+   Skim `0007-coarse-grained-permission-categories.md` only to know that category expansion is **Phase 6.5**
+   and **out of scope here** — keep `filter` flat-verb.
+5. `10-QA-TEST-CASES.md` — the unit / integration / e2e cases your work must satisfy.
+6. **Context you will be checked against** in the review gate (step 5 of the per-ticket loop): the shipped
    [[TAG-DICTIONARY]] slice (`infra/opa/policies/category.rego` — the `tags_satisfied` shape you
-   generalize), the [[LIBRARY-SPINE]] `HttpOpaClient` (the fail-closed JDK-client pattern you extend),
-   and [[DOMAIN-MODEL-FOUNDATION]] (`AbstractSecuredEntity` / `ResourceTags` / the `tags` JSONB column +
+   generalize, AND `team.rego` — the **no-subject-roles-fallback** shape your `filter` rule copies), the
+   [[LIBRARY-SPINE]] `HttpOpaClient` (the fail-closed JDK-client pattern you extend), and
+   [[DOMAIN-MODEL-FOUNDATION]] (`AbstractSecuredEntity` / `ResourceTags` / the `tags` JSONB column +
    GIN index you filter over). The e2e details are in `docs/guides/E2E-TESTING.md`.
-6. Root `CLAUDE.md` — the **IP boundary** (clean-room: original names only) and the **commit identity**
+7. Root `CLAUDE.md` — the **IP boundary** (clean-room: original names only) and the **commit identity**
    rule (`Void3110 <void31102025@gmail.com>`).
-7. `infra/README.md` — the local rig (needed for the e2e ticket), including the in-network token caveat
+8. `infra/README.md` — the local rig (needed for the e2e ticket), including the in-network token caveat
    and the "restart OPA after editing a policy" gotcha.
-8. **Prime Mulch:** `ml prime opa-abac` and `ml search "partial eval data filtering specification"`
+9. **Prime Mulch:** `ml prime opa-abac` and `ml search "partial eval data filtering specification"`
    (records mx-15ee3e, mx-666644, mx-7d3605 are directly relevant); skim any client / rego / JSONB
    records.
 
@@ -87,13 +93,21 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
    - **Additivity / boundary:** `compile`/`allowAll` are purely additive to `OpaClient`; `allow` and
      the whole `@OpaPreAuthorize` path are **byte-for-byte unchanged** (prove with
      `git diff --name-only` on the security module — it must be untouched by T1–T5). `opa-abac-core`
-     carries **no** JPA/Spring import (the residual model + Compile-API call are Spring-free).
+     carries **no** JPA/Spring import (the residual model + Compile-API call are Spring-free). The one
+     mechanical cost is converting the **three test `OpaClient` impls** (two are lambdas:
+     `PermissiveSecurityTestConfig.allowAllOpaClient`, `AbacTestConfig.inProcessTeamOpaClient`; one named:
+     `StubOpaClient`) to the widened interface — `./gradlew build` is red until they compile (see T1).
    - **Fail-closed, every layer:** compile error → `DENY_ALL` (empty page); batch error → all-false;
-     an unsupported residual lands on **deny** or on an **exact batch re-check** — never on
-     "return everything". Grep your own code for any path that returns all rows on an error.
-   - **Three-layer separation:** the Compile-API call + DNF model live in core; the JSONB→Criteria
+     an unsupported residual lands on **deny** or on an **exact batch re-check**; **a list with no role
+     definition → `DENY_ALL` (empty), because the `filter` rule has NO subject-roles fallback** (unlike
+     the shipped `allow` rule — model `filter` on `team.rego`) — never on "return everything". Grep your
+     own code AND the `filter` rego for any path that returns all rows on a missing/failed input.
+   - **Module-layer separation (core / spring-data / rego)** — *distinct from the ADR-0006 enforcement
+     layers (gateway / app / DB)*: the Compile-API call + DNF model live in core; the JSONB→Criteria
      translation lives in spring-data; the rego `filter` entrypoint lives in the policy. No layer
-     reaches across (core knows nothing of JPA; the factory knows nothing of OPA wire format).
+     reaches across (core knows nothing of JPA; the factory knows nothing of OPA wire format). And the
+     residual `Specification` is **AND-ed with** the existing path scoping in the list handlers, never
+     replacing the scoped finder (else cross-scope rows leak).
    - **Pattern reuse:** the fail-closed JDK-client shape matches `HttpOpaClient.allow`; the scalar-vs-
      array tag handling matches the [[TAG-DICTIONARY]] `resource_tag_values` normalize; the bean
      conditionals match the existing starter idioms; the operator set stays **small and closed**.
@@ -153,14 +167,23 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Fail-closed is the load-bearing invariant.** No code path may return more rows on an error than on
   success. Compile/transport/parse failure → `DENY_ALL`. Batch failure → all-false. An unsupported
   residual → deny (or, with `allowlistFallback`, an exact batch re-check over a recognized-conjunct
-  pre-filter) — **never an unfiltered fetch**.
+  pre-filter) — **never an unfiltered fetch**. **The `filter` rego rule has NO subject-roles fallback**
+  (the shipped `allow` rule does; `filter` must not) — a list with no role definition → empty, not the
+  whole table. Model `filter` on `team.rego`.
+- **AND, don't replace.** The residual `Specification` is AND-ed with the list handler's existing path
+  scoping (`catalogId`/`categoryId`) — never swap the scoped finder for a bare `findAll(residual)` (it
+  would leak cross-scope rows). Resolve the role on the **governing parent** (as `CategoryAuthorizer` does).
+- **`filter` is flat-verb only** — match the current `<type>:read` verb; **do NOT** add category tokens
+  (`READ`/`WRITE`/`TAG`/`GRANT`). Category expansion is Phase 6.5 / ADR 0007, a later additive retrofit.
 - **Clean-room IP boundary** — never introduce proprietary names, package names, comments, or source.
   Reference the prior platform only generically.
 - **`opa-abac-core` stays Spring-free** — no JPA/Spring imports leak into the residual model or the
   Compile-API client.
-- **Purely additive to `OpaClient`** — `allow` and the `@OpaPreAuthorize` path are unchanged; **no DB
-  schema change** (the `tags` JSONB + GIN index already exist; `ddl-auto: validate` must stay clean);
-  **no OpenAPI spec change** (the list response shape is the same — fewer items, not a new schema).
+- **Purely additive to `OpaClient`** — `allow` (method + rego rule) and the `@OpaPreAuthorize` path are
+  unchanged; the only mechanical cost is converting the **three test `OpaClient` impls** (two lambdas +
+  `StubOpaClient`) to the widened interface so `./gradlew build` is green (see T1). **No DB schema change**
+  (the `tags` JSONB + GIN index already exist; `ddl-auto: validate` must stay clean); **no OpenAPI spec
+  change** (the list response shape is the same — fewer items, not a new schema).
 - **Do NOT push, open PRs, or touch `main`.** Local + this branch only. Report at checkpoints; the
   maintainer pushes.
 

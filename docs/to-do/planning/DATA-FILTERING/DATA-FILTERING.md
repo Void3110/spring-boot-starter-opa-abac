@@ -52,7 +52,9 @@ In the library:
   plus a neutral **residual-condition model** (`PartialResult` = `Decision{ALLOW_ALL, DENY_ALL,
   CONDITIONAL}` + a list of `Condition{path, operator, value}` in disjunctive normal form). Plus a
   **batch decision method** (`allowAll(List<AbacContext>) → List<Boolean>`) over OPA's bulk-input
-  shape. Both **fail closed**. Core stays Spring-free.
+  shape — designed as a **reusable primitive** (it is also the batch method Phase-6 action enrichment
+  consumes; see [[ACTION-ENRICHMENT]]), not a filtering-only helper. Both **fail closed**. Core stays
+  Spring-free.
 - **`opa-abac-spring-data`** — a **`ResidualSpecificationFactory`** that translates a `PartialResult`
   into a Spring Data JPA `Specification<T>` over the `tags` JSONB column (operators `=`, `in`,
   `json-contains`/array-membership via `jsonb_extract_path_text` / `?`), with `ALLOW_ALL ⇒` no
@@ -70,7 +72,10 @@ In the example + infra:
   return only the rows the subject may see.
 - **`category.rego`** gains a partial-eval-friendly **filter entrypoint** (`data.category.filter`) whose
   body references `input.resource.tags[...]` as *unknowns* so the Compile API returns row-shaped
-  residuals.
+  residuals. The `filter` rule is **role-definition-only** (it does **not** inherit the shipped
+  subject-roles fallback) so a missing role definition fails *closed* to an empty list, never an
+  unfiltered table — see the fail-closed boundary in [[00-DESIGN]] and ADR
+  [[0005-partial-eval-to-jpa-specification|0005]].
 - an **e2e list-filtering matrix** proving the decisive contrast: two subjects hit the **same** list
   endpoint and get **different row sets** — and the filtering happens in SQL (asserted by the residual,
   not a post-filter), with a third "allow-all" subject seeing everything.
@@ -80,7 +85,12 @@ In the example + infra:
 - **Hierarchical ancestor-walk** authorization (a Category inheriting its Catalog's grant) — the
   general per-instance path the tag demo stubbed with the app-layer `CategoryAuthorizer` load-then-check.
   Phase 5 filters by the resource's **own** attributes/tags; ancestor inheritance is a follow-up.
-- **ReBAC-in-Rego** (the team/membership/grant join in policy) — that's **Phase 7**.
+- **Action enrichment** (the `_actions` affordance map) — **Phase 6**, the first consumer of this slice's
+  `allowAll` batch primitive ([[ACTION-ENRICHMENT]]).
+- **Coarse permission categories + delegation** (`READ`/`WRITE`/`TAG`/`GRANT` expansion) — **Phase 6.5**,
+  ADR [[0007-coarse-grained-permission-categories|0007]]. The `filter` rule here stays **flat-verb**
+  (`category:read`) until then; 6.5 retrofits category expansion, additively.
+- **ReBAC-in-Rego** (the team/membership/grant join in policy) — that's **Phase 8**.
 - **`@AutoTag` auto-population** — orthogonal machinery, still deferred ([[RESEARCH-AUTOTAG-AND-FILTERING]] §1).
 - Any change to the single-decision `@OpaPreAuthorize` path — it stays exactly as shipped.
 
@@ -123,7 +133,10 @@ tested with an in-process HTTP stub). T4's allowlist depends on T2.
 
 ## Related
 
-- [[POC-ROADMAP]] — Phase 5 (this slice), Phase 7 (ReBAC-in-Rego).
+- **The pinned decisions:** ADR [[0005-partial-eval-to-jpa-specification|0005]] (partial-eval →
+  `Specification`, the central fork this slice implements) · ADR
+  [[0006-three-layer-enforcement-model|0006]] (the three-layer model this is **layer 3 — DB** of).
+- [[POC-ROADMAP]] — Phase 5 (this slice), Phase 6 ([[ACTION-ENRICHMENT]]), Phase 6.5 (ADR 0007), Phase 8 (ReBAC-in-Rego).
 - [[RESEARCH-AUTOTAG-AND-FILTERING]] — §3 scoped the partial-eval → `Specification` mechanism.
 - [[DOMAIN-MODEL-FOUNDATION]] — the `tags` JSONB column + the GIN index this filters over.
 - [[LIBRARY-SPINE]] — the `OpaClient` / `AbacContext` this extends.

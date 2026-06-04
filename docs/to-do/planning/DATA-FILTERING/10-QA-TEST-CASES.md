@@ -82,6 +82,12 @@ tags:
 - **U26 (opa eval --partial)** for a tag-gated role, `compile` of `data.category.filter == true` with
   `unknowns=[input.resource]` returns the expected residual (region condition); for an unrestricted
   role, returns unconditional-true (→ `ALLOW_ALL`).
+- **U27 (opa eval --partial, fail-closed)** `data.category.filter` with **no `role_definition`** on the
+  input compiles to an **empty/unsatisfiable** result (→ `DENY_ALL`), proving the `filter` rule does NOT
+  inherit the `allow` rule's subject-roles fallback. (A subject-roles-only input that `allow` would grant
+  must NOT widen `filter`.)
+- **I8** *(spring-data IT / handler)* a list request whose role-definition supplier returns empty yields
+  `[]`, not the full table — the AND-ed scope + `DENY_ALL` residual returns nothing.
 
 ## e2e — list-filtering matrix — T7
 
@@ -97,9 +103,12 @@ tags:
 
 ## Cross-cutting
 
-- `./gradlew build` green; `opa test` green; `ddl-auto: validate` clean; `CatalogCrudIT` /
-  `ProductConcurrencyIT` unchanged-green.
-- **Fail-closed proven** at every layer (U7, U8, U11, U14, U21, U24).
-- `opa-abac-core` Spring-free; `OpaClient.allow` + `@OpaPreAuthorize` byte-for-byte unchanged
-  (`git diff --name-only` on the security module empty for T1–T5).
+- `./gradlew build` green (incl. the **three converted test `OpaClient` impls** — two lambdas +
+  `StubOpaClient` — compiling against the widened interface); `opa test` green; `ddl-auto: validate` clean;
+  `CatalogCrudIT` / `ProductConcurrencyIT` unchanged-green.
+- **Fail-closed proven** at every layer (U7, U8, U11, U14, U21, U24, **U27 no-role-def → empty**).
+- The residual is **AND-ed with** path scoping (no cross-scope leak); the `filter` rule has **no
+  subject-roles fallback**; the `filter` rule is **flat-verb** (no category tokens).
+- `opa-abac-core` Spring-free; `OpaClient.allow` (method + rego rule) + `@OpaPreAuthorize` byte-for-byte
+  unchanged (`git diff --name-only` on the security module empty for T1–T5).
 - **Clean-room scan clean** on all new code + docs.
