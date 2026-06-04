@@ -2,7 +2,9 @@ package dev.dmitriikonovalov.example.catalog.support;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,8 +40,29 @@ public class PermissiveSecurityTestConfig {
         return request -> Optional.of(editor);
     }
 
+    /**
+     * A permissive stub implementing the full {@link OpaClient} contract — {@code allow} always grants
+     * (so {@code @OpaPreAuthorize} passes) and the data-filtering methods return their "see everything"
+     * shapes, since these ITs exercise persistence/concurrency, not authorization. (Real filtering
+     * behavior is covered by the spring-data ITs and the e2e filter matrix.)
+     */
     @Bean
     OpaClient allowAllOpaClient() {
-        return context -> true;
+        return new OpaClient() {
+            @Override
+            public boolean allow(AbacContext context) {
+                return true;
+            }
+
+            @Override
+            public PartialResult compile(AbacContext context) {
+                return PartialResult.allowAll();
+            }
+
+            @Override
+            public List<Boolean> allowAll(List<AbacContext> contexts) {
+                return Collections.nCopies(contexts.size(), Boolean.TRUE);
+            }
+        };
     }
 }

@@ -120,6 +120,18 @@ class OpaAbacAutoConfigurationTest {
         public boolean allow(dev.dmitriikonovalov.opaabac.core.AbacContext context) {
             return true;
         }
+
+        @Override
+        public dev.dmitriikonovalov.opaabac.core.PartialResult compile(
+                dev.dmitriikonovalov.opaabac.core.AbacContext context) {
+            return dev.dmitriikonovalov.opaabac.core.PartialResult.denyAll();
+        }
+
+        @Override
+        public java.util.List<Boolean> allowAll(
+                java.util.List<dev.dmitriikonovalov.opaabac.core.AbacContext> contexts) {
+            return java.util.Collections.nCopies(contexts.size(), Boolean.FALSE);
+        }
     }
 
     static class StubSupplier implements RoleDefinitionSupplier {
