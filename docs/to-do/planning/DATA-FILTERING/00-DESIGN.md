@@ -14,6 +14,11 @@ tags:
 > see?" — without N round-trips or a full-table-scan-then-filter, by pushing authorization **into the
 > SQL `WHERE` clause** via OPA partial evaluation, with a **batch** call for the residue that doesn't
 > reduce to SQL. Index: [[DATA-FILTERING]]. Mechanism background: [[RESEARCH-AUTOTAG-AND-FILTERING]] §3.
+>
+> **The pinned decision is ADR [[0005-partial-eval-to-jpa-specification|0005]]** (partial-eval → JPA
+> `Specification`, fail-closed, abstract `OpaClient` methods) — this file is the *design detail* behind
+> it; the ADR is the canonical record of the fork. This slice is the **DB layer (layer 3)** of the
+> three-layer enforcement model, ADR [[0006-three-layer-enforcement-model|0006]].
 
 ## The problem, concretely
 
@@ -83,6 +88,13 @@ per-row finish on the (now small) candidate set. One round-trip, not N.
 > eval alone can't express conditions that aren't SQL-expressible. Together: the DB does what it does
 > best (cheap, indexed set reduction over JSONB), OPA does what only it can (the exact policy on the
 > survivors). The two layers compose; either is usable alone.
+
+> **`allowAll` is a reusable primitive, not a filtering-only helper.** Besides the allowlist finisher
+> here, `allowAll` (and the `bulk` rego rule) is the batch method **Phase-6 action enrichment** consumes
+> as its first real consumer (ADR [[0005-partial-eval-to-jpa-specification|0005]]; [[ACTION-ENRICHMENT]]).
+> Design it as a general public `OpaClient` method (N contexts → N booleans), **not** a `spring-data`-private
+> helper — building it general here avoids building batch twice. The "which roles may I assign?" check
+> (Phase 6.5 / ADR 0007) is structurally the same batch question.
 
 ## Core changes (`opa-abac-core`, stays Spring-free)
 
@@ -220,15 +232,31 @@ spring-data module already depends on `spring-data-jpa`; this seam is the natura
 - **Repositories** add `JpaSpecificationExecutor<…>` (`CategoryRepository`, `ProductRepository`,
   `CatalogRepository`) — additive, no behavior change to existing finders.
 - **List handlers** (`CategoryController.listCategories`, `ProductController.listProducts`,
-  `CatalogController.listCatalogs`) build the query-context and delegate to `AbacQueryService`, AND-ing
-  the residual with the existing scope filter (`catalogId` / `categoryId`). The per-type `:read`
-  `@OpaPreAuthorize` stays as the coarse "may read this *type* at all" gate; the residual is the
-  *which-rows* layer **inside** it — two-layer, same spirit as the gateway↔app split.
+  `CatalogController.listCatalogs`) build the query-context and delegate to `AbacQueryService`, **AND-ing
+  the residual with the existing scope filter** (`catalogId` / `categoryId`) — the residual *composes*
+  with the existing scoping, it does **not** replace `findByCatalogId`/`findByCategoryId` (replacing it
+  would leak cross-scope rows). The per-type `:read` `@OpaPreAuthorize` stays as the coarse "may read this
+  *type* at all" gate; the residual is the *which-rows* layer **inside** it — this is the **DB layer
+  (layer 3) of the three-layer enforcement model** (ADR [[0006-three-layer-enforcement-model|0006]]):
+  gateway (coarse) → app `@OpaPreAuthorize` (layer 2) → DB residual filter (layer 3). The list path
+  resolves the role on the **governing parent** the way the shipped `CategoryAuthorizer` does (so the
+  list and a single-GET agree on which rows are visible). The wire action stays the flat `<type>:read`
+  for this slice.
 - **`category.rego`** gains a **`filter`** rule — a partial-eval-friendly entrypoint whose body
   references `input.resource.tags[...]` as the unknown so compile returns row residuals. It reuses the
-  `tags_satisfied` shape from [[TAG-DICTIONARY]] but written to leave `input.resource` symbolic. The
-  single-decision `allow` rule is untouched. A `bulk` rule (list input → list of decisions) backs
-  `allowAll`. `opa test` keeps existing cases green + adds compile/filter cases (`opa eval --partial`).
+  `tags_satisfied` shape from [[TAG-DICTIONARY]] but written to leave `input.resource` symbolic. **The
+  `filter` rule is role-definition-only — it does NOT inherit the shipped subject-roles fallback** (the
+  `allow` rule's `not has_role_definition → grant from JWT roles` path): a list request with no role
+  definition must fail *closed* to an empty list, never compile to `ALLOW_ALL` and leak the whole table.
+  Model it on `team.rego` (which already dropped the fallback). The single-decision `allow` rule is
+  **untouched**. A `bulk` rule (list input → list of decisions) backs `allowAll`. `opa test` keeps existing
+  cases green + adds compile/filter cases (`opa eval --partial`).
+  - **Flat-verb scope (sequencing).** The `filter` rule matches the **current flat `category:read` verb**
+    (same model as the shipped `allow`); it is **not** category-aware. Phase 6.5 (ADR
+    [[0007-coarse-grained-permission-categories|0007]]) introduces `READ`/`WRITE`/`TAG`/`GRANT` expansion
+    (`expand-minus-deny`, table in OPA `data`) and will retrofit `filter` to evaluate the expanded `READ`
+    set (which maps to `view`/`list`) — additive, since flat tokens keep deciding. **Designing categories
+    into `filter` now is out of scope.**
 - **`deploy.sh`** — no new env needed (`/v1/compile` is the same OPA on the same base URL); document
   the partial-eval toggle.
 
@@ -292,7 +320,10 @@ batch re-check — never on "return everything".**
 
 ## Deferred (noted, not built this slice)
 
-Hierarchical ancestor-walk authorization · ReBAC-in-Rego (Phase 7) · `@AutoTag` auto-population · a
-pluggable non-Postgres `JsonPathDialect` · partial-eval result caching · a partial-eval CI job · pushing
-the residual through pagination/count queries (the `Specification` already composes with `Pageable`; a
-dedicated authorized-`Page` helper is a follow-up).
+Hierarchical ancestor-walk authorization · **action enrichment** (the `_actions` affordance map — Phase 6,
+the first consumer of this slice's `allowAll` batch primitive, [[ACTION-ENRICHMENT]]) · **coarse permission
+categories + delegation** (`READ`/`WRITE`/`TAG`/`GRANT` expansion — Phase 6.5, ADR
+[[0007-coarse-grained-permission-categories|0007]]; the `filter` rule here stays flat-verb until then) ·
+ReBAC-in-Rego (Phase 8) · `@AutoTag` auto-population · a pluggable non-Postgres `JsonPathDialect` ·
+partial-eval result caching · a partial-eval CI job · pushing the residual through pagination/count queries
+(the `Specification` already composes with `Pageable`; a dedicated authorized-`Page` helper is a follow-up).
