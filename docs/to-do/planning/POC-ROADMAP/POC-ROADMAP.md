@@ -38,9 +38,9 @@ platform — it's to extract the *general* idea and make it **natively Spring-fr
 ## What we're building (target shape)
 
 ```
-opa-abac-core                     # framework-agnostic ABAC model + OPA client (no Spring dep)
-opa-abac-spring-security          # AuthorizationManager + @OpaPreAuthorize
-opa-abac-spring-data              # partial-eval → JPA Specification data filtering
+opa-abac-core                     # framework-agnostic ABAC model + OPA client (allow / compile / batch; no Spring dep)
+opa-abac-spring-security          # AuthorizationManager + @OpaPreAuthorize + action-enrichment advice (P6)
+opa-abac-spring-data              # partial-eval → JPA Specification data filtering (P5)
 opa-abac-spring-boot-starter      # the published starter (auto-config)
 
 example-catalog-management-service   # the RESOURCE side of the demo (see naming note below)
@@ -129,8 +129,20 @@ pushing the OPA residual into the SQL `WHERE` clause over the existing `tags` JS
 for the residue) — the strongest "stands out vs naive OPA" piece in the repo. The full work package
 (design + tickets T1–T7 + autonomous prompt + QA + STATUS stubs) is ready: [[DATA-FILTERING]]. The
 general per-instance/**hierarchical** ancestor-walk path the tag demo stubbed with a load-then-check is
-explicitly **not** in this slice (it filters by the row's own tags) — it follows Phase 5. Then **Phase 7**
-(ReBAC-in-Rego — the team-grant join in the policy, to compare against the app-resolved path shipped here).
+explicitly **not** in this slice (it filters by the row's own tags) — it follows Phase 5.
+
+**Then Phase 6 — action enrichment.** The first real consumer of Phase 5's batch primitive: a response
+decorator that attaches a `{action: allowed}` affordance map to returned resources so a UI shows only the
+buttons the user can click. Direction is set ([[ACTION-ENRICHMENT]]); decomposition follows once Phase 5's
+`allowAll` exists. After that, **Phase 7** (publish & polish) and **Phase 8** (ReBAC-in-Rego — the
+team-grant join in the policy, to compare against the app-resolved path shipped here).
+
+> **Two lenses on this roadmap.** Beyond the technical phases here, the same work is tracked as
+> **user stories** — what a person experiences when each mechanism is wired into the catalog service
+> ([[USER-STORIES]]) — and the **structural decisions** behind it are pinned as immutable
+> [[adr/README|ADRs]] (0005 = partial-eval→Specification, 0006 = the three-layer enforcement model;
+> an action-enrichment ADR is pending). Use the stories as the product-facing acceptance lens and the
+> ADRs as the "why this fork" record.
 
 ## Phases
 
@@ -145,9 +157,10 @@ explicitly **not** in this slice (it filters by the row's own tags) — it follo
 | **3** | Library spine | `OpaClient` → `AbacContext` extraction → `OpaAuthorizationManager` → `@OpaPreAuthorize`, layered onto the catalog app. | ✅ **DONE** (on a feature branch). The core generalization work. First slice: [[DOMAIN-MODEL-FOUNDATION]] (base/secure entities, tags, locking, base service, e2e suite). Second slice: [[LIBRARY-SPINE]] (HttpOpaClient + extraction + role-definition-driven `@OpaPreAuthorize` + starter wiring + catalog adoption; the demo gateway enricher retired; e2e allow/deny matrix green). |
 | **4** | **user-management-service (teams + role-defs)** | New example app: users, **teams** (members + a role hierarchy), **role definitions** (fixed system roles + owner-defined team-scoped custom roles), **team-scoped grants**, owner-on-create + transfer-ownership. The HTTP-backed `RoleDefinitionSupplier` resolves the caller's effective role *for a resource* by walking team membership server-side and feeds it to the catalog spine (a single-bean swap of the demo supplier). **Authorization is app-resolved**: the service resolves the role, the catalog still passes `role_definition` in OPA `input`. | ✅ **DONE.** Shipped slice [[USER-MANAGEMENT-SERVICE]] (T1–T9): the team/role-def core, owner-on-create, the subset rule, transfer-ownership, the `/internal/effective-role` resolve API, the catalog `HttpRoleDefinitionSupplier` swap, the second service in the rig, and a green e2e team matrix through the gateway. The service **dogfoods** the starter. Guide: [[TEAM-BASED-AUTHORIZATION]]. The **dynamic tag dictionary** is deferred to Phase 4.5. |
 | **4.5** | **Dynamic tag dictionary (ABAC extension)** | A runtime-editable tag dictionary — **global + team-scoped** tag *definitions* (`valueType` STRING/ENUM, `cardinality` SINGLE/MULTI, optional `allowedValues`), tag *assignment* to sub-resources (validated against the dictionary), and tag-based *grants*: a role carries `requiredTags` + a `matchMode` and OPA grants when the resource's tags satisfy it — the **ANY_OF/ALL_OF match evaluated in Rego** (`some in`/`every`). The source platform hardcodes tag keys; this does it properly. | ✅ **DONE** (T1–T6). Shipped slice [[TAG-DICTIONARY]]: the `TagDefinition` dictionary (global+team partial-unique, seeded system keys) + `team:define-tags` management; tag assignment on Category validated fail-closed against the dictionary; the **additive** `RoleDefinition.requiredTags`/`matchMode` (the one library change, whole-repo build green); the `category.rego` `tags_satisfied` match (`some in`/`every`, vacuous back-compat, fail-closed) — `opa test` 49/49; and a green tag matrix through the gateway (the decisive same-role/different-tags 200-vs-403 contrast). Owner/admin **define** (`team:define-tags`); members **assign** (a normal write). Guide: [[TAG-BASED-AUTHORIZATION]]. Background: [[RESEARCH-AUTOTAG-AND-FILTERING]]. Lead-in to Phase 7 (match-in-policy). |
-| **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. 📋 **Planned + decomposed** — full work package [[DATA-FILTERING]] (T1–T7: `OpaClient.compile`/`allowAll` in core, `ResidualSpecificationFactory` + `AbacQueryService` in spring-data, the rego `filter`/`bulk` entrypoints, filtered catalog list endpoints, e2e row-set matrix). Hierarchical ancestor-walk held for a follow-up; ReBAC is Phase 7. |
-| **6** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. |
-| **7** | **ReBAC-in-Rego (team grants, in-policy)** | Push the team/membership/grant graph into OPA `data` and express the "subject member-of team **and** team has-role-on resource" join *in Rego* (Zanzibar-style userset), as an alternative to the Phase-4 app-resolved path. Demonstrates RBAC vs ABAC vs ReBAC expression in one OPA policy. | New item from the team-abstraction analysis. The strongest "stands out vs naive OPA" piece; deferred so the app-resolved path ships first. |
+| **5** | Advanced library | Batch evaluation → partial-eval → JPA data filtering, demonstrated across both services. | The differentiators vs. naive OPA integration. 📋 **Planned + decomposed** — full work package [[DATA-FILTERING]] (T1–T7: `OpaClient.compile`/`allowAll` in core, `ResidualSpecificationFactory` + `AbacQueryService` in spring-data, the rego `filter`/`bulk` entrypoints, filtered catalog list endpoints, e2e row-set matrix). Pinned by ADR 0005. Hierarchical ancestor-walk held for a follow-up; ReBAC is Phase 8. |
+| **6** | **Action enrichment (affordance metadata)** | After a handler returns a resource/page, a response decorator attaches an `_actions` map — *which actions the caller may perform on it* — so a UI renders exactly the right buttons. Powered by Phase-5 **batch eval** (one OPA round-trip → N action verdicts), an **action registry** per resource type (also a validation allowlist), and an **`x-implements` marker** (`Enrichable`) stamped onto the generated DTOs via the OpenAPI generator. Affordance, **not** enforcement. | 🔜 **Planned (direction set, not yet decomposed)** — [[ACTION-ENRICHMENT]]. First real consumer of the Phase-5 `allowAll` primitive (so it sequences right after). Open question: the `_actions` envelope ↔ OpenAPI codegen fit (the `x-implements` marker, modeled on the source platform's `AutoCloseable` DTO precedent). ADR pending, to be written with its decomposition. |
+| **7** | Publish & polish | Maven Central publish for the starter; docs/guides complete; example runs from a clean clone. | The artifact must stand on its own. *(Was Phase 6; renumbered when action enrichment landed as Phase 6.)* |
+| **8** | **ReBAC-in-Rego (team grants, in-policy)** | Push the team/membership/grant graph into OPA `data` and express the "subject member-of team **and** team has-role-on resource" join *in Rego* (Zanzibar-style userset), as an alternative to the Phase-4 app-resolved path. Demonstrates RBAC vs ABAC vs ReBAC expression in one OPA policy. | New item from the team-abstraction analysis. The strongest "stands out vs naive OPA" piece; deferred so the app-resolved path ships first. *(Was Phase 7.)* |
 
 ## Guiding principle
 
@@ -167,5 +180,8 @@ documentation is a first-class goal alongside correctness.
 
 - Feature plan: [[USER-MANAGEMENT-SERVICE]]
 - Next slice (planned): [[DATA-FILTERING]] — Phase 5 partial-eval + batch data filtering
+- Phase 6 direction: [[ACTION-ENRICHMENT]] — affordance metadata via batch eval + an `x-implements` marker
+- Product lens: [[USER-STORIES]] — the catalog service from the user's perspective, per phase
+- Decisions: [[adr/README|ADRs]] — 0005 (partial-eval→Specification), 0006 (three-layer enforcement)
 - Root project intent & IP boundary: `../../../CLAUDE.md`
 - Incremental plan source: `CLAUDE.md` → "Incremental plan"

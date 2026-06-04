@@ -39,7 +39,9 @@ implementation choices (naming, file layout, which test library) do **not** need
 only when you catch yourself writing a "considered & rejected" list worth keeping.
 
 > Records 0001–0004 were written **retroactively** for the Phase-4/4.5 user-management work (the decisions
-> were sound, the docs just hadn't been pinned). From here, the ADR is authored *with* the decomposition.
+> were sound, the docs just hadn't been pinned). From here, the ADR is authored *with* the decomposition —
+> **0005 and 0006 are the first records written *up front*** (0005 pins a Phase-5 fork as part of the
+> [[DATA-FILTERING]] decomposition; 0006 pins a cross-cutting model that previously lived only in prose).
 
 ## Index
 
@@ -49,8 +51,15 @@ only when you catch yourself writing a "considered & rejected" list worth keepin
 | [0002](0002-team-and-team-target-indirection.md) | Team + team-target: the resource→authority indirection | Accepted | user-service · abac |
 | [0003](0003-role-definitions-role-not-grant.md) | Role definitions: role ≠ grant, system + team-scoped, app-resolved | Accepted | user-service · abac |
 | [0004](0004-dynamic-tag-dictionary.md) | The dynamic tag dictionary: three layers, global + team, match-in-Rego | Accepted | user-service · abac |
+| [0005](0005-partial-eval-to-jpa-specification.md) | Partial evaluation → JPA `Specification`: residual conditions in the SQL `WHERE` | Accepted (planned) | spring-data · abac · opa |
+| [0006](0006-three-layer-enforcement-model.md) | The three-layer enforcement model: gateway → app → DB | Accepted | abac · opa · spring |
+
+> **Pending (to be written with its decomposition):** an ADR for **action enrichment** (the
+> `{action: allowed}` affordance map via a response decorator + the action registry + the `x-implements`
+> marker on generated DTOs) — see [[ACTION-ENRICHMENT]]. Held until the Phase-6 design questions settle.
 
 ## Related
 - The example app these decisions shape: [[USER-MANAGEMENT-SERVICE]] (Phase 4) and [[TAG-DICTIONARY]] (Phase 4.5).
+- The library slices they feed/pin: [[DATA-FILTERING]] (Phase 5) · [[ACTION-ENRICHMENT]] (Phase 6).
 - The authorization model they feed: [[TEAM-BASED-AUTHORIZATION]], [[TAG-BASED-AUTHORIZATION]], [[ABAC-AUTHORIZATION]].
 - The library base they build on: [[DOMAIN-MODEL]].
