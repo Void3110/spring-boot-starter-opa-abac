@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
 import dev.dmitriikonovalov.example.catalog.config.CategoryAuthorizer;
+import dev.dmitriikonovalov.example.catalog.config.CategoryListAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.TagAssignmentService;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
@@ -22,25 +23,29 @@ public class CategoryController implements CategoryApi {
     private final CatalogRepository catalogs;
     private final TagAssignmentService tagAssignment;
     private final CategoryAuthorizer categoryAuthorizer;
+    private final CategoryListAuthorizer categoryListAuthorizer;
 
     public CategoryController(
             CategoryRepository categories,
             CatalogRepository catalogs,
             TagAssignmentService tagAssignment,
-            CategoryAuthorizer categoryAuthorizer) {
+            CategoryAuthorizer categoryAuthorizer,
+            CategoryListAuthorizer categoryListAuthorizer) {
         this.categories = categories;
         this.catalogs = catalogs;
         this.tagAssignment = tagAssignment;
         this.categoryAuthorizer = categoryAuthorizer;
+        this.categoryListAuthorizer = categoryListAuthorizer;
     }
 
     @Override
     @OpaPreAuthorize(action = "category:read", resourceType = "'category'")
     public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) {
         requireCatalog(catalogId);
-        var entities = (parentId == null)
-                ? categories.findByCatalogId(catalogId)
-                : categories.findByCatalogIdAndParentId(catalogId, parentId);
+        // The @OpaPreAuthorize above is the coarse type-level gate ("may read categories at all", layer 2).
+        // The which-rows cut happens in SQL here (layer 3): partial-eval residual AND-ed with the catalog
+        // (+ parent) path scope. A subject with no role definition gets an empty list, not the full table.
+        var entities = categoryListAuthorizer.readable(catalogId, parentId);
         return ResponseEntity.ok(entities.stream().map(CatalogMapper::toDto).toList());
     }
 

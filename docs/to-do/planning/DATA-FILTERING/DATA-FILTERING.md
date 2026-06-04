@@ -9,12 +9,14 @@ tags:
 
 # Data filtering — partial evaluation + batch evaluation
 
-> **Status: Planning.** This folder is the full work package for [[POC-ROADMAP]] **Phase 5 — the
+> **Status: ✅ SHIPPED (T1–T7).** This folder is the full work package for [[POC-ROADMAP]] **Phase 5 — the
 > advanced library slice**: the two mechanisms that make this starter stand out against a naive
 > "call OPA per request" integration — **OPA partial evaluation → JPA `Specification`** row-level
-> filtering, and **batch evaluation** for the residual per-item allowlist. It is written to be
-> **implemented autonomously**: the design, the work breakdown, a self-contained
-> [[AUTONOMOUS-IMPLEMENTATION-PROMPT]], the QA cases, and per-ticket STATUS stubs are all here.
+> filtering, and **batch evaluation** for the residual per-item allowlist. Implemented autonomously from
+> the self-contained [[AUTONOMOUS-IMPLEMENTATION-PROMPT]]; the per-ticket STATUS notes record the prompt +
+> outcomes (the workflow-as-artifact). Proven end to end: `opa test` 60/60, real-Postgres Testcontainers
+> ITs (two subjects → different row sets), and a green gateway filter matrix (16/16). Guide:
+> [[PARTIAL-EVALUATION-FILTERING]].
 
 This package mirrors the four shipped slices ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
 [[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]]) 1:1 in structure. On ship the folder moves to
@@ -109,13 +111,13 @@ In the example + infra:
 
 | # | Ticket | Module | Status |
 |---|--------|--------|--------|
-| T1 | Partial-eval client: `OpaClient.compile` + `PartialResult`/`Condition` model + Compile-API call | core | ☐ |
-| T2 | Batch decision: `OpaClient.allowAll` (bulk input) | core | ☐ |
-| T3 | `ResidualSpecificationFactory` — residuals → JPA `Specification` over JSONB | spring-data | ☐ |
-| T4 | `AbacQueryService` seam + optional post-fetch allowlist (batch) | spring-data | ☐ |
-| T5 | Starter wiring (beans, `partialEval.enabled`, overridable) | starter | ☐ |
-| T6 | Example adoption: `JpaSpecificationExecutor`, filtered list handlers, `category.rego` filter entrypoint | example + infra | ☐ |
-| T7 | e2e list-filtering matrix + docs + roadmap/Mulch | e2e + docs | ☐ |
+| T1 | Partial-eval client: `OpaClient.compile` + `PartialResult`/`Condition` model + Compile-API call | core | ✅ |
+| T2 | Batch decision: `OpaClient.allowAll` (bulk input) | core | ✅ |
+| T3 | `ResidualSpecificationFactory` — residuals → JPA `Specification` over JSONB | spring-data | ✅ |
+| T4 | `AbacQueryService` seam + optional post-fetch allowlist (batch) | spring-data | ✅ |
+| T5 | Starter wiring (beans, `partialEval.enabled`, overridable) | starter | ✅ |
+| T6 | Example adoption: `JpaSpecificationExecutor`, filtered list handlers, `category.rego` filter entrypoint | example + infra | ✅ |
+| T7 | e2e list-filtering matrix + docs + roadmap/Mulch | e2e + docs | ✅ |
 
 **Critical path:** T1 → T3 → T4 → T5 → T6 → T7. **T2 runs parallel with T1** (both pure-core, unit
 tested with an in-process HTTP stub). T4's allowlist depends on T2.

@@ -24,6 +24,9 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
  *       username-claim: preferred_username
  *       attribute-claims: []
  *       validate-expiry: true
+ *     partial-eval:
+ *       enabled: true
+ *       allowlist-fallback: true
  * </pre>
  */
 @ConfigurationProperties(prefix = "opa.abac")
@@ -54,6 +57,10 @@ public class OpaAbacProperties {
     /** How the JWT subject is read from claims. */
     @NestedConfigurationProperty
     private Subject subject = new Subject();
+
+    /** Partial-evaluation (list data-filtering) settings. */
+    @NestedConfigurationProperty
+    private PartialEval partialEval = new PartialEval();
 
     public boolean isEnabled() {
         return enabled;
@@ -109,6 +116,45 @@ public class OpaAbacProperties {
 
     public void setSubject(Subject subject) {
         this.subject = subject;
+    }
+
+    public PartialEval getPartialEval() {
+        return partialEval;
+    }
+
+    public void setPartialEval(PartialEval partialEval) {
+        this.partialEval = partialEval;
+    }
+
+    /**
+     * Partial-evaluation (list data-filtering) settings. {@code enabled} is a true kill-switch: when off,
+     * {@code AbacQueryService} degrades to the coarse pre-filtering path (scope + one decision), never
+     * fail-open. {@code allowlistFallback} runs a post-fetch batch re-check for residuals that don't fully
+     * reduce to SQL.
+     */
+    public static class PartialEval {
+
+        /** Master switch for partial-eval list filtering (a kill-switch, never fail-open when off). */
+        private boolean enabled = true;
+
+        /** Run the post-fetch batch allowlist for residuals flagged not-fully-SQL. */
+        private boolean allowlistFallback = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public boolean isAllowlistFallback() {
+            return allowlistFallback;
+        }
+
+        public void setAllowlistFallback(boolean allowlistFallback) {
+            this.allowlistFallback = allowlistFallback;
+        }
     }
 
     /** Where the JWT subject claims live (all paths support dotted nesting). */

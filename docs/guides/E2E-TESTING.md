@@ -102,6 +102,9 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 # Tag-based ABAC matrix (Phase 4.5 — requires the full rig WITH the user-service)
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 ./run-tag-matrix.sh
+
+# Data-filtering matrix (Phase 5 — same full rig; restart OPA after editing category.rego)
+./run-filter-matrix.sh
 ```
 
 `run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
@@ -129,6 +132,26 @@ internal]` ALL_OF), and creates three differently-tagged Categories through the 
 Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision. A team key
 defined at runtime governs assignment + decisions immediately — no redeploy. All 7 green; stable across
 reruns. Guide: [[TAG-BASED-AUTHORIZATION]].
+
+### Data-filtering matrix (Phase 5)
+
+`run-filter-matrix.sh` proves OPA partial-evaluation **list** filtering end to end — the residual pushed
+into the SQL `WHERE` clause, so two subjects hit the **same** list endpoint and get **different row sets**.
+It needs the full rig with the user-service (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`).
+At run time it mints tokens, seeds a demo catalog as a team-target, bootstraps two single-region-gated
+reader roles (`emea-reader`, `apac-reader`), binds an allow-all owner, leaves the `outsider` user **unbound**
+(no role definition), and creates three region-tagged Categories through the gateway. Then 4 list requests:
+
+| # | Subject | `GET …/categories` returns |
+|---|---------|----------------------------|
+| 1 | reader gated to `region=emea` | **only the emea row** (1 row) |
+| 2 | reader gated to `region=apac` | **only the apac row** (1 row) — a *different* set, same endpoint |
+| 3 | owner (allow-all) | **all three rows** |
+| 4 | stranger (**no role definition**) | **`[]`** — the `filter` rule has no subject-roles fallback, so a missing role fails *closed* to an empty list, never the whole table |
+
+Requests 1+2 are the decisive proof: the **same endpoint** yields **different rows** because the residual
+is in the SQL, not a post-filter. Request 4 is the fail-closed boundary (the one the pre-impl audit
+flagged). All green; stable across reruns. Guide: [[PARTIAL-EVALUATION-FILTERING]].
 
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.
@@ -158,4 +181,5 @@ sensible follow-up, tracked separately.
 - The rig: [`infra/README.md`](../../infra/README.md)
 - The library being exercised: [[DOMAIN-MODEL]], [[CONCURRENCY-AND-LOCKING]]
 - Tag-based authorization (the tag matrix): [[TAG-BASED-AUTHORIZATION]]
+- Data filtering (the filter matrix): [[PARTIAL-EVALUATION-FILTERING]]
 - Implementation plan (ticket 5 fleshes out the suite): [[DOMAIN-MODEL-FOUNDATION]]
