@@ -8,6 +8,8 @@ import dev.dmitriikonovalov.opaabac.core.OpaClientConfig;
 import dev.dmitriikonovalov.opaabac.core.PerTypePolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
+import dev.dmitriikonovalov.opaabac.data.filter.ResidualSpecificationFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -77,5 +79,35 @@ public class OpaAbacAutoConfiguration {
     })
     @org.springframework.context.annotation.Import(OpaAbacSecurityBeans.class)
     static class SecurityAutoConfiguration {
+    }
+
+    /**
+     * Data-filtering beans (partial-eval → JPA {@code Specification}), present only when Spring Data JPA is
+     * on the classpath. Security-independent — they need JPA, not the web/security stack. The
+     * {@code AbacQueryService} carries the {@code partialEval.enabled} kill-switch and the
+     * {@code allowlistFallback} toggle; both default on.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.data.jpa.repository.JpaSpecificationExecutor")
+    static class DataFilteringAutoConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        public ResidualSpecificationFactory residualSpecificationFactory() {
+            return new ResidualSpecificationFactory();
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public AbacQueryService abacQueryService(
+                OpaClient opaClient,
+                ResidualSpecificationFactory residualSpecificationFactory,
+                OpaAbacProperties properties) {
+            OpaAbacProperties.PartialEval pe = properties.getPartialEval();
+            return new AbacQueryService(
+                    opaClient,
+                    residualSpecificationFactory,
+                    new AbacQueryService.PartialEvalSettings(pe.isEnabled(), pe.isAllowlistFallback()));
+        }
     }
 }
