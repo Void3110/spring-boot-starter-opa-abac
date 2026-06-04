@@ -195,7 +195,7 @@ documentation is a first-class goal alongside correctness.
 ## Related
 
 - Feature plan: [[USER-MANAGEMENT-SERVICE]]
-- Next slice (planned): [[DATA-FILTERING]] — Phase 5 partial-eval + batch data filtering
+- Shipped slice: [[DATA-FILTERING]] — Phase 5 partial-eval + batch data filtering (✅ merged, PR #11)
 - Phase 6 direction: [[ACTION-ENRICHMENT]] — affordance metadata via batch eval + an `x-implements` marker
 - Phase 6.5 direction: ADR [[0007-coarse-grained-permission-categories|0007]] — coarse permission categories + delegation
 - Product lens: [[USER-STORIES]] — the catalog service from the user's perspective, per phase
