@@ -109,8 +109,8 @@ In the example + infra:
 
 | # | Ticket | Module | Status |
 |---|--------|--------|--------|
-| T1 | Partial-eval client: `OpaClient.compile` + `PartialResult`/`Condition` model + Compile-API call | core | ☐ |
-| T2 | Batch decision: `OpaClient.allowAll` (bulk input) | core | ☐ |
+| T1 | Partial-eval client: `OpaClient.compile` + `PartialResult`/`Condition` model + Compile-API call | core | ✅ |
+| T2 | Batch decision: `OpaClient.allowAll` (bulk input) | core | ✅ |
 | T3 | `ResidualSpecificationFactory` — residuals → JPA `Specification` over JSONB | spring-data | ☐ |
 | T4 | `AbacQueryService` seam + optional post-fetch allowlist (batch) | spring-data | ☐ |
 | T5 | Starter wiring (beans, `partialEval.enabled`, overridable) | starter | ☐ |
