@@ -53,6 +53,7 @@ only when you catch yourself writing a "considered & rejected" list worth keepin
 | [0004](0004-dynamic-tag-dictionary.md) | The dynamic tag dictionary: three layers, global + team, match-in-Rego | Accepted | user-service · abac |
 | [0005](0005-partial-eval-to-jpa-specification.md) | Partial evaluation → JPA `Specification`: residual conditions in the SQL `WHERE` | Accepted (planned) | spring-data · abac · opa |
 | [0006](0006-three-layer-enforcement-model.md) | The three-layer enforcement model: gateway → app → DB | Accepted | abac · opa · spring |
+| [0007](0007-coarse-grained-permission-categories.md) | Coarse-grained permission categories (READ/WRITE/TAG/GRANT) + the five-tier ceiling model | Accepted (planned) | user-service · abac · spring |
 
 > **Pending (to be written with its decomposition):** an ADR for **action enrichment** (the
 > `{action: allowed}` affordance map via a response decorator + the action registry + the `x-implements`

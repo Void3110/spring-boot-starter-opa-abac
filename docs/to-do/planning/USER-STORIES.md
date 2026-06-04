@@ -31,7 +31,7 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 |---------|--------------|----------------------|
 | **Viewer** | A team member with read-only access to a catalog. | Seeing the catalogs/categories/products they're entitled to — and *not* seeing or being offered actions they can't take. |
 | **Editor** | A team member who can create/update catalog content. | Doing their work without hitting surprise 403s; clear feedback when something is genuinely out of bounds. |
-| **Team owner / administrator** | Runs a team: manages membership, defines custom roles, curates the tag dictionary. | Delegating safely (no self-escalation), shaping what their team can do, governing the vocabulary. |
+| **Team owner / administrator / senior** | Runs or helps run a team: the **owner** authors role definitions + curates the dictionary; **administrators** do everything but author roles; a **senior** onboards juniors (assigns a subset of what they hold). The five-tier ladder (reader → member → senior → administrator → owner) is ADR 0007. | Delegating safely (no self-escalation), shaping what their team can do by coarse buckets, governing the vocabulary. |
 | **Platform / super-admin** *(future)* | Operates across teams. | Broad visibility; an unconditional grant that data-filtering must honor as "see everything." |
 | **Integrator (frontend/API consumer)** | Builds a UI or script against the catalog API. | A response that says *which actions are available* so the UI renders the right controls without guessing. |
 
@@ -86,6 +86,26 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **E3** *As an editor*, write affordances report `true`; an action my role never mentions still reports
   `false` (the registry enumerates the full action set, not just granted verbs). — **Phase 6** 🔜
 
+### Epic G — "I shape and delegate access by coarse buckets, safely" (permission categories + delegation)
+
+> The dev-team delegation flow: project owner = **owner**, lead/architect = **administrator**, senior dev =
+> **senior**, mid dev/analyst = **member**, stakeholder = **reader**. Pinned by ADR 0007. — **Phase 6.5**
+> ([[POC-ROADMAP]]) 🔜 planned
+
+- **G1** *As a catalog owner authoring a role*, I pick a **level** (reader/member/senior/administrator) and
+  the categories that level allows are pre-checked and **locked**; I then refine **downward** by denying
+  specific fine actions (e.g. "member, but may not `delete`"). I grant by **bucket** (`READ`/`WRITE`/`TAG`/
+  `GRANT`), not action-by-action. — **Phase 6.5** 🔜
+- **G2** *As an administrator*, I can assign any role **strictly below administrator** to a team member —
+  but I **cannot** assign another administrator (the seniority ceiling), and I **cannot** author new role
+  definitions (only the owner does). — **Phase 6.5** 🔜
+- **G3** *As a senior dev*, I can onboard a new member by assigning them a role whose permissions are a
+  **subset of mine** — but I can **never** hand out role-assignment power itself (`GRANT` is capped at
+  administrator), so I can't create another senior or an admin. — **Phase 6.5** 🔜
+- **G4** *As any user editing a category/product*, my role's `TAG` bucket lets me **assign** dictionary tags
+  as part of the management flow, and (if granted `define-tags`) curate the tag vocabulary — the same
+  category that fences tag-curation from plain content `WRITE`. — **Phase 6.5** (builds on **Phase 4.5**) 🔜
+
 ### Epic F — "It works from a clean clone" (adoption / publish)
 
 - **F1** *As a developer adopting the starter*, I add a dependency + a few properties + one `x-implements`
@@ -108,6 +128,7 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 ## Related
 - [[POC-ROADMAP]] — the technical phases these stories are tagged to.
 - Shipped mechanisms: [[LIBRARY-SPINE]] · [[USER-MANAGEMENT-SERVICE]] · [[TAG-DICTIONARY]].
-- Planned mechanisms: [[DATA-FILTERING]] (Phase 5) · [[ACTION-ENRICHMENT]] (Phase 6).
+- Planned mechanisms: [[DATA-FILTERING]] (Phase 5) · [[ACTION-ENRICHMENT]] (Phase 6) · coarse permission
+  categories + delegation (Phase 6.5, ADR [[0007-coarse-grained-permission-categories|0007]]).
 - The guides that document each delivered epic: [[ABAC-AUTHORIZATION]], [[TEAM-BASED-AUTHORIZATION]],
   [[TAG-BASED-AUTHORIZATION]].
