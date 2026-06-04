@@ -112,7 +112,7 @@ In the example + infra:
 | T1 | Partial-eval client: `OpaClient.compile` + `PartialResult`/`Condition` model + Compile-API call | core | ✅ |
 | T2 | Batch decision: `OpaClient.allowAll` (bulk input) | core | ✅ |
 | T3 | `ResidualSpecificationFactory` — residuals → JPA `Specification` over JSONB | spring-data | ✅ |
-| T4 | `AbacQueryService` seam + optional post-fetch allowlist (batch) | spring-data | ☐ |
+| T4 | `AbacQueryService` seam + optional post-fetch allowlist (batch) | spring-data | ✅ |
 | T5 | Starter wiring (beans, `partialEval.enabled`, overridable) | starter | ☐ |
 | T6 | Example adoption: `JpaSpecificationExecutor`, filtered list handlers, `category.rego` filter entrypoint | example + infra | ☐ |
 | T7 | e2e list-filtering matrix + docs + roadmap/Mulch | e2e + docs | ☐ |

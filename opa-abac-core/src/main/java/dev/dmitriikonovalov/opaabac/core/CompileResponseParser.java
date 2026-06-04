@@ -65,8 +65,9 @@ final class CompileResponseParser {
         for (JsonNode query : queries) {
             ConjunctionResult cj = parseQuery(query);
             if (cj.unsupported()) {
-                // A single unsupported expression poisons the whole residual → fail closed.
-                return PartialResult.denyAll();
+                // A single unsupported expression poisons the whole residual → fail closed, but FLAGGED
+                // not-fully-SQL so a caller with the allowlist on can batch-recheck instead of returning empty.
+                return PartialResult.unsupported();
             }
             if (cj.alwaysTrue()) {
                 // An empty/tautological conjunction means this disjunct holds for every row → ALLOW_ALL.

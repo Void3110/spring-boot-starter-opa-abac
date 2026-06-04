@@ -28,11 +28,20 @@ import java.util.List;
  *
  * <p>No OPA types leak through this record — it is pure data, Spring-free, JSON-free.
  *
- * @param decision which of the three outcomes this residual is
- * @param clauses  the DNF disjuncts (each a conjunction of conditions); meaningful only for
- *                 {@link Decision#CONDITIONAL}, otherwise an empty list
+ * <h2>The "fully supported" flag (the allowlist escape hatch)</h2>
+ * When the residual contained an expression the translator could not map to SQL, {@link #fullySupported()}
+ * is {@code false}. The residual still <strong>defaults to {@link Decision#DENY_ALL}</strong> (fail-closed),
+ * but the flag lets a caller with the post-fetch allowlist enabled choose an <em>exact batch re-check</em>
+ * over the candidate set instead of an empty list — never a wider one. When the fallback is off, the
+ * unsupported residual simply denies. A fully-translatable residual has {@code fullySupported == true}.
+ *
+ * @param decision       which of the three outcomes this residual is
+ * @param clauses        the DNF disjuncts (each a conjunction of conditions); meaningful only for
+ *                       {@link Decision#CONDITIONAL}, otherwise an empty list
+ * @param fullySupported {@code false} iff the compile output contained an expression the translator could
+ *                       not represent (so a batch finish may be needed); {@code true} otherwise
  */
-public record PartialResult(Decision decision, List<Conjunction> clauses) {
+public record PartialResult(Decision decision, List<Conjunction> clauses, boolean fullySupported) {
 
     /** The three outcomes a compiled residual collapses to. */
     public enum Decision {
@@ -48,6 +57,11 @@ public record PartialResult(Decision decision, List<Conjunction> clauses) {
         clauses = clauses == null ? List.of() : List.copyOf(clauses);
     }
 
+    /** A fully-supported residual (the common case): the translation is complete. */
+    public PartialResult(Decision decision, List<Conjunction> clauses) {
+        this(decision, clauses, true);
+    }
+
     /** The "match everything" residual — the query holds for every row (no predicate). */
     public static PartialResult allowAll() {
         return new PartialResult(Decision.ALLOW_ALL, List.of());
@@ -55,10 +69,20 @@ public record PartialResult(Decision decision, List<Conjunction> clauses) {
 
     /**
      * The "match nothing" residual — the query holds for no row. <strong>This is the fail-closed
-     * value</strong>: every compile/transport/parse/unsupported-expression failure resolves to it.
+     * value</strong>: every compile/transport/parse failure resolves to it (fully supported — there was
+     * simply nothing to satisfy).
      */
     public static PartialResult denyAll() {
         return new PartialResult(Decision.DENY_ALL, List.of());
+    }
+
+    /**
+     * A fail-closed deny that is <strong>flagged not-fully-SQL</strong> — the compile output contained an
+     * expression the translator could not represent. With the post-fetch allowlist on, a caller may run an
+     * exact batch re-check rather than returning empty; with it off, this is an ordinary deny.
+     */
+    public static PartialResult unsupported() {
+        return new PartialResult(Decision.DENY_ALL, List.of(), false);
     }
 
     /**

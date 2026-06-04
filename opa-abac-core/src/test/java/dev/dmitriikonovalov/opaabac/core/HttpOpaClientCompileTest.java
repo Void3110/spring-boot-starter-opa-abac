@@ -221,8 +221,19 @@ class HttpOpaClientCompileTest {
                         + "{\"type\":\"number\",\"value\":5}]}";
         String body = "{\"result\":{\"queries\":[[" + gtExpr + "]]}}";
         String base = startServer(ex -> respond(ex, 200, body));
-        assertThat(clientFor(base, "catalog").compile(categoryListContext()).decision())
-                .isEqualTo(PartialResult.Decision.DENY_ALL);
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+        // Fail-closed (deny) BUT flagged not-fully-SQL, so a caller with the allowlist on can batch-recheck.
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+    }
+
+    @Test // a clean DENY_ALL (empty result) is fully supported — there was simply nothing to satisfy
+    void emptyResult_isFullySupportedDeny() throws IOException {
+        String base = startServer(ex -> respond(ex, 200, "{\"result\":{}}"));
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isTrue();
     }
 
     @Test // U8 — a reference that isn't input.resource.* → DENY_ALL
