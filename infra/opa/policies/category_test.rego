@@ -245,3 +245,109 @@ test_any_of_second_key_hits if {
 		{"region": ["apac"], "sensitivity": "public"},
 	)
 }
+
+# --- Phase 5: filter entrypoint (list filtering) ----------------------------
+#
+# `filter` is concrete-evaluated here for coverage (the residual / partial-eval shape is asserted by the
+# Java HttpOpaClientCompileTest + the e2e matrix). The decisive property: filter is ROLE-DEFINITION-ONLY
+# (no subject-roles fallback) so a missing role definition fails CLOSED, and its membership tag match
+# matches a scalar OR an array tag — agreeing with the single-decision `allow`.
+
+# An unrestricted role (no required tags) -> filter true for any readable category.
+test_filter_unrestricted_reads if {
+	category.filter with input as {
+		"action": "category:read",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": viewer_role_def,
+		"environment": {},
+	}
+}
+
+# A tag-gated role + a matching SCALAR tag -> filter true.
+test_filter_tag_gated_scalar_match if {
+	category.filter with input as tag_input(regional_reader_any, {"region": "emea"})
+}
+
+# A tag-gated role + a matching ARRAY tag -> filter true (membership matches the array element).
+test_filter_tag_gated_array_match if {
+	category.filter with input as tag_input(regional_reader_any, {"region": ["emea", "amer"]})
+}
+
+# A tag-gated role + a non-matching tag -> filter false.
+test_filter_tag_gated_miss if {
+	not category.filter with input as tag_input(regional_reader_any, {"region": ["apac"]})
+}
+
+# filter AGREES with allow for both the scalar and the array case (the consistency property).
+test_filter_agrees_with_allow_scalar if {
+	req := tag_input(regional_reader_any, {"region": "emea"})
+	category.filter with input as req
+	category.allow with input as req
+}
+
+test_filter_agrees_with_allow_array if {
+	req := tag_input(regional_reader_any, {"region": ["emea", "amer"]})
+	category.filter with input as req
+	category.allow with input as req
+}
+
+# U27 — the fail-open-leak guard: NO role_definition -> filter false (would be DENY_ALL on partial eval).
+# `allow` would grant this read via its subject-roles fallback, but `filter` must NOT — a list with no
+# role definition is empty, never the whole table.
+test_filter_no_role_definition_denies if {
+	not category.filter with input as {
+		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"action": "category:read",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"environment": {},
+	}
+}
+
+# Contrast: `allow` DOES grant the same no-role-def read (the fallback) — proving filter dropped it.
+test_allow_grants_no_role_def_read_that_filter_denies if {
+	category.allow with input as {
+		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"action": "category:read",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"environment": {},
+	}
+}
+
+# filter requires the read permission too: a role without category:read -> filter false.
+test_filter_requires_read_permission if {
+	not category.filter with input as {
+		"action": "category:read",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": {"code": "x", "permissions": {"catalog": ["read"]}},
+		"environment": {},
+	}
+}
+
+# --- Phase 5: bulk entrypoint (batch / allowlist primitive) ------------------
+
+# bulk returns a positional list of allow-decisions over input.items.
+test_bulk_returns_positional_decisions if {
+	result := category.bulk with input as {"items": [
+		{
+			"subject": {"id": "u", "roles": []},
+			"action": "category:read",
+			"resource": {"type": "category", "id": "a", "attributes": {}},
+			"role_definition": viewer_role_def,
+			"environment": {},
+		},
+		{
+			"subject": {"id": "u", "roles": []},
+			"action": "category:write",
+			"resource": {"type": "category", "id": "b", "attributes": {}},
+			"role_definition": viewer_role_def,
+			"environment": {},
+		},
+	]}
+	result == [true, false]
+}
+
+# bulk over an empty item list -> empty decision list.
+test_bulk_empty if {
+	result := category.bulk with input as {"items": []}
+	result == []
+}

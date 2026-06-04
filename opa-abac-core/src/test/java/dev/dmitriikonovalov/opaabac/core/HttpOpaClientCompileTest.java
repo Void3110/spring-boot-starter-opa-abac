@@ -154,6 +154,30 @@ class HttpOpaClientCompileTest {
         assertThat(in.value()).isEqualTo(List.of("public"));
     }
 
+    @Test // U5 — CONTAINS: member_2(literal, resourceRef) ("v in resource.tags.region") → Operator.CONTAINS
+    void conditional_containsFromMembership() throws IOException {
+        // internal.member_2("emea", input.resource.attributes.region) — literal LEFT, resource ref RIGHT.
+        String containsExpr =
+                "{\"index\":0,\"terms\":["
+                        + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"internal\"},"
+                        + "{\"type\":\"string\",\"value\":\"member_2\"}]},"
+                        + "{\"type\":\"string\",\"value\":\"emea\"},"
+                        + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"input\"},"
+                        + "{\"type\":\"string\",\"value\":\"resource\"},"
+                        + "{\"type\":\"string\",\"value\":\"attributes\"},"
+                        + "{\"type\":\"string\",\"value\":\"region\"}]}]}";
+        String body = "{\"result\":{\"queries\":[[" + containsExpr + "]]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.CONDITIONAL);
+        Condition c = result.clauses().get(0).conditions().get(0);
+        assertThat(c.operator()).isEqualTo(Condition.Operator.CONTAINS);
+        assertThat(c.path()).isEqualTo("tags.region");
+        assertThat(c.value()).isEqualTo("emea");
+    }
+
     @Test // U6 — intrinsic-column residual (input.resource.id == <uuid>) → non-tags path
     void conditional_intrinsicColumn() throws IOException {
         String idExpr =

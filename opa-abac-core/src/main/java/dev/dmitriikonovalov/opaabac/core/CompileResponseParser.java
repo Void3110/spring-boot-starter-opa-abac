@@ -114,26 +114,24 @@ final class CompileResponseParser {
             return ExprResult.notSupported();
         }
 
-        JsonNode a = terms.get(1);
-        JsonNode b = terms.get(2);
-        // Identify which operand is the resource ref and which is the literal.
-        String refPath = resourceRefPath(a);
-        JsonNode literal = b;
+        JsonNode first = terms.get(1);
+        JsonNode second = terms.get(2);
+        // Identify which operand is the resource ref and which is the literal, remembering the SIDE
+        // (the resource ref being the LEFT vs RIGHT operand changes membership semantics).
+        String refPath = resourceRefPath(first);
+        boolean refIsLeft = refPath != null;
+        JsonNode literal = second;
         if (refPath == null) {
-            refPath = resourceRefPath(b);
-            literal = a;
+            refPath = resourceRefPath(second);
+            literal = first;
         }
         if (refPath == null) {
             return ExprResult.notSupported(); // neither operand references input.resource.*
         }
 
-        Operator base = mapOperator(op);
-        if (base == null) {
-            return ExprResult.notSupported();
-        }
-        Operator operator = negated ? negate(base) : base;
+        Operator operator = mapOperator(op, refIsLeft, negated);
         if (operator == null) {
-            return ExprResult.notSupported(); // a negation we can't represent
+            return ExprResult.notSupported();
         }
 
         // The resource-type binding (eq on input.resource.type against the known type) is a tautology here.
@@ -177,21 +175,25 @@ final class CompileResponseParser {
         return name.toString();
     }
 
-    /** Map an OPA operator var name to the closed operator set, or null if unsupported. */
-    private static Operator mapOperator(String op) {
+    /**
+     * Map an OPA operator var to the closed operator set, honoring operand side and negation. Returns null
+     * if unsupported.
+     *
+     * <p>{@code internal.member_2} (the lowering of {@code x in y}) is the subtle case — the side decides:
+     * <ul>
+     *   <li>{@code member_2(resourceRef, {literals})} — "the row's value is one of these" → {@code IN};</li>
+     *   <li>{@code member_2(literal, resourceRef)} — "this literal is in the row's value(s)" → {@code CONTAINS}
+     *       (scalar-or-array membership, so the SQL {@code ?} operator agrees with the single-decision
+     *       scalar-as-singleton-set normalize).</li>
+     * </ul>
+     * A negated membership is not representable in the closed set → unsupported.
+     */
+    private static Operator mapOperator(String op, boolean refIsLeft, boolean negated) {
         return switch (op) {
-            case "eq", "equal" -> Operator.EQ;
-            case "neq" -> Operator.NEQ;
-            case "internal.member_2" -> Operator.IN; // `x in {…}` lowers to member_2(x, set)
+            case "eq", "equal" -> negated ? Operator.NEQ : Operator.EQ;
+            case "neq" -> negated ? Operator.EQ : Operator.NEQ;
+            case "internal.member_2" -> negated ? null : (refIsLeft ? Operator.IN : Operator.CONTAINS);
             default -> null;
-        };
-    }
-
-    private static Operator negate(Operator op) {
-        return switch (op) {
-            case EQ -> Operator.NEQ;
-            case NEQ -> Operator.EQ;
-            default -> null; // negated IN/CONTAINS not represented in the closed set → unsupported
         };
     }
 
