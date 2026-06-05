@@ -8,22 +8,30 @@ tags:
 
 # Autonomous implementation flow
 
-The repeatable **plan → autonomous-implement → test → review** process behind every shipped slice in
-this repo ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]], [[USER-MANAGEMENT-SERVICE]],
+The repeatable **plan → decompose → autonomous-implement → test → review** process behind every shipped
+slice in this repo ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]], [[USER-MANAGEMENT-SERVICE]],
 [[TAG-DICTIONARY]], [[DATA-FILTERING]]). It is also a **first-class portfolio artifact**: each slice's
-`AUTONOMOUS-IMPLEMENTATION-PROMPT.md` is kept verbatim and its `STATUS-0N.md` notes record the outcome,
-so the prompt + results form a studyable case study of high-autonomy AI-assisted engineering.
+planning package + `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` is kept verbatim and its `STATUS-0N.md` notes
+record the outcome, so the *whole* artifact — how the work was reasoned about, then handed off, then
+verified — is a studyable case study of high-autonomy AI-assisted engineering.
 
-This guide is the **template + checklist** for producing the next one. It distills the invariant
-skeleton common to all five shipped prompts, marks the per-slice fill-in slots, and folds in the
-lessons each run added. When you start a new slice, copy the skeleton in
-[§3](#3-the-autonomous-implementation-promptmd-template), fill the slots, and you have a self-contained
-prompt a fresh agent can execute.
+This guide documents the **end-to-end method** and is the **template + checklist** for producing the
+next slice. The work happens in three phases:
 
-> **Why this shape.** A doc-first plan turned into a *self-contained, checkpoint-gated, fail-closed*
-> prompt lets one agent implement a multi-ticket slice end to end at high autonomy without drifting —
-> because the architecture-review gate and the per-ticket checkpoint catch mistakes before they
-> compound, and the hard rules pin the load-bearing invariants the agent must never trade away.
+1. **Planning** ([§2](#2-planning-phase-chat--grill-me--decisions)) — interactive: chat, an optional
+   `grill-me` session, ending in pinned **ADRs**, **user stories**, and a `00-DESIGN`. *Resolve the forks
+   here so the run has fewer reasons to stop.*
+2. **Decomposition** ([§3](#3-decomposition-phase-design--tickets)) — turn the design + ADRs + stories
+   into the ordered ticket list, the QA cases, and the self-contained prompt. *This is the bridge: still
+   interactive/docs-only, but it produces the agent's marching orders.*
+3. **Autonomous implementation** ([§4](#4-the-autonomous-implementation-promptmd-template) onward) — one
+   agent runs the prompt, ticket by ticket, checkpoint-gated, fail-closed. *This is the autonomous half.*
+
+> **Why this shape.** Planning + decomposition front-load the thinking into immutable artifacts (ADRs)
+> and an unambiguous work list; the autonomous prompt then turns that into a *self-contained,
+> checkpoint-gated, fail-closed* hand-off that one agent executes end to end without drifting — because
+> the architecture-review gate and the per-ticket checkpoint catch mistakes before they compound, and
+> the hard rules pin the load-bearing invariants the agent must never trade away.
 
 ---
 
@@ -31,63 +39,123 @@ prompt a fresh agent can execute.
 
 ```
         ┌─────────────────────────────────────────────────────────────┐
-        │ PLAN (interactive, with the maintainer)                      │
-        │  • scope the slice; resolve forks (grill-me) → confirm        │
-        │  • write the planning package (§2) + any up-front ADR         │
-        │  • this is a docs-only turn — NOT the implementation          │
+        │ ① PLANNING (interactive, with the maintainer)                │
+        │   chat → optional /grill-me to resolve every fork            │
+        │   end-results:  ADR note(s)  ·  USER-STORIES  ·  00-DESIGN    │
+        │   docs-only — NOT the implementation                         │
+        └───────────────────────────┬─────────────────────────────────┘
+                                     │ forks resolved, decisions pinned
+                                     ▼
+        ┌─────────────────────────────────────────────────────────────┐
+        │ ② DECOMPOSITION (interactive, docs-only)                     │
+        │   design + ADRs + stories  →  the work list                  │
+        │   end-results:  <SLICE>.md index · 01-DECOMPOSITION (T1…TN)   │
+        │     · 10-QA-TEST-CASES · AUTONOMOUS-…-PROMPT · STATUS stubs   │
         └───────────────────────────┬─────────────────────────────────┘
                                      │ maintainer reviews the package
                                      ▼
         ┌─────────────────────────────────────────────────────────────┐
-        │ AUTONOMOUS IMPLEMENT (one agent, the §3 prompt)               │
-        │  branch feature/void3110/<slice>                              │
-        │  per-ticket loop T1…TN, IN ORDER, STOP at each checkpoint:    │
-        │    prime → build → test → ★review+refactor → IT/e2e → docs    │
-        │           → Mulch → one commit → CHECKPOINT & report          │
+        │ ③ AUTONOMOUS IMPLEMENT (one agent, the §4 prompt)            │
+        │   branch feature/void3110/<slice>                            │
+        │   per-ticket loop T1…TN, IN ORDER, STOP at each checkpoint:  │
+        │     prime → build → test → ★review+refactor → IT/e2e → docs  │
+        │            → Mulch → one commit → CHECKPOINT & report         │
         └───────────────────────────┬─────────────────────────────────┘
                                      │ maintainer reads checkpoints
                                      ▼
         ┌─────────────────────────────────────────────────────────────┐
-        │ REVIEW / SHIP (maintainer-driven)                            │
-        │  • /deep-review the branch  • push  • PR  • CI green  • merge │
-        │  • git mv the folder planning/ → implemented/ + Shipped banner│
+        │ ④ REVIEW / SHIP (maintainer-driven)                          │
+        │   /deep-review the branch · push · PR · CI green · merge      │
+        │   git mv  planning/ → implemented/  + Shipped banner          │
         └─────────────────────────────────────────────────────────────┘
 ```
 
-**Division of labour (a hard line, carried in every prompt):** the agent does **everything local on the
-branch** — code, tests, docs, Mulch, one commit per ticket. The **maintainer pushes, opens the PR, and
-merges.** The prompt must say *"Do NOT push, open PRs, or touch `main`."* Pushing is a separate,
-explicit "let's push and create pr and then merge" turn.
+**Division of labour (a hard line, carried in every prompt):** in phases ① and ②, the maintainer and the
+planning agent work *together* and produce only docs. In phase ③ the agent does **everything local on
+the branch** — code, tests, docs, Mulch, one commit per ticket. The **maintainer pushes, opens the PR,
+and merges** (phase ④). The prompt must say *"Do NOT push, open PRs, or touch `main`."* Pushing is a
+separate, explicit "let's push and create pr and then merge" turn.
 
 ---
 
-## 2. The planning package (produced in the PLAN turn)
+## 2. Planning phase (chat + grill-me → decisions)
 
-Every slice gets a folder `docs/to-do/planning/<SLICE>/` that is a **1:1 structural mirror** of every
-prior slice. The package is the *input* the autonomous prompt reads; the prompt is one file inside it.
+**Goal:** reach *shared understanding* and pin every fork **before** any ticket exists — so the
+autonomous run almost never has to stop and ask. This phase is conversational and docs-only.
+
+**The flow.** Discuss the slice with the maintainer; when the design tree has real branches, run the
+**`grill-me`** skill — it interviews the maintainer one question at a time, walking each branch and
+recommending an answer, until the decisions are settled. (Phase 6.5's coarse-permission-categories ADR
+came straight out of such a session.) Explore the codebase to answer anything the code can settle, rather
+than asking.
+
+**The three end-results (the planning deliverables):**
+
+| Deliverable | Where it lives | What it pins |
+|-------------|----------------|--------------|
+| **ADR(s)** | `docs/architecture/adr/NNNN-*.md` | Each **structural** fork — a schema/authority shape, a module/service boundary, *where a check is evaluated* (app vs. policy), an additive-vs-breaking choice, a deliberate "we did **not** do X." Lightly-MADR: **Status · Context · Decision · Considered options (why-rejected) · Consequences.** Immutable once `Accepted`; superseded, never edited. |
+| **USER-STORIES** | `docs/to-do/planning/USER-STORIES.md` | The **product lens** — "as a «persona» I can/can't …", each story **tagged to the phase that delivers it**. Keeps the project honest about *who the authorization is for* and gives each phase a user-visible acceptance lens beyond "the test is green." |
+| **`00-DESIGN.md`** | the slice's planning folder | The **how-it-works** prose: the mechanism, the **fail-closed posture**, and a **considered-&-rejected** list. Links the ADR(s) for the *why*. This one is *living* (rewritten as the work evolves); the ADRs are not. |
+
+**ADRs are written *up front, as part of planning* — not retroactively.** A feature's
+`00-DESIGN`/`01-DECOMPOSITION` are living docs that get rewritten and `git mv`'d to `implemented/` on
+ship, so a rationale buried in them drifts or moves; an ADR is an *immutable, dated snapshot* of the fork
+and its rejected alternatives. Reach for one only when you catch yourself writing a "considered &
+rejected" list worth keeping — routine choices (naming, file layout, test library) don't need one. (See
+`docs/architecture/adr/README.md` → "When to write one.")
+
+**Exit criterion for planning:** every fork that would otherwise make the autonomous agent *stop and ask*
+is decided and recorded (in an ADR if structural, in `00-DESIGN`'s considered-&-rejected otherwise), and
+the user stories for the slice exist and are phase-tagged. Only then move to decomposition.
+
+---
+
+## 3. Decomposition phase (design → tickets)
+
+**Goal:** turn the settled design + ADRs + stories into an **unambiguous, ordered work list** and the
+**self-contained prompt** that drives it. Still interactive and docs-only — this is the bridge between
+"we know what and why" and "an agent can now build it."
+
+This phase produces the rest of the **planning package** — the folder `docs/to-do/planning/<SLICE>/`,
+a **1:1 structural mirror** of every prior slice:
 
 | File | Role |
 |------|------|
 | `<SLICE>.md` | `type/index` — what the slice delivers, file glossary, **ticket status table**, critical path, conventions (clean-room + commit identity). |
-| `00-DESIGN.md` | `type/architecture` — the design, the fail-closed posture, and a **considered-&-rejected** list. |
-| `01-DECOMPOSITION.md` | `type/project` — the ordered tickets **T1…TN**, each with **Goal / Deliverables / Acceptance / What-NOT-to-touch**, + a cross-cutting acceptance block. **The work list.** |
-| `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | The self-contained prompt (the §3 template). **Kept verbatim — a deliverable, not scaffolding.** |
-| `10-QA-TEST-CASES.md` | `type/project` — concrete U*/I*/E* cases the implementation must satisfy. |
-| `STATUS-01.md … STATUS-0N.md` | One stub per ticket, filled at each checkpoint: *What shipped · Tests · Architecture review + refactor · Integration/e2e · Decisions · Commit.* |
+| `01-DECOMPOSITION.md` | `type/project` — the ordered tickets **T1…TN**, each with **Goal / Deliverables / Acceptance / What-NOT-to-touch**, + a cross-cutting acceptance block, + the **critical path** (which tickets are sequential, which parallel, which independently landable). **The work list.** |
+| `10-QA-TEST-CASES.md` | `type/project` — concrete U*/I*/E* cases the implementation must satisfy (these become each ticket's *Acceptance*). |
+| `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | The self-contained prompt (the [§4](#4-the-autonomous-implementation-promptmd-template) template). **Kept verbatim — a deliverable, not scaffolding.** |
+| `STATUS-01.md … STATUS-0N.md` | One stub per ticket, filled at each checkpoint during the run: *What shipped · Tests · Architecture review + refactor · Integration/e2e · Decisions · Commit.* |
+
+**The decomposition discipline — what makes a good ticket:**
+
+- **One focused commit's worth of work**, with a clear **Goal**, exact **Deliverables** (classes,
+  packages, rego rules, mappings — named), **Acceptance** (drawn from `10-QA-TEST-CASES.md` — the exact
+  `:module:test` / `opa test` / e2e that proves it), and **What-NOT-to-touch** (the boundary, drawn from
+  the ADRs and the fail-closed posture).
+- **Ordered with an explicit critical path.** Name what's sequential (T1 → T3 → …), what runs in parallel
+  (e.g. "T2 parallel with T1"), and which early subset is **independently landable** for standalone value
+  if the window is short.
+- **Each ticket carries its slice-invariants forward.** "What-NOT-to-touch" is where AND-don't-replace,
+  additive-only, match-in-Rego, flat-verb-only, etc. get pinned per ticket so the agent can't trade them
+  away mid-run.
+- **Flag the build-breakers in the ticket that causes them.** If widening an interface breaks existing
+  test stubs (it will — adding an abstract method un-functional-interfaces it), say so *in that ticket*,
+  list the exact files, and require they land in the same commit. (DATA-FILTERING T1 is the model.)
 
 **Conventions for every note:** valid frontmatter (one `status/`, one `type/`, ≥1 `area/`),
-`UPPER-KEBAB-CASE.md`, `[[wikilinks]]`, links back to `[[POC-ROADMAP]]`. A **structural decision** taken
-while planning (an authority shape, a module boundary, a match-here-not-there, an additive-vs-breaking
-fork) does **not** live in the decomposition — it gets its own dated **ADR** in `architecture/adr/` and
-the design links it. (See `docs/README.md` → "Decisions vs. designs".)
+`UPPER-KEBAB-CASE.md`, `[[wikilinks]]`, links back to `[[POC-ROADMAP]]`. A structural decision surfaced
+*during* decomposition still gets its own ADR up front (decomposition is exactly when these surface —
+records 0005/0006 were written this way) — the decomposition references it, the rationale doesn't live
+inside the decomposition.
 
-On ship, `git mv` the folder to `docs/to-do/implemented/<SLICE>/`, flip `status/*` → `status/done` in
-the index frontmatter, and add a past-tense **Shipped** banner — keeping the prompt-and-results record
-intact alongside the prior slices for cross-run comparison.
+On ship, `git mv` the folder to `docs/to-do/implemented/<SLICE>/`, flip `status/*` → `status/done` in the
+index frontmatter, and add a past-tense **Shipped** banner — keeping the prompt-and-results record intact
+alongside the prior slices for cross-run comparison.
 
 ---
 
-## 3. The `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` template
+## 4. The `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` template
 
 Copy this verbatim into the new slice folder and fill every `«SLOT»`. Everything **not** in a slot is
 the invariant skeleton — keep it word-for-word, because it is the part that has been hardened across
@@ -240,7 +308,7 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 
 ---
 
-## 4. The invariant skeleton (what never changes)
+## 5. The invariant skeleton (what never changes)
 
 These eleven elements appear, near-identically, in all five shipped prompts. They are the spine — keep
 them; only the bracketed content varies per slice.
@@ -274,7 +342,7 @@ them; only the bracketed content varies per slice.
 
 ---
 
-## 5. The per-slice slots (what you fill in)
+## 6. The per-slice slots (what you fill in)
 
 | Slot | What it is | Drawn from |
 |------|-----------|-----------|
@@ -293,7 +361,7 @@ them; only the bracketed content varies per slice.
 
 ---
 
-## 6. Lessons baked in (why the skeleton looks the way it does)
+## 7. Lessons baked in (why the skeleton looks the way it does)
 
 Each run added a hard rule that is now permanent. When you write the next prompt, these are *already*
 in the skeleton — this section is the rationale so you don't quietly drop one.
@@ -339,11 +407,20 @@ resolve the forks *before* the prompt is written so the run has fewer reasons to
 
 ## Related
 
+**Phase ① Planning:**
+- `docs/architecture/adr/README.md` — the ADR format + the "ADRs are part of the decomposition process,
+  written up front" convention this flow depends on.
+- [[USER-STORIES]] — the product-lens deliverable; each story phase-tagged.
+- The `grill-me` skill — the fork-resolving interview that ends the planning conversation.
+
+**Phase ② Decomposition & ③ Autonomous implementation:**
 - `docs/README.md` → "`to-do/` lifecycle" and "Decisions vs. designs" — the folder mechanics + the
   ADR-vs-design split this flow assumes.
 - [[POC-ROADMAP]] — the phase plan each slice implements one piece of.
-- The shipped prompts to copy from: [[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
+- The shipped packages to copy from: [[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
   [[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]], [[DATA-FILTERING]] (each folder's
-  `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`).
-- `docs/code-review/CODE-REVIEW-WORKFLOW.md` — the `/deep-review` process that runs in the REVIEW/SHIP
-  stage after the autonomous run.
+  `01-DECOMPOSITION.md` + `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`).
+
+**Phase ④ Review / ship:**
+- `docs/code-review/CODE-REVIEW-WORKFLOW.md` — the `/deep-review` process that runs after the
+  autonomous run, before push/PR/merge.
