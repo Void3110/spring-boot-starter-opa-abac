@@ -92,11 +92,19 @@ In the example + infra:
 
 ## Ticket status
 
-*(populated by slice-planner — the decomposition produces T1…TN.)*
-
 | # | Ticket | Module | Status |
 |---|--------|--------|--------|
-| — | *(pending decomposition)* | — | 📋 |
+| T1 | Core: `ParentRef` + `abacParent()` + `Resource.ancestors` (Spring-free, additive) | core | 📋 |
+| T2 | `AncestorResolver` SPI + ltree & recursive-CTE impls (cycle + depth, fail-closed) | spring-data | 📋 |
+| T3 | `AbstractHierarchicalEntity` (ltree path + maintainer + atomic re-parent) | spring-data | 📋 |
+| T4 | Single-resource hierarchical check (`direct OR (walk_ok AND inherited)`) | spring-data | 📋 |
+| T5 | Starter wiring: resolver SPI + inheritance config (default-off) + `maxDepth` | starter | 📋 |
+| T6 | Example adoption + rego inheritance clause + Liquibase ltree migration | example + infra | 📋 |
+| T7 | e2e (incl. the mandatory re-parent test) + docs + roadmap/Mulch | e2e + docs | 📋 |
+
+**Critical path:** T1 → T2 → T3 → T4 → T5 → T6 → T7. T1 is independently landable (pure core). T1+T2+T3
+land the reusable library core (parent model + resolver SPI + both impls + hierarchical entity) before the
+example adoption (T6) and e2e (T7).
 
 ## Conventions (same as every prior slice)
 
