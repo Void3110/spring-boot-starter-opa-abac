@@ -54,6 +54,7 @@ only when you catch yourself writing a "considered & rejected" list worth keepin
 | [0005](0005-partial-eval-to-jpa-specification.md) | Partial evaluation → JPA `Specification`: residual conditions in the SQL `WHERE` | Accepted (planned) | spring-data · abac · opa |
 | [0006](0006-three-layer-enforcement-model.md) | The three-layer enforcement model: gateway → app → DB | Accepted | abac · opa · spring |
 | [0007](0007-coarse-grained-permission-categories.md) | Coarse-grained permission categories (READ/WRITE/TAG/GRANT) + the five-tier ceiling model | Accepted (planned) | user-service · abac · spring |
+| [0008](0008-hierarchical-resource-authorization.md) | Hierarchical (N-level ancestor) resource authorization: chain-in-input, opt-in inheritance, `ltree`/CTE resolver SPI, fail-closed | Accepted (planned) | abac · opa · spring-data |
 
 > **Pending (to be written with its decomposition):** an ADR for **action enrichment** (the
 > `{action: allowed}` affordance map via a response decorator + the action registry + the `x-implements`
