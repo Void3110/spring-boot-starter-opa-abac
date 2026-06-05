@@ -76,6 +76,31 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   (the filter degrades to "match all"). — **Phase 5** 📋
 - **D4** *As a user with no grant*, the list is empty (`[]`), not an error and not a leak. — **Phase 5** 📋
 
+### Epic H — "Access I'm granted on a parent reaches what's nested under it" (hierarchical inheritance)
+
+> A grant on a Catalog should govern the Categories and Products nested under it, **N levels deep** — not
+> just the root and the leaf. Opt-in per relation, fail-closed, deny-overridable. Pinned by ADR
+> [[0008-hierarchical-resource-authorization|0008]]. Ships as two slices: **5.5-A** (single-resource) then
+> **5.5-B** (lists). — **Phase 5.5** ([[POC-ROADMAP]]) 📋 planned
+
+- **H1** *As a user granted access on a Catalog*, I can read a **Product three levels down**
+  (`catalog/{id}/category/{id}/product/{id}`) without a separate grant on the product — the grant is
+  inherited down the **whole** ancestor chain, not just root+leaf. — **Phase 5.5-A** 📋
+- **H2** *As an owner*, inheritance is **opt-in**: a resource type only inherits from an ancestor where I've
+  declared the relation inheritable; by default a type is authorized on itself (no surprise widening). —
+  **Phase 5.5-A** 📋
+- **H3** *As an owner*, an explicit **deny** on a specific node wins over an inherited grant — I can share a
+  Catalog yet carve out one Category that stays private (deny-overrides). — **Phase 5.5-A** 📋
+- **H4** *As an admin moving a Category* under a different Catalog, access **re-derives correctly and
+  immediately** — the moved subtree now inherits the new parent's grants, and nothing is left pointing at
+  the old lineage (re-parenting is consistent and atomic). — **Phase 5.5-A** 📋
+- **H5** *As a user granted on a Catalog*, `GET …/products` (a list) returns the products **anywhere under
+  that Catalog** — the inherited grant **widens** the rows the filter returns, decided in SQL, on top of
+  the Phase-5 tag filter. — **Phase 5.5-B** 📋
+- **H6** *As any user*, if the ancestor chain can't be resolved (broken/cyclic/too-deep lineage), I get my
+  **direct** access only — never more (a failed walk never widens, never strips a direct grant). —
+  **Phase 5.5-A** 📋
+
 ### Epic E — "The UI shows only the buttons I can click" (action enrichment)
 
 - **E1** *As an integrator*, each resource in a response carries an `_actions` map telling me which actions
