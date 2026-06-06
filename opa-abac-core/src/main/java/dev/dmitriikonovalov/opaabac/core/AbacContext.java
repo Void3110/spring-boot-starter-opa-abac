@@ -42,10 +42,33 @@ public record AbacContext(
         }
     }
 
-    /** The resource being accessed. */
-    public record Resource(String type, String id, Map<String, Object> attributes) {
+    /**
+     * The resource being accessed.
+     *
+     * <p>The {@code ancestors} list carries the resource's ancestor chain for hierarchical
+     * authorization — <b>root-first and leaf-excluded</b> (the leaf is already this resource's own
+     * {@code type}/{@code id}). It serializes as {@code input.resource.ancestors} and is
+     * <em>omitted when empty</em> ({@code @JsonInclude} {@code NON_EMPTY}), so a non-hierarchical
+     * resource serializes byte-for-byte as before. The three-argument constructor (no ancestors) keeps
+     * every prior caller compiling unchanged.
+     */
+    public record Resource(
+            String type,
+            String id,
+            Map<String, Object> attributes,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<ParentRef> ancestors) {
+
         public Resource {
             attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+            ancestors = ancestors == null ? List.of() : List.copyOf(ancestors);
+        }
+
+        /**
+         * Convenience constructor for a resource with <b>no ancestor chain</b> — the prior shape. Keeps
+         * every existing caller compiling unchanged and serializing byte-for-byte as before.
+         */
+        public Resource(String type, String id, Map<String, Object> attributes) {
+            this(type, id, attributes, List.of());
         }
     }
 }

@@ -94,7 +94,7 @@ In the example + infra:
 
 | # | Ticket | Module | Status |
 |---|--------|--------|--------|
-| T1 | Core: `ParentRef` + `abacParent()` + `Resource.ancestors` (Spring-free, additive) | core | 📋 |
+| T1 | Core: `ParentRef` + `abacParent()` + `Resource.ancestors` (Spring-free, additive) | core | ✅ |
 | T2 | `AncestorResolver` SPI + ltree & recursive-CTE impls (cycle + depth, fail-closed) | spring-data | 📋 |
 | T3 | `AbstractHierarchicalEntity` (ltree path + maintainer + atomic re-parent) | spring-data | 📋 |
 | T4 | Single-resource hierarchical check (`direct OR (walk_ok AND inherited)`) | spring-data | 📋 |
