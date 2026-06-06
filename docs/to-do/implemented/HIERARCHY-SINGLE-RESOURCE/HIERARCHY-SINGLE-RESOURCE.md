@@ -9,7 +9,14 @@ tags:
 
 # Hierarchical authorization — single-resource (Slice 5.5-A)
 
-> 📋 **PLANNED.** The first of two slices for [[POC-ROADMAP]] **Phase 5.5**, pinned by ADR
+> ✅ **SHIPPED** (T1–T7, branch `feature/void3110/hierarchy-single-resource`). The library walk +
+> resolver SPI (ltree + CTE) + opt-in `AbstractHierarchicalEntity` (ltree + atomic/cross-table re-parent) +
+> `HierarchicalAuthorizer` + starter wiring + the catalog adoption (ltree migration + Rego `inherited_grant`
+> /deny-overrides) + an e2e matrix incl. the re-parent flip are all in. Feature guide:
+> [[HIERARCHICAL-AUTHORIZATION]]. The live newman run is the maintainer's (Docker unreachable in the build
+> env); the behaviors are proven by `opa test`/`opa eval` + `HierarchyAdoptionIT` against real Postgres.
+>
+> The first of two slices for [[POC-ROADMAP]] **Phase 5.5**, pinned by ADR
 > [[0008-hierarchical-resource-authorization|0008]]. This slice generalizes the one-step parent hop (a
 > Category's role resolved on its governing Catalog) into a **full N-level ancestor-chain walk** for
 > **single-resource** checks: a grant on a Catalog governs a Category and a Product nested under it, N
@@ -100,7 +107,7 @@ In the example + infra:
 | T4 | Single-resource hierarchical check (`direct OR (walk_ok AND inherited)`) | spring-data | ✅ |
 | T5 | Starter wiring: resolver SPI + inheritance config (default-off) + `maxDepth` | starter | ✅ |
 | T6 | Example adoption + rego inheritance clause + Liquibase ltree migration | example + infra | ✅ |
-| T7 | e2e (incl. the mandatory re-parent test) + docs + roadmap/Mulch | e2e + docs | 📋 |
+| T7 | e2e (incl. the mandatory re-parent test) + docs + roadmap/Mulch | e2e + docs | ✅ |
 
 **Critical path:** T1 → T2 → T3 → T4 → T5 → T6 → T7. T1 is independently landable (pure core). T1+T2+T3
 land the reusable library core (parent model + resolver SPI + both impls + hierarchical entity) before the
