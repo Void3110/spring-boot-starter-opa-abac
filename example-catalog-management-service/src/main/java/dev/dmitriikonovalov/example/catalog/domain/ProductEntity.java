@@ -1,20 +1,24 @@
 package dev.dmitriikonovalov.example.catalog.domain;
 
-import dev.dmitriikonovalov.opaabac.data.model.AbstractSecuredEntity;
+import dev.dmitriikonovalov.opaabac.core.ParentRef;
+import dev.dmitriikonovalov.opaabac.data.model.AbstractHierarchicalEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * A product within a category. Extends the secure base — authorizable as resource type
- * {@code "product"}, with audit columns, version, and tags inherited.
+ * A product within a category. Extends the <b>hierarchical</b> secure base (Phase 5.5-A) — authorizable as
+ * resource type {@code "product"}, carrying the denormalized {@code ltree} {@code path}. Its immediate
+ * parent is its Category; the path encodes the full {@code catalog → category → product} lineage, so a
+ * Catalog grant can govern a Product even though a Product carries no {@code catalogId}.
  */
 @Entity
 @Table(name = "product")
-public class ProductEntity extends AbstractSecuredEntity {
+public class ProductEntity extends AbstractHierarchicalEntity {
 
     @Column(name = "category_id", nullable = false, updatable = false)
     private UUID categoryId;
@@ -52,6 +56,12 @@ public class ProductEntity extends AbstractSecuredEntity {
     @Override
     public String abacResourceType() {
         return "product";
+    }
+
+    /** The immediate parent for the ancestor walk: this Product's Category. */
+    @Override
+    public Optional<ParentRef> abacParent() {
+        return Optional.of(new ParentRef("category", categoryId.toString()));
     }
 
     /**

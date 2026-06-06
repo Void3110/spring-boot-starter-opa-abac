@@ -20,6 +20,16 @@ package category
 
 default allow := false
 
+# final decision: a grant (direct, inherited, or the subject-roles fallback) that is NOT denied.
+# Phase 5.5-A added inheritance + deny-overrides; the tag match + filter/bulk entrypoints are unchanged.
+#   final_allow = (direct_grant OR inherited_grant OR fallback) AND NOT denied
+# Inheritance is OPT-IN, default-off via data.category.inheritable[<leaf>][<ancestor>] (absent ⇒ none),
+# so with no inheritable data this behaves EXACTLY as the pre-hierarchy direct-only decision.
+allow if {
+	granted
+	not denied
+}
+
 # The action verb is the part after the ":" in input.action (e.g. "category:read" -> "read").
 verb := v if {
 	parts := split(input.action, ":")
@@ -27,30 +37,55 @@ verb := v if {
 	v := parts[1]
 }
 
-# PRIMARY: role-definition-driven. Allow when the verb is granted for this resource type by
-# the caller's role definition AND the resource's tags satisfy the role's tag requirement.
-allow if {
-	verb in input.role_definition.permissions[input.resource.type]
+# PRIMARY: role-definition-driven direct grant. The verb is granted for THIS resource type by the
+# caller's role definition AND the resource's tags satisfy the role's tag requirement.
+granted if {
+	direct_grant
+}
+
+# INHERITED: an inheritable ancestor's type carries the verb in the (root-resolved) role. The leaf's
+# tag requirement still applies (a tag-gated role only grants where the leaf's tags satisfy it).
+granted if {
+	inherited_grant
 	tags_satisfied
 }
 
 # FALLBACK: only when no role definition is present, decide from subject roles.
 # viewer/editor may read; only editor may write. (No tag requirement applies to the fallback.)
-allow if {
+granted if {
 	not has_role_definition
 	verb == "read"
 	some role in input.subject.roles
 	role in {"catalog-viewer", "catalog-editor"}
 }
 
-allow if {
+granted if {
 	not has_role_definition
 	verb == "write"
 	"catalog-editor" in input.subject.roles
 }
 
+direct_grant if {
+	verb in input.role_definition.permissions[input.resource.type]
+	tags_satisfied
+}
+
+# An ancestor grant satisfies the leaf action when:
+#   - the ancestor's type is declared inheritable for the leaf type (OPT-IN, default-off), and
+#   - the root-resolved role grants the verb on that ancestor type.
+inherited_grant if {
+	some ancestor in input.resource.ancestors
+	data.category.inheritable[input.resource.type][ancestor.type]
+	verb in input.role_definition.permissions[ancestor.type]
+}
+
 has_role_definition if {
 	input.role_definition.permissions
+}
+
+# Deny-overrides (the final narrowing AND): an explicit leaf deny wins over any grant.
+denied if {
+	input.resource.attributes.abac_deny == true
 }
 
 # ---------------------------------------------------------------------------

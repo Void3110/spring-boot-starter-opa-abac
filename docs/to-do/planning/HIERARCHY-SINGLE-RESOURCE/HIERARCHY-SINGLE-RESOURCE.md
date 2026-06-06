@@ -99,7 +99,7 @@ In the example + infra:
 | T3 | `AbstractHierarchicalEntity` (ltree path + maintainer + atomic re-parent) | spring-data | ✅ |
 | T4 | Single-resource hierarchical check (`direct OR (walk_ok AND inherited)`) | spring-data | ✅ |
 | T5 | Starter wiring: resolver SPI + inheritance config (default-off) + `maxDepth` | starter | ✅ |
-| T6 | Example adoption + rego inheritance clause + Liquibase ltree migration | example + infra | 📋 |
+| T6 | Example adoption + rego inheritance clause + Liquibase ltree migration | example + infra | ✅ |
 | T7 | e2e (incl. the mandatory re-parent test) + docs + roadmap/Mulch | e2e + docs | 📋 |
 
 **Critical path:** T1 → T2 → T3 → T4 → T5 → T6 → T7. T1 is independently landable (pure core). T1+T2+T3

@@ -1,0 +1,100 @@
+databaseChangeLog:
+  # Phase 5.5-A — N-level hierarchical authorization. Add the denormalized ltree `path` column to the
+  # three hierarchy tables so a grant on an ancestor can govern a descendant. The label convention is
+  # `<type>_<dash-free-hex-uuid>` (ltree labels allow only [A-Za-z0-9_], so the UUID's hyphens are
+  # stripped), shared with HierarchyLabels in the library. Backfill computes each row's full lineage.
+  #
+  # The entity mappings (AbstractHierarchicalEntity) must match the `path` column exactly — the app boots
+  # with ddl-auto: validate, so a clean boot is the proof. Postgres-only (ltree extension + the <@ operator).
+
+  - changeSet:
+      id: 0003-ltree-extension
+      author: catalog-management-service
+      changes:
+        - sql:
+            sql: CREATE EXTENSION IF NOT EXISTS ltree
+      rollback:
+        - sql:
+            sql: DROP EXTENSION IF EXISTS ltree
+
+  - changeSet:
+      id: 0003-add-path-columns
+      author: catalog-management-service
+      changes:
+        - addColumn:
+            tableName: catalog
+            columns:
+              - column:
+                  name: path
+                  type: ltree
+        - addColumn:
+            tableName: category
+            columns:
+              - column:
+                  name: path
+                  type: ltree
+        - addColumn:
+            tableName: product
+            columns:
+              - column:
+                  name: path
+                  type: ltree
+
+  - changeSet:
+      id: 0003-backfill-paths
+      author: catalog-management-service
+      changes:
+        # Catalog (root): path = catalog_<hex>
+        - sql:
+            sql: >-
+              UPDATE catalog
+                 SET path = CAST('catalog_' || replace(id::text, '-', '') AS ltree)
+               WHERE path IS NULL
+        # Category (a tree via parent_id): a recursive CTE builds each category's full lineage from its
+        # catalog root down, handling unbounded nesting. A root category sits directly under its catalog.
+        - sql:
+            sql: >-
+              WITH RECURSIVE cat_path AS (
+                  SELECT k.id,
+                         (SELECT path FROM catalog c WHERE c.id = k.catalog_id)
+                           || CAST('category_' || replace(k.id::text, '-', '') AS ltree) AS path
+                    FROM category k
+                   WHERE k.parent_id IS NULL
+                   UNION ALL
+                  SELECT child.id,
+                         parent.path
+                           || CAST('category_' || replace(child.id::text, '-', '') AS ltree) AS path
+                    FROM category child
+                    JOIN cat_path parent ON child.parent_id = parent.id
+              )
+              UPDATE category k
+                 SET path = cp.path
+                FROM cat_path cp
+               WHERE k.id = cp.id
+                 AND k.path IS NULL
+        # Product: path = its category's path || product_<hex>
+        - sql:
+            sql: >-
+              UPDATE product p
+                 SET path = k.path || CAST('product_' || replace(p.id::text, '-', '') AS ltree)
+                FROM category k
+               WHERE p.category_id = k.id
+                 AND p.path IS NULL
+
+  - changeSet:
+      id: 0003-path-gin-indexes
+      author: catalog-management-service
+      changes:
+        - sql:
+            sql: CREATE INDEX idx_catalog_path ON catalog USING gist (path)
+        - sql:
+            sql: CREATE INDEX idx_category_path ON category USING gist (path)
+        - sql:
+            sql: CREATE INDEX idx_product_path ON product USING gist (path)
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_catalog_path
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_category_path
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_product_path

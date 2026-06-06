@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
+import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.openapi.api.CatalogApi;
@@ -16,9 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CatalogController implements CatalogApi {
 
     private final CatalogRepository catalogs;
+    private final CatalogHierarchyService hierarchy;
 
-    public CatalogController(CatalogRepository catalogs) {
+    public CatalogController(CatalogRepository catalogs, CatalogHierarchyService hierarchy) {
         this.catalogs = catalogs;
+        this.hierarchy = hierarchy;
     }
 
     @Override
@@ -35,6 +38,7 @@ public class CatalogController implements CatalogApi {
                 UUID.randomUUID(),
                 request.getName(),
                 request.getDescription());
+        hierarchy.assignPath(entity); // a root: path = catalog_<id>
         var saved = catalogs.save(entity);
         return ResponseEntity.status(HttpStatus.CREATED).body(CatalogMapper.toDto(saved));
     }

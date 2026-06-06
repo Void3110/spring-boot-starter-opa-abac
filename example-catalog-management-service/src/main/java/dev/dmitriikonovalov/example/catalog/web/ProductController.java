@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
+import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
@@ -20,12 +21,14 @@ public class ProductController implements ProductApi {
     private final ProductRepository products;
     private final ProductService productService;
     private final CategoryRepository categories;
+    private final CatalogHierarchyService hierarchy;
 
     public ProductController(ProductRepository products, ProductService productService,
-                             CategoryRepository categories) {
+                             CategoryRepository categories, CatalogHierarchyService hierarchy) {
         this.products = products;
         this.productService = productService;
         this.categories = categories;
+        this.hierarchy = hierarchy;
     }
 
     @Override
@@ -48,6 +51,7 @@ public class ProductController implements ProductApi {
                 request.getSku(),
                 request.getPriceCents(),
                 request.getCurrency());
+        hierarchy.assignPath(entity); // path = category path || product_<id> (encodes the full lineage)
         var saved = products.save(entity);
         return ResponseEntity.status(HttpStatus.CREATED).body(CatalogMapper.toDto(saved));
     }
