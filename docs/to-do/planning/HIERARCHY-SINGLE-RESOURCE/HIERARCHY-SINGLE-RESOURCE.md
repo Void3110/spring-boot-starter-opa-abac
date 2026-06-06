@@ -98,7 +98,7 @@ In the example + infra:
 | T2 | `AncestorResolver` SPI + ltree & recursive-CTE impls (cycle + depth, fail-closed) | spring-data | ✅ |
 | T3 | `AbstractHierarchicalEntity` (ltree path + maintainer + atomic re-parent) | spring-data | ✅ |
 | T4 | Single-resource hierarchical check (`direct OR (walk_ok AND inherited)`) | spring-data | ✅ |
-| T5 | Starter wiring: resolver SPI + inheritance config (default-off) + `maxDepth` | starter | 📋 |
+| T5 | Starter wiring: resolver SPI + inheritance config (default-off) + `maxDepth` | starter | ✅ |
 | T6 | Example adoption + rego inheritance clause + Liquibase ltree migration | example + infra | 📋 |
 | T7 | e2e (incl. the mandatory re-parent test) + docs + roadmap/Mulch | e2e + docs | 📋 |
 

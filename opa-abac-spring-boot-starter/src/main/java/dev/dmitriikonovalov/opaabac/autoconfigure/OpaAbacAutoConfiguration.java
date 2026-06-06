@@ -10,8 +10,15 @@ import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.filter.ResidualSpecificationFactory;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.HierarchicalAuthorizer;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreeAncestorResolver;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreePathSource;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.ParentLinkSource;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.RecursiveCteAncestorResolver;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -108,6 +115,53 @@ public class OpaAbacAutoConfiguration {
                     opaClient,
                     residualSpecificationFactory,
                     new AbacQueryService.PartialEvalSettings(pe.isEnabled(), pe.isAllowlistFallback()));
+        }
+    }
+
+    /**
+     * Hierarchical (N-level ancestor) authorization beans (Slice 5.5-A). <strong>Opt-in, default-off</strong>:
+     * the whole group is gated on {@code opa.abac.hierarchy.enabled=true} AND Spring Data JPA on the
+     * classpath. The {@code AncestorResolver} is chosen by {@code hierarchy.resolver} ({@code ltree}/{@code cte})
+     * and wired only when the app supplies the matching data-access source bean — a
+     * {@link LtreePathSource} for ltree or a {@link ParentLinkSource} for cte (the library can't know the
+     * app's tables). The app can also supply its own {@code AncestorResolver} / {@code HierarchicalAuthorizer}
+     * to override everything ({@link ConditionalOnMissingBean}).
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.data.jpa.repository.JpaSpecificationExecutor")
+    @ConditionalOnProperty(prefix = "opa.abac.hierarchy", name = "enabled", havingValue = "true")
+    static class HierarchyAutoConfiguration {
+
+        /** The default resolver — used when {@code hierarchy.resolver=ltree} and an app supplies a path source. */
+        @Bean
+        @ConditionalOnMissingBean(AncestorResolver.class)
+        @ConditionalOnBean(LtreePathSource.class)
+        @ConditionalOnProperty(prefix = "opa.abac.hierarchy", name = "resolver",
+                havingValue = "ltree", matchIfMissing = true)
+        public AncestorResolver ltreeAncestorResolver(
+                LtreePathSource pathSource, OpaAbacProperties properties) {
+            return new LtreeAncestorResolver(pathSource, properties.getHierarchy().getMaxDepth());
+        }
+
+        /** The live-walk resolver — used when {@code hierarchy.resolver=cte} and an app supplies a parent source. */
+        @Bean
+        @ConditionalOnMissingBean(AncestorResolver.class)
+        @ConditionalOnBean(ParentLinkSource.class)
+        @ConditionalOnProperty(prefix = "opa.abac.hierarchy", name = "resolver", havingValue = "cte")
+        public AncestorResolver recursiveCteAncestorResolver(
+                ParentLinkSource parentSource, OpaAbacProperties properties) {
+            return new RecursiveCteAncestorResolver(parentSource, properties.getHierarchy().getMaxDepth());
+        }
+
+        /** The single-resource hierarchical check, wired once a resolver is present. */
+        @Bean
+        @ConditionalOnMissingBean
+        @ConditionalOnBean(AncestorResolver.class)
+        public HierarchicalAuthorizer hierarchicalAuthorizer(
+                AncestorResolver ancestorResolver,
+                RoleDefinitionSupplier roleDefinitionSupplier,
+                OpaClient opaClient) {
+            return new HierarchicalAuthorizer(ancestorResolver, roleDefinitionSupplier, opaClient);
         }
     }
 }
