@@ -351,3 +351,79 @@ test_bulk_empty if {
 	result := category.bulk with input as {"items": []}
 	result == []
 }
+
+# --- Phase 5.5-A: N-level ancestor inheritance + deny-overrides --------------
+
+# A role resolved on the governing root (a Catalog) grants `read` on the catalog type only.
+cat_root_role := {
+	"code": "catalog-viewer",
+	"attributes": {},
+	"permissions": {"catalog": ["read"]},
+}
+
+# category inherits from catalog (opt-in, default-off): supplied per-test via `with data`.
+category_inherits_catalog := {"category": {"catalog": true}}
+
+deep_category_input(role_def, attrs) := {
+	"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+	"action": "category:read",
+	"resource": {
+		"type": "category",
+		"id": "k1",
+		"attributes": attrs,
+		"ancestors": [{"type": "catalog", "id": "c1"}],
+	},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# INHERITED: a Catalog grant authorizes a Category under it (opt-in ON), no leaf tag requirement.
+test_inherited_grant_from_catalog if {
+	category.allow with input as deep_category_input(cat_root_role, {})
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# OPT-IN OFF: same ancestor grant, EMPTY inheritable data → deny (override the bundled data with {}).
+test_opt_in_off_no_inheritance if {
+	not category.allow with input as deep_category_input(cat_root_role, {})
+		with data.category.inheritable as {}
+}
+
+# DENY-OVERRIDES: a leaf deny beats the inherited grant.
+test_deny_overrides_beats_inherited if {
+	not category.allow with input as deep_category_input(cat_root_role, {"abac_deny": true})
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# NO ANCESTORS: a catalog-only role on a category with no ancestors → direct-only → deny.
+test_no_ancestors_direct_only_deny if {
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"action": "category:read",
+		"resource": {"type": "category", "id": "k1", "attributes": {}},
+		"role_definition": cat_root_role,
+		"environment": {},
+	}
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# TAG MATCH ON THE INHERITED PATH: a tag-gated root role only inherits where the LEAF's tags satisfy it.
+cat_root_role_tagged := {
+	"code": "regional-catalog-reader",
+	"attributes": {},
+	"permissions": {"catalog": ["read"]},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+# leaf tagged region=emea → inherited grant holds (tag satisfied).
+test_inherited_grant_respects_leaf_tags_match if {
+	category.allow with input as deep_category_input(cat_root_role_tagged, {"region": "emea"})
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# leaf tagged region=apac → inherited grant denied (tag NOT satisfied), even though the ancestor grants.
+test_inherited_grant_respects_leaf_tags_mismatch if {
+	not category.allow with input as deep_category_input(cat_root_role_tagged, {"region": "apac"})
+		with data.category.inheritable as category_inherits_catalog
+}

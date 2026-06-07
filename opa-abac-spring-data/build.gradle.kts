@@ -31,7 +31,9 @@ dependencies {
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
-    testRuntimeOnly("org.postgresql:postgresql")
+    // The AncestorResolver IT uses PGSimpleDataSource directly (pure-JDBC ltree / recursive-CTE reads),
+    // so the driver must be on the test compile classpath, not only at runtime.
+    testImplementation("org.postgresql:postgresql")
 }
 
 // Resolve a Docker-compatible socket for Testcontainers (the ResidualSpecificationFactory IT).

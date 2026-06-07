@@ -155,6 +155,115 @@ class OpaAbacAutoConfigurationTest {
         });
     }
 
+    // --- hierarchy beans (T5) ------------------------------------------------
+
+    @Test // default-off: no hierarchy beans unless hierarchy.enabled=true (even with a source present)
+    void hierarchyBeansAbsent_byDefault() {
+        runner.withUserConfiguration(LtreeSourceConfig.class).run(context -> {
+            assertThat(context).doesNotHaveBean(
+                    dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class);
+            assertThat(context).doesNotHaveBean(
+                    dev.dmitriikonovalov.opaabac.data.hierarchy.HierarchicalAuthorizer.class);
+        });
+    }
+
+    @Test // enabled + an ltree path source → the ltree resolver + the authorizer
+    void hierarchyLtreeResolver_whenEnabledWithPathSource() {
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+                .withUserConfiguration(LtreeSourceConfig.class)
+                .run(context -> {
+                    assertThat(context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class))
+                            .isInstanceOf(dev.dmitriikonovalov.opaabac.data.hierarchy.LtreeAncestorResolver.class);
+                    assertThat(context).hasSingleBean(
+                            dev.dmitriikonovalov.opaabac.data.hierarchy.HierarchicalAuthorizer.class);
+                });
+    }
+
+    @Test // resolver=cte + a parent-link source → the recursive-CTE resolver
+    void hierarchyCteResolver_whenSelectedWithParentSource() {
+        runner.withPropertyValues(
+                        "opa.abac.hierarchy.enabled=true",
+                        "opa.abac.hierarchy.resolver=cte")
+                .withUserConfiguration(CteSourceConfig.class)
+                .run(context -> assertThat(
+                        context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class))
+                        .isInstanceOf(
+                                dev.dmitriikonovalov.opaabac.data.hierarchy.RecursiveCteAncestorResolver.class));
+    }
+
+    @Test // enabled but NO source bean → no resolver (the app must supply the data-access seam)
+    void hierarchyResolverAbsent_withoutSource() {
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true").run(context ->
+                assertThat(context).doesNotHaveBean(
+                        dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class));
+    }
+
+    @Test // an app-supplied AncestorResolver overrides the auto one
+    void userAncestorResolverWins() {
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+                .withUserConfiguration(LtreeSourceConfig.class, UserResolverConfig.class)
+                .run(context -> assertThat(
+                        context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class))
+                        .isSameAs(UserResolverConfig.RESOLVER));
+    }
+
+    @Test // hierarchy properties bind (maxDepth + the inheritable map)
+    void hierarchyPropertiesBind() {
+        runner.withPropertyValues(
+                        "opa.abac.hierarchy.enabled=true",
+                        "opa.abac.hierarchy.resolver=cte",
+                        "opa.abac.hierarchy.max-depth=8",
+                        "opa.abac.hierarchy.inheritable.category=catalog",
+                        "opa.abac.hierarchy.inheritable.product=category,catalog")
+                .run(context -> {
+                    OpaAbacProperties props = context.getBean(OpaAbacProperties.class);
+                    assertThat(props.getHierarchy().isEnabled()).isTrue();
+                    assertThat(props.getHierarchy().getResolver()).isEqualTo("cte");
+                    assertThat(props.getHierarchy().getMaxDepth()).isEqualTo(8);
+                    assertThat(props.getHierarchy().getInheritable())
+                            .containsEntry("category", java.util.List.of("catalog"))
+                            .containsEntry("product", java.util.List.of("category", "catalog"));
+                });
+    }
+
+    @Test // hierarchy defaults: off, ltree, maxDepth 32, empty inheritable
+    void hierarchyDefaults() {
+        runner.run(context -> {
+            OpaAbacProperties.Hierarchy h = context.getBean(OpaAbacProperties.class).getHierarchy();
+            assertThat(h.isEnabled()).isFalse();
+            assertThat(h.getResolver()).isEqualTo("ltree");
+            assertThat(h.getMaxDepth()).isEqualTo(32);
+            assertThat(h.getInheritable()).isEmpty();
+        });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class LtreeSourceConfig {
+        @Bean
+        dev.dmitriikonovalov.opaabac.data.hierarchy.LtreePathSource ltreePathSource() {
+            return (type, id) -> Optional.empty();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CteSourceConfig {
+        @Bean
+        dev.dmitriikonovalov.opaabac.data.hierarchy.ParentLinkSource parentLinkSource() {
+            return (type, id) -> Optional.empty();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserResolverConfig {
+        static final dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver RESOLVER =
+                (type, id) -> java.util.List.of();
+
+        @Bean
+        dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver ancestorResolver() {
+            return RESOLVER;
+        }
+    }
+
     // --- user overrides ------------------------------------------------------
 
     @Configuration(proxyBeanMethods = false)

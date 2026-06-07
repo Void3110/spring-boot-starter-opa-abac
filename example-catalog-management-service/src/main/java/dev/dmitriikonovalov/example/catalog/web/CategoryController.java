@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
+import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
 import dev.dmitriikonovalov.example.catalog.config.CategoryAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.CategoryListAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.TagAssignmentService;
@@ -24,18 +25,21 @@ public class CategoryController implements CategoryApi {
     private final TagAssignmentService tagAssignment;
     private final CategoryAuthorizer categoryAuthorizer;
     private final CategoryListAuthorizer categoryListAuthorizer;
+    private final CatalogHierarchyService hierarchy;
 
     public CategoryController(
             CategoryRepository categories,
             CatalogRepository catalogs,
             TagAssignmentService tagAssignment,
             CategoryAuthorizer categoryAuthorizer,
-            CategoryListAuthorizer categoryListAuthorizer) {
+            CategoryListAuthorizer categoryListAuthorizer,
+            CatalogHierarchyService hierarchy) {
         this.categories = categories;
         this.catalogs = catalogs;
         this.tagAssignment = tagAssignment;
         this.categoryAuthorizer = categoryAuthorizer;
         this.categoryListAuthorizer = categoryListAuthorizer;
+        this.hierarchy = hierarchy;
     }
 
     @Override
@@ -70,6 +74,7 @@ public class CategoryController implements CategoryApi {
         // throws 422 and a definitions-fetch failure throws 503 — nothing is stored either way).
         entity.setTags(tagAssignment.validateAndBuild(
                 "category", categoryId.toString(), request.getTags()));
+        hierarchy.assignPath(entity); // path = parent (category or catalog) path || category_<id>
         var saved = categories.save(entity);
         return ResponseEntity.status(HttpStatus.CREATED).body(CatalogMapper.toDto(saved));
     }
