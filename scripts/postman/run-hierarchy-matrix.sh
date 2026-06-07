@@ -121,9 +121,11 @@ echo "==> Bootstrapping the team + membership (reader reads catalog+category) ..
 OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"Owner\"}" | json_field userId)"
 READER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_SUB\",\"displayName\":\"Reader\"}" | json_field userId)"
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hierarchy demo\",\"targetType\":\"catalog\",\"targetId\":\"$GRANTED_CATALOG_ID\"}" | json_field teamId)"
-# A 'catalog-reader' role: read on catalog + category (so a Category inherits the Catalog grant).
+# A 'catalog-reader' role: read on the CATALOG ONLY. The reader has NO direct category grant, so a
+# readable Category proves the decision came from inherited_grant (the catalog→category inheritance),
+# not a direct category:read — this is what isolates the Phase-5.5-A CUT in test 1.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-reader\",\"permissions\":{\"catalog\":[\"read\"],\"category\":[\"read\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-reader\",\"permissions\":{\"catalog\":[\"read\"]}}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"catalog-reader\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $GRANTED_CATALOG_ID."

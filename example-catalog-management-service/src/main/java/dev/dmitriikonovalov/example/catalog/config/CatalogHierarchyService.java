@@ -52,7 +52,11 @@ public class CatalogHierarchyService {
      */
     @Transactional
     public CategoryEntity reparentCategory(UUID categoryId, UUID newParentCategoryId) {
-        CategoryEntity category = categories.findById(categoryId).orElseThrow(
+        // Lock the moving Category FOR UPDATE as the first entity-touching read (the repo's lock-first
+        // mutate posture, AbstractCrudService.mutate): two concurrent re-parents of the same Category then
+        // serialize at the row lock instead of racing on a stale @Version. The subtree path rewrite (step 3)
+        // happens in this same transaction.
+        CategoryEntity category = categories.findByIdForUpdate(categoryId).orElseThrow(
                 () -> new IllegalArgumentException("Category not found: " + categoryId));
         String oldPath = category.getPath();
 
