@@ -376,6 +376,41 @@ them; only the bracketed content varies per slice.
 Each run added a hard rule that is now permanent. When you write the next prompt, these are *already*
 in the skeleton — this section is the rationale so you don't quietly drop one.
 
+### 7.0 Prompt-language principles (how to phrase the skeleton)
+
+These come from the prompt-engineering research distilled in Jaymin West's *Agentic Engineering Book*
+(the "Prompt" chapter) — applied to *how* we word the autonomous prompt, not *what* it says. They are
+guidelines, not a rewrite of the hardened skeleton; follow them when you fill the slots and when the
+skeleton itself is next revised.
+
+- **Positive constraints over negative, where a positive form exists ("pink-elephant" effect).** Research
+  (InstructGPT / 16x.engineer) shows `NEVER do X` *backfires in long contexts* — naming the forbidden
+  action semantically activates it, so over a long run the agent drifts *toward* it. Prefer the positive
+  reframe: **"`opa-abac-core` stays Spring-free"** beats "NEVER import Spring into core"; **"residual is
+  AND-ed with existing scope"** beats "never replace the scope". The autonomous run is *exactly* the
+  long-context scenario this finding targets.
+- **Reserve hard NEVER for true, non-negotiable boundaries.** Some rules have no safe positive form and
+  must stay imperative-negative — **"Do NOT push, open PRs, or touch `main`"**, **"clean-room: no
+  proprietary names"**. Keep these as `NEVER`; the discipline is to use that register *only* where a
+  violation is unrecoverable, so it keeps its weight. Don't dilute it across stylistic preferences.
+- **Critical constraints first (ordering matters).** The model weights earlier content more heavily, so
+  the hard-rules block leads with the load-bearing ones (fail-closed, push-nothing, clean-room) before
+  the slice-specific and stylistic ones.
+- **Declarative for goals, imperative for steps (~23% reasoning gain, SatLM arxiv:2305.09656).** Frame
+  *"The problem"* and the fail-closed invariant as **states the result must satisfy** ("no path returns a
+  wider result on error than on success"), and keep the per-ticket loop as **imperative steps** ("prime →
+  build → test → review"). Declarative goals encourage the model to build an internal model of the target
+  state; imperative steps drive tool-calling.
+- **Specificity where there's an objective right answer; flexibility elsewhere (DETAIL framework).** Be
+  exact on output/format, the boundary, success criteria, and the exact `:module:test` / `run-*.sh` that
+  proves a ticket (code-gen specificity gains are real); leave *implementation approach* free unless a
+  shipped pattern must be matched. Over-specifying edge cases makes the prompt brittle — give core
+  principles + the canonical example (e.g. "DATA-FILTERING T1 is the build-breaker model"), not 47 cases.
+
+> **Net effect on the skeleton:** most of our hard rules already read as positive constraints; the ones
+> that don't (the push/clean-room boundaries) are precisely the ones that *should* stay `NEVER`. So this
+> is mostly a phrasing discipline to preserve, plus the critical-first ordering — not a structural change.
+
 - **The ★ review gate goes BEFORE IT/e2e, not after.** Cheap self-review (fail-closed, boundaries,
   pattern-reuse, SOLID) and real refactoring *before* the expensive validation catches structural
   mistakes while they're still cheap to fix. Documented per ticket so it can't become ritual.
@@ -524,6 +559,26 @@ Two of the four tools are **upstream** (others' work we adopt); two are **this r
 A reader who wants to adopt the *review* half of this flow in their own project should start from
 [`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) — a vendor-neutral
 version with the project-specific parts marked as fill-in slots.
+
+### Where each prompt sits on the maturity model
+
+A useful lens (from the *Agentic Engineering Book*'s 7-level prompt-maturity model) — it explains why the
+pieces are split the way they are, and where each could evolve:
+
+| Artifact | Level | Why |
+|----------|-------|-----|
+| `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | **L4 — Contextual** | A self-contained one-shot prompt that reads external files (the design, ADRs, QA cases, `CLAUDE.md`) and primes Mulch. Everything-upfront, no follow-up assumed. |
+| **deep-review** | **L5 — Composed** | Invokes other operations — it reaches for a *workflow* (sub-agents) on large diffs and runs `/rego-skill` on policies. Orchestration that coordinates specialists. |
+| **slice-planner** | **L6 — Template metaprompt** | It *generates a new prompt* (the next slice's `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`) from a settled design — a prompt that writes prompts, against the §4 template. |
+
+**The L6→L7 principle we already follow: separate *Expertise* from *Workflow*; only Expertise updates.**
+The book's rule for self-improving prompts is that the operational *workflow* stays stable while the
+*expertise* grows. We implement that split across two stores: the **prompt skeleton (§5) is the stable
+Workflow** — kept verbatim across runs — and **Mulch is the growing Expertise**, re-primed each run. That
+is why "keep the skeleton word-for-word; record learnings to Mulch" is a hard rule and not a stylistic
+preference: it *is* the Expertise/Workflow separation, mapped onto our two-store setup. (A true L7
+meta-cognitive step — a prompt that rewrites *other* prompts in the system — we deliberately don't
+automate; revising the skeleton is a human, ADR-worthy decision.)
 
 ---
 
