@@ -13,8 +13,9 @@ tags:
 > resolver SPI (ltree + CTE) + opt-in `AbstractHierarchicalEntity` (ltree + atomic/cross-table re-parent) +
 > `HierarchicalAuthorizer` + starter wiring + the catalog adoption (ltree migration + Rego `inherited_grant`
 > /deny-overrides) + an e2e matrix incl. the re-parent flip are all in. Feature guide:
-> [[HIERARCHICAL-AUTHORIZATION]]. The live newman run is the maintainer's (Docker unreachable in the build
-> env); the behaviors are proven by `opa test`/`opa eval` + `HierarchyAdoptionIT` against real Postgres.
+> [[HIERARCHICAL-AUTHORIZATION]]. **The live newman matrix passes through the gateway** (inheritance 200 ·
+> deny-overrides 403 · sibling 200 · re-parent flips to 403); also proven by `opa test`/`opa eval` +
+> `HierarchyAdoptionIT` against real Postgres + the real ltree migration.
 >
 > The first of two slices for [[POC-ROADMAP]] **Phase 5.5**, pinned by ADR
 > [[0008-hierarchical-resource-authorization|0008]]. This slice generalizes the one-step parent hop (a

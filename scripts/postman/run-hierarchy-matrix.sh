@@ -79,9 +79,13 @@ token_sub() {
 post_json() { curl -s -X POST "$1" -H 'Content-Type: application/json' -d "$2"; }
 json_field() { python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])"; }
 create_category() {
-  local token="$1" catalog="$2" body="$3"
-  curl -s -X POST "$GATEWAY/api/v1/catalogs/$catalog/categories" \
-    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body" | json_field id
+  local token="$1" catalog="$2" body="$3" resp
+  resp="$(curl -s -X POST "$GATEWAY/api/v1/catalogs/$catalog/categories" \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body")"
+  printf '%s' "$resp" | json_field id 2>/dev/null || {
+    echo "ERROR: create_category failed (catalog=$catalog): $resp" >&2
+    return 1
+  }
 }
 read_status() {
   local token="$1" catalog="$2" category="$3"
@@ -127,7 +131,7 @@ echo "  team $TEAM_ID governs catalog $GRANTED_CATALOG_ID."
 # --- create Categories via the gateway (owner) -------------------------------
 echo "==> Creating Categories (open / denied / sibling / movable) through the gateway ..."
 OPEN_CATEGORY_ID="$(create_category "$OWNER_TOKEN" "$GRANTED_CATALOG_ID" '{"name":"Open"}')"
-DENIED_CATEGORY_ID="$(create_category "$OWNER_TOKEN" "$GRANTED_CATALOG_ID" '{"name":"Denied","tags":{"abac_deny":true}}')"
+DENIED_CATEGORY_ID="$(create_category "$OWNER_TOKEN" "$GRANTED_CATALOG_ID" '{"name":"Denied"}')"
 SIBLING_CATEGORY_ID="$(create_category "$OWNER_TOKEN" "$GRANTED_CATALOG_ID" '{"name":"Sibling"}')"
 MOVABLE_CATEGORY_ID="$(create_category "$OWNER_TOKEN" "$GRANTED_CATALOG_ID" '{"name":"Movable"}')"
 for pair in "open:$OPEN_CATEGORY_ID" "denied:$DENIED_CATEGORY_ID" "sibling:$SIBLING_CATEGORY_ID" "movable:$MOVABLE_CATEGORY_ID"; do
@@ -135,6 +139,14 @@ for pair in "open:$OPEN_CATEGORY_ID" "denied:$DENIED_CATEGORY_ID" "sibling:$SIBL
   [ -n "$id" ] && [ "$id" != "None" ] || { echo "ERROR: failed to create the '$name' Category." >&2; exit 1; }
 done
 echo "  open=$OPEN_CATEGORY_ID denied=$DENIED_CATEGORY_ID sibling=$SIBLING_CATEGORY_ID movable=$MOVABLE_CATEGORY_ID"
+
+# Set the deny-overrides flag on the 'denied' Category directly in the DB. `abac_deny` is an operational
+# control flag (read by the policy as a deny-override), not a user-facing dictionary tag — so the gateway's
+# tag-dictionary validation (Phase 4.5) correctly rejects it on create; we set it out-of-band here.
+"$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+UPDATE category SET tags = jsonb_set(coalesce(tags,'{}'::jsonb), '{abac_deny}', 'true')
+ WHERE id = '$DENIED_CATEGORY_ID';
+SQL
 
 # --- run the inheritance + deny-overrides + pre-reparent checks --------------
 mkdir -p "$REPORT_DIR/$RUN_ID"

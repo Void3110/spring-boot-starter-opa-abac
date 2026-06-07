@@ -36,14 +36,21 @@ tags:
 - **`opa test infra/opa/policies/` — 72/72**; **`./gradlew build` green** throughout (the library unit +
   Testcontainers ITs, the example `ddl-auto: validate` boot + `HierarchyAdoptionIT`, the starter
   `ApplicationContextRunner`).
-- **Live newman run — NOT executed this turn: the local Docker daemon is unreachable in this environment**,
-  so the OIDC rig (Keycloak/APISIX/OPA pods) can't start. This is an environment limitation, not a code
-  issue — exactly the "unrecoverable local prerequisite" case. The script + collection are committed as
-  runnable artifacts (the same way the prior Phase-3/4/4.5/5 matrices were authored-and-committed); the
-  maintainer runs `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2` then
-  `cd scripts/postman && ./run-hierarchy-matrix.sh`. The decisive behaviors are **independently proven**:
-  the policy decision by `opa test` + an `opa eval` probe; the resolver + the cross-table re-parent flip by
-  `HierarchyAdoptionIT` against real Postgres + the real ltree migration.
+- **Live newman run — ✅ GREEN through the gateway.** The full OIDC rig was brought up
+  (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`, image rebuilt with the hierarchy code —
+  the pods booted clean, confirming the 0003 ltree migration ↔ entity mapping under `ddl-auto: validate`
+  **in the deployed image**, and OPA served `data.product.inheritable`). `./run-hierarchy-matrix.sh` →
+  **all 4 newman assertions pass + the re-parent flip passes**: (1) inheritance — a Catalog-granted member
+  reads a nested Category → **200**; (2) deny-overrides — the `abac_deny` Category → **403**; (3) the
+  sibling stays **200**; (4) the movable Category is **200** before the move; then re-parenting it under a
+  foreign Catalog (ltree subtree + product rewrite) flips the read to **403**. (Earlier "Docker unreachable"
+  was a false negative — `timeout` isn't on the shell PATH, so the daemon probe silently errored; the
+  maintainer's podman→Docker-Desktop switch + probing the socket directly recovered it.)
+- **One integration finding the live run surfaced:** the deny-overrides `abac_deny` tag is (correctly)
+  rejected by the Phase-4.5 **tag-dictionary** validation on create — it's an operational control flag, not
+  a user-facing dictionary tag. The matrix sets it **out-of-band via SQL** (the same way it seeds the
+  catalogs), and `create_category` now surfaces a clear error on a non-`id` body instead of a bare
+  Python traceback.
 
 ## Architecture review + refactor (the ★ gate)
 
