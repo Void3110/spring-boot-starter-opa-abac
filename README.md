@@ -144,6 +144,43 @@ export DOCKER_HOST="unix://$(podman machine inspect podman-machine-default \
 
 GitHub Actions provides Docker out of the box, so CI runs these tests with no extra config.
 
+## How this repo is built — AI-assisted engineering
+
+Beyond the library, this repo is a deliberate, **studyable case study in high-autonomy AI-assisted
+engineering**. Every slice is shipped through the same documented loop, and the prompts and outcomes are
+kept verbatim so the *method* — not just the result — is on display:
+
+```
+① PLAN          ② DECOMPOSE              ③ AUTONOMOUS IMPLEMENT       ④ REVIEW / SHIP
+chat + grill-me  design → ordered tickets  one agent runs the prompt,   /deep-review (multi-lens,
+→ ADRs, design   + QA cases + a verbatim   ticket by ticket,            adversarial verify) →
+                 autonomous prompt         checkpoint-gated,            PR → CI → merge →
+                                           fail-closed                  record the run retrospective
+```
+
+Each slice's planning package (`00-DESIGN`, the ordered tickets, the **verbatim**
+`AUTONOMOUS-IMPLEMENTATION-PROMPT.md`, and per-ticket `STATUS` notes) is preserved under
+[`docs/to-do/`](docs/to-do/) so a reader can see how the work was reasoned about, handed off, and verified.
+
+**The tooling that powers each phase** (with upstream credits and the orchestration patterns each one
+instantiates):
+
+| Phase | Tooling |
+|-------|---------|
+| ① Plan | **grill-me** (fork-resolving interview) → immutable ADRs + a design |
+| ② Decompose | **slice-planner** → the ordered tickets, QA cases, and the autonomous prompt |
+| ③ Implement | one agent runs the prompt, checkpoint-gated, with an architecture-review gate before every validation |
+| ④ Review | **deep-review** — a multi-lens, adversarial workflow (fan-out → refute → synthesize) |
+| All phases | **Mulch** (a per-repo expertise store, primed before / recorded after) + **LSP** (`jdtls`) code intelligence |
+
+Two quality ideas run through it: **fail-closed is the load-bearing invariant** every slice is checked
+against, and an **autonomous-run retrospective** is recorded for each slice (was it a clean run or did it
+pause to ask — and what should planning have pre-resolved) so the *next* slice's planning gets sharper.
+
+> The full method — the prompt template, the hard rules, the tooling stack with credits, and a portable
+> review-harness template — is documented in
+> [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md).
+
 ## Requirements
 
 - Java 21+
@@ -158,6 +195,7 @@ The full architecture, decision records, and per-feature guides live in [`docs/`
 - **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
 - **Architecture & ADRs** — [`docs/architecture/`](docs/architecture/)
 - **Roadmap** — [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md)
+- **AI-assisted workflow** — [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) (the plan → implement → review method this repo is built with) + the portable [`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](docs/code-review/DEEP-REVIEW-TEMPLATE.md)
 
 ## License
 
