@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "Hierarchical ABAC matrix (N-level ancestor inheritance, Phase 5.5-A)",
+    "description": "Proves single-resource hierarchical authorization through the gateway: a grant on a Catalog ancestor governs a Category nested under it (inheritance), an explicit leaf deny carves one Category out while a sibling stays readable (deny-overrides), and a subtree re-parent flips a decision. The role is resolved once on the governing root; the decision is direct OR (walk_ok AND inherited), deny-overrides narrowing. Fail-closed throughout.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Inherited grant: catalog-granted member reads a Category under it -> 200",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{reader_token}}" }],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{open_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{catalog_id}}", "categories", "{{open_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('a Catalog grant authorizes a Category nested under it (inheritance)', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. DECISIVE — deny-overrides: a leaf-denied Category is carved out -> 403",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{reader_token}}" }],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{denied_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{catalog_id}}", "categories", "{{denied_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('an explicit leaf deny wins over the inherited Catalog grant', function () {",
+              "  pm.response.to.have.status(403);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Sibling stays readable: deny-overrides narrows only the denied node -> 200",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{reader_token}}" }],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{sibling_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{catalog_id}}", "categories", "{{sibling_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('a sibling of the denied Category is still readable (deny is narrow)', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. RE-PARENT flips a decision — pre-move: nested Category is readable -> 200",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{reader_token}}" }],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{movable_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{catalog_id}}", "categories", "{{movable_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('before re-parent: the Category inherits the readable Catalog grant -> 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "gateway", "value": "http://localhost:9085" },
+    { "key": "catalog_id", "value": "" },
+    { "key": "open_category_id", "value": "" },
+    { "key": "denied_category_id", "value": "" },
+    { "key": "sibling_category_id", "value": "" },
+    { "key": "movable_category_id", "value": "" },
+    { "key": "reader_token", "value": "" }
+  ]
+}

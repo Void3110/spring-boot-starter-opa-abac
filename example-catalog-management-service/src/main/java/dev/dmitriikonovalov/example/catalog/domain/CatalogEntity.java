@@ -1,20 +1,22 @@
 package dev.dmitriikonovalov.example.catalog.domain;
 
-import dev.dmitriikonovalov.opaabac.data.model.AbstractSecuredEntity;
+import dev.dmitriikonovalov.opaabac.core.ParentRef;
+import dev.dmitriikonovalov.opaabac.data.model.AbstractHierarchicalEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * A product catalog — the root of the resource hierarchy. Extends the secure base, so it carries
- * audit columns, an optimistic-lock version, and ABAC tags, and is authorizable as resource type
- * {@code "catalog"}. The id/created-at/version/tags are inherited; {@code createdAt} is now
- * populated by Spring Data auditing rather than supplied by the caller.
+ * A product catalog — the <b>root</b> of the resource hierarchy. Extends the hierarchical secure base
+ * (Phase 5.5-A) so it carries the {@code ltree} {@code path} (just its own label, as a root) that the
+ * Categories and Products beneath it build their lineage on. Authorizable as resource type
+ * {@code "catalog"}; has no parent ({@link #abacParent()} empty).
  */
 @Entity
 @Table(name = "catalog")
-public class CatalogEntity extends AbstractSecuredEntity {
+public class CatalogEntity extends AbstractHierarchicalEntity {
 
     @Column(nullable = false)
     private String name;
@@ -35,6 +37,12 @@ public class CatalogEntity extends AbstractSecuredEntity {
     @Override
     public String abacResourceType() {
         return "catalog";
+    }
+
+    /** A Catalog is the hierarchy root — it has no parent. */
+    @Override
+    public Optional<ParentRef> abacParent() {
+        return Optional.empty();
     }
 
     public String getName() {

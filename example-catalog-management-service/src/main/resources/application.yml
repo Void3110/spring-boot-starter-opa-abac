@@ -19,6 +19,20 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+# ABAC / OPA — Phase 5.5-A enables N-level hierarchical authorization. The starter wires the ltree
+# AncestorResolver + HierarchicalAuthorizer once this app supplies a LtreePathSource (HierarchyConfig).
+# `inheritable` is the structural declaration mirrored into OPA data (infra/opa/data/*.json) that the
+# rego inheritance clause reads; here it documents the same relations for the app's own reference.
+opa:
+  abac:
+    hierarchy:
+      enabled: ${OPA_ABAC_HIERARCHY_ENABLED:true}
+      resolver: ${OPA_ABAC_HIERARCHY_RESOLVER:ltree}
+      max-depth: ${OPA_ABAC_HIERARCHY_MAX_DEPTH:32}
+      inheritable:
+        category: [catalog]
+        product: [category, catalog]
+
 # Role-definition source for ABAC decisions:
 #   demo (default) — the static DemoRoleDefinitionSupplier (Keycloak realm roles -> role definition)
 #   http           — HttpRoleDefinitionSupplier, resolving the caller's effective role from the

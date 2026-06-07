@@ -2,7 +2,9 @@ package dev.dmitriikonovalov.opaabac.autoconfigure;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
@@ -61,6 +63,10 @@ public class OpaAbacProperties {
     /** Partial-evaluation (list data-filtering) settings. */
     @NestedConfigurationProperty
     private PartialEval partialEval = new PartialEval();
+
+    /** N-level hierarchical authorization settings (opt-in, default-off). */
+    @NestedConfigurationProperty
+    private Hierarchy hierarchy = new Hierarchy();
 
     public boolean isEnabled() {
         return enabled;
@@ -126,6 +132,14 @@ public class OpaAbacProperties {
         this.partialEval = partialEval;
     }
 
+    public Hierarchy getHierarchy() {
+        return hierarchy;
+    }
+
+    public void setHierarchy(Hierarchy hierarchy) {
+        this.hierarchy = hierarchy;
+    }
+
     /**
      * Partial-evaluation (list data-filtering) settings. {@code enabled} is a true kill-switch: when off,
      * {@code AbacQueryService} degrades to the coarse pre-filtering path (scope + one decision), never
@@ -154,6 +168,74 @@ public class OpaAbacProperties {
 
         public void setAllowlistFallback(boolean allowlistFallback) {
             this.allowlistFallback = allowlistFallback;
+        }
+    }
+
+    /**
+     * N-level hierarchical authorization settings (Slice 5.5-A). <strong>Opt-in, default-off</strong>: a
+     * grant on an ancestor inherits down to a descendant only when {@code enabled} is {@code true} AND the
+     * relation is declared {@link #inheritable}. When off, every type is authorized on itself, as before.
+     *
+     * <pre>
+     * opa:
+     *   abac:
+     *     hierarchy:
+     *       enabled: true
+     *       resolver: ltree           # ltree (default, materialized path) | cte (live parent walk)
+     *       max-depth: 32             # mandatory bound; a deeper chain throws (fail-closed)
+     *       inheritable:              # structural declaration: childType -> [ancestorType...]
+     *         category: [catalog]
+     *         product: [category, catalog]
+     * </pre>
+     *
+     * <p>{@code inheritable} mirrors the {@code inheritable[childType][ancestorType]} OPA data the Rego
+     * inheritance clause reads; it is exposed here so an app can publish a single source of truth to OPA.
+     * The library uses {@code enabled}/{@code resolver}/{@code maxDepth} to wire the resolver beans.
+     */
+    public static class Hierarchy {
+
+        /** Master switch for hierarchical authorization. <strong>Default false (opt-in).</strong> */
+        private boolean enabled = false;
+
+        /** Which {@code AncestorResolver} to wire: {@code ltree} (default) or {@code cte}. */
+        private String resolver = "ltree";
+
+        /** Mandatory depth bound; a chain deeper than this throws (fail-closed), never truncates. */
+        private int maxDepth = 32;
+
+        /** Structural inheritance declaration: {@code childType -> [ancestorType...]}; empty = no inheritance. */
+        private Map<String, List<String>> inheritable = new LinkedHashMap<>();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getResolver() {
+            return resolver;
+        }
+
+        public void setResolver(String resolver) {
+            this.resolver = resolver;
+        }
+
+        public int getMaxDepth() {
+            return maxDepth;
+        }
+
+        public void setMaxDepth(int maxDepth) {
+            this.maxDepth = maxDepth;
+        }
+
+        public Map<String, List<String>> getInheritable() {
+            return inheritable;
+        }
+
+        public void setInheritable(Map<String, List<String>> inheritable) {
+            this.inheritable = inheritable;
         }
     }
 

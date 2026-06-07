@@ -1,0 +1,10 @@
+{
+  "category": {
+    "inheritable": {
+      "category": {
+        "catalog": true,
+        "category": true
+      }
+    }
+  }
+}

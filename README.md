@@ -12,8 +12,30 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 
 ## Status
 
-🚧 **Early development.** Phase 0: the example service skeleton (no auth yet) — the thing we
-are going to secure. The starter library is then built up step by step and layered onto it.
+🚧 **Active development** — the library is taking shape slice by slice, each one layered onto the
+runnable example and proven end-to-end (unit + Testcontainers ITs + `opa test` + a newman gateway matrix).
+
+**Shipped so far:**
+
+- **Domain-model foundation** — a secured-entity base (UUID id, audit, optimistic-lock `@Version`,
+  JSONB resource tags) + a safe locked-write `mutate()` path.
+- **Library spine** — a fail-closed OPA client (`HttpOpaClient`, JDK `HttpClient`), JWT→subject
+  extraction, and a **role-definition-driven** `@OpaPreAuthorize` enforcement path.
+- **Team-based authorization** — an example `user-management-service` resolving a caller's effective role
+  from real team membership (role ≠ grant, owner-on-create, the subset/no-self-escalation rule, transfer).
+- **Dynamic tag dictionary** — runtime-editable tag keys + tag-based grants matched in Rego (`some in` /
+  `every`, ANY_OF / ALL_OF).
+- **Partial-evaluation data filtering** — OPA's Compile API → a JPA `Specification` over JSONB, so a list
+  endpoint returns only the rows a subject may see (filtered in SQL, fail-closed to an empty page).
+- **N-level hierarchical authorization** — a grant on a Catalog governs a Category/Product nested under it,
+  N levels deep (opt-in per relation, deny-overridable, fail-closed; an `ltree` materialized-path resolver
+  + atomic re-parent). See [`docs/guides/HIERARCHICAL-AUTHORIZATION.md`](docs/guides/HIERARCHICAL-AUTHORIZATION.md).
+
+**Next:** hierarchy-aware **list** filtering (5.5-B) and an action-affordance map (Phase 6). The technical
+plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
+
+> **Not yet published to Maven Central** — the API is still moving as slices land. The full picture
+> (architecture, ADRs, guides) is in [`docs/`](docs/README.md).
 
 ## This is a monorepo
 
@@ -67,7 +89,8 @@ shape ABAC needs to show off:
 Built with the **vanilla** `org.openapi.generator` Gradle plugin
 (`generatorName = spring`, `interfaceOnly`): the OpenAPI spec generates API interfaces + DTOs,
 and we write the `@RestController` implementations. Persistence is Postgres via Spring Data JPA,
-schema managed by Liquibase. **No authentication yet** — this is the insecure baseline we secure.
+schema managed by Liquibase. It is secured with the starter **incrementally** — running it standalone
+shows the bare CRUD; behind the full rig (below) it enforces real ABAC through APISIX → OPA.
 
 ### Run it
 
@@ -80,6 +103,22 @@ schema managed by Liquibase. **No authentication yet** — this is the insecure 
 
 > Postgres is published on host port **5433** (not 5432) to avoid colliding with other
 > local Postgres instances. Override with `SPRING_DATASOURCE_URL` if needed.
+
+### Run the full secured rig (APISIX → OPA → app → Postgres)
+
+To see ABAC enforced end-to-end — gateway OIDC, OPA decisions, the user-service, tracing:
+
+```bash
+./profile.sh up                                          # base Postgres
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+# gateway at http://localhost:9085 ; then run an allow/deny matrix:
+cd scripts/postman && ./run-hierarchy-matrix.sh          # or run-tests.sh / run-filter-matrix.sh / ...
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh down
+```
+
+> The newman matrices under [`scripts/postman/`](scripts/postman/) are the through-the-gateway proofs
+> (role / team / tag / data-filtering / hierarchy). Mint tokens **in-network** (APISIX validates the
+> issuer as `keycloak:8888`) — the scripts handle this. See [`infra/README.md`](infra/README.md).
 
 ### Running the tests
 
@@ -110,7 +149,15 @@ GitHub Actions provides Docker out of the box, so CI runs these tests with no ex
 - Java 21+
 - Spring Boot 3.4+
 - A container runtime — Docker or podman (for the example infrastructure and the integration tests)
-- An OPA server (added in a later phase)
+- **Open Policy Agent (OPA) 1.x** — the decision engine the library calls; the local rig runs it for you
+- **PostgreSQL** — the example uses Postgres-specific features (JSONB tags, `ltree` materialized paths)
+
+## Documentation
+
+The full architecture, decision records, and per-feature guides live in [`docs/`](docs/README.md):
+- **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
+- **Architecture & ADRs** — [`docs/architecture/`](docs/architecture/)
+- **Roadmap** — [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md)
 
 ## License
 
