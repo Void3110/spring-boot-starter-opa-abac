@@ -434,6 +434,7 @@ knows that material rather than looking like bespoke ceremony.
 | Tool | What it is | Used in phase | Upstream | Pattern it instantiates |
 |------|-----------|---------------|----------|--------------------------|
 | **Mulch** (`ml`) | A CLI expertise store — durable team knowledge (patterns, decisions, failures) recorded per project in `.mulch/`, primed back into the agent before a task. | All phases (prime before, record after) | **Jaymin West** — [`@os-eco/mulch-cli`](https://github.com/jayminwest/mulch) (MIT). Installed globally, store is per-repo. | *Externalized memory* — the durable counter to **goal drift**: invariants live in a store the agent re-reads, not in a degrading context window. |
+| **LSP code intelligence** (`jdtls`) | Eclipse JDT language server, exposed as the agent's `LSP` tool: real Java symbol resolution — `goToDefinition`, `findReferences`, `goToImplementation`, `documentSymbol`/`workspaceSymbol`, call hierarchy. *Symbol-accurate*, not text-grep. | All phases (precise navigation: scope a change in ①/②, trace blast-radius in ④) | **Anthropic** — the `jdtls-lsp` Claude Code plugin (+ `pyright-lsp` for Python). | *Ground-truth structural index* — answers "who calls this / what implements this" from the compiler's model, where ripgrep can only guess. The Java-native code intelligence layer. |
 | **grill-me** | A skill that interviews the maintainer one question at a time, walking each branch of the design tree and recommending an answer, until every fork is resolved. | ① Planning | **Matt Pocock** — [`mattpocock/skills`](https://github.com/mattpocock/skills) (`productivity/grill-me`). | *Evaluator-driven elicitation* — front-loads decisions into ADRs **before** the autonomous run, so the run has fewer reasons to stop (the planning-time form of "stop and ask"). |
 | **slice-planner** | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
 | **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ④ Review / ship | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
@@ -474,6 +475,26 @@ risk routing *is* Anthropic's "match architectural complexity to value" decision
 > `slice-planner` are pure skills (phases ① and ②). `deep-review` is a skill that, on a large/high-risk
 > diff, *reaches for* a workflow (phase ④). Mulch is neither — it's the external store all three lean on.
 
+### Code intelligence: LSP over text-grep (and why not a code-DB here)
+
+The `LSP` tool (Eclipse `jdtls`) is the **standing structural index** under every phase — it answers
+*who calls this method, what implements this interface, where is this symbol defined* from the Java
+compiler's own model, not a regex guess. Where it earns its keep in this flow:
+
+- **Planning / decomposition (①/②)** — `workspaceSymbol` + `findReferences` to scope what a slice
+  actually touches (which callers of `OpaClient` / `AbacContext` a change ripples to), so the ticket
+  boundaries and "What-NOT-to-touch" lists are grounded in the real call graph.
+- **Review (④)** — `findReferences` / `incomingCalls` to trace a finding's blast radius, and
+  `goToImplementation` to confirm an SPI's every impl was considered (e.g. both `AncestorResolver`
+  implementations). Symbol-accurate beats grep when verifying "did this change every call site."
+
+> **Why a code-intelligence *database* (KotaDB et al.) is **not** in this stack.** We evaluated KotaDB
+> (Jaymin West) as a pre-review/planning index. Its structural parsing is **JS/TS-only**
+> (`@typescript-eslint/parser`); on a Java/Kotlin/Rego repo it degrades to SQLite FTS5 full-text search —
+> no symbol graph, so its `analyze_change_impact` / `search_dependencies` have nothing structural to work
+> with here. For **this** repo the LSP server *is* the code-intelligence layer; a JS/TS project would be
+> a different calculus. (The fuller analysis is a private research note, not part of the public repo.)
+
 ### Credit & reuse
 
 This process stands on others' work, and says so on purpose — both because it's right and because the
@@ -490,6 +511,8 @@ Two of the four tools are **upstream** (others' work we adopt); two are **this r
 - **Dynamic workflows / the harness thesis** © Anthropic — the vocabulary (fan-out, adversarial verify,
   loop-until-dry, completeness critic) and the three-failure-mode framing this whole flow is built
   around. The deep-review workflow is our application of it, not an invention of it.
+- **LSP plugins** (`jdtls-lsp`, `pyright-lsp`) © Anthropic — the Claude Code plugins that surface the
+  Eclipse JDT / Pyright language servers as the agent's `LSP` tool.
 
 **Ours (this repo's local skills, gitignored in `.claude/skills/`):**
 - **slice-planner** — the phase-② automation that instantiates §3–§4 of this guide; the guide stays the
