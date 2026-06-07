@@ -70,6 +70,7 @@ instantiates, is documented in [§8](#8-the-tooling--skills-stack-what-powers-ea
         ┌─────────────────────────────────────────────────────────────┐
         │ ④ REVIEW / SHIP (maintainer-driven)                          │
         │   /deep-review the branch · push · PR · CI green · merge      │
+        │   record the run retrospective → `autonomous-runs` Mulch      │
         │   git mv  planning/ → implemented/  + Shipped banner          │
         └─────────────────────────────────────────────────────────────┘
 ```
