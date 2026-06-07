@@ -7,19 +7,24 @@ tags:
 
 # Code Review
 
-The review workflow for this repo. The [`/deep-review`](../../.claude/skills/deep-review/SKILL.md)
-skill drives the full lifecycle; this folder holds the authoritative process and checklist it
-references.
+The review workflow for this repo. The `/deep-review` skill (local, in `.claude/skills/` —
+**gitignored**, so it isn't in this repo) drives the full lifecycle; this folder holds the authoritative
+process, checklist, and a portable template it references.
 
-> **Note:** the `deep-review` skill was copied from a portal backend and is still being adapted
-> to this project. Where the skill mentions portal-specific tooling (a particular E2E suite,
-> Camunda, internal libraries), treat the *process* as canonical and the *specifics* as TODO.
-> Track adaptation in [`../to-do/planning/`](../to-do/planning/).
+> **Adaptation status.** The `deep-review` skill began as a port of a mature review process and has
+> since been **tuned to this repo** — it now speaks this project's modules (`opa-abac-*`), build
+> (`./gradlew build`), e2e (the newman suites), and the fail-closed authorization invariant. Its heavy
+> path is a multi-lens **adversarial** workflow (fan-out → refute → synthesize). The remaining
+> generalization work is to lift the project-specific parts out into the portable template below; each
+> shipped slice refines this. The **process** here is canonical.
 
 ## Documents
 
-- [`CODE-REVIEW-WORKFLOW.md`](CODE-REVIEW-WORKFLOW.md) — the phases a review goes through.
-- [`CODE-REVIEW-CHECKLIST.md`](CODE-REVIEW-CHECKLIST.md) — per-finding checklist.
+- [`CODE-REVIEW-WORKFLOW.md`](CODE-REVIEW-WORKFLOW.md) — the phases a review goes through (this project).
+- [`CODE-REVIEW-CHECKLIST.md`](CODE-REVIEW-CHECKLIST.md) — per-finding checklist (this project).
+- [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) — the **vendor-neutral, adaptable** version of the
+  review harness, with project-specific parts marked as fill-in slots (for adopting this flow elsewhere;
+  credits the Anthropic dynamic-workflows patterns it builds on).
 
 ## Mulch-driven
 

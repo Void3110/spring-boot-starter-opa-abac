@@ -6,6 +6,7 @@ domains:
   spring-data-filtering: {}
   api-design: {}
   code-review-process: {}
+  autonomous-runs: {}
 governance:
   max_entries: 100
   warn_entries: 150
