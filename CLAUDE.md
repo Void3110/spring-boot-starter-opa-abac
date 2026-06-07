@@ -95,6 +95,61 @@ Track feature work under `docs/to-do/planning/<FEATURE>/`; move to `implemented/
 Project expertise lives in `.mulch/`. Before a non-trivial task: `ml prime <domain>` or
 `ml search "<query>"`. After a durable insight: `ml record <domain> --type <type> …` then `ml sync`.
 
+> **The swept-staged trap.** `ml sync` commits whatever is staged. **Before `ml sync`, run
+> `git restore --staged .`** so the sync commit touches `.mulch/` only — otherwise it sweeps unrelated
+> staged code into the "mulch: update expertise" commit.
+
+### Domains
+
+| Domain | Holds |
+|--------|-------|
+| `opa-abac` | The cross-cutting technical store — patterns/failures/decisions about the library + rig. |
+| `rego-policy` · `spring-security-integration` · `spring-data-filtering` · `api-design` | Surface-specific technical expertise; prime the one matching the change. |
+| `code-review-process` | How reviews are run (the `/deep-review` process meta). |
+| **`autonomous-runs`** | **Per-slice record of how the autonomous *run itself* went** — see below. |
+
+### `autonomous-runs` — the run-retrospective domain (feeds planning)
+
+This domain is **process-level, not technical**: one record per slice's autonomous-implementation run,
+capturing **how the run went** so the *next* slice's planning/decomposition can pre-empt what stopped or
+slowed the last one. The `opa-abac` domain answers "what did we learn about the code?"; this one answers
+**"was the run a clean full-success, or did it have to pause and ask — and what should planning have
+pinned so it wouldn't?"**
+
+**When to record:** at the **end of a slice run** (flow phase ④, after `/deep-review`, before the folder
+moves to `implemented/`). One `reference` record per run, `--outcome-status` set:
+
+```bash
+ml record autonomous-runs --type reference \
+  --name "Run: <SLICE> (<N> tickets)" --classification observational \
+  --outcome-status <success|partial|failure> \   # success=fully autonomous; partial=paused-and-asked; failure=blocked
+  --description "OUTCOME … PAUSE-CAUSE … FRICTION … PLANNING-GAP->FIX … QA …"
+git restore --staged . && ml sync
+```
+
+**Each record captures (in the description, in this order):**
+1. **OUTCOME + PAUSE-CAUSE** — full-success / paused-and-asked / blocked; if it paused, the *class* of
+   fork that stopped it (`undecided externally-visible behavior` · `missing acceptance detail` ·
+   `rig/environment gotcha` · `design fork the docs didn't cover`) + the ticket number.
+2. **CHECKPOINT / TICKET FRICTION** — any ticket that needed a substantive refactor at the ★ review gate,
+   or where fix-until-green looped, or a build-breaker that had to land in the same commit. (Decomposition
+   that was too coarse/fine shows up here.)
+3. **PLANNING-GAP → FIX** *(the keystone)* — for each pause/friction, what the **planning (①) or
+   decomposition (②)** phase *should have pre-resolved* so it won't recur. This is the actionable loop
+   back into `grill-me` / `00-DESIGN` / the slice's acceptance cases.
+4. **QA** — did a post-run `/deep-review` find issues the run's own gate missed? (laziness signal.)
+
+**Prime it when planning a new slice.** During phase ① (grill-me) and phase ② (slice-planner), run
+`ml prime autonomous-runs` and explicitly ask: *which fail-open/contract semantics are unpinned?* and
+*which rig gotchas from prior runs apply here?* The synthesis record (`type pattern`,
+"the two recurring planning-gap classes") is the one to read first — across the first six slices, the
+single recurring pause/friction class was **"design left a fail-open/contract semantic unpinned,"**
+followed by **"a rig/test-harness gotcha discovered mid-run."** Pre-resolving those in design is what
+converts a paused run into a full-success run.
+
+See [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) for
+the full plan → implement → review method this domain measures.
+
 ## Commit identity
 
 This repo uses a **personal** identity (set repo-local, not global):
