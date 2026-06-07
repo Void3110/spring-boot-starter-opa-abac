@@ -27,6 +27,10 @@ next slice. The work happens in three phases:
 3. **Autonomous implementation** ([§4](#4-the-autonomous-implementation-promptmd-template) onward) — one
    agent runs the prompt, ticket by ticket, checkpoint-gated, fail-closed. *This is the autonomous half.*
 
+The **tooling that powers each phase** — Mulch, `grill-me`, `deep-review`, and the Claude Code dynamic
+workflows underneath — with upstream credits and the Anthropic orchestration patterns each one
+instantiates, is documented in [§8](#8-the-tooling--skills-stack-what-powers-each-phase).
+
 > **Why this shape.** Planning + decomposition front-load the thinking into immutable artifacts (ADRs)
 > and an unambiguous work list; the autonomous prompt then turns that into a *self-contained,
 > checkpoint-gated, fail-closed* hand-off that one agent executes end to end without drifting — because
@@ -115,6 +119,11 @@ the user stories for the slice exist and are phase-tagged. Only then move to dec
 **Goal:** turn the settled design + ADRs + stories into an **unambiguous, ordered work list** and the
 **self-contained prompt** that drives it. Still interactive and docs-only — this is the bridge between
 "we know what and why" and "an agent can now build it."
+
+> **The `slice-planner` skill automates this phase.** It is the checklist + scaffolding for producing the
+> package below from a settled design; this guide stays canonical (the skill defers to it). See
+> [§8](#8-the-tooling--skills-stack-what-powers-each-phase) for the tool; the rest of this section is the
+> *method* it follows.
 
 This phase produces the rest of the **planning package** — the folder `docs/to-do/planning/<SLICE>/`,
 a **1:1 structural mirror** of every prior slice:
@@ -405,6 +414,95 @@ resolve the forks *before* the prompt is written so the run has fewer reasons to
 
 ---
 
+## 8. The tooling & skills stack (what powers each phase)
+
+The flow above is a *method*; this section names the **tools** that make it repeatable, what each one
+does, **who built it**, and — for the agentic ones — **which published orchestration pattern it is an
+instance of**. The patterns are Anthropic's own (the *dynamic-workflows* feature + the "harness for
+every task" thesis); naming the mapping is deliberate, so the process is recognizable to anyone who
+knows that material rather than looking like bespoke ceremony.
+
+> **This section is seeded, not finished.** It captures the stack as used through the slices shipped so
+> far. Each future slice is expected to *refine* it — most concretely, to generalize the `deep-review`
+> skill from its still-somewhat-project-specific form toward the portable template in
+> [`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). Treat the
+> entries below as living.
+
+### The stack at a glance
+
+| Tool | What it is | Used in phase | Upstream | Pattern it instantiates |
+|------|-----------|---------------|----------|--------------------------|
+| **Mulch** (`ml`) | A CLI expertise store — durable team knowledge (patterns, decisions, failures) recorded per project in `.mulch/`, primed back into the agent before a task. | All phases (prime before, record after) | **Jaymin West** — [`@os-eco/mulch-cli`](https://github.com/jayminwest/mulch) (MIT). Installed globally, store is per-repo. | *Externalized memory* — the durable counter to **goal drift**: invariants live in a store the agent re-reads, not in a degrading context window. |
+| **grill-me** | A skill that interviews the maintainer one question at a time, walking each branch of the design tree and recommending an answer, until every fork is resolved. | ① Planning | **Matt Pocock** — [`mattpocock/skills`](https://github.com/mattpocock/skills) (`productivity/grill-me`). | *Evaluator-driven elicitation* — front-loads decisions into ADRs **before** the autonomous run, so the run has fewer reasons to stop (the planning-time form of "stop and ask"). |
+| **slice-planner** | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
+| **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ④ Review / ship | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
+| **Claude Code dynamic workflows** | The runtime that executes a JS orchestration script of many subagents in the background; the deep-review skill's heavy path (2B) *is* such a workflow. | ④ (the heavy review path) | **Anthropic** — [official docs](https://code.claude.com/docs/en/workflows) + the "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)" blog. | The substrate the patterns run on — see the [vault distillation](#related) of the feature. |
+
+### Why these three, mapped to the three failure modes
+
+Anthropic's harness thesis names three failure modes that long, autonomous agent runs degrade into.
+This flow's tooling is chosen to counter each — that's the *why* behind the stack, not just the *what*:
+
+| Failure mode (Anthropic) | How it shows up in an autonomous slice run | The tool/discipline that counters it |
+|--------------------------|---------------------------------------------|--------------------------------------|
+| **Goal drift** — constraints erode as context summaries lose fidelity | A load-bearing invariant (fail-closed, additive-only, core-stays-Spring-free) quietly weakens across tickets | **Mulch** (invariants re-primed from a store) + the **per-ticket checkpoint** + the prompt's **hard rules** restated every slice |
+| **Agentic laziness** — declares success on partial work | A ticket's acceptance only *shape*-asserted (200 vs 403) not the actual *cut* (row counts); 35 of 50 items done | The **headline pair** discipline (a real Testcontainers IT + an e2e that asserts the cut) + **deep-review**'s autonomous-run lens |
+| **Self-preferential bias** — over-grades its own output against a rubric | A `STATUS-0N.md` "review found nothing" where the diff says otherwise; ritual refactor notes | **deep-review's adversarial verification** — *separate* skeptic agents try to refute each finding before it survives; they have no stake in the original work |
+
+### The deep-review skill ↔ Anthropic patterns, concretely
+
+The review skill is the clearest worked example of "assemble published patterns into a task-specific
+harness." Its heavy path (`deep-review-workflow.js`) composes:
+
+1. **Fan-out** — one *failure-mode specialist lens* per relevant dimension runs in parallel
+   (fail-closed/authorization, core-boundary/additivity, rego/policy, persistence/concurrency,
+   API/OpenAPI contract, infra/e2e). Each lens is blind to the others — diversity catches what a single
+   pass misses.
+2. **Adversarial verification** — every candidate finding is handed to a *separate skeptic* prompted to
+   **refute** it; it survives only if re-confirmed from source. This is the direct counter to
+   self-preferential bias and to plausible-but-wrong findings.
+3. **Completeness critic** — a synthesis pass over the survivors (deduped, severity-sorted) before
+   anything reaches the maintainer.
+
+The light path (single sub-agent, for small/low-risk diffs) is the same shape collapsed to one agent —
+"start simple, scale intelligently": don't spin up a workflow to review a 20-line docs change. The size/
+risk routing *is* Anthropic's "match architectural complexity to value" decision applied per review.
+
+> **Skills vs. Workflows** (the distinction worth keeping straight, and worth teaching): a **skill** is
+> *knowledge the agent follows*; a **workflow** is *orchestration the runtime executes*. `grill-me` and
+> `slice-planner` are pure skills (phases ① and ②). `deep-review` is a skill that, on a large/high-risk
+> diff, *reaches for* a workflow (phase ④). Mulch is neither — it's the external store all three lean on.
+
+### Credit & reuse
+
+This process stands on others' work, and says so on purpose — both because it's right and because the
+honesty is part of the consulting/education story (you can't teach a method while hiding its sources).
+Two of the four tools are **upstream** (others' work we adopt); two are **this repo's own** skills built
+*on top of* that work and this guide:
+
+**Upstream (credit):**
+- **Mulch** © Jaymin West — the expertise-store habit (`ml prime` before, `ml record`/`ml sync` after)
+  is the single highest-leverage discipline here; it's what makes "the agent already knows this repo's
+  hard-won lessons" true rather than aspirational.
+- **grill-me** © Matt Pocock — the "interview relentlessly until shared understanding" framing is
+  exactly what a planning phase needs to produce immutable ADRs.
+- **Dynamic workflows / the harness thesis** © Anthropic — the vocabulary (fan-out, adversarial verify,
+  loop-until-dry, completeness critic) and the three-failure-mode framing this whole flow is built
+  around. The deep-review workflow is our application of it, not an invention of it.
+
+**Ours (this repo's local skills, gitignored in `.claude/skills/`):**
+- **slice-planner** — the phase-② automation that instantiates §3–§4 of this guide; the guide stays the
+  single source of truth, the skill is its checklist + scaffolding.
+- **deep-review** — the phase-④ review harness; its portable form is
+  [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). Built by composing the Anthropic
+  patterns above, tuned to this repo's invariants.
+
+A reader who wants to adopt the *review* half of this flow in their own project should start from
+[`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) — a vendor-neutral
+version with the project-specific parts marked as fill-in slots.
+
+---
+
 ## Related
 
 **Phase ① Planning:**
@@ -424,3 +522,12 @@ resolve the forks *before* the prompt is written so the run has fewer reasons to
 **Phase ④ Review / ship:**
 - `docs/code-review/CODE-REVIEW-WORKFLOW.md` — the `/deep-review` process that runs after the
   autonomous run, before push/PR/merge.
+- `docs/code-review/DEEP-REVIEW-TEMPLATE.md` — the vendor-neutral, adaptable version of the review
+  harness (for adopting this flow in another project).
+
+**The tooling (§8) — upstream:**
+- **Mulch** — [`github.com/jayminwest/mulch`](https://github.com/jayminwest/mulch) (Jaymin West).
+- **grill-me** — [`github.com/mattpocock/skills`](https://github.com/mattpocock/skills) (Matt Pocock).
+- **Claude Code dynamic workflows** — [official docs](https://code.claude.com/docs/en/workflows) and
+  the "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)"
+  blog (Anthropic) — the orchestration patterns and the three-failure-mode framing §8 maps onto.
