@@ -185,7 +185,9 @@ class AbacQueryServiceTest {
         verify(client, never()).allowAll(any()); // pure-SQL path, not batch
     }
 
-    @Test // U10 — DENY_ALL residual + a subtreeSpec → the subtree branch still widens (OR), not suppressed
+    @Test // U10 — a POLICY-derived DENY_ALL (unsatisfiable tag branch) + a subtreeSpec → the subtree
+    // branch still widens (OR): "no tag-matching rows" is a real policy answer, and an inheritable
+    // ancestor grant may legitimately make subtree rows visible alongside it.
     void denyAllResidual_withSubtree_stillWidensViaOr() {
         AtomicReference<Specification<Row>> passed = new AtomicReference<>();
         JpaSpecificationExecutor<Row> repo = repoCapturing(passed, List.of(new Row("a")));
@@ -198,6 +200,36 @@ class AbacQueryServiceTest {
                 .findAuthorized(repo, (r, q, cb) -> null, context(), subtree);
 
         assertThat(passed.get()).isNotNull();
+    }
+
+    @Test // an ERROR DENY_ALL (failed Compile call — OPA outage) + a subtreeSpec → the WHOLE list fails
+    // closed: no repo query at all. The subtree widening mirrors the policy's inherited-grant clause and
+    // must never outlive the policy engine it mirrors.
+    void errorResidual_withSubtree_failsWholeListClosed() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        OpaClient client = Mockito.spy(stub(PartialResult.error(), null, false));
+        Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
+
+        List<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context(), subtree);
+
+        assertThat(result).isEmpty();
+        verify(repo, never()).findAll(any(Specification.class));
+        verify(client, never()).allowAll(any());
+    }
+
+    @Test // an ERROR DENY_ALL with the allowlist fallback ON → still empty, no batch: an outage is not
+    // an "unsupported residual" and must not trigger the candidate fetch + re-check path either
+    void errorResidual_allowlistOn_noBatchNoRows() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        OpaClient client = Mockito.spy(stub(PartialResult.error(), List.of(true), false));
+
+        List<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, true))
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).isEmpty();
+        verify(repo, never()).findAll(any(Specification.class));
+        verify(client, never()).allowAll(any());
     }
 
     @Test // U11 — batch path: each per-row AbacContext carries the row's ANCESTOR chain (4-arg Resource)

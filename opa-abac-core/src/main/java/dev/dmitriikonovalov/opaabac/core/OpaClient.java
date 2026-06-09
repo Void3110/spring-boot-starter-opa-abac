@@ -37,9 +37,12 @@ public interface OpaClient {
      * The residual is returned as a neutral {@link PartialResult} (DNF) the data-filtering layer
      * translates to a query predicate.
      *
-     * <p><strong>Fails closed:</strong> any non-200, transport error, timeout, malformed body, or an
-     * expression the parser cannot map → {@link PartialResult#denyAll()} (an empty result set). A compile
-     * failure must never <em>widen</em> visibility.
+     * <p><strong>Fails closed:</strong> a <em>failed call</em> (non-200, transport error, timeout,
+     * malformed body) → {@link PartialResult#error()} — deny-all flagged {@code fromError}, so a caller
+     * also suppresses any widening or fallback it would otherwise compose with the residual. A
+     * <em>policy-derived</em> deny (unsatisfiable query, or an expression the parser cannot map) →
+     * {@link PartialResult#denyAll()} / {@link PartialResult#unsupported()}. A compile failure must never
+     * <em>widen</em> visibility.
      *
      * @param context the ABAC context — subject/action/role_definition are the known half; the resource
      *                is the unknown and is omitted from the serialized {@code input}
@@ -58,7 +61,12 @@ public interface OpaClient {
      * result whose length does not match the input → a list of {@code false} of the same length. An empty
      * input list returns an empty list with no HTTP call.
      *
-     * @param contexts the contexts to decide; each carries its own resource
+     * <p><strong>One resource type per batch.</strong> The batch is evaluated against a single per-type
+     * policy document (one list endpoint → one type), so every context must carry the same resource type.
+     * An implementation must reject a mixed batch fail-closed (all {@code false}), never evaluate items
+     * against another type's policy.
+     *
+     * @param contexts the contexts to decide; each carries its own resource, all of the same type
      * @return one boolean per input context, same order, same length; never {@code null}
      */
     List<Boolean> allowAll(List<AbacContext> contexts);

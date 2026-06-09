@@ -40,11 +40,14 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
  *   <li><strong>AND, never replace.</strong> The authorization specification is always
  *       {@code scope.and(...)} — the caller's own path scoping (e.g. {@code categoryId = ?}) is preserved,
  *       so no cross-scope row can leak (and the {@code subtreeSpec} widening cannot escape it).</li>
- *   <li><strong>Never fail-open.</strong> A compile failure yields {@code DENY_ALL} (empty page); a residual
- *       flagged not-fully-SQL yields empty <em>or</em> — with the allowlist on — an exact batch re-check over
- *       the survivors, never a wider set. A failed/empty {@code subtreeSpec} falls back to the narrower
- *       tag-only result. The {@code partialEval.enabled=false} kill-switch degrades to the coarse
- *       pre-Phase-5 path (scope + one {@code allow} check), still fail-closed.</li>
+ *   <li><strong>Never fail-open.</strong> A <em>failed</em> compile call ({@code fromError}) empties the
+ *       whole list — including the {@code subtreeSpec} widening, which must never outlive the policy engine
+ *       whose inherited-grant clause it mirrors. A <em>policy-derived</em> residual flagged not-fully-SQL
+ *       yields empty <em>or</em> — with the allowlist on — an exact batch re-check over the survivors, never
+ *       a wider set. A failed/empty {@code subtreeSpec} falls back to the narrower tag-only result. The
+ *       {@code partialEval.enabled=false} kill-switch degrades to the coarse pre-Phase-5 path (scope + one
+ *       {@code allow} check) — with the {@code abac_deny} filter still AND-ed, so the toggle never makes a
+ *       denied row listable.</li>
  * </ul>
  */
 public class AbacQueryService {
@@ -133,14 +136,24 @@ public class AbacQueryService {
 
         if (!settings.enabled()) {
             // Kill-switch: degrade to the coarse pre-Phase-5 path — one type-level allow check, then the
-            // caller's scope only. Still fail-closed (deny → empty list), never fail-open. Hierarchy N/A.
+            // caller's scope. Still fail-closed (deny → empty list), never fail-open. Hierarchy N/A.
+            // The deny-override stays AND-ed even here: toggling the kill-switch must not make a row
+            // carrying abac_deny == true listable when a single-GET for it returns 403.
             if (!opaClient.allow(queryContext)) {
                 return List.of();
             }
-            return repo.findAll(scopeOnly(scope));
+            return repo.findAll(scopeOnly(scope).and(notDenied()));
         }
 
         PartialResult residual = opaClient.compile(queryContext);
+
+        if (residual.fromError()) {
+            // The Compile call failed — there is no policy answer at all. The entire list fails closed,
+            // including the subtreeSpec widening: the Java-side subtree gate mirrors the policy's
+            // inherited-grant clause and must never outlive the policy engine it mirrors. (A policy-derived
+            // DENY_ALL — an unsatisfiable tag branch — is different: the widening below may still apply.)
+            return List.of();
+        }
 
         // A not-fully-SQL residual with the allowlist on: fetch the scoped candidates, then batch-recheck for
         // the exact answer. The batch decision is hierarchy-aware (each per-row context carries ancestors),
