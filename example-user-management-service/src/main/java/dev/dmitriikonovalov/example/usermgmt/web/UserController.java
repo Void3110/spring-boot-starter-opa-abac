@@ -6,9 +6,9 @@ import dev.dmitriikonovalov.example.usermgmt.openapi.api.UserApi;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserRequest;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * User read/create surface — enough to exercise persistence (ticket 2). Like the catalog app's
@@ -34,9 +34,15 @@ public class UserController implements UserApi {
     @Override
     public ResponseEntity<dev.dmitriikonovalov.example.usermgmt.openapi.model.User> createUser(
             UserRequest request) {
+        // bootstrap: pre-membership, authenticated-only by design — a new user has no team membership to
+        // authorize against yet, so this endpoint is deliberately ungated (no @OpaPreAuthorize).
         var entity = new User(UUID.randomUUID(), request.getSubject(), request.getDisplayName());
-        var saved = users.save(entity);
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserMgmtMapper.toDto(saved));
+        var dto = UserMgmtMapper.toDto(users.save(entity));
+        var location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(dto.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @Override

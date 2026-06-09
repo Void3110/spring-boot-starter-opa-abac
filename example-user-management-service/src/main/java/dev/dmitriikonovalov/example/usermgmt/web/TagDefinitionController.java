@@ -10,9 +10,9 @@ import dev.dmitriikonovalov.example.usermgmt.service.TagDefinitionService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * The dynamic tag dictionary's web surface.
@@ -74,7 +74,13 @@ public class TagDefinitionController implements TagDefinitionApi {
                 cardinality(request.getCardinality()),
                 request.getAllowedValues(),
                 request.getValuePattern());
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserMgmtMapper.toDto(created));
+        var dto = UserMgmtMapper.toDto(created);
+        // A team tag definition is addressed by its key (GET /teams/{teamId}/tag-definitions/{key}).
+        var location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{key}")
+                .buildAndExpand(dto.getKey())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @Override

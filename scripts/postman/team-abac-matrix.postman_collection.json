@@ -5,10 +5,22 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    {"key": "gateway", "value": "http://localhost:9085"},
-    {"key": "user_service", "value": "http://localhost:28090"},
-    {"key": "catalog_id", "value": ""},
-    {"key": "team_id", "value": ""}
+    {
+      "key": "gateway",
+      "value": "http://localhost:9085"
+    },
+    {
+      "key": "user_service",
+      "value": "http://localhost:28090"
+    },
+    {
+      "key": "catalog_id",
+      "value": ""
+    },
+    {
+      "key": "team_id",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -16,42 +28,112 @@
       "request": {
         "method": "PUT",
         "header": [
-          {"key": "Authorization", "value": "Bearer {{owner_token}}"},
-          {"key": "Content-Type", "value": "application/json"}
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
-        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
-        "body": {"mode": "raw", "raw": "{\"name\":\"Owner-updated catalog\"}"}
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{catalog_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Owner-updated catalog\"}"
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('owner may write (role resolved = owner)', function () { pm.response.to.have.status(200); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('owner may write (role resolved = owner)', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
       "name": "2. Owner reads -> 200",
       "request": {
         "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{owner_token}}"}],
-        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]}
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{catalog_id}}"
+          ]
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('owner may read', function () { pm.response.to.have.status(200); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('owner may read', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
       "name": "3. Viewer-member reads -> 200",
       "request": {
         "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{viewer_token}}"}],
-        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]}
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{viewer_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{catalog_id}}"
+          ]
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('viewer-member may read', function () { pm.response.to.have.status(200); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('viewer-member may read', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
@@ -59,16 +141,52 @@
       "request": {
         "method": "PUT",
         "header": [
-          {"key": "Authorization", "value": "Bearer {{viewer_token}}"},
-          {"key": "Content-Type", "value": "application/json"}
+          {
+            "key": "Authorization",
+            "value": "Bearer {{viewer_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
-        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
-        "body": {"mode": "raw", "raw": "{\"name\":\"Viewer-attempted update\"}"}
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{catalog_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Viewer-attempted update\"}"
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('viewer-member may NOT write (resolved viewer lacks write)', function () { pm.response.to.have.status(403); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('viewer-member may NOT write (resolved viewer lacks write)', function () { pm.response.to.have.status(403); });",
+              "// [phase-5.9 contract]",
+              "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+              "  const b = pm.response.json();",
+              "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+              "  pm.expect(b.status).to.eql(403);",
+              "  pm.expect(b).to.have.property('type');",
+              "  pm.expect(b).to.have.property('title');",
+              "  pm.expect(b).to.not.have.property('message');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
@@ -76,16 +194,42 @@
       "request": {
         "method": "PUT",
         "header": [
-          {"key": "Authorization", "value": "Bearer {{editor_token}}"},
-          {"key": "Content-Type", "value": "application/json"}
+          {
+            "key": "Authorization",
+            "value": "Bearer {{editor_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
-        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
-        "body": {"mode": "raw", "raw": "{\"name\":\"Custom-editor update\"}"}
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{catalog_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Custom-editor update\"}"
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('custom-editor member may write (team-scoped custom role grants write)', function () { pm.response.to.have.status(200); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('custom-editor member may write (team-scoped custom role grants write)', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
@@ -93,42 +237,134 @@
       "request": {
         "method": "PUT",
         "header": [
-          {"key": "Authorization", "value": "Bearer {{nonmember_token}}"},
-          {"key": "Content-Type", "value": "application/json"}
+          {
+            "key": "Authorization",
+            "value": "Bearer {{nonmember_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
-        "url": {"raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}", "host": ["{{gateway}}"], "path": ["api", "v1", "catalogs", "{{catalog_id}}"]},
-        "body": {"mode": "raw", "raw": "{\"name\":\"Non-member update\"}"}
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{catalog_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Non-member update\"}"
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('non-member may NOT write (no team -> empty role -> default deny)', function () { pm.response.to.have.status(403); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('non-member may NOT write (no team -> empty role -> default deny)', function () { pm.response.to.have.status(403); });",
+              "// [phase-5.9 contract]",
+              "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+              "  const b = pm.response.json();",
+              "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+              "  pm.expect(b.status).to.eql(403);",
+              "  pm.expect(b).to.have.property('type');",
+              "  pm.expect(b).to.have.property('title');",
+              "  pm.expect(b).to.not.have.property('message');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
       "name": "7. Dogfood: owner manages the user-service's own API -> 200",
       "request": {
         "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{owner_token}}"}],
-        "url": {"raw": "{{user_service}}/api/v1/teams/{{team_id}}/members", "host": ["{{user_service}}"], "path": ["api", "v1", "teams", "{{team_id}}", "members"]}
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('owner may manage the team (dogfooded @OpaPreAuthorize)', function () { pm.response.to.have.status(200); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('owner may manage the team (dogfooded @OpaPreAuthorize)', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     },
     {
       "name": "8. Dogfood: viewer-member cannot manage -> 403",
       "request": {
         "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer {{viewer_token}}"}],
-        "url": {"raw": "{{user_service}}/api/v1/teams/{{team_id}}/members", "host": ["{{user_service}}"], "path": ["api", "v1", "teams", "{{team_id}}", "members"]}
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{viewer_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        }
       },
       "event": [
-        {"listen": "test", "script": {"exec": [
-          "pm.test('viewer-member may NOT manage (dogfooded deny)', function () { pm.response.to.have.status(403); });"
-        ], "type": "text/javascript"}}
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('viewer-member may NOT manage (dogfooded deny)', function () { pm.response.to.have.status(403); });",
+              "// [phase-5.9 contract]",
+              "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+              "  const b = pm.response.json();",
+              "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+              "  pm.expect(b.status).to.eql(403);",
+              "  pm.expect(b).to.have.property('type');",
+              "  pm.expect(b).to.have.property('title');",
+              "  pm.expect(b).to.not.have.property('message');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
       ]
     }
   ]
