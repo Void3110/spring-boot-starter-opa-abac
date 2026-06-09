@@ -109,12 +109,17 @@ public class OpaAbacAutoConfiguration {
         public AbacQueryService abacQueryService(
                 OpaClient opaClient,
                 ResidualSpecificationFactory residualSpecificationFactory,
-                OpaAbacProperties properties) {
+                OpaAbacProperties properties,
+                ObjectProvider<AncestorResolver> ancestorResolver) {
             OpaAbacProperties.PartialEval pe = properties.getPartialEval();
+            // The AncestorResolver is present only when hierarchy is enabled (5.5-A wiring). When absent, the
+            // allowlist-batch path decides each row on its direct grant only (fail-closed, just not
+            // hierarchy-aware). When present, the batch path carries each row's ancestor chain (5.5-B).
             return new AbacQueryService(
                     opaClient,
                     residualSpecificationFactory,
-                    new AbacQueryService.PartialEvalSettings(pe.isEnabled(), pe.isAllowlistFallback()));
+                    new AbacQueryService.PartialEvalSettings(pe.isEnabled(), pe.isAllowlistFallback()),
+                    ancestorResolver.getIfAvailable());
         }
     }
 

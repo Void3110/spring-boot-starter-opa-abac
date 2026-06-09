@@ -121,7 +121,7 @@ In the example + infra:
 |---|--------|--------|--------|
 | T1 | SPI: `AncestorResolver.subtreeOf` + both impls (ltree `path <@` pushdown · CTE bounded `id IN`, fail-closed) + ITs | spring-data | ✅ |
 | T2 | `SubtreeSpecResolver` (root-role resolution + inheritable gate → `subtreeOf`; fail-closed to empty) | spring-data | ✅ |
-| T3 | `AbacQueryService`: 4-arg overload (OR/AND composition) + `notDenied` Spec + hierarchy-aware batch path; 3-arg byte-compat | spring-data | ⬜ |
+| T3 | `AbacQueryService`: 4-arg overload (OR/AND composition) + `notDenied` Spec + hierarchy-aware batch path; 3-arg byte-compat | spring-data | ✅ |
 | T4 | spring-data IT: both impls' row-sets, `notDenied` narrowing, AND-with-scope no-leak, re-parent in/out (Testcontainers) | spring-data | ⬜ |
 | T5 | Starter wiring (`SubtreeSpecResolver` bean) + example list-authorizer adoption (4-arg call) | starter + example | ⬜ |
 | T6 | e2e matrix (widen · two-subjects · deny-removes · stranger-empty · re-parent flip) + docs + roadmap/Mulch | e2e + docs | ⬜ |
