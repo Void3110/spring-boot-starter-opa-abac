@@ -153,7 +153,11 @@ ancestor grants. Fail-closed by construction: if hierarchy resolution fails, `su
   **Slice B (hierarchy-aware list filter):** the `subtreeSpec` composition into the Phase-5 residual
   (`path <@` / `id IN`), deny-overrides on lists, e2e (two subjects → different subtree row sets). Builds on
   A's proven resolver. A list-specific fork, if one surfaces during B's decomposition, earns its own
-  **ADR 0009**; until then this ADR governs both.
+  ADR; until then this ADR governs both. *(Those forks surfaced — the `subtreeSpec` composition, the
+  `subtreeOf` SPI extension, deny-overrides-as-SQL, and the hierarchy-aware allowlist batch — and are
+  pinned in [[0010-hierarchy-aware-list-filter|ADR 0010]]. The number originally reserved here, "0009",
+  was taken by [[0009-tag-requirement-subject-side|the tag-requirement decision]], so the list fork is
+  0010.)*
 - **Relation to ADR 0006:** this deepens **layer 2 (app, per-resource)** from one-step to N-level and makes
   **layer 3 (DB list filter)** hierarchy-aware — it does not change the three-layer model, it generalizes
   the resource-resolution within it.
