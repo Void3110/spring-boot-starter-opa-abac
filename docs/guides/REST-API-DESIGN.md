@@ -213,19 +213,28 @@ throws `503` if the tag dictionary can't be fetched — it will *not* store a re
 untagged resource could later read as more-permissive than intended. Failing closed on a dependency outage
 is the same invariant the whole library is built on; an API endpoint must not be the place it leaks.
 
+**A status alone is not enough — pair it with a typed `errorCode`.** Two `422`s (a bad tag value vs the
+role-subset rule) or several `409`s (a duplicate target vs an immutable role) are different problems a
+client handles differently. The status answers "which bucket"; the `errorCode` (see
+[§6](#6-error-handling)) answers "which failure within the bucket" — give a distinct code to each
+client-actionable failure the handlers discriminate, not one code per status.
+
 ---
 
 ## 4. Request and response bodies
 
-- **Content type** is `application/json` for every request and response body.
+- **Content type** is `application/json` for every request and response body — **except error responses**,
+  which are `application/problem+json` (see [§6](#6-error-handling)).
 - **Requests** are always a typed DTO (`CatalogRequest`, `AddMemberRequest`, …) — never loose maps or
   primitives in the body. Validation constraints are on the DTO, from the spec.
 - **A single resource** is returned as the bare resource DTO (`Catalog`, `Team`, `Membership`).
 - **A collection** is returned as a bare JSON array of the resource DTO (`Catalog[]`, `[Membership]`).
   There is no list envelope today — see [pagination](#7-pagination) and [targets](#9-targets).
 - **Creation** returns `201` with the **full created resource** in the body, including its
-  server-assigned `id`, so the client never needs a follow-up `GET`. *(The `Location` header that would
-  normally accompany a `201` is a [target](#9-targets), not yet emitted.)*
+  server-assigned `id`, so the client never needs a follow-up `GET`. Every `201` also carries a
+  **`Location` header** pointing at the new resource's canonical URL (`Location: /api/v1/<collection>/<id>`,
+  keyed by the resource's addressable identifier — built via `ServletUriComponentsBuilder`). *(Adopted in
+  Phase 5.9.)*
 
 ### Readonly and server-owned fields
 
@@ -317,49 +326,80 @@ where it would most easily slip in.
 
 ## 6. Error handling
 
-### The error envelope
+### The error envelope — RFC-7807 `application/problem+json`
 
-Errors are returned as a small JSON object via a `@RestControllerAdvice` per service. Both services use
-the same shape, declared in the spec as `ApiError`:
+Errors are returned as a canonical [RFC-7807](https://www.rfc-editor.org/rfc/rfc7807)
+`application/problem+json` object via a `@RestControllerAdvice` per service. Both specs declare it as
+`ProblemDetail` (adopted in **Phase 5.9**, ADR [[0011-error-contract-problem-json|0011]]):
 
 ```json
 {
-  "status": 422,
-  "message": "Unknown tag key: reglon",
+  "type":      "/problems/tag-value-illegal",
+  "title":     "Tag value not permitted by the dictionary",
+  "status":    422,
+  "detail":    "Unknown tag key: reglon",
+  "instance":  "/api/v1/catalogs/7b/categories",
+  "errorCode": "TAG_VALUE_ILLEGAL",
   "timestamp": "2026-06-09T10:15:30Z"
 }
 ```
 
-| Field | Type | Meaning |
+| Member | Type | Meaning |
 |---|---|---|
-| `status` | int | the HTTP status code, repeated in the body for convenience |
-| `message` | string | a human-readable description |
-| `timestamp` | date-time (ISO-8601) | when the error was produced |
+| `type` | string | a stable, **relative**, opaque identifier for the problem kind (`/problems/<kebab>`). **Not dereferenced** — no hosted registry; it is a stable id, not a live docs URL. |
+| `title` | string | a short, **status-stable** summary of the problem *kind* (one per `errorCode`). |
+| `status` | int | the HTTP status code, repeated in the body. |
+| `detail` | string | the human, instance-specific explanation (RFC-7807's own field — replaces the old `message`). |
+| `instance` | string | the request path that produced the error (correlation). |
+| `errorCode` | string (typed enum in the spec) | the **machine-stable** code a consumer branches on — see below. |
+| `timestamp` | date-time (ISO-8601) | when the error was produced (an extension member, kept for correlation). |
 
-Content type is `application/json`. *(A machine-stable `errorCode`, the `application/problem+json`
-content type, and a `request`/path field are [targets](#9-targets) — see the review for why they matter
-for a published library.)*
+Content type is **`application/problem+json`** on every error response. There is **no legacy `message`
+field** — the body is canonical RFC-7807 plus the two documented extensions (`errorCode`, `timestamp`).
+
+### The `errorCode` vocabulary — library-owned and typed
+
+A consumer branches on `errorCode`, not on the human `detail`. The vocabulary is **typed and extensible**:
+
+- the library (`opa-abac-spring-security`) ships an **`ApiErrorCode` interface** (`code()` / `status()` /
+  `problemType()` / `title()`) and a **`LibraryErrorCode`** enum for the failures it raises / the generic
+  ones — `ACCESS_DENIED` (403), `DEPENDENCY_UNAVAILABLE` (503), `VALIDATION_FAILED` (400),
+  `RESOURCE_NOT_FOUND` (404), `STATE_CONFLICT` (409), `TAG_VALUE_ILLEGAL` / `ROLE_SUBSET_VIOLATION` (422);
+- **each service ships its own enum** implementing the same interface for its domain failures (the
+  user-service splits the 409 conflict group into `TEAM_TARGET_EXISTS`, `MEMBERSHIP_CONFLICT`,
+  `ROLE_CODE_CONFLICT`, `ROLE_IMMUTABLE`, `TAG_KEY_CONFLICT`, `TAG_DEFINITION_IMMUTABLE`, plus
+  `TAG_DEFINITION_INVALID` at 422; the catalog reuses library codes only);
+- granularity is **semantic** — one code per *distinct, client-actionable* failure the handlers
+  discriminate, **not** one per HTTP status (`TAG_VALUE_ILLEGAL` ≠ `ROLE_SUBSET_VIOLATION`, both 422);
+- `errorCode` is a **typed `enum` member of each spec's `ProblemDetail` schema** (the union of codes that
+  service emits), so the generated client is typed and the vocabulary self-documents. (This is why the
+  library ships its own small `ProblemDetail` DTO rather than Spring's `org.springframework.http.ProblemDetail`,
+  whose untyped `properties` map would carry `errorCode` untyped.)
 
 ### How the advice maps exceptions
 
-Each service has an `ApiExceptionHandler` that maps a domain exception to a status with the envelope. The
-mapping **is** the `400/403/404/409/422/503` policy from [§3](#3-http-methods-and-status-codes) — keep it
-there, not scattered through controllers. Representative mappings:
+Each service has an `ApiExceptionHandler` extending the library's `AbstractProblemAdvice`; each
+`@ExceptionHandler` resolves its exception to an `ApiErrorCode` and builds the `ProblemDetail` body at
+`application/problem+json` (the base also maps Spring Security's `AccessDeniedException` →
+`ACCESS_DENIED` 403, so a denied `@OpaPreAuthorize` call also lands as a problem body). The status mapping
+**is** the `400/403/404/409/422/503` policy from [§3](#3-http-methods-and-status-codes) — keep it there,
+not scattered through controllers. Representative mappings:
 
-| Exception (example) | Status |
-|---|---|
-| Bean-Validation (`MethodArgumentNotValidException`), `IllegalArgumentException` | `400` |
-| `NotFoundException` (and per-domain `*NotFoundException`) | `404` |
-| a uniqueness / immutability / lifecycle conflict (`*ConflictException`, `*ImmutableException`) | `409` |
-| a domain-rule violation (`IllegalTagAssignmentException`, `SubsetRuleViolationException`, `InvalidTagDefinitionException`) | `422` |
-| a dependency-unreachable, fail-closed condition (`TagDefinitionFetchException`) | `503` |
+| Exception (example) | Status | `errorCode` |
+|---|---|---|
+| Bean-Validation (`MethodArgumentNotValidException`), `IllegalArgumentException` | `400` | `VALIDATION_FAILED` |
+| `NotFoundException` (and per-domain `*NotFoundException`) | `404` | `RESOURCE_NOT_FOUND` |
+| a uniqueness / immutability / lifecycle conflict (`*ConflictException`, `*ImmutableException`) | `409` | `STATE_CONFLICT` or a service refinement |
+| a domain-rule violation (`IllegalTagAssignmentException` / `SubsetRuleViolationException` / `InvalidTagDefinitionException`) | `422` | `TAG_VALUE_ILLEGAL` / `ROLE_SUBSET_VIOLATION` / `TAG_DEFINITION_INVALID` |
+| a dependency-unreachable, fail-closed condition (`TagDefinitionFetchException`) | `503` | `DEPENDENCY_UNAVAILABLE` |
+| an OPA-deny / unauthenticated / unresolved subject | `403` | `ACCESS_DENIED` |
 
-A new error condition gets a **typed exception** + a handler entry, not an ad-hoc `ResponseEntity` in the
-controller. The controller throws; the advice formats.
+A new error condition gets a **typed exception** + a handler entry mapped to an `ApiErrorCode`, not an
+ad-hoc `ResponseEntity` in the controller. The controller throws; the advice formats.
 
 ### Never leak internals
 
-The `message` is for a developer/operator, but the envelope must never carry a stack trace, an SQL string,
+The `detail` is for a developer/operator, but the body must never carry a stack trace, an SQL string,
 an internal hostname, or a token. A generic `500` for an unexpected exception is correct; a detailed one
 is a disclosure bug.
 
@@ -411,12 +451,15 @@ is a deliberate slice, not a drive-by.
 
 | ◓ Target | What it would add | Why it's deferred / what it buys |
 |---|---|---|
-| **RFC-7807 `problem+json` + stable `errorCode`** | `application/problem+json` content type; a machine-stable `errorCode` enum field; a `request`/instance path field on `ApiError` | The current `{status,message,timestamp}` is fine for a demo, but a *published* library's consumers want to branch on a stable code, not parse a human string. Highest-value target. |
-| **`Location` header on `201`** | every create returns `Location: <uri-of-created-resource>` | Standard REST affordance; cheap to add (the create already knows the new id). Low effort, low risk. |
-| **Pagination envelope** | a shared `{count, page, perPage, items}` wrapper + `page`/`perPage` params on every list | Bounds unbounded lists; must be adopted *once, everywhere* and composed with the partial-eval filter, so it's a slice not a patch. |
+| **Pagination envelope** | a shared `{count, page, perPage, items}` wrapper + `page`/`perPage` params on every list | Bounds unbounded lists; must be adopted *once, everywhere* and composed with the partial-eval filter, so it's a slice not a patch. **Next up — Phase 5.95** (see [[POC-ROADMAP]]). |
 | **ABAC `actions` / `pageActions` metadata** | each resource response carries `actions: [{action, allowed, reason}]`; each list carries `pageActions` | Lets a UI render "can I click this button" without a second round-trip. This is **Phase 6 — action enrichment** (already on the roadmap, see [[POC-ROADMAP]]); it's a target here only to point at it. |
 | **`Retry-After` on `503`** | a hint for when to retry a fail-closed dependency outage | Small polish on the `503` path once a real backoff story exists. |
 
+> **Adopted in Phase 5.9** (and moved into the body above): the **RFC-7807 `application/problem+json`
+> error envelope + a typed, library-owned `errorCode`** (now [§6](#6-error-handling), ADR
+> [[0011-error-contract-problem-json|0011]]) and the **`Location` header on every `201`** (now
+> [§4](#4-request-and-response-bodies)).
+>
 > When a target is adopted, move its row out of this section and into the body as a normal rule, the same
 > way the portal guide retired its own "Missing" notes as features landed.
 
@@ -433,12 +476,13 @@ is a deliberate slice, not a drive-by.
 - [ ] Request is a **typed DTO** with validation constraints in the spec.
 - [ ] **Authorization chosen deliberately**: type-level `@OpaPreAuthorize`, load-then-check (tag-based),
       or the partial-eval list filter — and **every error path fails closed**.
-- [ ] Errors go through the **`ApiExceptionHandler`** (typed exception → status + `ApiError`), no
+- [ ] Errors go through the **`ApiExceptionHandler`** (extends `AbstractProblemAdvice`; typed exception →
+      status + a typed `errorCode` in an RFC-7807 `ProblemDetail` at `application/problem+json`), no
       internals leaked.
 
 ### A `POST` that creates
 - [ ] Returns `201` with the **full created resource** (incl. server-assigned `id`).
-- [ ] *(target)* `Location` header to the new resource.
+- [ ] **`Location` header** to the new resource (`/api/v1/<collection>/<id>`).
 
 ### A list endpoint
 - [ ] Coarse `@OpaPreAuthorize` gate **+** a row-level cut (partial-eval residual ∧ scope) — empty list,
