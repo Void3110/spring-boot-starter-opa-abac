@@ -9,9 +9,9 @@ import dev.dmitriikonovalov.example.catalog.openapi.model.CatalogRequest;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 public class CatalogController implements CatalogApi {
@@ -40,7 +40,11 @@ public class CatalogController implements CatalogApi {
                 request.getDescription());
         hierarchy.assignPath(entity); // a root: path = catalog_<id>
         var saved = catalogs.save(entity);
-        return ResponseEntity.status(HttpStatus.CREATED).body(CatalogMapper.toDto(saved));
+        var location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(saved.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(CatalogMapper.toDto(saved));
     }
 
     @Override

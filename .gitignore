@@ -50,3 +50,7 @@ CLAUDE.local.md
 
 # Mulch session (keep the expertise store, ignore the ephemeral session dir)
 .mulch/.session/
+
+# Python bytecode (e.g. scripts/postman helpers)
+__pycache__/
+*.pyc
