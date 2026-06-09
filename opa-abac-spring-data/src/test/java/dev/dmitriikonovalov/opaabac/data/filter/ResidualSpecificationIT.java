@@ -42,6 +42,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Testcontainers
+// Pin the configuration explicitly: the filter test package now holds more than one
+// @SpringBootConfiguration (HierarchyListFilterIT adds its own), so @DataJpaTest's package scan would be
+// ambiguous. ContextConfiguration on this IT's own TestApp wires its beans and disables that scan.
+@org.springframework.test.context.ContextConfiguration(classes = ResidualSpecificationIT.TestApp.class)
 class ResidualSpecificationIT {
 
     @SuppressWarnings("resource")
