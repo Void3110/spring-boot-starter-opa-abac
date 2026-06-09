@@ -135,17 +135,37 @@ so a UUID's hyphens are stripped; `HierarchyLabels` is the shared encode/decode)
 5. Replace any hard-coded one-step parent hop with the `HierarchicalAuthorizer` walk.
 6. Add the `inherited_grant` + `deny-overrides` Rego clause and ship the `inheritable` OPA data.
 
+## The list analogue (Slice 5.5-B)
+
+The decision above is **single-resource** (`GET …/{id}`). Its **list** counterpart — an ancestor grant
+widening which rows `GET …/categories` returns — ships in **Slice 5.5-B**, which composes this resolver with
+the Phase-5 partial-eval residual:
+
+- the OPA residual stays **tag-only**; hierarchy widening is a separate app-built **`subtreeSpec`** OR-ed into
+  the query, from a new additive `AncestorResolver.subtreeOf(rootType, rootId) → Specification` (ltree
+  `path <@` pushdown / CTE bounded `id IN`, both fail-closed);
+- a `SubtreeSpecResolver` applies the **same root-only inheritable gate** as this seam — resolve the role once
+  on the governing root, check it inheritably grants the verb — so **the widened list and a single-GET decide
+  the same rows by construction**;
+- the leaf deny is mirrored as SQL (`abac_deny IS DISTINCT FROM true`) AND-ed outside the widening OR, inside
+  the caller's scope (no cross-catalog leak); the allowlist-batch path carries each row's ancestor chain;
+- a small additive `allow` list clause lets an inheritable-ancestor-grant subject pass the **coarse**
+  type-level list gate (the fine which-rows cut stays in SQL).
+
+See [[PARTIAL-EVALUATION-FILTERING]] (the hierarchy-aware list section) and ADR
+[[0010-hierarchy-aware-list-filter|0010]]. Proven by `HierarchyListFilterIT` (real Postgres) and
+`scripts/postman/run-hierarchy-list-matrix.sh`.
+
 ## What this does NOT do
 
-- **List filtering** — an ancestor grant widening which rows `GET …/products` returns is **Slice 5.5-B**
-  (it composes this resolver with the Phase-5 residual via an app-built `subtreeSpec`). This slice is
-  **single-resource only**; list endpoints keep the tag-only filter.
 - **Per-node independent grants** — a mid-tree Category with its *own* team is **Phase 8** (ReBAC). Here the
   role is resolved **once on the governing root**.
 
 ## Related
 
 - ADR [[0008-hierarchical-resource-authorization|0008]] (the pinned decision) · ADR
+  [[0010-hierarchy-aware-list-filter|0010]] (the list analogue, Slice 5.5-B) · ADR
   [[0006-three-layer-enforcement-model|0006]] (the layers this deepens) · [[ABAC-AUTHORIZATION]] (the spine) ·
-  [[TAG-BASED-AUTHORIZATION]] (the leaf tag grant the decision still uses) · [[E2E-TESTING]] (the
-  `run-hierarchy-matrix.sh` allow/deny + re-parent matrix).
+  [[TAG-BASED-AUTHORIZATION]] (the leaf tag grant the decision still uses) ·
+  [[PARTIAL-EVALUATION-FILTERING]] (the list filter it composes with) · [[E2E-TESTING]] (the
+  `run-hierarchy-matrix.sh` + `run-hierarchy-list-matrix.sh` matrices).

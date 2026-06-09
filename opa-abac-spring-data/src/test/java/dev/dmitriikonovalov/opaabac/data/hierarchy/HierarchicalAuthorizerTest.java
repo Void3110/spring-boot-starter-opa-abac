@@ -71,7 +71,7 @@ class HierarchicalAuthorizerTest {
 
     @Test // I10 + U5 + U6 — a Catalog grant authorizes a deep Product: role on the ROOT, ancestors carried
     void catalogGrantAuthorizesDeepProduct() {
-        AncestorResolver resolver = (t, id) -> List.of(CATALOG_REF, CATEGORY_REF);
+        AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF, CATEGORY_REF));
         when(supplier.lookup(eq("user-1"), eq("catalog"), eq(CATALOG)))
                 .thenReturn(Optional.of(catalogViewer()));
         when(opaClient.allow(any())).thenReturn(true);
@@ -96,9 +96,8 @@ class HierarchicalAuthorizerTest {
 
     @Test // I11 — a resolver FAILURE → no ancestors → direct grant only (role on the LEAF), never wider
     void resolverFailureFallsBackToDirectGrantOnly() {
-        AncestorResolver failing = (t, id) -> {
-            throw new AncestorResolutionException("broken chain");
-        };
+        AncestorResolver failing = TestAncestorResolvers.ancestorsThrowing(
+                () -> new AncestorResolutionException("broken chain"));
         // role now resolves on the LEAF (product), since the chain collapsed to empty
         when(supplier.lookup(eq("user-1"), eq("product"), eq(PRODUCT)))
                 .thenReturn(Optional.of(new RoleDefinition("p", Map.of(), Map.of("product", List.of("read")))));
@@ -116,9 +115,8 @@ class HierarchicalAuthorizerTest {
 
     @Test // I11 — resolver failure + no direct grant → deny (a failed walk never widens)
     void resolverFailureWithoutDirectGrantDenies() {
-        AncestorResolver failing = (t, id) -> {
-            throw new AncestorResolutionException("broken");
-        };
+        AncestorResolver failing = TestAncestorResolvers.ancestorsThrowing(
+                () -> new AncestorResolutionException("broken"));
         when(supplier.lookup(eq("user-1"), eq("product"), eq(PRODUCT)))
                 .thenReturn(Optional.of(new RoleDefinition("p", Map.of(), Map.of())));
         when(opaClient.allow(any())).thenReturn(false); // no direct grant in the policy
@@ -128,7 +126,7 @@ class HierarchicalAuthorizerTest {
 
     @Test // I12 — an unresolved role → deny (fail-closed), no OPA call
     void unresolvedRoleDenies() {
-        AncestorResolver resolver = (t, id) -> List.of(CATALOG_REF, CATEGORY_REF);
+        AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF, CATEGORY_REF));
         when(supplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         assertThat(authorizer(resolver).isAllowed(subject(), "read", product())).isFalse();
@@ -137,14 +135,14 @@ class HierarchicalAuthorizerTest {
 
     @Test // no subject → deny, no resolver/OPA call
     void noSubjectDenies() {
-        AncestorResolver resolver = (t, id) -> List.of(CATALOG_REF);
+        AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF));
         assertThat(authorizer(resolver).isAllowed(null, "read", product())).isFalse();
         verify(opaClient, never()).allow(any());
     }
 
     @Test // I13 — opt-in OFF (resolver returns empty, e.g. no inheritable config) → direct-only on the leaf
     void optInOffMeansDirectOnly() {
-        AncestorResolver empty = (t, id) -> List.of(); // no ancestors surfaced
+        AncestorResolver empty = TestAncestorResolvers.ancestors(List.of()); // no ancestors surfaced
         when(supplier.lookup(eq("user-1"), eq("product"), eq(PRODUCT)))
                 .thenReturn(Optional.of(new RoleDefinition("p", Map.of(), Map.of("product", List.of("read")))));
         when(opaClient.allow(any())).thenReturn(true);
@@ -158,7 +156,7 @@ class HierarchicalAuthorizerTest {
 
     @Test // an OPA-side error denies (fail-closed)
     void opaErrorDenies() {
-        AncestorResolver resolver = (t, id) -> List.of(CATALOG_REF);
+        AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF));
         when(supplier.lookup(any(), any(), any())).thenReturn(Optional.of(catalogViewer()));
         when(opaClient.allow(any())).thenThrow(new RuntimeException("opa down"));
 

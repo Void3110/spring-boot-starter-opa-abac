@@ -4,6 +4,7 @@ import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.springframework.data.jpa.domain.Specification;
 
 /**
  * The default {@link AncestorResolver}: reads the leaf's denormalized materialized {@code ltree} path
@@ -85,6 +86,61 @@ public class LtreeAncestorResolver implements AncestorResolver {
 
         // Root-first, leaf-excluded.
         return List.copyOf(decoded.subList(0, decoded.size() - 1));
+    }
+
+    /**
+     * The subtree predicate as a pure {@code ltree} SQL pushdown: {@code path <@ '<root-path>'}, where the
+     * root's materialized path is read once via the {@link LtreePathSource}. The descendant id set is
+     * <strong>never materialized</strong> in Java — this is the whole point of the {@code ltree} strategy.
+     *
+     * <p>The predicate is over the <em>queried entity's</em> own {@code path} column (every
+     * {@link AbstractHierarchicalEntity} carries one), so a list scoped to one child type matches only that
+     * type's rows beneath the root. The literal root path is bound (no SQL-string interpolation) and cast to
+     * {@code ltree} so the {@code <@} descendant operator applies.
+     *
+     * <h2>Fail-closed</h2>
+     * A missing/blank root path, a path that exceeds {@code maxDepth} (a malformed lineage), or any
+     * source/SQL error collapses to an <strong>always-false</strong> predicate — the list then falls back to
+     * the narrower tag-only result, never the whole table.
+     */
+    @Override
+    public <T> Specification<T> subtreeOf(String rootType, String rootId) {
+        Objects.requireNonNull(rootType, "rootType");
+        Objects.requireNonNull(rootId, "rootId");
+
+        String rootPath;
+        try {
+            rootPath = pathSource.pathOf(rootType, rootId)
+                    .filter(p -> !p.isBlank())
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            // A SQL/data-access error must fail closed (empty widening), never the whole table.
+            rootPath = null;
+        }
+        if (rootPath == null) {
+            return alwaysFalse();
+        }
+        // A path deeper than the bound is a malformed lineage → fail closed (no widening).
+        if (rootPath.split("\\.").length > maxDepth) {
+            return alwaysFalse();
+        }
+
+        final String boundRootPath = rootPath;
+        // entity.path <@ rootPath  ≡  "is rootPath an ancestor of (or equal to) entity.path"
+        //                          ≡  ltree_isparent(rootPath, entity.path)  — the function form of the
+        // `@>` operator (the reverse of `<@`). Using the function keeps the predicate inside JPA Criteria
+        // (no native-SQL operator string); the bound literal is cast to ltree via text2ltree(?).
+        return (root, query, cb) ->
+                cb.isTrue(cb.function(
+                        "ltree_isparent",
+                        Boolean.class,
+                        cb.function("text2ltree", Object.class, cb.literal(boundRootPath)),
+                        root.get("path")));
+    }
+
+    /** An always-false predicate — the fail-closed empty-widening shape (matches no row). */
+    private static <T> Specification<T> alwaysFalse() {
+        return (root, query, cb) -> cb.disjunction();
     }
 
     /** A convenience factory matching the SPI source shape. */

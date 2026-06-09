@@ -207,6 +207,30 @@ class OpaAbacAutoConfigurationTest {
                         .isSameAs(UserResolverConfig.RESOLVER));
     }
 
+    @Test // U13 (5.5-B) — enabled + a source → the SubtreeSpecResolver (list widening) bean is present
+    void subtreeSpecResolver_whenEnabledWithSource() {
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+                .withUserConfiguration(LtreeSourceConfig.class)
+                .run(context -> assertThat(context).hasSingleBean(
+                        dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver.class));
+    }
+
+    @Test // U13 — no SubtreeSpecResolver when hierarchy is off (default), even with a source present
+    void subtreeSpecResolverAbsent_byDefault() {
+        runner.withUserConfiguration(LtreeSourceConfig.class).run(context ->
+                assertThat(context).doesNotHaveBean(
+                        dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver.class));
+    }
+
+    @Test // U14 — an app-supplied SubtreeSpecResolver overrides the auto one
+    void userSubtreeSpecResolverWins() {
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+                .withUserConfiguration(LtreeSourceConfig.class, UserSubtreeResolverConfig.class)
+                .run(context -> assertThat(
+                        context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver.class))
+                        .isSameAs(UserSubtreeResolverConfig.RESOLVER));
+    }
+
     @Test // hierarchy properties bind (maxDepth + the inheritable map)
     void hierarchyPropertiesBind() {
         runner.withPropertyValues(
@@ -255,11 +279,39 @@ class OpaAbacAutoConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class UserResolverConfig {
+        // AncestorResolver is no longer a single-method interface (it gained subtreeOf), so the user-supplied
+        // override is an anonymous class: an empty chain and a fail-closed (empty) subtree predicate.
         static final dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver RESOLVER =
-                (type, id) -> java.util.List.of();
+                new dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver() {
+                    @Override
+                    public java.util.List<dev.dmitriikonovalov.opaabac.core.ParentRef> ancestorsOf(
+                            String leafType, String leafId) {
+                        return java.util.List.of();
+                    }
+
+                    @Override
+                    public <T> org.springframework.data.jpa.domain.Specification<T> subtreeOf(
+                            String rootType, String rootId) {
+                        return (root, query, cb) -> cb.disjunction();
+                    }
+                };
 
         @Bean
         dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver ancestorResolver() {
+            return RESOLVER;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserSubtreeResolverConfig {
+        static final dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver RESOLVER =
+                new dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver(
+                        UserResolverConfig.RESOLVER,
+                        (userId, type, id) -> java.util.Optional.empty(),
+                        java.util.Map.of());
+
+        @Bean
+        dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver subtreeSpecResolver() {
             return RESOLVER;
         }
     }

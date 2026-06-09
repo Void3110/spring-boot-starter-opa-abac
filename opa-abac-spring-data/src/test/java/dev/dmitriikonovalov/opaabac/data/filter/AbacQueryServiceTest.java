@@ -11,8 +11,11 @@ import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
 import dev.dmitriikonovalov.opaabac.core.Condition;
 import dev.dmitriikonovalov.opaabac.core.Conjunction;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolutionException;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -147,7 +150,146 @@ class AbacQueryServiceTest {
         verify(repo, never()).findAll(any(Specification.class));
     }
 
+    // --- 5.5-B: 4-arg overload + notDenied + hierarchy-aware batch ----------
+
+    @Test // U6/U7 — the 3-arg path and the 4-arg-with-null subtreeSpec are behaviorally identical
+    void threeArg_equals_fourArgNullSubtree() {
+        OpaClient client = stub(conditionalEmea(), null, false);
+
+        AtomicReference<Specification<Row>> threeArg = new AtomicReference<>();
+        AtomicReference<Specification<Row>> fourArgNull = new AtomicReference<>();
+
+        service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repoCapturing(threeArg, List.of(new Row("a"))), (r, q, cb) -> null, context());
+        service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(
+                        repoCapturing(fourArgNull, List.of(new Row("a"))),
+                        (r, q, cb) -> null, context(), null);
+
+        // both produced a (non-null) composed spec reaching the repo — the 3-arg delegates to the 4-arg.
+        assertThat(threeArg.get()).isNotNull();
+        assertThat(fourArgNull.get()).isNotNull();
+    }
+
+    @Test // U8 — 4-arg with a subtreeSpec → a composed spec reaches the repo; no batch (fully supported)
+    void fourArg_withSubtreeSpec_composesAndDoesNotBatch() {
+        AtomicReference<Specification<Row>> passed = new AtomicReference<>();
+        JpaSpecificationExecutor<Row> repo = repoCapturing(passed, List.of(new Row("a")));
+        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
+
+        service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context(), subtree);
+
+        assertThat(passed.get()).isNotNull(); // scope.and(tagResidual.or(subtree)).and(notDenied)
+        verify(client, never()).allowAll(any()); // pure-SQL path, not batch
+    }
+
+    @Test // U10 — DENY_ALL residual + a subtreeSpec → the subtree branch still widens (OR), not suppressed
+    void denyAllResidual_withSubtree_stillWidensViaOr() {
+        AtomicReference<Specification<Row>> passed = new AtomicReference<>();
+        JpaSpecificationExecutor<Row> repo = repoCapturing(passed, List.of(new Row("a")));
+        OpaClient client = stub(PartialResult.denyAll(), null, false);
+        Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
+
+        // DENY_ALL tag-branch is an always-false predicate, but OR-ed with the subtree it still composes a
+        // non-null spec (the subtree rows survive). The actual row-set widening is proven in the T4 IT.
+        service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context(), subtree);
+
+        assertThat(passed.get()).isNotNull();
+    }
+
+    @Test // U11 — batch path: each per-row AbacContext carries the row's ANCESTOR chain (4-arg Resource)
+    void batchPath_perRowContextCarriesAncestors() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class)))
+                .thenReturn(List.of(new HierRow("a"), new HierRow("b")));
+        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true, true), false));
+
+        AncestorResolver resolver = ancestorsReturning(List.of(new ParentRef("catalog", "C")));
+        hierService(client, new AbacQueryService.PartialEvalSettings(true, true), resolver)
+                .findAuthorized(repo, (r, q, cb) -> null, context(), (r, q, cb) -> cb.equal(r.get("x"), "y"));
+
+        ArgumentCaptor<List<AbacContext>> perRow = ArgumentCaptor.forClass(List.class);
+        verify(client).allowAll(perRow.capture());
+        // each per-row Resource carries the resolved ancestor chain — the same input as a single-GET
+        assertThat(perRow.getValue())
+                .allSatisfy(ctx -> assertThat(ctx.resource().ancestors())
+                        .containsExactly(new ParentRef("catalog", "C")));
+    }
+
+    @Test // U12 — batch path: a candidate whose ancestor resolution throws → EMPTY ancestors (direct-only)
+    void batchPath_resolverFailure_emptyAncestors() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of(new HierRow("a")));
+        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true), false));
+
+        AncestorResolver failing = throwingResolver();
+        hierService(client, new AbacQueryService.PartialEvalSettings(true, true), failing)
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null);
+
+        ArgumentCaptor<List<AbacContext>> perRow = ArgumentCaptor.forClass(List.class);
+        verify(client).allowAll(perRow.capture());
+        assertThat(perRow.getValue().get(0).resource().ancestors()).isEmpty(); // fail-closed: direct-only
+    }
+
+    @Test // U11/U12 — short/all-false batch decision still drops rows (fail-closed), hierarchy-aware
+    void batchPath_shortDecisionList_dropsRows() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class)))
+                .thenReturn(List.of(new HierRow("a"), new HierRow("b")));
+        // the client returns a SHORT list (error shape) → both rows dropped
+        OpaClient client = stub(PartialResult.unsupported(), List.of(), false);
+
+        List<Row> result = hierService(
+                        client, new AbacQueryService.PartialEvalSettings(true, true),
+                        ancestorsReturning(List.of()))
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null);
+
+        assertThat(result).isEmpty();
+    }
+
     // --- helpers -------------------------------------------------------------
+
+    private AbacQueryService hierService(
+            OpaClient client, AbacQueryService.PartialEvalSettings settings, AncestorResolver resolver) {
+        return new AbacQueryService(client, factory, settings, resolver);
+    }
+
+    private static PartialResult conditionalEmea() {
+        return new PartialResult(
+                PartialResult.Decision.CONDITIONAL,
+                List.of(new Conjunction(List.of(new Condition("tags.region", Condition.Operator.EQ, "emea")))));
+    }
+
+    private static AncestorResolver ancestorsReturning(List<ParentRef> chain) {
+        return new AncestorResolver() {
+            @Override
+            public List<ParentRef> ancestorsOf(String leafType, String leafId) {
+                return chain;
+            }
+
+            @Override
+            public <T> Specification<T> subtreeOf(String rootType, String rootId) {
+                return (root, query, cb) -> cb.disjunction();
+            }
+        };
+    }
+
+    private static AncestorResolver throwingResolver() {
+        return new AncestorResolver() {
+            @Override
+            public List<ParentRef> ancestorsOf(String leafType, String leafId) {
+                throw new AncestorResolutionException("broken");
+            }
+
+            @Override
+            public <T> Specification<T> subtreeOf(String rootType, String rootId) {
+                return (root, query, cb) -> cb.disjunction();
+            }
+        };
+    }
 
     private static JpaSpecificationExecutor<Row> repoCapturing(
             AtomicReference<Specification<Row>> captured, List<Row> result) {
@@ -189,6 +331,24 @@ class AbacQueryServiceTest {
         @Override
         public String abacResourceId() {
             return id;
+        }
+    }
+
+    /** A hierarchical authorizable row (declares a parent) for the hierarchy-aware batch tests. */
+    record HierRow(String id) implements AbacDataObject {
+        @Override
+        public String abacResourceType() {
+            return "category";
+        }
+
+        @Override
+        public String abacResourceId() {
+            return id;
+        }
+
+        @Override
+        public java.util.Optional<ParentRef> abacParent() {
+            return java.util.Optional.of(new ParentRef("catalog", "C"));
         }
     }
 }
