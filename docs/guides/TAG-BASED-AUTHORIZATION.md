@@ -72,6 +72,68 @@ JSONB.
 
 ## Layer 3 — the requirement + the Rego match (the grant)
 
+### Where the requirement lives — and what it means (read this first)
+
+This is the part most worth being precise about, because there are two legitimate ABAC shapes and **this
+project deliberately uses one of them**:
+
+> **The tag requirement lives on the *role*, not on the resource.** A `RoleDefinition` carries
+> `requiredTags` + a `matchMode`; a **resource carries only plain tag *values*** (e.g. `region=emea`). The
+> requirement is a property of *the role's reach*: *"this role grants its permissions only on resources
+> whose tags match."* The resource makes no demand of its own.
+
+This is the **subject-side / condition-on-the-policy** model — the same shape as **AWS IAM ABAC**, where
+one policy is attached to roles and resources carry plain tag values, and `matchMode` ALL_OF / ANY_OF are
+the analogue of AWS's `ForAllValues` / `ForAnyValue`. The alternative — **resource-side** (a resource
+*demands* a clearance the subject must possess, à la **Keycloak Authorization Services**, where a
+permission attaches policies *to the protected resource*) — is **not** what this project does, and is a
+deliberate choice: the subject-side model is **fail-closed by construction** and composes natively with
+the Phase-5 partial-eval **row filter** (the requirement becomes a residual `WHERE` over the `tags`
+column). The resource-side model's natural default is *"an untagged resource is open to everyone"* — a
+documented **fail-open** default (AWS warns about the identical `ForAllValues`-over-empty hazard) that
+would conflict with this repo's load-bearing fail-closed invariant. (A future "resource-declared
+clearance" slice could add the resource-side model *with the default inverted to fail-closed*; see
+[`docs/architecture/adr/`](../architecture/adr/) when it lands.)
+
+**What `requiredTags` is — and is NOT:**
+
+- It is **NOT** used to decide *which roles a member may be assigned* (that's team/ownership rules in
+  [[TEAM-BASED-AUTHORIZATION]] — tags play no part). It is a **per-request filter on the resource**,
+  evaluated *every time* the member touches a resource.
+- Tags on a role **narrow** its reach; they do **not** grant from an empty baseline. The truth table:
+
+| The role… | …sees | Why |
+|-----------|-------|-----|
+| has the `read` permission, **no** `requiredTags` | **every** readable resource | no requirement → vacuously satisfied → the role's full reach |
+| has `read` + `requiredTags={region:[emea]}` | **only** `region=emea` resources | the requirement narrows the reach to matching tags |
+| has `read` + `requiredTags={region:[emea], tier:[gold]}`, `ALL_OF` | resources matching `emea` **and** `gold` | universal (`every`) over the required keys |
+| has `read` + same two keys, `ANY_OF` | resources matching `emea` **or** `gold` | existential (`some … in`) over the required keys |
+| has **no** role definition at all | **nothing** (`DENY_ALL` on lists) | the fail-closed boundary — `filter` requires `has_role_definition` |
+| has no `read` permission | **nothing** | the permission check fails before tags are even considered |
+
+> So the genuine empty list comes from **no role definition** (the fail-closed boundary), *not* from "a
+> role with no tags". A role with the permission and no tag requirement sees everything it's permitted to —
+> tags only ever *subtract*.
+
+**A worked data-flow** (the e2e demo, traced through the rego):
+
+```
+Member holds role "regional-reader":  permissions={category:[read]}, requiredTags={region:[emea]}, ANY_OF
+
+GET /categories/X   where X is tagged region=apac
+  1. resolve the member's effective role            → regional-reader
+  2. load Category X, read its tags                 → {region: apac}
+  3. POST to OPA: { role_definition:{permissions, required_tags, match_mode},
+                    resource:{ attributes:{region: apac} } }
+  4. rego:  granted = (read ∈ permissions[category])   ✅
+                      AND tags_satisfied                ❌   (apac ∉ [emea])
+  5. → deny (403)
+
+Same member, GET /categories/Y where Y is tagged region=emea → tags_satisfied ✅ → 200.
+```
+
+Identical permission; only the resource's tags differ. That contrast *is* the feature.
+
 ### The role carries the requirement (the one library change)
 
 `opa-abac-core`'s `RoleDefinition` gains two **optional, additive** fields:
