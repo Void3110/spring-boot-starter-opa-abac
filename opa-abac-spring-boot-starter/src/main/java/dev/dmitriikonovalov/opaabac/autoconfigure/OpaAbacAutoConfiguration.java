@@ -16,6 +16,7 @@ import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreeAncestorResolver;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreePathSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.ParentLinkSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.RecursiveCteAncestorResolver;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -167,6 +168,24 @@ public class OpaAbacAutoConfiguration {
                 RoleDefinitionSupplier roleDefinitionSupplier,
                 OpaClient opaClient) {
             return new HierarchicalAuthorizer(ancestorResolver, roleDefinitionSupplier, opaClient);
+        }
+
+        /**
+         * The <strong>list</strong> widening resolver (Slice 5.5-B), wired once a resolver is present. It
+         * produces the {@code subtreeSpec} the example list authorizers pass into the 4-arg
+         * {@code AbacQueryService.findAuthorized}. It reuses the same {@code AncestorResolver} +
+         * {@code RoleDefinitionSupplier} as the single-resource authorizer, plus the inheritance declaration
+         * (the {@code childType -> [ancestorType…]} map). Overridable via {@link ConditionalOnMissingBean}.
+         */
+        @Bean
+        @ConditionalOnMissingBean
+        @ConditionalOnBean(AncestorResolver.class)
+        public SubtreeSpecResolver subtreeSpecResolver(
+                AncestorResolver ancestorResolver,
+                RoleDefinitionSupplier roleDefinitionSupplier,
+                OpaAbacProperties properties) {
+            return new SubtreeSpecResolver(
+                    ancestorResolver, roleDefinitionSupplier, properties.getHierarchy().getInheritable());
         }
     }
 }
