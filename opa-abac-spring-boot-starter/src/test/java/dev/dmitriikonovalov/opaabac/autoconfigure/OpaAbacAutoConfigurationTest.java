@@ -103,6 +103,26 @@ class OpaAbacAutoConfigurationTest {
                 assertThat(context.getBean(RoleDefinitionSupplier.class)).isInstanceOf(NoOpRoleDefinitionSupplier.class));
     }
 
+    // --- trust-forwarded-jwt gate ---------------------------------------------
+
+    @Test // without the explicit trust acknowledgment, the JWT extractor must NOT be wired —
+    // the refusing stand-in keeps every request anonymous (fail-closed), never trusts a forwarded token
+    void subjectExtractor_refusesUntilTrustAcknowledged() {
+        runner.run(context -> {
+            assertThat(context).hasSingleBean(AbacSubjectExtractor.class);
+            assertThat(context.getBean(AbacSubjectExtractor.class))
+                    .isNotInstanceOf(dev.dmitriikonovalov.opaabac.security.JwtClaimsSubjectExtractor.class);
+            assertThat(context.getBean(OpaAbacProperties.class).getSubject().isTrustForwardedJwt()).isFalse();
+        });
+    }
+
+    @Test // trust-forwarded-jwt=true → the real JWT extractor is wired
+    void subjectExtractor_isJwt_whenTrustAcknowledged() {
+        runner.withPropertyValues("opa.abac.subject.trust-forwarded-jwt=true").run(context ->
+                assertThat(context.getBean(AbacSubjectExtractor.class))
+                        .isInstanceOf(dev.dmitriikonovalov.opaabac.security.JwtClaimsSubjectExtractor.class));
+    }
+
     // --- data-filtering beans (T5) -------------------------------------------
 
     @Test // I3 — JPA on classpath + enabled → the filtering beans are present

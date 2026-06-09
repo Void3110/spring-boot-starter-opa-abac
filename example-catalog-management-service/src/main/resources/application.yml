@@ -25,6 +25,11 @@ server:
 # rego inheritance clause reads; here it documents the same relations for the app's own reference.
 opa:
   abac:
+    subject:
+      # Explicit acknowledgment that a signature-validating gateway (APISIX openid-connect) fronts this
+      # app — the starter's JWT extractor decodes the forwarded token WITHOUT verifying its signature,
+      # so it stays disabled until this is set. Never enable gateway-less.
+      trust-forwarded-jwt: true
     hierarchy:
       enabled: ${OPA_ABAC_HIERARCHY_ENABLED:true}
       resolver: ${OPA_ABAC_HIERARCHY_RESOLVER:ltree}

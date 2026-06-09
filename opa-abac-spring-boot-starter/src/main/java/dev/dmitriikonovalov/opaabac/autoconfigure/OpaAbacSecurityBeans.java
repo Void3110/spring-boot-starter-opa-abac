@@ -9,7 +9,9 @@ import dev.dmitriikonovalov.opaabac.security.JwtClaimsSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.OpaMethodSecurityConfiguration;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorizeAuthorizationManager;
 import dev.dmitriikonovalov.opaabac.security.SubjectClaimsConfig;
-import org.springframework.beans.factory.ObjectProvider;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,14 +31,34 @@ import org.springframework.context.annotation.Import;
 @Import(OpaMethodSecurityConfiguration.class)
 public class OpaAbacSecurityBeans {
 
+    private static final Logger log = LoggerFactory.getLogger(OpaAbacSecurityBeans.class);
+
+    /**
+     * The default subject extractor — gated on the explicit
+     * {@code opa.abac.subject.trust-forwarded-jwt=true} acknowledgment, because
+     * {@link JwtClaimsSubjectExtractor} does <strong>no signature verification</strong> (it trusts a
+     * validating gateway). Without the acknowledgment a refusing extractor is registered instead: every
+     * request stays anonymous, every check denies (fail-closed), and a startup warning explains why —
+     * a misdeployed app must never silently accept self-minted tokens. An app-provided
+     * {@code AbacSubjectExtractor} bean overrides this entirely ({@code @ConditionalOnMissingBean}).
+     *
+     * <p>Claims parsing uses a private {@link ObjectMapper}: token payloads are external input, and the
+     * extractor's behavior must not change with the application's Jackson customizations.
+     */
     @Bean
     @ConditionalOnMissingBean
-    public AbacSubjectExtractor abacSubjectExtractor(
-            ObjectProvider<ObjectMapper> objectMapper, OpaAbacProperties properties) {
+    public AbacSubjectExtractor abacSubjectExtractor(OpaAbacProperties properties) {
         OpaAbacProperties.Subject s = properties.getSubject();
+        if (!s.isTrustForwardedJwt()) {
+            log.warn("opa.abac.subject.trust-forwarded-jwt is not set — the default JWT subject extractor "
+                    + "is DISABLED, every request is anonymous, and all ABAC checks deny (fail-closed). "
+                    + "Set it to true ONLY behind a signature-validating gateway (the extractor does not "
+                    + "verify signatures itself), or provide your own AbacSubjectExtractor bean.");
+            return request -> Optional.empty();
+        }
         SubjectClaimsConfig claims = new SubjectClaimsConfig(
                 s.getIdClaim(), s.getRolesClaim(), s.getUsernameClaim(), s.getAttributeClaims(), s.isValidateExpiry());
-        return new JwtClaimsSubjectExtractor(objectMapper.getIfAvailable(ObjectMapper::new), claims);
+        return new JwtClaimsSubjectExtractor(new ObjectMapper(), claims);
     }
 
     @Bean
