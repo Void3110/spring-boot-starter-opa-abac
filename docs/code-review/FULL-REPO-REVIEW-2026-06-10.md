@@ -43,9 +43,13 @@ Severity · finding · disposition. **Fixed** = in this branch; **Deferred** = t
 
 1. **Clean-room slip in a committed doc** — `docs/to-do/implemented/LIBRARY-SPINE/10-QA-TEST-CASES.md`
    case X3 enumerated the literal proprietary scan strings (employer name, internal project names, a
-   token prefix) in the public repo. **Fixed** — reworded to a neutral description; the concrete scan
-   list is maintainer-local. ⚠️ The strings remain in **git history** (entered at `fb40819`); with no
-   forks/stars yet, a one-time history rewrite is still cheap — **maintainer decision pending**.
+   token prefix) in the public repo. **Fixed twice over**: the tip was reworded to a neutral
+   description (the concrete scan list is maintainer-local), and the **git history was rewritten**
+   (2026-06-10, `git filter-repo --replace-text`, all 242 commits) so the strings appear nowhere in
+   any reachable blob — historic versions of the line read `[redacted]` placeholders (the offending
+   commit is now `2d7b0a9`). A pre-rewrite backup bundle is kept maintainer-local. Note: GitHub may
+   serve old, now-unreachable commit SHAs from cache until its garbage collection runs; support can
+   purge sooner if ever needed.
 
 ### Medium — fail-open seams (all fixed)
 
