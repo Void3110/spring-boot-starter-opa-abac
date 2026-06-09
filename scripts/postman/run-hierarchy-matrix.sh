@@ -46,7 +46,13 @@ OWNER_USER="${OWNER_USER:-editor}";   OWNER_PASS="${OWNER_PASS:-editor}"
 READER_USER="${READER_USER:-viewer}"; READER_PASS="${READER_PASS:-viewer}"
 
 GRANTED_CATALOG_ID="${GRANTED_CATALOG_ID:-33333333-3333-3333-3333-333333333333}"
-FOREIGN_CATALOG_ID="${FOREIGN_CATALOG_ID:-44444444-4444-4444-4444-444444444444}"
+# The FOREIGN catalog must be one NO matrix ever grants the reader ('viewer') a role on. The user-service
+# DB persists across runs, so fixture ids collide ACROSS matrices: 4444 is run-hierarchy-list-matrix.sh's
+# GRANTED root — a past list-matrix run leaves a team granting 'viewer' an inheritable role on it, which
+# silently flips this matrix's re-parent assert from 403 to a legitimate 200. Fixture-id registry:
+# 1111 team-matrix · 2222 tag-matrix · 3333 filter + this matrix's granted · 4444 list-granted ·
+# 5555 list-foreign · 6666 THIS matrix's foreign (keep unique, never grant on it).
+FOREIGN_CATALOG_ID="${FOREIGN_CATALOG_ID:-66666666-6666-6666-6666-666666666666}"
 
 # --- preflight ---------------------------------------------------------------
 command -v newman >/dev/null 2>&1 || {
