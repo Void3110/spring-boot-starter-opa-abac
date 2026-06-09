@@ -39,20 +39,33 @@ class OpaMethodSecuritySliceTest {
         }
     }
 
+    /** The annotation on the INTERFACE method — the impl is bare (the natural contract-first placement). */
+    interface InterfaceSecuredService {
+        @OpaPreAuthorize(action = "product:read", resourceType = "'product'")
+        String read();
+    }
+
+    static class InterfaceSecuredServiceImpl implements InterfaceSecuredService {
+        @Override
+        public String read() {
+            return "ok";
+        }
+    }
+
     private SecuredService proxyWith(boolean opaAllows) {
+        ProxyFactory factory = new ProxyFactory(new SecuredServiceImpl());
+        factory.addAdvisor(interceptorWith(opaAllows));
+        return (SecuredService) factory.getProxy();
+    }
+
+    private AuthorizationManagerBeforeMethodInterceptor interceptorWith(boolean opaAllows) {
         OpaClient opaClient = mock(OpaClient.class);
         when(opaClient.allow(Mockito.any())).thenReturn(opaAllows);
         RoleDefinitionSupplier supplier = mock(RoleDefinitionSupplier.class);
         when(supplier.lookup(Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(Optional.empty());
 
         var manager = new OpaPreAuthorizeAuthorizationManager(opaClient, supplier);
-        AuthorizationManagerBeforeMethodInterceptor interceptor =
-                new OpaMethodSecurityConfiguration().opaPreAuthorizeMethodInterceptor(manager);
-
-        // Proxy the concrete target; the interceptor's own pointcut (matching @OpaPreAuthorize) gates it.
-        ProxyFactory factory = new ProxyFactory(new SecuredServiceImpl());
-        factory.addAdvisor(interceptor);
-        return (SecuredService) factory.getProxy();
+        return new OpaMethodSecurityConfiguration().opaPreAuthorizeMethodInterceptor(manager);
     }
 
     private void authenticate() {
@@ -84,5 +97,33 @@ class OpaMethodSecuritySliceTest {
     void unauthenticated_throwsAccessDenied() {
         SecuredService service = proxyWith(true); // OPA would allow, but no subject → fail-closed deny
         assertThatThrownBy(service::read).isInstanceOf(AccessDeniedException.class);
+    }
+
+    /**
+     * The enforcement-dodge regression: {@code @OpaPreAuthorize} declared on the INTERFACE method must be
+     * enforced under a class-based (CGLIB) proxy — Spring Boot's default proxying mode. Before the
+     * pointcut searched the type hierarchy ({@code checkInherited}), this exact shape ran with no
+     * enforcement and no error.
+     */
+    @Test
+    void interfaceAnnotation_isEnforced_underClassProxy() {
+        authenticate();
+        ProxyFactory factory = new ProxyFactory(new InterfaceSecuredServiceImpl());
+        factory.setProxyTargetClass(true); // CGLIB, as in a Boot app
+        factory.addAdvisor(interceptorWith(false));
+        InterfaceSecuredService service = (InterfaceSecuredService) factory.getProxy();
+
+        assertThatThrownBy(service::read).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void interfaceAnnotation_allowsThroughManager_underClassProxy() {
+        authenticate();
+        ProxyFactory factory = new ProxyFactory(new InterfaceSecuredServiceImpl());
+        factory.setProxyTargetClass(true);
+        factory.addAdvisor(interceptorWith(true));
+        InterfaceSecuredService service = (InterfaceSecuredService) factory.getProxy();
+
+        assertThat(service.read()).isEqualTo("ok");
     }
 }

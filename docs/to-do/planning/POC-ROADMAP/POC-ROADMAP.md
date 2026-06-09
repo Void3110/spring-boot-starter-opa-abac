@@ -72,12 +72,15 @@ attributes that protect it.
   `opa-abac-*` modules and avoid a redundant `example/example-…` nesting.
 - This means an early **prerequisite step**: rename/move the existing `example/catalog-management-service`
   → `example-catalog-management-service` and update `settings.gradle.kts`, package paths, and any
-  references. Tracked as Phase 1 below. *(Not yet executed — separate confirmed step.)*
+  references. Tracked as Phase 1 below. *(✅ Executed — commit `0ce6026`; see the phase table.)*
 
-## Current state (snapshot)
+## Current state (chronological log)
 
-Phases 0–2 are **done**. The example rig runs end to end via `./deploy.sh` (see
-[`infra/README.md`](../../../infra/README.md)):
+> This section is an **append-style log**: each block below records the state *as of that phase's
+> completion*, oldest first. For the up-to-date picture, read the **last** block and the phase table.
+
+**Phases 0–2 done.** The example rig runs end to end via `./deploy.sh` (see
+[`infra/README.md`](../../../../infra/README.md)):
 
 ```
 Keycloak (identity) → APISIX [ openid-connect → demo identity-enricher → OPA decision → tracing ]
@@ -86,11 +89,13 @@ Keycloak (identity) → APISIX [ openid-connect → demo identity-enricher → O
 
 - **Load balancing**: APISIX round-robins over N app pods (`./deploy.sh up --pods N`).
 - **Tracing**: Jaeger + Badger; 5 services traced (apisix, keycloak, opa, catalog app, jaeger).
-- **Authz**: OPA called per request — **allow-all placeholder** policy (`infra/opa/policies/gateway.rego`).
-- **Identity**: Keycloak realm `catalog-demo` (user `demo/demo`), gateway OIDC; a **demo** Lua
-  enricher injects `X-User-Id`/`X-Username` — **throwaway**, replaced by Spring-native extraction in Phase 3.
-- The **service itself does no auth yet** — all enforcement is at the gateway. That's intentional;
-  Phase 3 moves real ABAC into the app via the library.
+- **Authz** *(as of Phase 2 — superseded in Phase 3)*: OPA called per request — the **allow-all
+  placeholder** gateway policy (`infra/opa/policies/gateway.rego`, still a placeholder; the real
+  decisions moved into the per-type app policies).
+- **Identity** *(as of Phase 2 — superseded in Phase 3)*: Keycloak realm `catalog-demo` (user
+  `demo/demo`), gateway OIDC; the demo Lua enricher was **throwaway** and is long replaced by
+  Spring-native extraction.
+- The "service does no auth yet" state ended with Phase 3: the app now does real, fine-grained ABAC.
 
 **Phase 3 in progress.** Its first, load-bearing slice — the **domain-model foundation** (base/secure
 entities, tags, locking, base service) — is **done and merged on a feature branch**: the reusable

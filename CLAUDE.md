@@ -86,7 +86,7 @@ Track feature work under `docs/to-do/planning/<FEATURE>/`; move to `implemented/
 `docs/` is an **Obsidian vault** (`.obsidian/` is gitignored). Start at [`docs/README.md`](docs/README.md).
 - Architecture: [`docs/architecture/`](docs/architecture/)
 - Guides: [`docs/guides/`](docs/guides/)
-- API reference: [`docs/api/`](docs/api/)
+- API contract: the OpenAPI specs (`example-*/src/main/resources/openapi/*.yaml`) + Swagger UI; `docs/api/` is reserved and currently empty
 - Code review: [`docs/code-review/`](docs/code-review/)
 - Tags: [`docs/TAG-SYSTEM.md`](docs/TAG-SYSTEM.md)
 

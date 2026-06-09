@@ -199,20 +199,22 @@ class HttpOpaClientCompileTest {
         assertThat(c.value()).isEqualTo("cat-123");
     }
 
-    @Test // U7 — fail-closed on HTTP 500
+    @Test // U7 — fail-closed on HTTP 500, flagged fromError (a failed call, not a policy answer)
     void failClosed_onHttp500() throws IOException {
         String base = startServer(ex -> respond(ex, 500, "boom"));
-        assertThat(clientFor(base, "catalog").compile(categoryListContext()).decision())
-                .isEqualTo(PartialResult.Decision.DENY_ALL);
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fromError()).isTrue();
     }
 
-    @Test // U7 — fail-closed on connection refused
+    @Test // U7 — fail-closed on connection refused, flagged fromError
     void failClosed_onConnectionRefused() {
-        assertThat(clientFor("http://127.0.0.1:1", "catalog").compile(categoryListContext()).decision())
-                .isEqualTo(PartialResult.Decision.DENY_ALL);
+        PartialResult result = clientFor("http://127.0.0.1:1", "catalog").compile(categoryListContext());
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fromError()).isTrue();
     }
 
-    @Test // U7 — fail-closed on timeout
+    @Test // U7 — fail-closed on timeout, flagged fromError
     void failClosed_onTimeout() throws IOException {
         String base = startServer(ex -> {
             try {
@@ -222,15 +224,17 @@ class HttpOpaClientCompileTest {
             }
             respond(ex, 200, "{\"result\":{\"queries\":[[]]}}");
         });
-        assertThat(clientFor(base, "catalog").compile(categoryListContext()).decision())
-                .isEqualTo(PartialResult.Decision.DENY_ALL);
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fromError()).isTrue();
     }
 
-    @Test // U7 — fail-closed on malformed body
+    @Test // U7 — fail-closed on malformed body, flagged fromError
     void failClosed_onMalformedBody() throws IOException {
         String base = startServer(ex -> respond(ex, 200, "not-json"));
-        assertThat(clientFor(base, "catalog").compile(categoryListContext()).decision())
-                .isEqualTo(PartialResult.Decision.DENY_ALL);
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fromError()).isTrue();
     }
 
     @Test // U8 — unsupported operator (e.g. gt) anywhere in the residual → DENY_ALL
@@ -248,16 +252,20 @@ class HttpOpaClientCompileTest {
 
         PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
         // Fail-closed (deny) BUT flagged not-fully-SQL, so a caller with the allowlist on can batch-recheck.
+        // A POLICY answer, not a failed call: fromError stays false.
         assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
         assertThat(result.fullySupported()).isFalse();
+        assertThat(result.fromError()).isFalse();
     }
 
-    @Test // a clean DENY_ALL (empty result) is fully supported — there was simply nothing to satisfy
+    @Test // a clean DENY_ALL (empty result) is fully supported — there was simply nothing to satisfy —
+    // and NOT fromError: "unsatisfiable" is a real policy answer, so a subtree widening may still apply
     void emptyResult_isFullySupportedDeny() throws IOException {
         String base = startServer(ex -> respond(ex, 200, "{\"result\":{}}"));
         PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
         assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
         assertThat(result.fullySupported()).isTrue();
+        assertThat(result.fromError()).isFalse();
     }
 
     @Test // U8 — a reference that isn't input.resource.* → DENY_ALL

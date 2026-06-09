@@ -99,16 +99,25 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 ./run-matrix.sh
 ./run-matrix.sh --verbose
 
-# Tag-based ABAC matrix (Phase 4.5 — requires the full rig WITH the user-service)
+# Team-based role-resolution matrix (Phase 4 — requires the full rig WITH the user-service)
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+./run-team-matrix.sh
+
+# Tag-based ABAC matrix (Phase 4.5 — same full rig with the user-service)
 ./run-tag-matrix.sh
 
 # Data-filtering matrix (Phase 5 — same full rig; restart OPA after editing category.rego)
 ./run-filter-matrix.sh
 
+# Hierarchy single-resource matrix (Slice 5.5-A — ancestor grant, deny-override, re-parent flips a 200 to 403)
+./run-hierarchy-matrix.sh
+
 # Hierarchy-aware list matrix (Slice 5.5-B — an ancestor grant widens a list; same full rig)
 ./run-hierarchy-list-matrix.sh
 ```
+
+> Since Phase 5.9 the matrices also assert the **RFC-7807 `problem+json` error contract** on deny
+> paths (`application/problem+json` + a typed `errorCode`) and the `Location` header on creates.
 
 `run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
 `viewer_token` + `editor_token`. Expected: editor seeds a catalog/category/product (201), viewer reads

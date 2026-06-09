@@ -37,9 +37,13 @@ class HttpOpaClientAllowAllTest {
     }
 
     private AbacContext ctx(String resourceId) {
+        return ctxOfType("category", resourceId);
+    }
+
+    private AbacContext ctxOfType(String resourceType, String resourceId) {
         AbacContext.Subject subject = new AbacContext.Subject("user-1", List.of("catalog-viewer"), Map.of());
         AbacContext.Resource resource =
-                new AbacContext.Resource("category", resourceId, Map.of("region", "emea"));
+                new AbacContext.Resource(resourceType, resourceId, Map.of("region", "emea"));
         RoleDefinition roleDefinition =
                 new RoleDefinition("catalog-viewer", Map.of(), Map.of("category", List.of("read")));
         return new AbacContext(subject, "category:read", resource, roleDefinition, Map.of());
@@ -153,6 +157,20 @@ class HttpOpaClientAllowAllTest {
     @Test // U12 — null input is also empty, no call
     void nullInput_returnsEmpty() {
         assertThat(clientFor("http://127.0.0.1:1", "catalog").allowAll(null)).isEmpty();
+    }
+
+    @Test // a MIXED-resource-type batch is rejected fail-closed (all-false), with no HTTP call —
+    // evaluating items against the first item's policy document would be silently wrong
+    void failClosed_onMixedResourceTypes_noHttpCall() throws IOException {
+        AtomicInteger calls = new AtomicInteger();
+        String base = startServer(ex -> {
+            calls.incrementAndGet();
+            respond(ex, 200, "{\"result\":[true,true]}");
+        });
+
+        assertThat(clientFor(base, "catalog").allowAll(List.of(ctx("a"), ctxOfType("product", "b"))))
+                .containsExactly(false, false);
+        assertThat(calls.get()).isZero();
     }
 
     @FunctionalInterface

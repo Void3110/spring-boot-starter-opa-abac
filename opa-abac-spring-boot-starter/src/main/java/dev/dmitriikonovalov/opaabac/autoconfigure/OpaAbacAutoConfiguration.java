@@ -52,17 +52,16 @@ public class OpaAbacAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public OpaClient opaClient(
-            ObjectProvider<ObjectMapper> objectMapper,
-            PolicyPathResolver policyPathResolver,
-            OpaAbacProperties properties) {
-        // Reuse the application's ObjectMapper if present; otherwise a private one. The starter must NOT
-        // register a primary ObjectMapper bean — that would suppress Boot's Jackson auto-configuration
-        // (e.g. JSR-310 date support) for the whole app.
-        ObjectMapper mapper = objectMapper.getIfAvailable(ObjectMapper::new);
+    public OpaClient opaClient(PolicyPathResolver policyPathResolver, OpaAbacProperties properties) {
+        // A PRIVATE ObjectMapper, deliberately not the application's: the serialized `input` is the wire
+        // protocol the policies match on, so it must not silently change with app-level Jackson
+        // customizations (naming strategies, inclusion rules, custom modules) — a global snake_case
+        // switch would break every policy match. Fail-closed turns that into an outage, not a breach,
+        // but the contract belongs to the starter, not to whoever last touched the app's mapper.
+        // (No ObjectMapper bean is registered either — Boot's Jackson auto-config stays untouched.)
         OpaClientConfig config = new OpaClientConfig(
                 properties.getBaseUrl(), properties.getTimeout(), properties.getDecisionField());
-        return new HttpOpaClient(mapper, policyPathResolver, config);
+        return new HttpOpaClient(new ObjectMapper(), policyPathResolver, config);
     }
 
     /**

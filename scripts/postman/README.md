@@ -37,6 +37,26 @@ token in-network).
 | `local.postman_environment.example.json` | Committed env template (copy to `local.postman_environment.json`). |
 | `local.postman_environment.json` | Your local copy — **gitignored**. |
 
+## Fixture-id registry (cross-matrix discipline)
+
+The user-service DB **persists across runs**, so the teams/grants one matrix bootstraps are still
+there when another matrix runs — fixture catalog ids therefore collide *across* matrices, not just
+within one. Rule: an id one matrix uses as a **negative case** ("the reader has no grant here") must
+never be an id another matrix **grants on**. Current registry — keep it unique when adding a matrix:
+
+| Catalog id (prefix) | Used by | As |
+|---|---|---|
+| `1111…` | `run-team-matrix.sh` | demo (granted) |
+| `2222…` | `run-tag-matrix.sh` | demo (granted) |
+| `3333…` | `run-filter-matrix.sh` + `run-hierarchy-matrix.sh` | demo / granted root |
+| `4444…` | `run-hierarchy-list-matrix.sh` | granted root |
+| `5555…` | `run-hierarchy-list-matrix.sh` | foreign (never granted) |
+| `6666…` | `run-hierarchy-matrix.sh` | foreign (never granted) |
+
+(Discovered the hard way: the hierarchy matrix originally used `4444…` as its foreign catalog; a past
+list-matrix run had granted the same reader an inheritable role on it, flipping the re-parent assert
+from 403 to a *policy-correct* 200.)
+
 ## Why the token is minted in-network
 
 Keycloak is hostname-aware and APISIX validates the issuer as `keycloak:8888` (in-network). A token
@@ -49,10 +69,11 @@ it to newman as `access_token`. Full explanation in
 
 **Working suite** — auth + the full Catalog → Category → Product lifecycle (create → get → update →
 list → delete → 404-after-delete) with id-chaining and field-level assertions, then a cascade
-cleanup. Runs green against the local rig.
+cleanup, **plus the full ABAC matrix set listed above**: viewer-vs-editor role decisions, team-based
+role resolution, tag-based grants, partial-eval data filtering (exact row sets per subject), and the
+hierarchy allow/deny + re-parent matrix. All run green against the local rig, through the gateway,
+with real OPA decisions and (since Phase 5.9) RFC-7807 `problem+json` error-contract assertions on
+the deny paths.
 
-The **authz** depth is still shallow on purpose: OPA runs an allow-all placeholder and the service
-does no JWT/ABAC check yet, so the suite proves the *plumbing* (a Keycloak-authenticated identity
-reaches the app and CRUD works through the gateway), not fine-grained decisions. The viewer-vs-editor
-matrix is added when `@OpaPreAuthorize` + a real policy land in a later Phase-3 slice — see the
-`DOMAIN-MODEL-FOUNDATION` plan, ticket 5, and `10-QA-TEST-CASES.md` (E9+).
+Each matrix landed with its slice — the file table above is the authoritative list of what is proven
+end-to-end today.

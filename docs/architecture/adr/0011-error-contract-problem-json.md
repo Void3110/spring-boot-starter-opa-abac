@@ -9,7 +9,7 @@ tags:
 
 # ADR 0011 — Error contract: RFC-7807 `problem+json` + a stable `errorCode` vocabulary
 
-**Status:** Accepted (planned)
+**Status:** Accepted (implemented — Phase 5.9, [[REST-API-REFINEMENT]])
 **Date:** 2026-06
 **Context tags:** REST API, error contract, RFC-7807, problem+json, errorCode, publication-readiness, clean-room
 

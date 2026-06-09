@@ -138,12 +138,25 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         assertThat(decision.isGranted()).isFalse();
     }
 
-    @Test // unannotated method → abstain (null)
-    void unannotated_abstains() throws Exception {
+    @Test // unannotated method → DENY, not abstain. The manager is bound to an @OpaPreAuthorize pointcut,
+    // so "matched but no annotation" is a wiring inconsistency — an abstain (null) would let the
+    // interceptor proceed unenforced.
+    void unannotated_denies() throws Exception {
         AuthorizationDecision decision = manager.check(noopAuthSupplier,
                 invocationOf("unannotated", new Class<?>[] {}, new Object[] {}));
 
-        assertThat(decision).isNull();
+        assertThat(decision).isNotNull();
+        assertThat(decision.isGranted()).isFalse();
+    }
+
+    @Test // a DECLARED resourceId whose SpEL evaluates to null must deny — silently degrading to a
+    // type-level (id-less) check would skip per-id deny rules and per-resource role scoping (widen).
+    void declaredResourceIdEvaluatesNull_deny() throws Exception {
+        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {null}));
+
+        assertThat(decision.isGranted()).isFalse();
+        org.mockito.Mockito.verify(opaClient, org.mockito.Mockito.never()).allow(any());
     }
 
     @Test // U27 + U28 — RoleDefinitionSupplier consulted; AbacContext carries action + resource + role_definition

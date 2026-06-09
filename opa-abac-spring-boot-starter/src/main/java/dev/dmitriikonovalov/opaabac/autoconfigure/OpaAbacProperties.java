@@ -19,8 +19,8 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
  *     policy-prefix: catalog
  *     timeout: 5s
  *     decision-field: allow
- *     verify-signature: false
  *     subject:
+ *       trust-forwarded-jwt: false
  *       id-claim: sub
  *       roles-claim: realm_access.roles
  *       username-claim: preferred_username
@@ -48,13 +48,6 @@ public class OpaAbacProperties {
 
     /** Boolean field read from OPA's {@code result} (e.g. {@code result.allow}). */
     private String decisionField = "allow";
-
-    /**
-     * Reserved: re-verify the JWT signature in the app. <strong>Not implemented in this slice</strong> —
-     * the app trusts a validating gateway and does structural + {@code exp} checks only. Setting this to
-     * {@code true} has no effect yet.
-     */
-    private boolean verifySignature = false;
 
     /** How the JWT subject is read from claims. */
     @NestedConfigurationProperty
@@ -106,14 +99,6 @@ public class OpaAbacProperties {
 
     public void setDecisionField(String decisionField) {
         this.decisionField = decisionField;
-    }
-
-    public boolean isVerifySignature() {
-        return verifySignature;
-    }
-
-    public void setVerifySignature(boolean verifySignature) {
-        this.verifySignature = verifySignature;
     }
 
     public Subject getSubject() {
@@ -242,6 +227,17 @@ public class OpaAbacProperties {
     /** Where the JWT subject claims live (all paths support dotted nesting). */
     public static class Subject {
 
+        /**
+         * Explicit acknowledgment that a <strong>signature-validating gateway</strong> sits in front of
+         * this app. The default {@code JwtClaimsSubjectExtractor} performs <em>no signature
+         * verification</em> (it decodes the forwarded token's payload and trusts it) — deployed without a
+         * validating gateway that is a total authentication bypass, so the extractor stays <strong>off
+         * until this is set {@code true}</strong>. While off, every request is anonymous and all checks
+         * deny (fail-closed); a startup warning says so. Providing your own
+         * {@code AbacSubjectExtractor} bean bypasses this toggle entirely.
+         */
+        private boolean trustForwardedJwt = false;
+
         /** Claim path for the subject id. */
         private String idClaim = "sub";
 
@@ -256,6 +252,14 @@ public class OpaAbacProperties {
 
         /** Reject a token whose {@code exp} is in the past. */
         private boolean validateExpiry = true;
+
+        public boolean isTrustForwardedJwt() {
+            return trustForwardedJwt;
+        }
+
+        public void setTrustForwardedJwt(boolean trustForwardedJwt) {
+            this.trustForwardedJwt = trustForwardedJwt;
+        }
 
         public String getIdClaim() {
             return idClaim;

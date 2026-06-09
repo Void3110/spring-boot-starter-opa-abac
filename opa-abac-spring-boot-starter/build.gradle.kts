@@ -21,9 +21,14 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-autoconfigure")
 
     // Security + web types are referenced by the security auto-config (AbacFilter extends
-    // OncePerRequestFilter; conditions on SecurityFilterChain). The consuming app supplies them at
-    // runtime; here they are compile-only so the starter stays usable in a non-web/non-security app
-    // (the security beans simply back off via @ConditionalOnClass).
+    // OncePerRequestFilter; conditions on SecurityFilterChain), so they are compile-only HERE.
+    // Honest caveat: opa-abac-spring-security declares them `implementation`, and the starter
+    // api-depends on that module — so a starter consumer still gets web+security on the runtime
+    // classpath transitively, and the @ConditionalOnClass back-off only fires if the consumer
+    // explicitly excludes them. A non-web/non-security app should depend on opa-abac-core (and
+    // opa-abac-spring-data if filtering) directly instead of the starter. Restructuring the module
+    // scopes so the starter is truly modular is a tracked follow-up decision (see
+    // docs/code-review/FULL-REPO-REVIEW-2026-06-10.md), not something to half-change here.
     compileOnly("org.springframework.boot:spring-boot-starter-security")
     compileOnly("org.springframework.boot:spring-boot-starter-web")
 

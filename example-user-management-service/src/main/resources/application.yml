@@ -26,6 +26,11 @@ opa:
     enabled: ${OPA_ABAC_ENABLED:false}
     base-url: ${OPA_ABAC_BASE_URL:http://localhost:8181}
     policy-prefix: ${OPA_ABAC_POLICY_PREFIX:}
+    subject:
+      # Explicit acknowledgment that a signature-validating gateway (APISIX openid-connect) fronts this
+      # app in the rig — the starter's JWT extractor does NOT verify signatures itself. Never enable
+      # gateway-less.
+      trust-forwarded-jwt: ${OPA_ABAC_TRUST_FORWARDED_JWT:true}
 
 springdoc:
   swagger-ui:

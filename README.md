@@ -30,8 +30,14 @@ runnable example and proven end-to-end (unit + Testcontainers ITs + `opa test` +
 - **N-level hierarchical authorization** — a grant on a Catalog governs a Category/Product nested under it,
   N levels deep (opt-in per relation, deny-overridable, fail-closed; an `ltree` materialized-path resolver
   + atomic re-parent). See [`docs/guides/HIERARCHICAL-AUTHORIZATION.md`](docs/guides/HIERARCHICAL-AUTHORIZATION.md).
+- **Hierarchy-aware list filtering** — an inheritable ancestor grant *widens a list* in SQL
+  (`scope AND (tagResidual OR subtreeSpec) AND notDenied`), composed so the widening can never escape the
+  caller's scope and a leaf deny still overrides it.
+- **RFC-7807 error contract** — every error is `application/problem+json` with a typed, library-owned
+  `errorCode` vocabulary (app-extensible), plus `Location` on creates — asserted end-to-end by the
+  newman matrices.
 
-**Next:** hierarchy-aware **list** filtering (5.5-B) and an action-affordance map (Phase 6). The technical
+**Next:** the pagination envelope (5.95), then an action-affordance map (Phase 6). The technical
 plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
 
 > **Not yet published to Maven Central** — the API is still moving as slices land. The full picture
@@ -39,22 +45,25 @@ plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADM
 
 ## This is a monorepo
 
-Two things live here, built together so the library and a real consumer evolve in lockstep:
+Two things live here, built together so the library and real consumers evolve in lockstep:
 
 ```
 spring-boot-starter-opa-abac/
-├── opa-abac-core/                  # Framework-agnostic ABAC model + OPA client (library)
-├── opa-abac-spring-security/       # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
-├── opa-abac-spring-data/           # Partial-eval → JPA Specification data filtering
-├── opa-abac-spring-boot-starter/   # Auto-configuration (the published starter)
-└── example/
-    └── catalog-management-service/ # E-commerce product catalog REST service (the app we secure)
+├── opa-abac-core/                       # Framework-agnostic ABAC model + OPA client (library)
+├── opa-abac-spring-security/            # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
+├── opa-abac-spring-data/                # Partial-eval → JPA Specification filtering + ltree hierarchy
+├── opa-abac-spring-boot-starter/        # Auto-configuration (the published starter)
+├── example-catalog-management-service/  # E-commerce product catalog REST service (the app we secure)
+├── example-user-management-service/     # Users/teams/role-definitions/tag-dictionary (drives the ABAC attributes)
+├── infra/                               # The local rig: APISIX, Keycloak, OPA (+ policies), Jaeger
+├── scripts/postman/                     # Newman e2e matrices (the through-the-gateway proofs)
+└── docs/                                # Architecture, ADRs, guides, per-slice planning packages
 ```
 
-The `opa-abac-*` modules are the publishable library. Everything under `example/` is a
-demonstration and is **not** published.
+The `opa-abac-*` modules are the publishable library. The two `example-*` services are
+demonstrations and are **not** published.
 
-### The target architecture (built incrementally)
+### The architecture (running today via `deploy.sh`)
 
 ```
                      ┌──────────┐   OIDC    ┌──────────┐
@@ -68,16 +77,16 @@ demonstration and is **not** published.
               ┌───────────────────────────┐        ┌─────────┐
               │ catalog-management-service │        │ Jaeger  │
               │  (ABAC checks via starter) │        └─────────┘
-              └───────────────────────────┘
-                          │
-                          ▼
-                     ┌──────────┐
-                     │ Postgres │
-                     └──────────┘
+                          │         ╲
+                          ▼          ╲ effective role / tags
+                     ┌──────────┐   ┌─────────────────────────┐
+                     │ Postgres │   │ user-management-service │
+                     └──────────┘   │  (roles + tag dictionary)│
+                                    └─────────────────────────┘
 ```
 
-A separate `user-service` (role definitions + a dynamic tag dictionary) is introduced later
-to drive the ABAC attributes.
+The `user-management-service` (teams, role definitions, a dynamic tag dictionary) supplies the
+attributes the ABAC decisions are made with — and dogfoods the starter to secure its own API.
 
 ## The example: catalog-management-service
 
@@ -89,17 +98,23 @@ shape ABAC needs to show off:
 Built with the **vanilla** `org.openapi.generator` Gradle plugin
 (`generatorName = spring`, `interfaceOnly`): the OpenAPI spec generates API interfaces + DTOs,
 and we write the `@RestController` implementations. Persistence is Postgres via Spring Data JPA,
-schema managed by Liquibase. It is secured with the starter **incrementally** — running it standalone
-shows the bare CRUD; behind the full rig (below) it enforces real ABAC through APISIX → OPA.
+schema managed by Liquibase. The service is **secured by default** — every `/api/v1/**` request
+requires an authenticated subject and a real OPA decision, so the meaningful way to drive it is
+**through the rig** (below). That's deliberate: an authorization showcase whose example runs open
+would undercut its own pitch.
 
-### Run it
+### Browse it standalone (no auth, read-only exploration)
 
 ```bash
 ./profile.sh up        # start Postgres (Docker), host port 5433
 ./gradlew :example-catalog-management-service:bootRun
-# Swagger UI at http://localhost:8080/swagger-ui.html
+# Swagger UI (API browsing) at http://localhost:8080/swagger-ui.html
 ./profile.sh down      # stop & remove
 ```
+
+Swagger UI, the OpenAPI spec, and `/actuator/health` are open, so you can explore the API surface —
+but **API calls will return 401**: there's no token source and no OPA standalone. To exercise the
+API, run the full rig.
 
 > Postgres is published on host port **5433** (not 5432) to avoid colliding with other
 > local Postgres instances. Override with `SPRING_DATASOURCE_URL` if needed.
