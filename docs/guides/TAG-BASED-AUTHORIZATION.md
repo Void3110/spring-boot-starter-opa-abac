@@ -91,9 +91,10 @@ deliberate choice: the subject-side model is **fail-closed by construction** and
 the Phase-5 partial-eval **row filter** (the requirement becomes a residual `WHERE` over the `tags`
 column). The resource-side model's natural default is *"an untagged resource is open to everyone"* — a
 documented **fail-open** default (AWS warns about the identical `ForAllValues`-over-empty hazard) that
-would conflict with this repo's load-bearing fail-closed invariant. (A future "resource-declared
-clearance" slice could add the resource-side model *with the default inverted to fail-closed*; see
-[`docs/architecture/adr/`](../architecture/adr/) when it lands.)
+would conflict with this repo's load-bearing fail-closed invariant. This choice is pinned by
+**[ADR 0009](../architecture/adr/0009-tag-requirement-subject-side.md)** (with the rejected resource-side
+alternative and the fail-open analysis). A future "resource-declared clearance" slice could add the
+resource-side model *with the default inverted to fail-closed* — it would get its own ADR.
 
 **What `requiredTags` is — and is NOT:**
 
