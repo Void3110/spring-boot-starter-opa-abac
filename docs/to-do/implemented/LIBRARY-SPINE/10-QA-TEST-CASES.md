@@ -92,5 +92,5 @@ tags:
 |---|------|----------|
 | X1 | `./gradlew build` | all modules + example + codegen + ITs green. |
 | X2 | `opa-abac-core` dependencies | Jackson + SLF4J + JDK only (no Spring, no Feign). |
-| X3 | Clean-room scan of the diff | no `severstal`/`portal-backend`/`sss-*`/`glpat-`/local-path/ticket-id strings. |
+| X3 | Clean-room scan of the diff | no proprietary company/project names, internal prefixes, token prefixes, local paths, or ticket ids (the concrete scan list is maintainer-local, per the IP boundary in `CLAUDE.md`). |
 | X4 | Fail-closed | every OPA error/timeout/ambiguity denies, at both the client and the manager. |

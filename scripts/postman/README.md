@@ -49,10 +49,11 @@ it to newman as `access_token`. Full explanation in
 
 **Working suite** — auth + the full Catalog → Category → Product lifecycle (create → get → update →
 list → delete → 404-after-delete) with id-chaining and field-level assertions, then a cascade
-cleanup. Runs green against the local rig.
+cleanup, **plus the full ABAC matrix set listed above**: viewer-vs-editor role decisions, team-based
+role resolution, tag-based grants, partial-eval data filtering (exact row sets per subject), and the
+hierarchy allow/deny + re-parent matrix. All run green against the local rig, through the gateway,
+with real OPA decisions and (since Phase 5.9) RFC-7807 `problem+json` error-contract assertions on
+the deny paths.
 
-The **authz** depth is still shallow on purpose: OPA runs an allow-all placeholder and the service
-does no JWT/ABAC check yet, so the suite proves the *plumbing* (a Keycloak-authenticated identity
-reaches the app and CRUD works through the gateway), not fine-grained decisions. The viewer-vs-editor
-matrix is added when `@OpaPreAuthorize` + a real policy land in a later Phase-3 slice — see the
-`DOMAIN-MODEL-FOUNDATION` plan, ticket 5, and `10-QA-TEST-CASES.md` (E9+).
+Each matrix landed with its slice — the file table above is the authoritative list of what is proven
+end-to-end today.

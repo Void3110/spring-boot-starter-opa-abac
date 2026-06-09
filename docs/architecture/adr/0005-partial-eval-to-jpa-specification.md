@@ -9,7 +9,7 @@ tags:
 
 # ADR 0005 — Partial evaluation → JPA `Specification`: residual conditions in the SQL `WHERE`
 
-**Status:** Accepted (Phase 5, planned)
+**Status:** Accepted (implemented — Phase 5, [[DATA-FILTERING]])
 **Date:** 2026-06
 **Context tags:** spring-data, list filtering, OPA partial evaluation, ABAC, fail-closed
 

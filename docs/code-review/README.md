@@ -31,4 +31,4 @@ process, checklist, and a portable template it references.
 Reviews are **expertise-driven**: before reviewing, prime the relevant Mulch domain
 (`ml prime code-review-process`, `ml search "<topic>"`). After a review surfaces a durable
 insight, record it (`ml record … && ml sync`). See [`../../CLAUDE.md`](../../CLAUDE.md) and the
-[mulch skill](../../.claude/skills/mulch/SKILL.md).
+mulch skill (local, in the gitignored `.claude/skills/` — not part of the public repo).
