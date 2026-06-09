@@ -9,9 +9,9 @@ import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * Team-scoped custom role-definition management — <strong>owner only</strong>, dogfooding the starter.
@@ -50,7 +50,13 @@ public class RoleDefinitionController implements RoleDefinitionApi {
         var created = roleDefinitions.create(
                 actor, teamId, request.getCode(), request.getAttributes(), request.getPermissions(),
                 request.getRequiredTags(), matchModeOf(request.getMatchMode()));
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserMgmtMapper.toDto(created));
+        var dto = UserMgmtMapper.toDto(created);
+        // A role definition is addressed by its code (GET /teams/{teamId}/role-definitions/{code}).
+        var location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{code}")
+                .buildAndExpand(dto.getCode())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @Override

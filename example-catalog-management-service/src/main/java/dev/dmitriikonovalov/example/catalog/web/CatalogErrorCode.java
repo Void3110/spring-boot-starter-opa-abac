@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
 import dev.dmitriikonovalov.opaabac.security.ApiErrorCode;
+import org.springframework.http.HttpStatus;
 
 /**
  * The catalog service's own {@link ApiErrorCode} vocabulary — the typed extension point for catalog
@@ -21,5 +22,12 @@ public enum CatalogErrorCode implements ApiErrorCode {
     @Override
     public String code() {
         return name();
+    }
+
+    @Override
+    public HttpStatus status() {
+        // Unreachable: the enum has no constants today. A real catalog code would carry its own status,
+        // as the user-service's UserMgmtErrorCode constants do.
+        throw new UnsupportedOperationException("CatalogErrorCode has no constants");
     }
 }

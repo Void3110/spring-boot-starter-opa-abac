@@ -10,9 +10,9 @@ import dev.dmitriikonovalov.example.usermgmt.service.TeamService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * Team read + create surface. Reads talk to the repository directly (catalog-style); <em>creation</em>
@@ -36,10 +36,18 @@ public class TeamController implements TeamApi {
 
     @Override
     public ResponseEntity<Team> createTeam(CreateTeamRequest request) {
+        // bootstrap: pre-membership, authenticated-only by design — creating your first team precedes any
+        // membership to authorize against (owner-on-create), so this endpoint is deliberately ungated
+        // (no @OpaPreAuthorize). The creator becomes the owner atomically inside TeamService.
         UUID creator = callerIdentity.requireActingUserId(request.getCreatorUserId());
         var team = teamService.createWithOwner(
                 creator, request.getName(), request.getTargetType(), request.getTargetId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserMgmtMapper.toDto(team));
+        var dto = UserMgmtMapper.toDto(team);
+        var location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(dto.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(dto);
     }
 
     @Override

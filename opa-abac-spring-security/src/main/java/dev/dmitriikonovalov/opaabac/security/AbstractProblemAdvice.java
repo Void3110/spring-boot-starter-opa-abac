@@ -39,13 +39,17 @@ public abstract class AbstractProblemAdvice {
         return problem(LibraryErrorCode.ACCESS_DENIED, "Access denied", request);
     }
 
-    /** Build a {@code problem+json} response, taking the status from a {@link LibraryErrorCode}. */
+    /**
+     * Build a {@code problem+json} response, taking the status from the code itself. Works for any
+     * {@link ApiErrorCode} — a {@link LibraryErrorCode} or an application's own enum — so a subclass never
+     * re-invents the status at the call site.
+     */
     protected ResponseEntity<ProblemDetail> problem(
-            LibraryErrorCode code, String detail, HttpServletRequest request) {
+            ApiErrorCode code, String detail, HttpServletRequest request) {
         return problem(code.status(), code, detail, request);
     }
 
-    /** Build a {@code problem+json} response with an explicit status (for app codes). */
+    /** Build a {@code problem+json} response with an explicit status (rarely needed). */
     protected ResponseEntity<ProblemDetail> problem(
             HttpStatus status, ApiErrorCode code, String detail, HttpServletRequest request) {
         String instance = request != null ? request.getRequestURI() : null;
