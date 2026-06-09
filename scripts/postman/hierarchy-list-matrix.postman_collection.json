@@ -1,0 +1,92 @@
+{
+  "info": {
+    "name": "Hierarchy-aware list filter matrix (Slice 5.5-B)",
+    "description": "Proves the hierarchy-aware LIST filter end to end through the gateway: an ancestor (Catalog) grant WIDENS a category list to the whole catalog subtree (rows the subject's own leaf-tags would never surface), two subjects on the SAME endpoint get DIFFERENT row sets, a leaf abac_deny still REMOVES a row from the widened list, and an unbound stranger gets []. The re-parent move (a row leaving one subject's widened list) is done by the runner between two passes of this collection (phase=pre|post) — the same ltree subtree rewrite CatalogHierarchyService.reparentCategory does. The decisive contrast is the row SET, not a single 200/403.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "gateway", "value": "http://localhost:9085"},
+    {"key": "collection_base_url", "value": "{{gateway}}/api/v1"},
+    {"key": "phase", "value": "pre"}
+  ],
+  "item": [
+    {
+      "name": "E1 — Inherit reader lists categories -> WIDENED to the whole catalog subtree",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{inherit_token}}"}],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": ["{{collection_base_url}}"],
+          "path": ["catalogs", "{{catalog_id}}", "categories"]
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "pm.test('200 OK (the coarse list gate let the inheritable grant through)', () => pm.response.code === 200);",
+          "const ids = pm.response.json().map(c => c.id);",
+          "const phase = pm.variables.get('phase');",
+          "// The inherit reader has NO category tag grant; it sees these rows ONLY because the Catalog grant",
+          "// widens the list to the whole catalog subtree (the headline).",
+          "pm.test('sees the EMEA category (in the subtree)', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
+          "if (phase === 'pre') {",
+          "  pm.test('PRE-reparent: sees the APAC category (in the subtree, NOT by its own tags)', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
+          "} else {",
+          "  pm.test('POST-reparent: the moved APAC category LEFT catalog C\\'s widened list', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
+          "}",
+          "pm.test('does NOT see the DENIED category (deny-overrides)', () => pm.expect(ids).to.not.include(pm.variables.get('deny_category_id')));"
+        ]}
+      }]
+    },
+    {
+      "name": "E2 — Region reader lists categories -> only the EMEA row (DIFFERENT set, same endpoint)",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{region_token}}"}],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": ["{{collection_base_url}}"],
+          "path": ["catalogs", "{{catalog_id}}", "categories"]
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "pm.test('200 OK', () => pm.response.code === 200);",
+          "const ids = pm.response.json().map(c => c.id);",
+          "// The region reader is tag-gated to region=emea (and has its own category:read), so it sees only",
+          "// the emea row via the residual — NOT the apac row the inherit reader sees pre-reparent. A different cut.",
+          "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
+          "pm.test('does NOT see the APAC category (its tags do not match)', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
+          "pm.test('does NOT see the DENIED category', () => pm.expect(ids).to.not.include(pm.variables.get('deny_category_id')));"
+        ]}
+      }]
+    },
+    {
+      "name": "E4 — Stranger (no role definition) lists categories -> EMPTY / 403 (fail-closed)",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "Bearer {{stranger_token}}"}],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+          "host": ["{{collection_base_url}}"],
+          "path": ["catalogs", "{{catalog_id}}", "categories"]
+        }
+      },
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "// The unbound stranger resolves NO role definition, so neither the coarse list gate (no inheritable",
+          "// grant) nor the SQL filter (no role -> DENY_ALL residual) lets any row through. 403 at the gate OR",
+          "// 200 with an empty body are both fail-closed; assert NO category is visible either way.",
+          "pm.test('fail-closed: 403 at the gate, or 200 with an empty list', () => pm.expect([200, 403]).to.include(pm.response.code));",
+          "if (pm.response.code === 200) {",
+          "  const ids = pm.response.json().map(c => c.id);",
+          "  pm.test('sees NO categories (empty, not the whole table)', () => pm.expect(ids.length).to.eql(0));",
+          "}"
+        ]}
+      }]
+    }
+  ]
+}

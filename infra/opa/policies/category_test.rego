@@ -427,3 +427,63 @@ test_inherited_grant_respects_leaf_tags_mismatch if {
 	not category.allow with input as deep_category_input(cat_root_role_tagged, {"region": "apac"})
 		with data.category.inheritable as category_inherits_catalog
 }
+
+# --- Phase 5.5-B: the COARSE LIST GATE (no resource id, inheritable ancestor grant) ----------------
+
+# The type-level @OpaPreAuthorize on a LIST endpoint asks `allow` with only a resource TYPE (no id).
+list_gate_input(role_def) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "category:read",
+	"resource": {"type": "category"},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-only role passes the COARSE list gate (it may read categories via the inheritable catalog grant).
+# The FINE which-rows cut still happens in SQL — this clause only OPENS the gate.
+test_list_gate_passes_for_inheritable_ancestor_grant if {
+	category.allow with input as list_gate_input(cat_root_role)
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# OPT-IN OFF: same catalog-only role, EMPTY inheritable data → the list gate denies (no inheritance).
+test_list_gate_denies_when_inheritance_off if {
+	not category.allow with input as list_gate_input(cat_root_role)
+		with data.category.inheritable as {}
+}
+
+# A stranger (no role definition) is still denied at the list gate (fail-closed boundary).
+test_list_gate_denies_stranger if {
+	not category.allow with input as {
+		"subject": {"id": "s", "roles": []},
+		"action": "category:read",
+		"resource": {"type": "category"},
+		"environment": {},
+	}
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# A leaf deny on the (hypothetical) list context still overrides — the gate AND-s `not denied`.
+test_list_gate_respects_deny if {
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:read",
+		"resource": {"type": "category", "attributes": {"abac_deny": true}},
+		"role_definition": cat_root_role,
+		"environment": {},
+	}
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# SINGLE-RESOURCE unchanged: a catalog-only role on a category WITH an id but NO ancestors → still deny
+# (the list-gate clause requires NO id, so it does not loosen single-resource decisions).
+test_list_gate_does_not_affect_single_resource if {
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:read",
+		"resource": {"type": "category", "id": "k1", "attributes": {}},
+		"role_definition": cat_root_role,
+		"environment": {},
+	}
+		with data.category.inheritable as category_inherits_catalog
+}
