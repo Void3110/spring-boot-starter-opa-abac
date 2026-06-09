@@ -137,6 +137,10 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   line and get ABAC + enrichment — no framework worldview to adopt. — **Phase 7** (publish & polish)
 - **F2** *As a reader*, the example runs end-to-end from a clean clone and the docs explain each layer.
   — **Phase 7**
+- **F3** *As a client of a reference service*, every error I get back is canonical RFC-7807
+  `application/problem+json` with a **machine-stable `errorCode`** I can branch on (not a human `message`
+  string), so I handle a `422` programmatically instead of string-matching. — **Phase 5.9**
+  ([[REST-API-REFINEMENT]], ADR [[0011-error-contract-problem-json|0011]])
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
