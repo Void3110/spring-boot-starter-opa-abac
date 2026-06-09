@@ -255,8 +255,22 @@ class OpaAbacAutoConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class UserResolverConfig {
+        // AncestorResolver is no longer a single-method interface (it gained subtreeOf), so the user-supplied
+        // override is an anonymous class: an empty chain and a fail-closed (empty) subtree predicate.
         static final dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver RESOLVER =
-                (type, id) -> java.util.List.of();
+                new dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver() {
+                    @Override
+                    public java.util.List<dev.dmitriikonovalov.opaabac.core.ParentRef> ancestorsOf(
+                            String leafType, String leafId) {
+                        return java.util.List.of();
+                    }
+
+                    @Override
+                    public <T> org.springframework.data.jpa.domain.Specification<T> subtreeOf(
+                            String rootType, String rootId) {
+                        return (root, query, cb) -> cb.disjunction();
+                    }
+                };
 
         @Bean
         dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver ancestorResolver() {

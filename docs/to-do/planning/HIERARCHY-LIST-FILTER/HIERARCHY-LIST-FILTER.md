@@ -119,7 +119,7 @@ In the example + infra:
 
 | # | Ticket | Module | Status |
 |---|--------|--------|--------|
-| T1 | SPI: `AncestorResolver.subtreeOf` + both impls (ltree `path <@` pushdown · CTE bounded `id IN`, fail-closed) + ITs | spring-data | ⬜ |
+| T1 | SPI: `AncestorResolver.subtreeOf` + both impls (ltree `path <@` pushdown · CTE bounded `id IN`, fail-closed) + ITs | spring-data | ✅ |
 | T2 | `SubtreeSpecResolver` (root-role resolution + inheritable gate → `subtreeOf`; fail-closed to empty) | spring-data | ⬜ |
 | T3 | `AbacQueryService`: 4-arg overload (OR/AND composition) + `notDenied` Spec + hierarchy-aware batch path; 3-arg byte-compat | spring-data | ⬜ |
 | T4 | spring-data IT: both impls' row-sets, `notDenied` narrowing, AND-with-scope no-leak, re-parent in/out (Testcontainers) | spring-data | ⬜ |
