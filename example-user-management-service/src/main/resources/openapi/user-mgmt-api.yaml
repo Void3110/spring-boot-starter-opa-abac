@@ -506,33 +506,33 @@ components:
     BadRequest:
       description: Invalid request
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
     NotFound:
       description: Resource not found
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
     Conflict:
       description: Conflict with the current state
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
     Forbidden:
       description: The caller is not authorized for this action
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
     UnprocessableEntity:
       description: The request violates a domain rule (e.g. the subset rule)
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
 
   schemas:
     Pong:
@@ -846,15 +846,45 @@ components:
           type: string
           nullable: true
 
-    ApiError:
+    ProblemDetail:
       type: object
-      required: [status, message]
+      description: >
+        An RFC-7807 problem object (application/problem+json). Five standard members plus two documented
+        extensions (errorCode, timestamp). A client branches on the typed errorCode, not the human detail.
+      required: [status, errorCode]
       properties:
+        type:
+          type: string
+          description: A stable, relative, opaque identifier for the problem kind (e.g. /problems/role-subset-violation). Not dereferenced.
+        title:
+          type: string
+          description: A short, status-stable summary of the problem kind.
         status:
           type: integer
           format: int32
-        message:
+          description: The HTTP status code.
+        detail:
           type: string
+          description: A human, instance-specific explanation.
+        instance:
+          type: string
+          description: The request path that produced the error.
+        errorCode:
+          type: string
+          description: The machine-stable code a consumer branches on. The union of codes this service can emit.
+          enum:
+            - ACCESS_DENIED
+            - RESOURCE_NOT_FOUND
+            - VALIDATION_FAILED
+            - ROLE_SUBSET_VIOLATION
+            - TEAM_TARGET_EXISTS
+            - MEMBERSHIP_CONFLICT
+            - ROLE_CODE_CONFLICT
+            - ROLE_IMMUTABLE
+            - TAG_KEY_CONFLICT
+            - TAG_DEFINITION_IMMUTABLE
+            - TAG_DEFINITION_INVALID
         timestamp:
           type: string
           format: date-time
+          description: When the error was produced (correlation).

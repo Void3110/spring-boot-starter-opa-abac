@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import java.util.Locale;
+import org.springframework.http.HttpStatus;
 
 /**
  * The contract slot for a machine-stable error code in an RFC-7807 {@code application/problem+json}
@@ -12,10 +13,11 @@ import java.util.Locale;
  * its domain failures. (A Java {@code enum} cannot be subclassed, so the shared contract is this
  * interface; the set of codes is open while each code stays typed.)
  *
- * <p>The three accessors feed the three RFC-7807 members an error body needs beyond the status and the
- * instance text: {@code errorCode} (the wire value), {@code type} (a stable identifier for the problem
- * kind), and {@code title} (a status-stable human summary). {@link #problemType()} and {@link #title()}
- * have sensible defaults derived from {@link #code()}, so an implementor need only supply the code.
+ * <p>A code carries everything the advice needs to render a problem body: its {@link #status()} (so the
+ * advice never re-invents the status at the call site), the wire {@link #code()}, the {@code type}
+ * ({@link #problemType()}) and the {@code title} ({@link #title()}). {@link #problemType()} and
+ * {@link #title()} have sensible defaults derived from {@link #code()}, so an implementor need only supply
+ * {@link #code()} and {@link #status()}.
  */
 public interface ApiErrorCode {
 
@@ -24,6 +26,12 @@ public interface ApiErrorCode {
      * Conventionally the enum constant name.
      */
     String code();
+
+    /**
+     * The HTTP status this failure maps to. Carried on the code so the advice resolves
+     * {@code (status, errorCode)} from one source and never re-invents the status at the call site.
+     */
+    HttpStatus status();
 
     /**
      * The stable, <strong>relative</strong>, opaque {@code type} identifier for this problem kind

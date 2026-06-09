@@ -140,6 +140,11 @@ class ProblemDetailContractTest {
         public String code() {
             return name();
         }
+
+        @Override
+        public HttpStatus status() {
+            return HttpStatus.CONFLICT;
+        }
     }
 
     /**

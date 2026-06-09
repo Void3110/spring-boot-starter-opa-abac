@@ -43,7 +43,7 @@ public enum LibraryErrorCode implements ApiErrorCode {
         this.title = title;
     }
 
-    /** The HTTP status this failure maps to. */
+    @Override
     public HttpStatus status() {
         return status;
     }

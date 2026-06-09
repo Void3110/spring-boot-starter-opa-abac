@@ -16,9 +16,12 @@ tags:
 In `opa-abac-spring-security` (`dev.dmitriikonovalov.opaabac.security`), five new types + a package-info
 doc edit:
 
-- **`ApiErrorCode`** (interface) — the contract slot: `code()` (abstract), plus `default`
+- **`ApiErrorCode`** (interface) — the contract slot: `code()` + `status()` (abstract), plus `default`
   `problemType()` (derives `/problems/<kebab-of-code>` — a stable **relative** opaque id, no host) and
-  `default title()` (derives a Title Case phrase from `code()`). An implementor need only supply `code()`.
+  `default title()` (derives a Title Case phrase from `code()`). An implementor need supply only `code()`
+  and `status()`. *(`status()` was lifted onto the interface in the T3 review gate — see STATUS-03 — so
+  the shared advice base resolves `(status, errorCode)` for any code generically; originally it lived only
+  on `LibraryErrorCode`.)*
 - **`LibraryErrorCode`** (enum implementing `ApiErrorCode`) — the seven library-owned codes, **each
   carrying its `HttpStatus`** via a `status()` accessor (so the advice resolves `(status, code)` from one
   source): `ACCESS_DENIED` 403, `DEPENDENCY_UNAVAILABLE` 503, `VALIDATION_FAILED` 400,

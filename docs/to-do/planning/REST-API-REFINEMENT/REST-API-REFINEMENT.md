@@ -128,7 +128,7 @@ Docs:
 |---|--------|--------|--------|
 | T1 | Library: `ApiErrorCode` interface + base enum + `ProblemDetail` carrier + advice base/mapping helper + unit tests | spring-security | ✅ |
 | T2 | Catalog: own `ApiErrorCode` enum + advice remap + OpenAPI `ProblemDetail` schema + `Location` on `201` + MockMvc IT | example-catalog | ✅ |
-| T3 | User-service: own `ApiErrorCode` enum + advice remap + OpenAPI `ProblemDetail` schema + `Location` on `201` + intent comments at ungated bootstrap mutations + MockMvc IT | example-user | ☐ |
+| T3 | User-service: own `ApiErrorCode` enum + advice remap + OpenAPI `ProblemDetail` schema + `Location` on `201` + intent comments at ungated bootstrap mutations + MockMvc IT | example-user | ✅ |
 | T4 | e2e: extend existing matrices to assert `problem+json` + `errorCode` on existing negatives + `Location` on existing `201`s (no new collection) | e2e | ☐ |
 | T5 | Docs (guide §3/§4 adopted from §9) + roadmap + Mulch + move folder to `implemented/` on ship | docs | ☐ |
 
