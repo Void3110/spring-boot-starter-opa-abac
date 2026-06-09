@@ -2,7 +2,6 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import org.aopalliance.intercept.MethodInvocation;
 import org.springframework.aop.Pointcut;
-import org.springframework.aop.support.ComposablePointcut;
 import org.springframework.aop.support.annotation.AnnotationMatchingPointcut;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,9 +29,13 @@ public class OpaMethodSecurityConfiguration {
     AuthorizationManagerBeforeMethodInterceptor opaPreAuthorizeMethodInterceptor(
             AuthorizationManager<MethodInvocation> opaPreAuthorizeAuthorizationManager) {
 
-        Pointcut pointcut = new ComposablePointcut(
-                AnnotationMatchingPointcut.forMethodAnnotation(OpaPreAuthorize.class))
-                .union(AnnotationMatchingPointcut.forClassAnnotation(OpaPreAuthorize.class));
+        // checkInherited = true: the annotation is found on the *most specific* method AND up the
+        // type hierarchy — so @OpaPreAuthorize declared on an interface method is matched under
+        // class-based (CGLIB) proxies too, the same posture as Spring Security's own @PreAuthorize
+        // pointcut. Without it, an interface-annotated method runs with NO enforcement and no error.
+        // The annotation is METHOD-only by design (each method names its action), so there is no
+        // class-level pointcut half.
+        Pointcut pointcut = new AnnotationMatchingPointcut(null, OpaPreAuthorize.class, true);
 
         AuthorizationManagerBeforeMethodInterceptor interceptor =
                 new AuthorizationManagerBeforeMethodInterceptor(pointcut, opaPreAuthorizeAuthorizationManager);

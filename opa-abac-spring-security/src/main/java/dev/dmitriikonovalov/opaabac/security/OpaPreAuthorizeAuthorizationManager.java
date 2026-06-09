@@ -34,9 +34,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * {@link AbacContext}; and asks the {@link OpaClient}.
  *
  * <h2>Fail-closed</h2>
- * Unauthenticated, an unresolvable resource, or <em>any</em> exception while building the context or
- * calling OPA results in a denied decision — never an allow. The second fail-closed layer (the first is
- * inside {@link OpaClient}).
+ * Unauthenticated, an unresolvable resource, a declared {@code resourceId} expression that resolves to
+ * null/blank, a pointcut match without a resolvable annotation, or <em>any</em> exception while building
+ * the context or calling OPA results in a denied decision — never an allow, never a silently-widened
+ * (id-less) check. The second fail-closed layer (the first is inside {@link OpaClient}).
  */
 public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationManager<MethodInvocation> {
 
@@ -64,8 +65,12 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         try {
             OpaPreAuthorize annotation = findAnnotation(invocation);
             if (annotation == null) {
-                // Not our annotation → abstain (null lets other managers decide).
-                return null;
+                // This manager is bound to an @OpaPreAuthorize-matching pointcut, so "matched but no
+                // annotation found" is a wiring inconsistency, not a legitimate state. Deny rather than
+                // abstain — an abstain (null) would let the interceptor proceed unenforced.
+                log.warn("OPA pre-authorize denied (fail-closed): pointcut matched '{}' but no "
+                        + "@OpaPreAuthorize annotation was resolved", invocation.getMethod());
+                return DENY;
             }
 
             AbacContext.Subject subject = currentSubject();
@@ -103,11 +108,10 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         // Resolve the most-specific (implementation) method behind any proxy/interface, so an
         // annotation on the concrete method is seen even when the invocation method is the interface one.
         Method specificMethod = AopUtils.getMostSpecificMethod(method, targetClass);
-        OpaPreAuthorize annotation = AnnotationUtils.findAnnotation(specificMethod, OpaPreAuthorize.class);
-        if (annotation != null) {
-            return annotation;
-        }
-        return AnnotationUtils.findAnnotation(targetClass, OpaPreAuthorize.class);
+        // findAnnotation searches the method, then the same method on superclasses and interfaces — so
+        // an annotation declared on the interface method is honored. The annotation is METHOD-only, so
+        // there is no class-level fallback.
+        return AnnotationUtils.findAnnotation(specificMethod, OpaPreAuthorize.class);
     }
 
     private static AbacContext.Subject currentSubject() {
@@ -137,8 +141,17 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         if (type == null || type.isBlank()) {
             return null; // no resource type → cannot decide
         }
-        String id =
-                annotation.resourceId().isBlank() ? null : asText(evaluate(annotation.resourceId(), spelContext));
+        if (annotation.resourceId().isBlank()) {
+            return new AbacContext.Resource(type, null, Map.of()); // type-level check, by declaration
+        }
+        String id = asText(evaluate(annotation.resourceId(), spelContext));
+        if (id == null || id.isBlank()) {
+            // A DECLARED resourceId that resolves to null/blank (a typo'd #param, or parameter names
+            // unavailable at runtime) must deny — silently degrading to a type-level check would skip
+            // per-id deny rules and per-resource role scoping, i.e. WIDEN access. Same posture as the
+            // unresolvable resource() branch above.
+            return null;
+        }
         return new AbacContext.Resource(type, id, Map.of());
     }
 
