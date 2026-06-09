@@ -57,6 +57,7 @@ only when you catch yourself writing a "considered & rejected" list worth keepin
 | [0008](0008-hierarchical-resource-authorization.md) | Hierarchical (N-level ancestor) resource authorization: chain-in-input, opt-in inheritance, `ltree`/CTE resolver SPI, fail-closed | Accepted (planned) | abac · opa · spring-data |
 | [0009](0009-tag-requirement-subject-side.md) | The tag access requirement is subject-side (on the role), not resource-side: AWS-IAM-style, fail-closed, row-filter-native; Keycloak-style resource-gated clearance deliberately deferred | Accepted | abac · opa · spring-data |
 | [0010](0010-hierarchy-aware-list-filter.md) | Hierarchy-aware list filter — the `subtreeSpec` composition: root-only subtree roots, the `subtreeOf` SPI (predicate-not-id-set), deny-overrides-as-SQL (`abac_deny`), the hierarchy-aware allowlist batch; extends ADR 0008 (took the "0009" 0008 had reserved) | Accepted (planned) | abac · opa · spring-data |
+| [0011](0011-error-contract-problem-json.md) | Error contract: RFC-7807 `application/problem+json` (minimal additive superset, no hosted type registry) + a library-owned, app-extensible `ApiErrorCode` vocabulary (interface + base enum, semantic granularity, typed in the OpenAPI schema); clean replacement of `ApiError` | Accepted (planned) | api · architecture · spring |
 
 > **Pending (to be written with its decomposition):** an ADR for **action enrichment** (the
 > `{action: allowed}` affordance map via a response decorator + the action registry + the `x-implements`
