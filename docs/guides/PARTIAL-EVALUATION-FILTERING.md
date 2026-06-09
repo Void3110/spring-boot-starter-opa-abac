@@ -167,15 +167,60 @@ leak: narrow-but-correct beats wide-but-wrong.
   gateway and get different row sets; an allow-all owner sees all; a stranger with no role definition sees
   none. Run with `scripts/postman/run-filter-matrix.sh`.
 
+## Hierarchy-aware list widening (Slice 5.5-B)
+
+The residual above filters by the row's **own** tags. An inheritable grant on an **ancestor** — which Slice
+5.5-A made authorize a single `GET …/{id}` — does not widen the list by itself. Slice 5.5-B closes that gap:
+"is this row in an allowed subtree" is a fact about **lineage**, not tags, so the residual stays **tag-only**
+and hierarchy widening is a separate, app-built **`subtreeSpec`** OR-ed into the query, with the leaf deny
+mirrored as SQL:
+
+```
+combined = scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )
+```
+
+- **`subtreeSpec`** — "the rows in the governing root's subtree", produced by `SubtreeSpecResolver` **iff**
+  the subject's role, resolved once on that root, **inheritably** grants the verb (else empty). Root-only;
+  mid-tree per-node grants are Phase 8. It comes from a new additive
+  `AncestorResolver.subtreeOf(rootType, rootId) → Specification`: the **ltree** impl pushes a
+  `path <@ '<root>'` predicate entirely into SQL (the descendant id set is never materialized); the **CTE**
+  impl materializes a `maxDepth`-bounded `id IN (…)` from a downward walk. Both **fail closed to an
+  always-false predicate** on any breach.
+- **`notDenied`** — `abac_deny IS DISTINCT FROM true` over the tags JSONB, the SQL mirror of the Rego deny.
+  AND-ed **outside** the OR so a leaf deny overrides the inherited widening too; a row absent the tag is kept
+  (matches Rego's `not denied` on an absent key).
+- **Placement is load-bearing:** `subtreeSpec` is OR-ed **inside** `scope.and(...)` so the widening can never
+  escape the caller's `catalogId` scope (no cross-catalog leak); `notDenied` is AND-ed **outside** the OR so
+  deny can't be re-admitted by the subtree branch.
+- **The allowlist-batch path is independently hierarchy-aware:** each per-row `AbacContext` carries the row's
+  ancestor chain, so `opaClient.allowAll` decides each row by the same `final_allow = (direct OR inherited)
+  AND NOT denied` as a single-GET (`subtreeSpec` is not applied there — it would be redundant).
+- **The coarse list gate:** the type-level `@OpaPreAuthorize(<type>:read)` on a list endpoint evaluates
+  `allow` with only a resource type (no ancestors), so a subject whose role grants read only on an
+  inheritable **ancestor** type would be denied at the gate before the widening runs. A small additive
+  `allow` clause (`category.rego`) lets such a subject pass the **coarse** "may you read `<type>` at all"
+  gate when its role inheritably grants the verb — the **fine** which-rows cut still happens in SQL. It is
+  scoped to a list request (no resource id), so single-resource decisions are unchanged; a true stranger is
+  still denied.
+
+The 3-arg `findAuthorized` stays byte-compatible (it delegates with `subtreeSpec = null`); `opa-abac-core`,
+the residual model, the operator set, and `RoleDefinition` are untouched. Wiring is opt-in, default-off (the
+`SubtreeSpecResolver` bean is gated on `opa.abac.hierarchy.enabled` + an `AncestorResolver`). Pinned by ADR
+[[adr/0010-hierarchy-aware-list-filter|0010]]; the single-resource analogue is in
+[[HIERARCHICAL-AUTHORIZATION]]. Proven by `HierarchyListFilterIT` (real Postgres: widening, two-subjects,
+`notDenied`, AND-with-scope no-leak, re-parent-on-list) and the e2e
+`scripts/postman/run-hierarchy-list-matrix.sh`.
+
 ## What this slice does NOT do
 
-Hierarchical ancestor-walk authorization (a Category inheriting its Catalog's grant — it filters by the
-row's *own* tags) · action enrichment (Phase 6) · coarse permission categories (Phase 6.5) ·
-ReBAC-in-Rego (Phase 8) · a non-Postgres `JsonPathDialect` · partial-eval result caching.
+Action enrichment (Phase 6) · coarse permission categories (Phase 6.5) · ReBAC-in-Rego / mid-tree per-node
+grants (Phase 8) · a non-Postgres `JsonPathDialect` · partial-eval result caching · widening a list that does
+not already use this partial-eval path (e.g. the product list's plain scoped query — a separate adoption).
 
 ## Related
 
 - ADR [[adr/0005-partial-eval-to-jpa-specification|0005]] (the pinned fork) · ADR
-  [[adr/0006-three-layer-enforcement-model|0006]] (the three layers — this is the DB layer) ·
-  [[TWO-LAYER-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[TAG-BASED-AUTHORIZATION]] · [[E2E-TESTING]] ·
-  [[POC-ROADMAP]].
+  [[adr/0006-three-layer-enforcement-model|0006]] (the three layers — this is the DB layer) · ADR
+  [[adr/0010-hierarchy-aware-list-filter|0010]] (the hierarchy-aware list widening above) ·
+  [[TWO-LAYER-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[TAG-BASED-AUTHORIZATION]] ·
+  [[HIERARCHICAL-AUTHORIZATION]] · [[E2E-TESTING]] · [[POC-ROADMAP]].
