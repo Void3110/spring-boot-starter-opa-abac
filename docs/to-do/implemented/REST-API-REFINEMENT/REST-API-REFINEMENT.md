@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planning
+  - status/done
   - type/index
   - area/api
   - area/architecture
@@ -9,16 +9,20 @@ tags:
 
 # REST API refinement — the error contract (Phase 5.9)
 
-> 🟡 **PLANNING** — branch `feature/void3110/rest-api-refinement` (to create). [[POC-ROADMAP]] **Phase
-> 5.9**, pinned by ADR [[0011-error-contract-problem-json|0011]]. The first **publication-readiness** slice:
-> it closes the highest-value maturity gap the [[REST-API-DESIGN-REVIEW|REST API design review]] found —
-> **no fail-open exists**; these are the distance between "a clean demo" and "a published library's
-> reference services".
+> ✅ **SHIPPED** on branch `feature/void3110/rest-api-refinement` (T1–T5, one focused commit each + a
+> post-run deep-review fix). [[POC-ROADMAP]] **Phase 5.9**, pinned by ADR
+> [[0011-error-contract-problem-json|0011]]. The first **publication-readiness** slice: it closed the
+> highest-value maturity gap the [[REST-API-DESIGN-REVIEW|REST API design review]] found — there was **no
+> fail-open**; these were the distance between "a clean demo" and "a published library's reference services".
 >
-> The review confirmed the API is sound, consistent, and fail-closed. This slice adopts the conventions
-> the review flagged as **targets**: an RFC-7807 `application/problem+json` error body with a machine-stable,
-> typed `errorCode`, plus two cheap ride-alongs (`Location` on `201`; intent comments at the deliberately-
-> ungated bootstrap mutations).
+> **What shipped:** the library `ApiErrorCode` interface + `LibraryErrorCode` + `ProblemDetail` carrier +
+> `AbstractProblemAdvice`; both services adopt an RFC-7807 `application/problem+json` error body with a
+> typed, library-owned `errorCode` (catalog reuses library codes; the user-service splits the 409 conflict
+> group into its own codes); a `Location` header on every `201`; one-line intent comments at the two
+> deliberately-ungated user-service bootstrap mutations. Proven by unit + per-service MockMvc ITs (real
+> Postgres) + OpenAPI codegen + the extended newman matrices through the gateway. A contract-**shape**
+> change only — **no authorization behavior changed and no fail-open was introduced**. The post-run
+> `/deep-review` found no security regression (one Low doc-completeness nit, fixed).
 
 This package mirrors the seven shipped slices ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
 [[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]], [[DATA-FILTERING]], [[HIERARCHY-SINGLE-RESOURCE]],
@@ -130,7 +134,7 @@ Docs:
 | T2 | Catalog: own `ApiErrorCode` enum + advice remap + OpenAPI `ProblemDetail` schema + `Location` on `201` + MockMvc IT | example-catalog | ✅ |
 | T3 | User-service: own `ApiErrorCode` enum + advice remap + OpenAPI `ProblemDetail` schema + `Location` on `201` + intent comments at ungated bootstrap mutations + MockMvc IT | example-user | ✅ |
 | T4 | e2e: extend existing matrices to assert `problem+json` + `errorCode` on existing negatives + `Location` on existing `201`s (no new collection) | e2e | ✅ |
-| T5 | Docs (guide §3/§4 adopted from §9) + roadmap + Mulch + move folder to `implemented/` on ship | docs | ☐ |
+| T5 | Docs (guide §3/§4 adopted from §9) + roadmap + Mulch + move folder to `implemented/` on ship | docs | ✅ |
 
 **Critical path:** T1 → (T2 ∥ T3) → T4 → T5. T2 and T3 are **independent** once T1's library carrier +
 interface land (each service adopts in isolation). T1 is independently landable (pure library + unit tests,
