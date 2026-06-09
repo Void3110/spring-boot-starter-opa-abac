@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -75,10 +76,15 @@ class CategoryTagAssignmentIT extends AbstractPostgresIT {
     @Test
     void unknownKeyIsRejected() throws Exception {
         String catalogId = createCatalog();
+        // I2b: 422 carries application/problem+json with errorCode TAG_VALUE_ILLEGAL.
         mockMvc.perform(post("/api/v1/catalogs/{c}/categories", catalogId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"C\",\"tags\":{\"nope\":\"x\"}}"))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.errorCode").value("TAG_VALUE_ILLEGAL"))
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.message").doesNotExist());
     }
 
     // --- A3: enum miss → 422 --------------------------------------------------
@@ -109,10 +115,14 @@ class CategoryTagAssignmentIT extends AbstractPostgresIT {
     void definitionsFetchFailureRejectsTheWrite() throws Exception {
         String catalogId = createCatalog();
         StubTagClientConfig.failNextFetch = true;
+        // I2c: the fail-closed 503 carries problem+json with DEPENDENCY_UNAVAILABLE; nothing is stored.
         mockMvc.perform(post("/api/v1/catalogs/{c}/categories", catalogId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"C\",\"tags\":{\"sensitivity\":\"internal\"}}"))
-                .andExpect(status().isServiceUnavailable());
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.errorCode").value("DEPENDENCY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.status").value(503));
 
         // No category leaked through with the tag.
         var list = mockMvc.perform(get("/api/v1/catalogs/{c}/categories", catalogId))

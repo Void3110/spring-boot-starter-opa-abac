@@ -150,6 +150,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/catalogs/{catalogId}/categories/{categoryId}:
     parameters:
@@ -312,15 +316,33 @@ components:
     BadRequest:
       description: Invalid request
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
+    Forbidden:
+      description: Access denied
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
     NotFound:
       description: Resource not found
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ApiError'
+            $ref: '#/components/schemas/ProblemDetail'
+    UnprocessableEntity:
+      description: A domain rule rejected the request (e.g. an illegal tag value)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ServiceUnavailable:
+      description: A required dependency was unavailable (fail-closed; the request was rejected)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
 
   schemas:
     Catalog:
@@ -454,15 +476,39 @@ components:
           minLength: 3
           maxLength: 3
 
-    ApiError:
+    ProblemDetail:
       type: object
-      required: [status, message]
+      description: >
+        An RFC-7807 problem object (application/problem+json). Five standard members plus two documented
+        extensions (errorCode, timestamp). A client branches on the typed errorCode, not the human detail.
+      required: [status, errorCode]
       properties:
+        type:
+          type: string
+          description: A stable, relative, opaque identifier for the problem kind (e.g. /problems/tag-value-illegal). Not dereferenced.
+        title:
+          type: string
+          description: A short, status-stable summary of the problem kind.
         status:
           type: integer
           format: int32
-        message:
+          description: The HTTP status code.
+        detail:
           type: string
+          description: A human, instance-specific explanation.
+        instance:
+          type: string
+          description: The request path that produced the error.
+        errorCode:
+          type: string
+          description: The machine-stable code a consumer branches on. The union of codes this service can emit.
+          enum:
+            - ACCESS_DENIED
+            - RESOURCE_NOT_FOUND
+            - VALIDATION_FAILED
+            - TAG_VALUE_ILLEGAL
+            - DEPENDENCY_UNAVAILABLE
         timestamp:
           type: string
           format: date-time
+          description: When the error was produced (correlation).
