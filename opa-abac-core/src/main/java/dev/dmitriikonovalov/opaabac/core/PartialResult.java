@@ -35,13 +35,26 @@ import java.util.List;
  * over the candidate set instead of an empty list — never a wider one. When the fallback is off, the
  * unsupported residual simply denies. A fully-translatable residual has {@code fullySupported == true}.
  *
+ * <h2>The "from error" flag (an outage is not a policy answer)</h2>
+ * A {@link Decision#DENY_ALL} can mean two very different things: the policy is <em>unsatisfiable</em>
+ * for this subject (a real answer), or the Compile call <em>failed</em> (transport error, non-200,
+ * unparseable body — no answer at all). Both deny, but a caller composing the residual with other
+ * predicates (e.g. a hierarchy widening OR-ed alongside it) must distinguish them: a widening may
+ * legitimately accompany "the tag branch is unsatisfiable", but nothing may widen during an OPA outage.
+ * {@link #fromError()} is {@code true} only for the failure case ({@link #error()}); every
+ * policy-derived residual — including {@link #denyAll()} and {@link #unsupported()} — has it
+ * {@code false}.
+ *
  * @param decision       which of the three outcomes this residual is
  * @param clauses        the DNF disjuncts (each a conjunction of conditions); meaningful only for
  *                       {@link Decision#CONDITIONAL}, otherwise an empty list
  * @param fullySupported {@code false} iff the compile output contained an expression the translator could
  *                       not represent (so a batch finish may be needed); {@code true} otherwise
+ * @param fromError      {@code true} iff this residual reports a failed Compile call rather than a policy
+ *                       answer; callers must not let any widening or fallback outlive a {@code true} here
  */
-public record PartialResult(Decision decision, List<Conjunction> clauses, boolean fullySupported) {
+public record PartialResult(
+        Decision decision, List<Conjunction> clauses, boolean fullySupported, boolean fromError) {
 
     /** The three outcomes a compiled residual collapses to. */
     public enum Decision {
@@ -57,9 +70,14 @@ public record PartialResult(Decision decision, List<Conjunction> clauses, boolea
         clauses = clauses == null ? List.of() : List.copyOf(clauses);
     }
 
+    /** A policy-derived residual with an explicit support flag ({@code fromError = false}). */
+    public PartialResult(Decision decision, List<Conjunction> clauses, boolean fullySupported) {
+        this(decision, clauses, fullySupported, false);
+    }
+
     /** A fully-supported residual (the common case): the translation is complete. */
     public PartialResult(Decision decision, List<Conjunction> clauses) {
-        this(decision, clauses, true);
+        this(decision, clauses, true, false);
     }
 
     /** The "match everything" residual — the query holds for every row (no predicate). */
@@ -68,12 +86,22 @@ public record PartialResult(Decision decision, List<Conjunction> clauses, boolea
     }
 
     /**
-     * The "match nothing" residual — the query holds for no row. <strong>This is the fail-closed
-     * value</strong>: every compile/transport/parse failure resolves to it (fully supported — there was
-     * simply nothing to satisfy).
+     * The "match nothing" residual as a <em>policy answer</em> — the query is unsatisfiable for this
+     * subject (e.g. the Compile API returned an empty result). Fail-closed, and {@code fromError() ==
+     * false}: this is OPA saying "no rows", not the call failing. For a failed call use {@link #error()}.
      */
     public static PartialResult denyAll() {
         return new PartialResult(Decision.DENY_ALL, List.of());
+    }
+
+    /**
+     * The "match nothing" residual for a <em>failed</em> Compile call (transport error, non-200,
+     * unparseable body). Denies like {@link #denyAll()}, but {@code fromError() == true} so a caller
+     * knows there is no policy answer at all — no widening (e.g. a hierarchy subtree branch) and no
+     * batch fallback may proceed on top of it.
+     */
+    public static PartialResult error() {
+        return new PartialResult(Decision.DENY_ALL, List.of(), true, true);
     }
 
     /**

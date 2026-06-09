@@ -89,9 +89,17 @@ public final class HttpOpaClient implements OpaClient {
                 return false;
             }
             return readDecision(response.body(), path);
+        } catch (InterruptedException e) {
+            // Fail-closed AND interrupt-correct: deny, but restore the flag so the container's
+            // shutdown/cancellation signal survives this call.
+            Thread.currentThread().interrupt();
+            log.warn("OPA denied (fail-closed): interrupted for path '{}'", path);
+            return false;
         } catch (Exception e) {
-            // Fail-closed: any transport/serialization/timeout failure denies. Never leak the token.
-            log.warn("OPA denied (fail-closed): {} for path '{}'", e.getClass().getSimpleName(), path);
+            // Fail-closed: any transport/serialization/timeout failure denies. Never log the token —
+            // exception class + message carry the URL/transport detail, not credentials.
+            log.warn("OPA denied (fail-closed): {} for path '{}'", e, path);
+            log.debug("OPA allow call failed", e);
             return false;
         }
     }
@@ -117,7 +125,9 @@ public final class HttpOpaClient implements OpaClient {
      * Partially evaluate the policy's {@code filter} rule with the resource declared unknown, returning
      * the residual. POSTs to {@code <baseUrl>/v1/compile} with
      * {@code {"query": "data.<path>.filter == true", "input": {…}, "unknowns": ["input.resource"]}}, the
-     * resource omitted from {@code input}. Fails closed to {@link PartialResult#denyAll()}.
+     * resource omitted from {@code input}. A failed call (transport, non-200, unparseable body) fails
+     * closed to {@link PartialResult#error()} — deny-all, flagged {@code fromError} so callers suppress
+     * any widening too.
      */
     @Override
     public PartialResult compile(AbacContext context) {
@@ -138,15 +148,21 @@ public final class HttpOpaClient implements OpaClient {
             int status = response.statusCode();
             if (status != 200) {
                 log.warn("OPA compile denied (fail-closed): non-200 status {} for path '{}'", status, path);
-                return PartialResult.denyAll();
+                return PartialResult.error();
             }
             String resourceType = context.resource() == null ? null : context.resource().type();
             JsonNode root = objectMapper.readTree(response.body());
             return new CompileResponseParser(resourceType).parse(root);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("OPA compile denied (fail-closed): interrupted for path '{}'", path);
+            return PartialResult.error();
         } catch (Exception e) {
-            // Fail-closed: a compile/transport/parse failure must never widen visibility.
-            log.warn("OPA compile denied (fail-closed): {} for path '{}'", e.getClass().getSimpleName(), path);
-            return PartialResult.denyAll();
+            // Fail-closed: a compile/transport/parse failure must never widen visibility. The result is
+            // flagged fromError so callers also suppress any widening composed alongside the residual.
+            log.warn("OPA compile denied (fail-closed): {} for path '{}'", e, path);
+            log.debug("OPA compile call failed", e);
+            return PartialResult.error();
         }
     }
 
@@ -164,7 +180,17 @@ public final class HttpOpaClient implements OpaClient {
         int n = contexts.size();
         String path = null;
         try {
-            // All contexts in a batch share a resource type (one list endpoint), so the first resolves the path.
+            // All contexts in a batch must share one resource type (one list endpoint) — the first context
+            // resolves the policy path for the whole batch. A mixed batch would silently evaluate every
+            // item against the first item's policy, so it is rejected outright (all-false, fail-closed).
+            String batchType = resourceTypeOf(contexts.get(0));
+            for (AbacContext context : contexts) {
+                if (!Objects.equals(batchType, resourceTypeOf(context))) {
+                    log.warn("OPA bulk denied (fail-closed): mixed resource types in one batch ('{}' vs '{}')",
+                            batchType, resourceTypeOf(context));
+                    return allFalse(n);
+                }
+            }
             path = pathResolver.resolve(contexts.get(0));
             URI uri = URI.create(config.baseUrl() + "/v1/data/" + path + "/bulk");
             byte[] body = objectMapper.writeValueAsBytes(new BulkInput(new BulkItems(contexts)));
@@ -182,10 +208,19 @@ public final class HttpOpaClient implements OpaClient {
                 return allFalse(n);
             }
             return readBulkDecisions(response.body(), n, path);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("OPA bulk denied (fail-closed): interrupted for path '{}'", path);
+            return allFalse(n);
         } catch (Exception e) {
-            log.warn("OPA bulk denied (fail-closed): {} for path '{}'", e.getClass().getSimpleName(), path);
+            log.warn("OPA bulk denied (fail-closed): {} for path '{}'", e, path);
+            log.debug("OPA bulk call failed", e);
             return allFalse(n);
         }
+    }
+
+    private static String resourceTypeOf(AbacContext context) {
+        return context.resource() == null ? null : context.resource().type();
     }
 
     private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {
