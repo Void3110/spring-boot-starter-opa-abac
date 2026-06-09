@@ -105,6 +105,9 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 
 # Data-filtering matrix (Phase 5 — same full rig; restart OPA after editing category.rego)
 ./run-filter-matrix.sh
+
+# Hierarchy-aware list matrix (Slice 5.5-B — an ancestor grant widens a list; same full rig)
+./run-hierarchy-list-matrix.sh
 ```
 
 `run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
@@ -152,6 +155,30 @@ reader roles (`emea-reader`, `apac-reader`), binds an allow-all owner, leaves th
 Requests 1+2 are the decisive proof: the **same endpoint** yields **different rows** because the residual
 is in the SQL, not a post-filter. Request 4 is the fail-closed boundary (the one the pre-impl audit
 flagged). All green; stable across reruns. Guide: [[PARTIAL-EVALUATION-FILTERING]].
+
+### Hierarchy-aware list matrix (Slice 5.5-B)
+
+`run-hierarchy-list-matrix.sh` proves that an **ancestor (Catalog) grant widens a category list** to the whole
+catalog subtree — composing the Phase-5 residual with the 5.5-A resolver via an app-built `subtreeSpec`. Same
+full rig (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`; run `./deploy.sh build` to force the
+5.5-B app code into the pods). At run time it seeds a catalog + a foreign catalog (with their ltree paths),
+bootstraps an **inherit reader** (role grants read on the **catalog only** — no category tag grant), a
+**region reader** (a direct `category:read` gated to `region=emea`), and leaves the `outsider` **unbound**;
+creates three Categories (emea / apac / one flagged `abac_deny`); then runs two passes around an ltree
+re-parent:
+
+| # | Subject | `GET …/categories` (catalog C) returns |
+|---|---------|----------------------------------------|
+| E1 | **inherit reader** (catalog grant only) | the **whole subtree** — emea **+ apac** (rows its own tags would never surface), **minus** the `abac_deny` row |
+| E2 | **region reader** (`region=emea`) | **only the emea row** — a *different* set on the same endpoint |
+| E4 | stranger (**no role definition**) | **`[]` / 403** — fail-closed (no inheritable grant, no residual) |
+| re-parent | move the apac Category to the foreign catalog, re-list as the inherit reader | the apac row **leaves** catalog C's widened list |
+
+E1 is the headline (the widening); E1-vs-E2 is the decisive different-set proof; the `abac_deny` exclusion is
+deny-overrides on a widened list; E4 is the fail-closed boundary; the re-parent proves the cut tracks live
+lineage. The inherit reader passes the **coarse** type-level list gate via the small additive `allow` list
+clause, while the **fine** which-rows cut stays in SQL. Guide: [[PARTIAL-EVALUATION-FILTERING]] (the
+hierarchy-aware list section) · [[HIERARCHICAL-AUTHORIZATION]].
 
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.

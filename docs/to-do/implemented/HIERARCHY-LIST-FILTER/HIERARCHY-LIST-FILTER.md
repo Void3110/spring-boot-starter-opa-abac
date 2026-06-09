@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -9,7 +9,7 @@ tags:
 
 # Hierarchy-aware list filter (Slice 5.5-B)
 
-> 🟡 **PLANNED** — branch `feature/void3110/hierarchy-list-filter`. The **second** of two slices for
+> ✅ **SHIPPED** — branch `feature/void3110/hierarchy-list-filter` (T1–T6 implemented). The **second** of two slices for
 > [[POC-ROADMAP]] **Phase 5.5**, pinned by ADR [[0008-hierarchical-resource-authorization|0008]] and the
 > list-specific ADR [[0010-hierarchy-aware-list-filter|0010]]. Builds directly on the **shipped**
 > [[HIERARCHY-SINGLE-RESOURCE|5.5-A]] resolver and the **shipped** [[DATA-FILTERING|Phase-5]] partial-eval
@@ -119,12 +119,12 @@ In the example + infra:
 
 | # | Ticket | Module | Status |
 |---|--------|--------|--------|
-| T1 | SPI: `AncestorResolver.subtreeOf` + both impls (ltree `path <@` pushdown · CTE bounded `id IN`, fail-closed) + ITs | spring-data | ⬜ |
-| T2 | `SubtreeSpecResolver` (root-role resolution + inheritable gate → `subtreeOf`; fail-closed to empty) | spring-data | ⬜ |
-| T3 | `AbacQueryService`: 4-arg overload (OR/AND composition) + `notDenied` Spec + hierarchy-aware batch path; 3-arg byte-compat | spring-data | ⬜ |
-| T4 | spring-data IT: both impls' row-sets, `notDenied` narrowing, AND-with-scope no-leak, re-parent in/out (Testcontainers) | spring-data | ⬜ |
-| T5 | Starter wiring (`SubtreeSpecResolver` bean) + example list-authorizer adoption (4-arg call) | starter + example | ⬜ |
-| T6 | e2e matrix (widen · two-subjects · deny-removes · stranger-empty · re-parent flip) + docs + roadmap/Mulch | e2e + docs | ⬜ |
+| T1 | SPI: `AncestorResolver.subtreeOf` + both impls (ltree `path <@` pushdown · CTE bounded `id IN`, fail-closed) + ITs | spring-data | ✅ |
+| T2 | `SubtreeSpecResolver` (root-role resolution + inheritable gate → `subtreeOf`; fail-closed to empty) | spring-data | ✅ |
+| T3 | `AbacQueryService`: 4-arg overload (OR/AND composition) + `notDenied` Spec + hierarchy-aware batch path; 3-arg byte-compat | spring-data | ✅ |
+| T4 | spring-data IT: both impls' row-sets, `notDenied` narrowing, AND-with-scope no-leak, re-parent in/out (Testcontainers) | spring-data | ✅ |
+| T5 | Starter wiring (`SubtreeSpecResolver` bean) + example list-authorizer adoption (4-arg call) | starter + example | ✅ |
+| T6 | e2e matrix (widen · two-subjects · deny-removes · stranger-empty · re-parent flip) + docs + roadmap/Mulch | e2e + docs | ✅ |
 
 **Critical path:** T1 → T2 → T3 → T5 → T6, with **T4 (IT)** landing after T3 (it proves T1–T3 against real
 Postgres before the example adoption). T1 is independently landable (pure SPI + ITs, no app).

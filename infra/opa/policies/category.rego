@@ -30,6 +30,26 @@ allow if {
 	not denied
 }
 
+# COARSE LIST GATE (Phase 5.5-B): the type-level `@OpaPreAuthorize(<type>:read)` on a LIST endpoint asks
+# `allow` with only a resource TYPE (no id, no ancestors) — so `inherited_grant` (which needs ancestors)
+# can't fire, and a subject whose role grants read only on an inheritable ANCESTOR (e.g. a Catalog) would
+# be denied at the gate before the SQL `subtreeSpec` widening can run. This clause lets such a subject pass
+# the COARSE "may you read <type> at all" gate when its role inheritably grants the verb on a declared
+# ancestor type; the FINE which-rows cut still happens in SQL (the app-built subtreeSpec) — so this only
+# OPENS the gate, never widens the rows. It is scoped to a LIST request (no resource id) so single-resource
+# decisions are unchanged, and it is opt-in/default-off via the same data.category.inheritable. A true
+# stranger (no role / no inheritable grant) is still denied.
+allow if {
+	not input.resource.id
+	not denied
+	list_inheritable_grant
+}
+
+list_inheritable_grant if {
+	some ancestor_type, _ in data.category.inheritable[input.resource.type]
+	verb in input.role_definition.permissions[ancestor_type]
+}
+
 # The action verb is the part after the ":" in input.action (e.g. "category:read" -> "read").
 verb := v if {
 	parts := split(input.action, ":")

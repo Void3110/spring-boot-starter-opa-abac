@@ -3,13 +3,16 @@ package dev.dmitriikonovalov.example.catalog.config;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
+import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
+import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,6 +36,13 @@ import org.springframework.stereotype.Component;
  * <p>Fail-closed: an unauthenticated caller yields an empty list; a missing role definition compiles to a
  * deny-all residual (the {@code filter} rule has no subject-roles fallback) → empty list, never the full
  * table.
+ *
+ * <p><b>Hierarchy-aware (Slice 5.5-B).</b> When the hierarchy starter is enabled, this also asks the
+ * {@link SubtreeSpecResolver} whether the subject's role on the governing Catalog <em>inheritably</em> grants
+ * {@code category:read}; if so, the resolved {@code subtreeSpec} is passed into the <b>4-arg</b>
+ * {@code findAuthorized} so the list is <em>widened</em> to the whole catalog subtree (still AND-ed with the
+ * {@code catalogId} scope, still minus any {@code abac_deny} row). With hierarchy disabled (no resolver
+ * bean), the {@code subtreeSpec} is simply absent and the list behaves exactly as the tag-only Phase-5 path.
  */
 @Component
 public class CategoryListAuthorizer {
@@ -40,14 +50,18 @@ public class CategoryListAuthorizer {
     private final CategoryRepository categories;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
     private final AbacQueryService queryService;
+    /** Present only when the hierarchy starter is enabled; absent → tag-only list (no widening). */
+    private final ObjectProvider<SubtreeSpecResolver> subtreeSpecResolver;
 
     public CategoryListAuthorizer(
             CategoryRepository categories,
             RoleDefinitionSupplier roleDefinitionSupplier,
-            AbacQueryService queryService) {
+            AbacQueryService queryService,
+            ObjectProvider<SubtreeSpecResolver> subtreeSpecResolver) {
         this.categories = categories;
         this.roleDefinitionSupplier = roleDefinitionSupplier;
         this.queryService = queryService;
+        this.subtreeSpecResolver = subtreeSpecResolver;
     }
 
     /**
@@ -74,8 +88,25 @@ public class CategoryListAuthorizer {
                 roleDefinition,
                 Map.of());
 
+        // 5.5-B: ask whether an inheritable Catalog grant should WIDEN the list to the whole catalog subtree.
+        // Resolved on the SAME governing Catalog the role is resolved on, so the list and a single-GET agree.
+        // Absent (hierarchy off / no inheritable grant) → null → the tag-only 3-arg behavior.
+        Specification<CategoryEntity> subtreeSpec = resolveSubtreeSpec(subject, catalogId);
+
         Specification<CategoryEntity> scope = scopedTo(catalogId, parentId);
-        return queryService.findAuthorized(categories, scope, queryContext);
+        return queryService.findAuthorized(categories, scope, queryContext, subtreeSpec);
+    }
+
+    /** The hierarchy widening for this catalog, or {@code null} when hierarchy is off / not granted. */
+    private Specification<CategoryEntity> resolveSubtreeSpec(AbacContext.Subject subject, UUID catalogId) {
+        SubtreeSpecResolver resolver = subtreeSpecResolver.getIfAvailable();
+        if (resolver == null) {
+            return null; // hierarchy starter disabled → tag-only list
+        }
+        return resolver
+                .<CategoryEntity>subtreeSpec(
+                        subject, "category", new ParentRef("catalog", catalogId.toString()), "read")
+                .orElse(null);
     }
 
     /** The existing path scoping: catalogId [+ parentId]. AND-ed with the residual, never replaced. */

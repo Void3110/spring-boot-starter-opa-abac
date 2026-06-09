@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -34,7 +34,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Testcontainers
-@Import(ResidualSpecificationIT.TestApp.class)
+// Pin the configuration explicitly so @DataJpaTest does not package-scan for a @SpringBootConfiguration —
+// the filter test package now holds more than one (HierarchyListFilterIT adds its own), which would be
+// ambiguous. ContextConfiguration on the chosen TestApp both wires the beans and disables the scan.
+@ContextConfiguration(classes = ResidualSpecificationIT.TestApp.class)
 class AbacQueryServiceIT {
 
     @SuppressWarnings("resource")
