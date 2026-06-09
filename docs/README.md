@@ -16,7 +16,7 @@ to navigate with backlinks and graph view. `[[wikilinks]]` resolve to notes by t
 |--------|---------|
 | [`architecture/`](architecture/) | How the library and example are designed — the ABAC model, OPA integration, the gateway↔app two-layer authorization, module boundaries. Dated decision records live in [`architecture/adr/`](architecture/adr/). |
 | [`guides/`](guides/) | How-to guides — adding an ABAC-secured endpoint, writing Rego policies, wiring Keycloak/APISIX/OPA, the OpenAPI codegen flow. |
-| [`api/`](api/) | API reference for the example services (catalog-management-service, later user-service) — resources, endpoints, request/response shapes. |
+| [`api/`](api/) | Reserved for a written API reference (currently empty). Today the API contract lives in the **OpenAPI specs** (`example-*/src/main/resources/openapi/*.yaml`, the codegen source of truth) and each running service's Swagger UI at `/swagger-ui.html`. |
 | [`code-review/`](code-review/) | The review workflow and checklist used by the `/deep-review` skill. |
 | [`to-do/`](to-do/) | Feature work, organized by lifecycle. See below. |
 

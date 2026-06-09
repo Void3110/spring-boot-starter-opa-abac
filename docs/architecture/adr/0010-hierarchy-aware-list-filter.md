@@ -9,7 +9,7 @@ tags:
 
 # ADR 0010 — Hierarchy-aware list filter (the `subtreeSpec` composition)
 
-**Status:** Accepted (planned)
+**Status:** Accepted (implemented — Slice 5.5-B, [[HIERARCHY-LIST-FILTER]])
 **Date:** 2026-06
 **Context tags:** ABAC, OPA, partial-eval, list filtering, ancestor inheritance, fail-closed, ltree, SPI
 

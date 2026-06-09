@@ -10,7 +10,8 @@ tags:
 
 The repeatable **plan → decompose → autonomous-implement → test → review** process behind every shipped
 slice in this repo ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]], [[USER-MANAGEMENT-SERVICE]],
-[[TAG-DICTIONARY]], [[DATA-FILTERING]]). It is also a **first-class portfolio artifact**: each slice's
+[[TAG-DICTIONARY]], [[DATA-FILTERING]], [[HIERARCHY-SINGLE-RESOURCE]], [[HIERARCHY-LIST-FILTER]],
+[[REST-API-REFINEMENT]]). It is also a **first-class portfolio artifact**: each slice's
 planning package + `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` is kept verbatim and its `STATUS-0N.md` notes
 record the outcome, so the *whole* artifact — how the work was reasoned about, then handed off, then
 verified — is a studyable case study of high-autonomy AI-assisted engineering.
@@ -595,7 +596,8 @@ automate; revising the skeleton is a human, ADR-worthy decision.)
   ADR-vs-design split this flow assumes.
 - [[POC-ROADMAP]] — the phase plan each slice implements one piece of.
 - The shipped packages to copy from: [[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
-  [[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]], [[DATA-FILTERING]] (each folder's
+  [[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]], [[DATA-FILTERING]], [[HIERARCHY-SINGLE-RESOURCE]],
+  [[HIERARCHY-LIST-FILTER]], [[REST-API-REFINEMENT]] (each folder's
   `01-DECOMPOSITION.md` + `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`).
 
 **Phase ④ Review / ship:**

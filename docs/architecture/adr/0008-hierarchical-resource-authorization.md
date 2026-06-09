@@ -9,7 +9,7 @@ tags:
 
 # ADR 0008 — Hierarchical (N-level ancestor) resource authorization
 
-**Status:** Accepted (planned)
+**Status:** Accepted (implemented — Slice 5.5-A, [[HIERARCHY-SINGLE-RESOURCE]])
 **Date:** 2026-06
 **Context tags:** ABAC, OPA, resource hierarchy, ancestor inheritance, partial-eval, fail-closed, ltree
 
