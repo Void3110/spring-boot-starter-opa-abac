@@ -88,8 +88,16 @@ public class AbacQueryService {
 
     /**
      * Return the rows under {@code scope} that {@code queryContext}'s subject may see — the tag-only path
-     * (no hierarchy widening). Preserved <strong>byte-compatible</strong>: delegates to the 4-arg overload
-     * with {@code subtreeSpec = null}, so it behaves exactly as before.
+     * (no hierarchy widening). The <strong>signature is preserved byte-compatible</strong> (every existing
+     * caller compiles unchanged); it delegates to the 4-arg overload with {@code subtreeSpec = null}.
+     *
+     * <p><strong>One deliberate behavioral change (a fail-closed hardening):</strong> the 4-arg path now
+     * AND-s {@link #notDenied()} into the query, so a row whose tags carry {@code abac_deny == true} is
+     * excluded from the list — even on this 3-arg path. Previously the tag-only {@code filter} residual did
+     * not express the leaf deny, so a denied-but-tag-matching row could appear in a list while the
+     * single-GET (whose {@code allow} rule applies deny-overrides) returned 403 for it. AND-ing
+     * {@code notDenied} closes that list↔single-GET discrepancy (a fail-<em>open</em> gap), at the cost of
+     * this one row-set change for any pre-existing caller relying on the old behavior.
      *
      * @param repo         the entity's repository (must support {@link Specification} queries)
      * @param scope        the caller's own scoping (e.g. {@code catalogId = ?}); AND-ed with the residual.
@@ -110,8 +118,8 @@ public class AbacQueryService {
      * <p>On the pure-SQL path the composition is
      * {@code scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )} — the widening OR-ed <em>inside</em>
      * {@code scope.and(...)} (so it cannot escape scope), the deny AND-ed <em>outside</em> the OR (so it
-     * overrides the widening). A {@code null} {@code subtreeSpec} reduces this to exactly the tag-only
-     * 3-arg behavior.
+     * overrides the widening). A {@code null} {@code subtreeSpec} reduces this to {@code scope.and(tagResidual)
+     * .and(notDenied)} — the tag-only path (now also deny-filtered; see the 3-arg overload's note).
      *
      * @param subtreeSpec the hierarchy widening (from a {@code SubtreeSpecResolver}); {@code null} for no
      *     widening (the tag-only path). A failed resolution should arrive as {@code null} or an empty
