@@ -14,7 +14,8 @@
 # Usage:
 #   ./deploy.sh up [--pods N]     Build (if needed) + start Postgres, APISIX, and N app pods,
 #                                 then point the APISIX upstream at all pods. Default N=2.
-#   ./deploy.sh down [-v]         Stop app pods + APISIX (keep Postgres). -v also removes volumes.
+#   ./deploy.sh down [-v]         Stop the whole rig: app pods + APISIX + OPA + Keycloak +
+#                                 user-mgmt + Jaeger + base Postgres. -v also removes volumes.
 #   ./deploy.sh build             Rebuild the app image only.
 #   ./deploy.sh scale --pods N    Re-generate + restart the pool at N pods, resync upstream.
 #   ./deploy.sh status            Show what's running + the current upstream node set.
@@ -27,6 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="opa-abac-example"
 APP_DIR="$SCRIPT_DIR/example-catalog-management-service"
 USERMGMT_DIR="$SCRIPT_DIR/example-user-management-service"
+BASE_COMPOSE="$SCRIPT_DIR/compose.yaml"
 APISIX_COMPOSE="$SCRIPT_DIR/infra/compose.apisix.yaml"
 JAEGER_COMPOSE="$SCRIPT_DIR/infra/compose.jaeger.yaml"
 OPA_COMPOSE="$SCRIPT_DIR/infra/compose.opa.yaml"
@@ -167,6 +169,7 @@ jaeger_compose() { docker compose -p "$PROJECT" -f "$JAEGER_COMPOSE" "$@"; }
 opa_compose() { docker compose -p "$PROJECT" -f "$OPA_COMPOSE" "$@"; }
 keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
 usermgmt_compose() { docker compose -p "$PROJECT" -f "$USERMGMT_COMPOSE" "$@"; }
+base_compose() { docker compose -p "$PROJECT" -f "$BASE_COMPOSE" "$@"; }
 
 build_usermgmt_image() {
   echo "==> Building user-management image $USERMGMT_IMAGE (Gradle bootJar inside the image)..."
@@ -319,7 +322,13 @@ case "$CMD" in
     keycloak_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     usermgmt_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
-    echo "==> Pool + APISIX + OPA + Keycloak + user-mgmt + Jaeger down. (Base Postgres left running — ./profile.sh down to stop it.)"
+    # Base Postgres last: it's the final container on the project network, so tearing it
+    # down here lets the auto-created "${PROJECT}_default" network be removed cleanly
+    # instead of failing with "Resource is still in use" (which happens if ./profile.sh down
+    # runs while these infra containers are still attached). This makes `./deploy.sh down`
+    # a complete one-command teardown of the whole rig.
+    base_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    echo "==> Full rig down: pool + APISIX + OPA + Keycloak + user-mgmt + Jaeger + base Postgres."
     ;;
 
   status)
