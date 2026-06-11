@@ -75,6 +75,9 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **D3** *As a platform super-admin* with an unconditional grant, the same endpoint returns **everything**
   (the filter degrades to "match all"). — **Phase 5** 📋
 - **D4** *As a user with no grant*, the list is empty (`[]`), not an error and not a leak. — **Phase 5** 📋
+- **D5** *As any user*, I page through a filtered list (`page`/`perPage`) and the envelope's `count`
+  reflects only what **I** may see; walking the pages never repeats or drops a row. — **Phase 5.95**
+  ([[PAGINATION-ENVELOPE]], ADR [[0012-pagination-envelope|0012]]) 📋 planned
 
 ### Epic H — "Access I'm granted on a parent reaches what's nested under it" (hierarchical inheritance)
 
