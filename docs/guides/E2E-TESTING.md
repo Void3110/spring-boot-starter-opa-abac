@@ -114,6 +114,9 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 
 # Hierarchy-aware list matrix (Slice 5.5-B — an ancestor grant widens a list; same full rig)
 ./run-hierarchy-list-matrix.sh
+
+# Pagination matrix (Phase 5.95 — the list envelope; same full rig; ./deploy.sh build first)
+./run-pagination-matrix.sh
 ```
 
 > Since Phase 5.9 the matrices also assert the **RFC-7807 `problem+json` error contract** on deny
@@ -188,6 +191,25 @@ deny-overrides on a widened list; E4 is the fail-closed boundary; the re-parent 
 lineage. The inherit reader passes the **coarse** type-level list gate via the small additive `allow` list
 clause, while the **fine** which-rows cut stays in SQL. Guide: [[PARTIAL-EVALUATION-FILTERING]] (the
 hierarchy-aware list section) · [[HIERARCHICAL-AUTHORIZATION]].
+
+### Pagination matrix (Phase 5.95)
+
+`run-pagination-matrix.sh` proves the **list envelope** (`{count, page, perPage, items}`, ADR
+[[adr/0012-pagination-envelope|0012]]) composed with the Phase-5 filter, through the gateway. Same full
+rig; run `./deploy.sh build` first so the pods carry the 5.95 app code. At run time it seeds the
+**dedicated pagination fixture set** — catalog `7777…` (its own row in the fixture-id registry,
+`scripts/postman/README.md`; its 5/3 counts are pinned, so no other matrix may touch it) with 5
+EMEA-tagged + 3 APAC-tagged Categories — and bootstraps a curator + two single-region readers:
+
+| # | Case | Asserts |
+|---|------|---------|
+| E1 | **the count contrast** — emea-reader vs apac-reader, SAME paged URL | `count` **5 vs 3** (the numbers, not just shape), row sets disjoint — *the count is the count of rows __you__ may see* |
+| E2 | **the paged walk** — `perPage=2`, pages 0/1/2 | pages disjoint; the concatenated walk equals the single-page list **in order** (no repeat, no drop); `count` stable on every page; past-the-end → `200` + empty + the exact count |
+| E3 | **the live strict negative** — `perPage=500` | `400` `application/problem+json` `errorCode=VALIDATION_FAILED` through APISIX (no clamping) |
+
+Since 5.95 every list-consuming collection asserts the envelope (`json.items.…`) — the bare-array shape
+is gone suite-wide, with every pre-existing row-count expectation numerically unchanged. Guides:
+[[REST-API-DESIGN]] §7 (the wire contract) · [[PARTIAL-EVALUATION-FILTERING]] (the paged composition).
 
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.

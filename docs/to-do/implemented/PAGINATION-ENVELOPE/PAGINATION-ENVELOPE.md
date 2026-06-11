@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/api
   - area/spring
@@ -9,23 +9,23 @@ tags:
 
 # Pagination envelope (Phase 5.95)
 
-> 📋 **PLANNED — design settled, ready for decomposition.** [[POC-ROADMAP]] **Phase 5.95**, pinned by ADR
-> [[0012-pagination-envelope|0012]] (settled via a planning interview, 2026-06-11). The second
-> **publication-readiness** slice after 5.9: every public list endpoint adopts one shared
-> `{count, page, perPage, items}` envelope, composed with the Phase-5 partial-eval filter — so the
-> *filtered* row set paginates, and `count` is the subject-relative authorized total on **every** query
-> path. A list-**shape** change only: **no authorization behavior changes, zero Rego changes,
-> `opa-abac-core` untouched.**
+> ✅ **SHIPPED** (2026-06-11, branch `feature/void3110/pagination-envelope`, T1–T6). [[POC-ROADMAP]]
+> **Phase 5.95**, pinned by ADR [[0012-pagination-envelope|0012]]. The second **publication-readiness**
+> slice after 5.9: every public list endpoint adopted one shared `{count, page, perPage, items}`
+> envelope, composed with the Phase-5 partial-eval filter — the *filtered* row set paginates, and
+> `count` is the subject-relative authorized total on **every** query path. A list-**shape** change
+> only: **no authorization behavior changed, zero Rego changes, `opa-abac-core` untouched.**
 >
-> **What it ships:** the additive paged `findAuthorized(…, Pageable)` → `Page<T>` overload in
-> `opa-abac-spring-data` (with the unsorted-`Pageable` guard and exact counts on all four paths — the
-> allowlist fallback pages its in-memory result at unchanged Phase-5 cost); `PageEnvelope` + `<Resource>Page`
-> `allOf` schemas and shared `page`/`perPage` parameters in both OpenAPI specs (strict 0-based contract:
-> defaults 0/20, bounds 1–100, `400 VALIDATION_FAILED` on violation, past-the-end = `200` + empty + exact
-> `count`); fixed `createdAt ASC, id ASC` ordering everywhere; all 9 public lists converted (only
-> `listCategories` uses the residual path, as today); `/internal/**` left unpaginated by design; guides
-> §7/§9 + PARTIAL-EVALUATION-FILTERING updated; a `run-pagination-matrix.sh` e2e matrix on a dedicated
-> fixture set.
+> **What shipped:** the additive paged `findAuthorized(…, Pageable)` → `Page<T>` overload in
+> `opa-abac-spring-data` (the unsorted-`Pageable` guard; exact counts on all four paths — the allowlist
+> fallback pages its SQL-sorted in-memory result at unchanged Phase-5 cost); `PageEnvelope` +
+> `<Resource>Page` `allOf` schemas and shared `page`/`perPage` parameters in both OpenAPI specs (strict
+> 0-based contract: defaults 0/20, bounds 1–100, `400 VALIDATION_FAILED` on violation, past-the-end =
+> `200` + empty + exact `count`); fixed `createdAt ASC, id ASC` ordering everywhere; all 9 public lists
+> converted (only `listCategories` on the residual path, as before); `/internal/**` unpaginated by
+> design; guides [[REST-API-DESIGN]] §7 + [[PARTIAL-EVALUATION-FILTERING]] (paged composition) +
+> [[E2E-TESTING]] updated; `run-pagination-matrix.sh` green through the gateway (27/27; the whole suite
+> 128 assertions) on the dedicated `7777…` fixture set. Proof and per-ticket detail: `STATUS-01…06`.
 
 This package mirrors the eight shipped slices ([[DOMAIN-MODEL-FOUNDATION]], [[LIBRARY-SPINE]],
 [[USER-MANAGEMENT-SERVICE]], [[TAG-DICTIONARY]], [[DATA-FILTERING]], [[HIERARCHY-SINGLE-RESOURCE]],
@@ -65,7 +65,7 @@ This package mirrors the eight shipped slices ([[DOMAIN-MODEL-FOUNDATION]], [[LI
 - [x] **T3** — Catalog: spec envelope + paged controllers + `CategoryListAuthorizer` pass-through + IT
 - [x] **T4** — User-service: spec envelope ×6 list ops + paged services/controllers + the `/internal` note + IT
 - [x] **T5** — e2e: the pagination matrix + the fixture set + the suite-wide envelope migration
-- [ ] **T6** — Docs (§7 adopted) + PARTIAL-EVALUATION-FILTERING + roadmap + Mulch + folder move
+- [x] **T6** — Docs (§7 adopted) + PARTIAL-EVALUATION-FILTERING + roadmap + Mulch + folder move
 
 ## Conventions
 

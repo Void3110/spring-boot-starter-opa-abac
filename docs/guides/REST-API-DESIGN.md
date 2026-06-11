@@ -16,9 +16,9 @@ tags:
 > *target we have not adopted yet*, it is flagged **◓ Target** with the reason, so the guide describes
 > reality and the roadmap in the same place.
 >
-> These services are **demonstrations** of the library, not products. Some choices (no pagination, open
-> public mutations on the user service) are deliberate scope-cuts that keep the demo small. Where that is
-> the case the guide says so — a demo simplification is a documented decision, not an accident.
+> These services are **demonstrations** of the library, not products. Some choices (open public mutations
+> on the user service) are deliberate scope-cuts that keep the demo small. Where that is the case the
+> guide says so — a demo simplification is a documented decision, not an accident.
 
 The companion review of the current API against this guide is
 [[REST-API-DESIGN-REVIEW]] (in `docs/code-review/`).
@@ -228,8 +228,8 @@ client-actionable failure the handlers discriminate, not one code per status.
 - **Requests** are always a typed DTO (`CatalogRequest`, `AddMemberRequest`, …) — never loose maps or
   primitives in the body. Validation constraints are on the DTO, from the spec.
 - **A single resource** is returned as the bare resource DTO (`Catalog`, `Team`, `Membership`).
-- **A collection** is returned as a bare JSON array of the resource DTO (`Catalog[]`, `[Membership]`).
-  There is no list envelope today — see [pagination](#7-pagination) and [targets](#9-targets).
+- **A collection** is returned as the shared **list envelope** `{count, page, perPage, items}` — never a
+  bare array. See [pagination](#7-pagination) for the contract. *(Adopted in Phase 5.95.)*
 - **Creation** returns `201` with the **full created resource** in the body, including its
   server-assigned `id`, so the client never needs a follow-up `GET`. Every `201` also carries a
   **`Location` header** pointing at the new resource's canonical URL (`Location: /api/v1/<collection>/<id>`,
@@ -407,14 +407,49 @@ is a disclosure bug.
 
 ## 7. Pagination
 
-**Today there is none.** Every list endpoint returns a bare, unbounded array. For the demo's data volumes
-this is fine and keeps the example focused.
+**Every public list is paginated with one shared envelope** *(adopted in Phase 5.95, pinned by ADR
+[[0012-pagination-envelope|0012]])*:
 
-This is a **documented limitation**, not a pattern to copy into a real service — an unbounded list is a
-latency and memory risk at scale, and it interacts with the partial-eval filter (the filter decides
-*which* rows, pagination would decide *how many per page*). When pagination is adopted it becomes a
-[target](#9-targets) below with a concrete envelope; until then, **don't** add ad-hoc `limit`/`offset` to
-one endpoint — adopt the shared envelope once, everywhere.
+```json
+{ "count": 7, "page": 0, "perPage": 20, "items": [ { "...": "Category" } ] }
+```
+
+- **`count` is the subject-relative authorized total** — the number of rows *the caller* may see across
+  all pages, never `items.length` and never an estimate. Under ABAC two users paging the same URL
+  legitimately see different counts (*the count is the count of rows __you__ may see*) — that holds on
+  every query path, including the partial-eval filter's allowlist fallback and the kill-switch.
+- **`page`/`perPage` echo the request verbatim** — nothing clamps.
+- In the spec, the envelope is one 3-field `PageEnvelope` component per spec file with thin
+  `allOf` compositions per resource (`CatalogPage`, `UserPage`, …, each adding a required typed `items`)
+  and shared `components/parameters/Page` + `PerPage`. The base is deliberately defined once *per spec*
+  — a cross-file `$ref` would couple the two services' builds.
+
+### The params contract (strict, 0-based)
+
+| Semantic | Rule |
+|---|---|
+| Wire params | `page`, `perPage` (shared parameter components) |
+| Base | **0-based** — `page` *is* `PageRequest.of(page, perPage)`; no translation layer |
+| Defaults | `page=0`, `perPage=20` |
+| Bounds | `page >= 0`, `1 <= perPage <= 100` — as spec schema constraints (the generated annotations carry them) |
+| Violation | **`400 VALIDATION_FAILED`** `problem+json` ([§6](#6-error-handling)) — **no clamping**: silently returning 100 rows when 500 were asked changes meaning without telling the client |
+| Past-the-end | **`200` + empty `items` + the exact `count`** — never `404`; under ABAC the last page is subject-relative, and a 404 would break paging loops and read as an existence probe |
+
+### Ordering: deterministic by construction
+
+- **Fixed server-side total order on every list: `createdAt ASC, id ASC`** (both inherited from
+  `AbstractAuditableEntity`; the `id` tiebreaker makes same-timestamp rows deterministic). Each service
+  builds it in one place (`web/PageDefaults`); clients do not choose the sort — client `?sort=` is a
+  deferred [target](#9-targets).
+- The paged `findAuthorized` seam **rejects an unsorted `Pageable`** (`IllegalArgumentException`):
+  paginating without a total order silently repeats/drops rows across pages — a correctness bug, refused
+  fail-loud at dev time. The composition with the partial-eval filter is documented in
+  [[PARTIAL-EVALUATION-FILTERING]] (the paged composition section).
+- The e2e proof is `scripts/postman/run-pagination-matrix.sh`: two subjects get different `count`s on
+  the same URL, and a `perPage=2` walk visits the authorized set exactly once.
+
+The [internal surface](#8-the-internal-api-surface) is **unpaginated by design** — bounded
+machine-to-machine payloads on a network-isolated surface; the envelope is a public-API concern.
 
 ---
 
@@ -437,6 +472,8 @@ Rules for this surface:
   exposed through the gateway would be an unauthenticated hole.
 - **Returns core types / plain shapes**, and uses `204 No Content` for a "no result" (e.g. no membership →
   no effective role) so the caller treats it as "empty", not an error.
+- **Unpaginated by design** (5.95): internal list shapes are bounded machine-to-machine payloads — the
+  public `{count, page, perPage, items}` envelope does not apply here.
 
 Keep public and internal strictly separated: a public endpoint is authenticated-at-the-gateway +
 ABAC-gated; an internal one is network-isolated. Never blur the two onto one path.
@@ -451,14 +488,18 @@ is a deliberate slice, not a drive-by.
 
 | ◓ Target | What it would add | Why it's deferred / what it buys |
 |---|---|---|
-| **Pagination envelope** | a shared `{count, page, perPage, items}` wrapper + `page`/`perPage` params on every list | Bounds unbounded lists; must be adopted *once, everywhere* and composed with the partial-eval filter, so it's a slice not a patch. **Next up — Phase 5.95** (see [[POC-ROADMAP]]). |
-| **ABAC `actions` / `pageActions` metadata** | each resource response carries `actions: [{action, allowed, reason}]`; each list carries `pageActions` | Lets a UI render "can I click this button" without a second round-trip. This is **Phase 6 — action enrichment** (already on the roadmap, see [[POC-ROADMAP]]); it's a target here only to point at it. |
+| **ABAC `actions` / `pageActions` metadata** | each resource response carries `actions: [{action, allowed, reason}]`; each list carries `pageActions` | Lets a UI render "can I click this button" without a second round-trip. This is **Phase 6 — action enrichment** (already on the roadmap, see [[POC-ROADMAP]]); it lands on the 5.95 list envelope. |
+| **Client `?sort=`** | caller-chosen ordering on paged lists | Multiplies the spec surface + a sortable-field-allowlist validation story while proving nothing new about the residual composition; the fixed `createdAt ASC, id ASC` order ([§7](#7-pagination)) keeps paging deterministic without it. Split out of 5.95 (ADR [[0012-pagination-envelope|0012]]). |
 | **`Retry-After` on `503`** | a hint for when to retry a fail-closed dependency outage | Small polish on the `503` path once a real backoff story exists. |
 
 > **Adopted in Phase 5.9** (and moved into the body above): the **RFC-7807 `application/problem+json`
 > error envelope + a typed, library-owned `errorCode`** (now [§6](#6-error-handling), ADR
 > [[0011-error-contract-problem-json|0011]]) and the **`Location` header on every `201`** (now
 > [§4](#4-request-and-response-bodies)).
+>
+> **Adopted in Phase 5.95:** the **pagination envelope** — `{count, page, perPage, items}` + strict
+> 0-based `page`/`perPage` on every public list, composed with the partial-eval filter (now
+> [§7](#7-pagination), ADR [[0012-pagination-envelope|0012]]).
 >
 > When a target is adopted, move its row out of this section and into the body as a normal rule, the same
 > way the portal guide retired its own "Missing" notes as features landed.
