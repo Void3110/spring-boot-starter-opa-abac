@@ -62,7 +62,7 @@ opa-abac-spring-boot-starter/   # auto-configuration (the published starter)
 example-catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
 compose.yaml · profile.sh       # local infra (Postgres now; Keycloak/APISIX/OPA/Jaeger added incrementally)
 docs/                           # Obsidian vault — see docs/README.md
-.claude/skills/                 # rego-skill, mulch, deep-review
+.claude/skills/                 # decompose, deep-review (local-only; rego-skill & mulch are global)
 .mulch/                         # project expertise store (ml CLI)
 ```
 
@@ -139,7 +139,7 @@ git restore --staged . && ml sync
    back into `grill-me` / `00-DESIGN` / the slice's acceptance cases.
 4. **QA** — did a post-run `/deep-review` find issues the run's own gate missed? (laziness signal.)
 
-**Prime it when planning a new slice.** During phase ① (grill-me) and phase ② (slice-planner), run
+**Prime it when planning a new slice.** During phase ① (grill-me) and phase ② (decompose), run
 `ml prime autonomous-runs` and explicitly ask: *which fail-open/contract semantics are unpinned?* and
 *which rig gotchas from prior runs apply here?* The synthesis record (`type pattern`,
 "the two recurring planning-gap classes") is the one to read first — across the first six slices, the

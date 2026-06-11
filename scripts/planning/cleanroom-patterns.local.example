@@ -1,0 +1,11 @@
+# Private clean-room blocklist for scripts/planning/verify-package.sh.
+#
+# Copy to cleanroom-patterns.local (gitignored) and tailor: one extended-regex
+# alternation on the first non-comment line — every term that must NEVER appear in
+# this public repo's committed docs (employer/product codenames, internal hostnames,
+# internal ticket-id shapes, your local username). The verify gate fails closed when
+# the .local file is missing.
+#
+# Generic patterns (PAT/token shapes, /Users/<name> paths) are built into the script
+# itself — list only what is private to you here.
+internal-codename|internal-product-name|INTERNAL-[0-9]{4,}|internal\.host\.example
