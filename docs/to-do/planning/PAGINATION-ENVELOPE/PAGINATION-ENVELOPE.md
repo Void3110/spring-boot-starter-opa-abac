@@ -61,7 +61,7 @@ This package mirrors the eight shipped slices ([[DOMAIN-MODEL-FOUNDATION]], [[LI
 > Branch: `feature/void3110/pagination-envelope`.
 
 - [x] **T1** — Library: paged `findAuthorized` overload (all four paths) + the unsorted-`Pageable` guard + unit tests
-- [ ] **T2** — Library IT (real Postgres): `PaginationListIT` — the two-subject `count` contrast + the `perPage=2` stability walk
+- [x] **T2** — Library IT (real Postgres): `PaginationListIT` — the two-subject `count` contrast + the `perPage=2` stability walk
 - [ ] **T3** — Catalog: spec envelope + paged controllers + `CategoryListAuthorizer` pass-through + IT
 - [ ] **T4** — User-service: spec envelope ×6 list ops + paged services/controllers + the `/internal` note + IT
 - [ ] **T5** — e2e: the pagination matrix + the fixture set + the suite-wide envelope migration
