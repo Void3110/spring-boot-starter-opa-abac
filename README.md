@@ -183,7 +183,7 @@ instantiates):
 | Phase | Tooling |
 |-------|---------|
 | ① Plan | **grill-me** (fork-resolving interview) → immutable ADRs + a design |
-| ② Decompose | **slice-planner** → the ordered tickets, QA cases, and the autonomous prompt |
+| ② Decompose | **decompose** (the skill) → the ordered tickets, QA cases, and the autonomous prompt |
 | ③ Implement | one agent runs the prompt, checkpoint-gated, with an architecture-review gate before every validation |
 | ④ Review | **deep-review** — a multi-lens, adversarial workflow (fan-out → refute → synthesize) |
 | All phases | **Mulch** (a per-repo expertise store, primed before / recorded after) + **LSP** (`jdtls`) code intelligence |

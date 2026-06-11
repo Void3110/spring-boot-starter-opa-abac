@@ -122,7 +122,7 @@ the user stories for the slice exist and are phase-tagged. Only then move to dec
 **self-contained prompt** that drives it. Still interactive and docs-only — this is the bridge between
 "we know what and why" and "an agent can now build it."
 
-> **The `slice-planner` skill automates this phase.** It is the checklist + scaffolding for producing the
+> **The `decompose` skill automates this phase** (formerly `slice-planner`). It is the checklist + scaffolding for producing the
 > package below from a settled design; this guide stays canonical (the skill defers to it). See
 > [§8](#8-the-tooling--skills-stack-what-powers-each-phase) for the tool; the rest of this section is the
 > *method* it follows.
@@ -472,7 +472,7 @@ knows that material rather than looking like bespoke ceremony.
 | **Mulch** (`ml`) | A CLI expertise store — durable team knowledge (patterns, decisions, failures) recorded per project in `.mulch/`, primed back into the agent before a task. | All phases (prime before, record after) | **Jaymin West** — [`@os-eco/mulch-cli`](https://github.com/jayminwest/mulch) (MIT). Installed globally, store is per-repo. | *Externalized memory* — the durable counter to **goal drift**: invariants live in a store the agent re-reads, not in a degrading context window. |
 | **LSP code intelligence** (`jdtls`) | Eclipse JDT language server, exposed as the agent's `LSP` tool: real Java symbol resolution — `goToDefinition`, `findReferences`, `goToImplementation`, `documentSymbol`/`workspaceSymbol`, call hierarchy. *Symbol-accurate*, not text-grep. | All phases (precise navigation: scope a change in ①/②, trace blast-radius in ④) | **Anthropic** — the `jdtls-lsp` Claude Code plugin (+ `pyright-lsp` for Python). | *Ground-truth structural index* — answers "who calls this / what implements this" from the compiler's model, where ripgrep can only guess. The Java-native code intelligence layer. |
 | **grill-me** | A skill that interviews the maintainer one question at a time, walking each branch of the design tree and recommending an answer, until every fork is resolved. | ① Planning | **Matt Pocock** — [`mattpocock/skills`](https://github.com/mattpocock/skills) (`productivity/grill-me`). | *Evaluator-driven elicitation* — front-loads decisions into ADRs **before** the autonomous run, so the run has fewer reasons to stop (the planning-time form of "stop and ask"). |
-| **slice-planner** | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
+| **decompose** (formerly `slice-planner`) | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. Portable form: [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md). | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
 | **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ④ Review / ship | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
 | **Claude Code dynamic workflows** | The runtime that executes a JS orchestration script of many subagents in the background; the deep-review skill's heavy path (2B) *is* such a workflow. | ④ (the heavy review path) | **Anthropic** — [official docs](https://code.claude.com/docs/en/workflows) + the "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)" blog. | The substrate the patterns run on — see the [vault distillation](#related) of the feature. |
 
@@ -508,7 +508,7 @@ risk routing *is* Anthropic's "match architectural complexity to value" decision
 
 > **Skills vs. Workflows** (the distinction worth keeping straight, and worth teaching): a **skill** is
 > *knowledge the agent follows*; a **workflow** is *orchestration the runtime executes*. `grill-me` and
-> `slice-planner` are pure skills (phases ① and ②). `deep-review` is a skill that, on a large/high-risk
+> `decompose` are pure skills (phases ① and ②). `deep-review` is a skill that, on a large/high-risk
 > diff, *reaches for* a workflow (phase ④). Mulch is neither — it's the external store all three lean on.
 
 ### Code intelligence: LSP over text-grep (and why not a code-DB here)
@@ -551,11 +551,15 @@ Two of the four tools are **upstream** (others' work we adopt); two are **this r
   Eclipse JDT / Pyright language servers as the agent's `LSP` tool.
 
 **Ours (this repo's local skills, gitignored in `.claude/skills/`):**
-- **slice-planner** — the phase-② automation that instantiates §3–§4 of this guide; the guide stays the
-  single source of truth, the skill is its checklist + scaffolding.
+- **decompose** (formerly `slice-planner`) — the phase-② automation that instantiates §3–§4 of this
+  guide; the guide stays the single source of truth, the skill is its checklist + scaffolding. Portable
+  form: [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md).
 - **deep-review** — the phase-④ review harness; its portable form is
   [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). Built by composing the Anthropic
   patterns above, tuned to this repo's invariants.
+- **autonomous-implement** (template only, for now) — the phase-③ runner discipline as a skill wrapper,
+  for repos that outgrow pasting the bare §4 prompt. Portable form:
+  [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md).
 
 A reader who wants to adopt the *review* half of this flow in their own project should start from
 [`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) — a vendor-neutral
@@ -570,7 +574,7 @@ pieces are split the way they are, and where each could evolve:
 |----------|-------|-----|
 | `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | **L4 — Contextual** | A self-contained one-shot prompt that reads external files (the design, ADRs, QA cases, `CLAUDE.md`) and primes Mulch. Everything-upfront, no follow-up assumed. |
 | **deep-review** | **L5 — Composed** | Invokes other operations — it reaches for a *workflow* (sub-agents) on large diffs and runs `/rego-skill` on policies. Orchestration that coordinates specialists. |
-| **slice-planner** | **L6 — Template metaprompt** | It *generates a new prompt* (the next slice's `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`) from a settled design — a prompt that writes prompts, against the §4 template. |
+| **decompose** | **L6 — Template metaprompt** | It *generates a new prompt* (the next slice's `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`) from a settled design — a prompt that writes prompts, against the §4 template. |
 
 **The L6→L7 principle we already follow: separate *Expertise* from *Workflow*; only Expertise updates.**
 The book's rule for self-improving prompts is that the operational *workflow* stays stable while the
