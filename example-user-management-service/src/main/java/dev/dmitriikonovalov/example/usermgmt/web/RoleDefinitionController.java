@@ -2,12 +2,12 @@ package dev.dmitriikonovalov.example.usermgmt.web;
 
 import dev.dmitriikonovalov.example.usermgmt.openapi.api.RoleDefinitionApi;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionUpdate;
 import dev.dmitriikonovalov.example.usermgmt.service.CallerIdentity;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,9 +37,10 @@ public class RoleDefinitionController implements RoleDefinitionApi {
 
     @Override
     @OpaPreAuthorize(action = "team:define-roles", resourceType = "'team'", resourceId = "#teamId")
-    public ResponseEntity<List<RoleDefinition>> listRoleDefinitions(UUID teamId) {
-        var result = roleDefinitions.list(teamId).stream().map(UserMgmtMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<RoleDefinitionPage> listRoleDefinitions(
+            UUID teamId, Integer page, Integer perPage) {
+        var result = roleDefinitions.list(teamId, PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(UserMgmtMapper.toRoleDefinitionPage(result));
     }
 
     @Override

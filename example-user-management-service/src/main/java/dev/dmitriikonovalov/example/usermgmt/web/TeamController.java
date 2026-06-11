@@ -4,11 +4,11 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.openapi.api.TeamApi;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.CreateTeamRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.Team;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.TeamPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TransferOwnershipRequest;
 import dev.dmitriikonovalov.example.usermgmt.service.CallerIdentity;
 import dev.dmitriikonovalov.example.usermgmt.service.TeamService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,9 +51,9 @@ public class TeamController implements TeamApi {
     }
 
     @Override
-    public ResponseEntity<List<Team>> listTeams() {
-        var result = teams.findAll().stream().map(UserMgmtMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<TeamPage> listTeams(Integer page, Integer perPage) {
+        var result = teams.findAll(PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(UserMgmtMapper.toTeamPage(result));
     }
 
     @Override

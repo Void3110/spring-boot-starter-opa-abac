@@ -3,12 +3,16 @@ package dev.dmitriikonovalov.example.usermgmt.domain;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TagDefinitionRepository extends JpaRepository<TagDefinition, UUID> {
 
     /** All global (system-wide) keys — {@code team_id IS NULL}. */
     List<TagDefinition> findByTeamIdIsNull();
+
+    Page<TagDefinition> findByTeamIdIsNull(Pageable pageable);
 
     /** A global key by its name (globals have {@code teamId == null}). */
     Optional<TagDefinition> findByTeamIdIsNullAndKey(String key);
@@ -21,4 +25,6 @@ public interface TagDefinitionRepository extends JpaRepository<TagDefinition, UU
 
     /** Global keys plus a single team's keys — the applicable dictionary for that team's resources. */
     List<TagDefinition> findByTeamIdIsNullOrTeamId(UUID teamId);
+
+    Page<TagDefinition> findByTeamIdIsNullOrTeamId(UUID teamId, Pageable pageable);
 }

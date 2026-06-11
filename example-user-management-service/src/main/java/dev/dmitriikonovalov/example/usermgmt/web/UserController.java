@@ -3,8 +3,8 @@ package dev.dmitriikonovalov.example.usermgmt.web;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.example.usermgmt.openapi.api.UserApi;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserRequest;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,9 +26,9 @@ public class UserController implements UserApi {
     }
 
     @Override
-    public ResponseEntity<List<dev.dmitriikonovalov.example.usermgmt.openapi.model.User>> listUsers() {
-        var result = users.findAll().stream().map(UserMgmtMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<UserPage> listUsers(Integer page, Integer perPage) {
+        var result = users.findAll(PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(UserMgmtMapper.toUserPage(result));
     }
 
     @Override

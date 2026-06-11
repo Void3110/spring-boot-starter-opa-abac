@@ -182,14 +182,15 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
         assertThat(create.getBody().getMatchMode())
                 .isEqualTo(RoleDefinition.MatchModeEnum.ALL_OF);
 
-        // Re-read via list to confirm it persisted.
+        // Re-read via list (the 5.95 envelope) to confirm it persisted.
         var list = rest.exchange(
                 "/api/v1/teams/{t}/role-definitions",
                 HttpMethod.GET,
                 AbacTestConfig.as(owner.getSubject()),
-                RoleDefinition[].class,
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionPage.class,
                 team.getId());
-        assertThat(list.getBody()).anyMatch(r ->
+        assertThat(list.getBody()).isNotNull();
+        assertThat(list.getBody().getItems()).anyMatch(r ->
                 r.getCode().equals("regional-reader")
                         && r.getRequiredTags().containsKey("region")
                         && r.getMatchMode() == RoleDefinition.MatchModeEnum.ALL_OF);
@@ -234,12 +235,15 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 "/api/v1/teams/{t}/role-definitions",
                 HttpMethod.GET,
                 AbacTestConfig.as(owner.getSubject()),
-                RoleDefinition[].class,
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionPage.class,
                 team.getId());
         assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(list.getBody()).isNotNull();
-        // The four system roles + the one custom role.
-        assertThat(list.getBody()).anyMatch(r -> r.getCode().equals("catalog-editor") && !r.getSystem());
-        assertThat(list.getBody()).anyMatch(r -> r.getCode().equals(SystemRoles.OWNER) && r.getSystem());
+        // The four system roles + the one custom role (count is the envelope's exact total).
+        assertThat(list.getBody().getCount()).isEqualTo(5);
+        assertThat(list.getBody().getItems())
+                .anyMatch(r -> r.getCode().equals("catalog-editor") && !r.getSystem());
+        assertThat(list.getBody().getItems())
+                .anyMatch(r -> r.getCode().equals(SystemRoles.OWNER) && r.getSystem());
     }
 }

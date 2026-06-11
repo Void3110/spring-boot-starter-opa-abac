@@ -5,6 +5,13 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TagDefinition;
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.MembershipPage;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionPage;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinitionPage;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.TeamPage;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserPage;
+import dev.dmitriikonovalov.example.usermgmt.service.MembershipView;
+import org.springframework.data.domain.Page;
 
 /**
  * Maps JPA entities to the generated OpenAPI DTOs — hand-written, mirroring the catalog app's
@@ -78,5 +85,49 @@ public final class UserMgmtMapper {
                 .allowedValues(e.getAllowedValues())
                 .valuePattern(e.getValuePattern())
                 .system(e.isSystem());
+    }
+
+    // --- the list envelope (ADR 0012): count = the page's totalElements; page/perPage echo the request.
+
+    public static UserPage toUserPage(Page<User> page) {
+        return new UserPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(UserMgmtMapper::toDto).toList());
+    }
+
+    public static TeamPage toTeamPage(Page<Team> page) {
+        return new TeamPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(UserMgmtMapper::toDto).toList());
+    }
+
+    public static MembershipPage toMembershipPage(Page<MembershipView> page) {
+        return new MembershipPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream()
+                        .map(v -> toDto(v.membership(), v.roleCode()))
+                        .toList());
+    }
+
+    public static RoleDefinitionPage toRoleDefinitionPage(Page<RoleDefinitionEntity> page) {
+        return new RoleDefinitionPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(UserMgmtMapper::toDto).toList());
+    }
+
+    public static TagDefinitionPage toTagDefinitionPage(Page<TagDefinition> page) {
+        return new TagDefinitionPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(UserMgmtMapper::toDto).toList());
     }
 }

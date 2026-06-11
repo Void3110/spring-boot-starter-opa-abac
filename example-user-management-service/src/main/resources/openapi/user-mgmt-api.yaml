@@ -51,15 +51,18 @@ paths:
       tags: [User]
       summary: List users
       operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Users
+          description: A page of users
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/UserPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       tags: [User]
       summary: Create a user
@@ -103,15 +106,18 @@ paths:
       tags: [Team]
       summary: List teams
       operationId: listTeams
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Teams
+          description: A page of teams
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Team'
+                $ref: '#/components/schemas/TeamPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       tags: [Team]
       summary: Create a team-target (owner-on-create)
@@ -163,15 +169,18 @@ paths:
       tags: [Membership]
       summary: List team members
       operationId: listMembers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Members
+          description: A page of members
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Membership'
+                $ref: '#/components/schemas/MembershipPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
     post:
       tags: [Membership]
       summary: Add a member (owner/administrator; subject to the subset rule)
@@ -227,15 +236,18 @@ paths:
       tags: [RoleDefinition]
       summary: List a team's roles (system + this team's custom roles)
       operationId: listRoleDefinitions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Roles
+          description: A page of roles
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RoleDefinition'
+                $ref: '#/components/schemas/RoleDefinitionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -325,15 +337,17 @@ paths:
             type: string
             format: uuid
           description: When present, include this team's keys alongside the global keys.
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Tag definitions
+          description: A page of tag definitions
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TagDefinition'
+                $ref: '#/components/schemas/TagDefinitionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/tag-definitions/{id}:
     parameters:
@@ -364,15 +378,18 @@ paths:
       tags: [TagDefinition]
       summary: List a team's tag keys (global keys + this team's custom keys)
       operationId: listTeamTagDefinitions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Tag definitions
+          description: A page of tag definitions
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TagDefinition'
+                $ref: '#/components/schemas/TagDefinitionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -501,6 +518,25 @@ components:
       schema:
         type: string
         format: uuid
+    Page:
+      name: page
+      in: query
+      description: 0-based page index. A bounds violation is a 400 VALIDATION_FAILED (no clamping).
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    PerPage:
+      name: perPage
+      in: query
+      description: Page size (1–100). A bounds violation is a 400 VALIDATION_FAILED (no clamping).
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
 
   responses:
     BadRequest:
@@ -544,6 +580,84 @@ components:
         status:
           type: string
           example: UP
+
+    PageEnvelope:
+      type: object
+      description: >
+        The shared list envelope. Every public list returns a page of items plus the exact total —
+        count is the number of rows the caller may see, across all pages (never items.length).
+        page/perPage echo the request. Rows are ordered createdAt ASC, id ASC (a fixed total order;
+        clients do not choose the sort). Defined per spec file by convention (no cross-file $ref).
+      required: [count, page, perPage]
+      properties:
+        count:
+          type: integer
+          format: int64
+          description: Total rows the caller is authorized to see, across all pages.
+        page:
+          type: integer
+          minimum: 0
+          description: 0-based page index, echoing the request.
+        perPage:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Page size, echoing the request.
+
+    UserPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+
+    TeamPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Team'
+
+    MembershipPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Membership'
+
+    RoleDefinitionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/RoleDefinition'
+
+    TagDefinitionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/TagDefinition'
 
     User:
       type: object

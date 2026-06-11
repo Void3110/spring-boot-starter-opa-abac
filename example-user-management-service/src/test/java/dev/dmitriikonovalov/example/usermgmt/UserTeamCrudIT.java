@@ -51,10 +51,13 @@ class UserTeamCrudIT extends AbstractPostgresIT {
         assertThat(fetched.getBody().getId()).isEqualTo(id);
 
         var list = rest.exchange(
-                "/api/v1/users", HttpMethod.GET, AbacTestConfig.as(SUBJECT), User[].class);
+                "/api/v1/users?perPage=100",
+                HttpMethod.GET,
+                AbacTestConfig.as(SUBJECT),
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.UserPage.class);
         assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(list.getBody()).isNotNull();
-        assertThat(list.getBody()).anyMatch(u -> u.getId().equals(id));
+        assertThat(list.getBody().getItems()).anyMatch(u -> u.getId().equals(id));
     }
 
     @Test
@@ -81,12 +84,12 @@ class UserTeamCrudIT extends AbstractPostgresIT {
         assertThat(fetched.getBody().getTargetType()).isEqualTo("catalog");
 
         var list = rest.exchange(
-                "/api/v1/teams",
+                "/api/v1/teams?perPage=100",
                 HttpMethod.GET,
                 AbacTestConfig.as(SUBJECT),
-                dev.dmitriikonovalov.example.usermgmt.openapi.model.Team[].class);
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.TeamPage.class);
         assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(list.getBody()).isNotNull();
-        assertThat(list.getBody()).anyMatch(t -> t.getId().equals(team.getId()));
+        assertThat(list.getBody().getItems()).anyMatch(t -> t.getId().equals(team.getId()));
     }
 }
