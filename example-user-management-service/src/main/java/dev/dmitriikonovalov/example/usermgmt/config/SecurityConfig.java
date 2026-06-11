@@ -46,6 +46,8 @@ public class SecurityConfig {
                                 "/v3/api-docs/**")
                         .permitAll()
                         // The internal resolve API is in-network only (ticket 7), never gateway-fronted.
+                        // Its list shapes are UNPAGINATED BY DESIGN (5.95): bounded machine-to-machine
+                        // payloads on an isolated surface — the public list envelope does not apply here.
                         .requestMatchers("/internal/**").permitAll()
                         .requestMatchers("/api/v1/**").authenticated()
                         .anyRequest().permitAll());

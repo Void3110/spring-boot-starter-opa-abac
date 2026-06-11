@@ -12,6 +12,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,14 +56,15 @@ public class TagDefinitionService {
 
     /**
      * The applicable dictionary: all global keys, plus a single team's keys when {@code teamId} is given.
-     * This is the same set tag assignment validates against (ticket 3), exposed read-only here.
+     * This is the same set tag assignment validates against (ticket 3), exposed read-only here — paged
+     * (5.95; {@link #applicableTo} stays unpaged: it is the validation-input fetch, not a public list).
      */
     @Transactional(readOnly = true)
-    public List<TagDefinition> list(UUID teamId) {
+    public Page<TagDefinition> list(UUID teamId, Pageable pageable) {
         if (teamId == null) {
-            return tagDefinitions.findByTeamIdIsNull();
+            return tagDefinitions.findByTeamIdIsNull(pageable);
         }
-        return tagDefinitions.findByTeamIdIsNullOrTeamId(teamId);
+        return tagDefinitions.findByTeamIdIsNullOrTeamId(teamId, pageable);
     }
 
     @Transactional(readOnly = true)

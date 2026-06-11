@@ -9,9 +9,9 @@ import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.openapi.api.CategoryApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Category;
+import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryRequest;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,13 +44,16 @@ public class CategoryController implements CategoryApi {
 
     @Override
     @OpaPreAuthorize(action = "category:read", resourceType = "'category'")
-    public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) {
+    public ResponseEntity<CategoryPage> listCategories(
+            UUID catalogId, UUID parentId, Integer page, Integer perPage) {
         requireCatalog(catalogId);
         // The @OpaPreAuthorize above is the coarse type-level gate ("may read categories at all", layer 2).
         // The which-rows cut happens in SQL here (layer 3): partial-eval residual AND-ed with the catalog
         // (+ parent) path scope. A subject with no role definition gets an empty list, not the full table.
-        var entities = categoryListAuthorizer.readable(catalogId, parentId);
-        return ResponseEntity.ok(entities.stream().map(CatalogMapper::toDto).toList());
+        // The page windows the FILTERED set, so count is the caller's authorized total.
+        var result = categoryListAuthorizer.readable(
+                catalogId, parentId, PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(CatalogMapper.toCategoryPage(result));
     }
 
     @Override

@@ -4,10 +4,10 @@ import dev.dmitriikonovalov.example.usermgmt.openapi.api.MembershipApi;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.AddMemberRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.ChangeRoleRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.Membership;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.MembershipPage;
 import dev.dmitriikonovalov.example.usermgmt.service.CallerIdentity;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,11 +36,10 @@ public class MembershipController implements MembershipApi {
 
     @Override
     @OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
-    public ResponseEntity<List<Membership>> listMembers(UUID teamId) {
-        var result = membershipService.list(teamId).stream()
-                .map(v -> UserMgmtMapper.toDto(v.membership(), v.roleCode()))
-                .toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<MembershipPage> listMembers(
+            UUID teamId, Integer page, Integer perPage) {
+        var result = membershipService.list(teamId, PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(UserMgmtMapper.toMembershipPage(result));
     }
 
     @Override

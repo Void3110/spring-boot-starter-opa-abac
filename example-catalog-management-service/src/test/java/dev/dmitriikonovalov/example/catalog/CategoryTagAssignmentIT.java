@@ -124,12 +124,13 @@ class CategoryTagAssignmentIT extends AbstractPostgresIT {
                 .andExpect(jsonPath("$.errorCode").value("DEPENDENCY_UNAVAILABLE"))
                 .andExpect(jsonPath("$.status").value(503));
 
-        // No category leaked through with the tag.
+        // No category leaked through with the tag (the envelope reports an authorized total of 0).
         var list = mockMvc.perform(get("/api/v1/catalogs/{c}/categories", catalogId))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode body = objectMapper.readTree(list.getResponse().getContentAsString());
-        assertThat(body).isEmpty();
+        assertThat(body.get("count").asLong()).isZero();
+        assertThat(body.get("items")).isEmpty();
     }
 
     // --- a category with no tags still works (no fetch) ------------------------

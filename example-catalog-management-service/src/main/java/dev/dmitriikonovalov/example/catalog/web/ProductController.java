@@ -7,9 +7,9 @@ import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductService;
 import dev.dmitriikonovalov.example.catalog.openapi.api.ProductApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Product;
+import dev.dmitriikonovalov.example.catalog.openapi.model.ProductPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.ProductRequest;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,10 +33,11 @@ public class ProductController implements ProductApi {
 
     @Override
     @OpaPreAuthorize(action = "product:read", resourceType = "'product'")
-    public ResponseEntity<List<Product>> listProducts(UUID catalogId, UUID categoryId) {
+    public ResponseEntity<ProductPage> listProducts(
+            UUID catalogId, UUID categoryId, Integer page, Integer perPage) {
         requireCategory(catalogId, categoryId);
-        var result = products.findByCategoryId(categoryId).stream().map(CatalogMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+        var result = products.findByCategoryId(categoryId, PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(CatalogMapper.toProductPage(result));
     }
 
     @Override

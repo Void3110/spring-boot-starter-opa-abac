@@ -4,8 +4,12 @@ import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Catalog;
+import dev.dmitriikonovalov.example.catalog.openapi.model.CatalogPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Category;
+import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Product;
+import dev.dmitriikonovalov.example.catalog.openapi.model.ProductPage;
+import org.springframework.data.domain.Page;
 
 /** Maps JPA entities to the generated OpenAPI DTOs. */
 public final class CatalogMapper {
@@ -40,5 +44,32 @@ public final class CatalogMapper {
                 .sku(e.getSku())
                 .priceCents(e.getPriceCents())
                 .currency(e.getCurrency());
+    }
+
+    // --- the list envelope (ADR 0012): count = the page's totalElements (the subject's authorized
+    // total on the categories list; the plain query total elsewhere); page/perPage echo the request.
+
+    public static CatalogPage toCatalogPage(Page<CatalogEntity> page) {
+        return new CatalogPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(CatalogMapper::toDto).toList());
+    }
+
+    public static CategoryPage toCategoryPage(Page<CategoryEntity> page) {
+        return new CategoryPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(CatalogMapper::toDto).toList());
+    }
+
+    public static ProductPage toProductPage(Page<ProductEntity> page) {
+        return new ProductPage()
+                .count(page.getTotalElements())
+                .page(page.getNumber())
+                .perPage(page.getSize())
+                .items(page.getContent().stream().map(CatalogMapper::toDto).toList());
     }
 }

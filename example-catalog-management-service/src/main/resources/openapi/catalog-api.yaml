@@ -30,15 +30,18 @@ paths:
       tags: [Catalog]
       summary: List catalogs
       operationId: listCatalogs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Catalogs
+          description: A page of catalogs
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Catalog'
+                $ref: '#/components/schemas/CatalogPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -130,15 +133,17 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Categories
+          description: A page of categories (the rows the caller is authorized to see)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Category'
+                $ref: '#/components/schemas/CategoryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -230,15 +235,18 @@ paths:
       tags: [Product]
       summary: List products in a category
       operationId: listProducts
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
       responses:
         '200':
-          description: Products
+          description: A page of products
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Product'
+                $ref: '#/components/schemas/ProductPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -341,6 +349,25 @@ components:
       schema:
         type: string
         format: uuid
+    Page:
+      name: page
+      in: query
+      description: 0-based page index. A bounds violation is a 400 VALIDATION_FAILED (no clamping).
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    PerPage:
+      name: perPage
+      in: query
+      description: Page size (1–100). A bounds violation is a 400 VALIDATION_FAILED (no clamping).
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
 
   responses:
     BadRequest:
@@ -375,6 +402,62 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
 
   schemas:
+    PageEnvelope:
+      type: object
+      description: >
+        The shared list envelope. Every public list returns a page of items plus the exact total —
+        and under ABAC that total is subject-relative: count is the number of rows THE CALLER is
+        authorized to see, across all pages (never items.length). page/perPage echo the request.
+        Rows are ordered createdAt ASC, id ASC (a fixed total order; clients do not choose the sort).
+      required: [count, page, perPage]
+      properties:
+        count:
+          type: integer
+          format: int64
+          description: Total rows the caller is authorized to see, across all pages.
+        page:
+          type: integer
+          minimum: 0
+          description: 0-based page index, echoing the request.
+        perPage:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Page size, echoing the request.
+
+    CatalogPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Catalog'
+
+    CategoryPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Category'
+
+    ProductPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Product'
+
     Catalog:
       type: object
       required: [id, name, createdAt]

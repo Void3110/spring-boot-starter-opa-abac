@@ -4,11 +4,11 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TagCardinality;
 import dev.dmitriikonovalov.example.usermgmt.domain.TagValueType;
 import dev.dmitriikonovalov.example.usermgmt.openapi.api.TagDefinitionApi;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinitionPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinitionRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinitionUpdate;
 import dev.dmitriikonovalov.example.usermgmt.service.TagDefinitionService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,9 +41,10 @@ public class TagDefinitionController implements TagDefinitionApi {
     // --- read (any authenticated caller) --------------------------------------
 
     @Override
-    public ResponseEntity<List<TagDefinition>> listTagDefinitions(UUID teamId) {
-        var result = tagDefinitions.list(teamId).stream().map(UserMgmtMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<TagDefinitionPage> listTagDefinitions(
+            UUID teamId, Integer page, Integer perPage) {
+        var result = tagDefinitions.list(teamId, PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(UserMgmtMapper.toTagDefinitionPage(result));
     }
 
     @Override
@@ -58,9 +59,10 @@ public class TagDefinitionController implements TagDefinitionApi {
 
     @Override
     @OpaPreAuthorize(action = "team:define-tags", resourceType = "'team'", resourceId = "#teamId")
-    public ResponseEntity<List<TagDefinition>> listTeamTagDefinitions(UUID teamId) {
-        var result = tagDefinitions.list(teamId).stream().map(UserMgmtMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<TagDefinitionPage> listTeamTagDefinitions(
+            UUID teamId, Integer page, Integer perPage) {
+        var result = tagDefinitions.list(teamId, PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(UserMgmtMapper.toTagDefinitionPage(result));
     }
 
     @Override

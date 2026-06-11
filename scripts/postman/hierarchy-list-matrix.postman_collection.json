@@ -25,7 +25,7 @@
         "listen": "test",
         "script": {"type": "text/javascript", "exec": [
           "pm.test('200 OK (the coarse list gate let the inheritable grant through)', () => pm.response.code === 200);",
-          "const ids = pm.response.json().map(c => c.id);",
+          "const ids = pm.response.json().items.map(c => c.id);",
           "const phase = pm.variables.get('phase');",
           "// The inherit reader has NO category tag grant; it sees these rows ONLY because the Catalog grant",
           "// widens the list to the whole catalog subtree (the headline).",
@@ -54,7 +54,7 @@
         "listen": "test",
         "script": {"type": "text/javascript", "exec": [
           "pm.test('200 OK', () => pm.response.code === 200);",
-          "const ids = pm.response.json().map(c => c.id);",
+          "const ids = pm.response.json().items.map(c => c.id);",
           "// The region reader is tag-gated to region=emea (and has its own category:read), so it sees only",
           "// the emea row via the residual — NOT the apac row the inherit reader sees pre-reparent. A different cut.",
           "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
@@ -82,7 +82,7 @@
           "// 200 with an empty body are both fail-closed; assert NO category is visible either way.",
           "pm.test('fail-closed: 403 at the gate, or 200 with an empty list', () => pm.expect([200, 403]).to.include(pm.response.code));",
           "if (pm.response.code === 200) {",
-          "  const ids = pm.response.json().map(c => c.id);",
+          "  const ids = pm.response.json().items.map(c => c.id);",
           "  pm.test('sees NO categories (empty, not the whole table)', () => pm.expect(ids.length).to.eql(0));",
           "}"
         ]}

@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.data.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -22,6 +23,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
@@ -29,7 +35,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
  * Unit tests for {@link AbacQueryService} with a mock repository and a programmable stub {@link OpaClient}.
  * Covers QA cases U20–U24: residual outcomes map to the right query; the allowlist path is invoked only
  * when flagged-and-toggled and drops {@code false} rows; the {@code enabled=false} kill-switch degrades to
- * the coarse path.
+ * the coarse path. The 5.95 block covers the paged overload (U1–U7): the four paths paged, the exact
+ * subject-relative count on each, and the unsorted-{@code Pageable} guard.
  */
 @SuppressWarnings("unchecked")
 class AbacQueryServiceTest {
@@ -282,7 +289,174 @@ class AbacQueryServiceTest {
         assertThat(result).isEmpty();
     }
 
+    // --- 5.95: the paged overload (U1–U7; U8 = the suite above stays green unmodified) ----------
+
+    @Test // U1 — pure-SQL path: the combined spec + the given pageable reach the repo; the Page returns as-is
+    void paged_pureSql_passesCombinedSpecAndPageable() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        Pageable pageable = PageRequest.of(0, 2, DEFAULT_ORDER);
+        Page<Row> repoPage = new PageImpl<>(List.of(new Row("a"), new Row("b")), pageable, 7);
+        when(repo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(repoPage);
+        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+
+        Page<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
+
+        // the count comes from the repo's COUNT query over the same combined spec, not the page size
+        assertThat(result.getTotalElements()).isEqualTo(7);
+        assertThat(result.getContent()).extracting(Row::id).containsExactly("a", "b");
+        ArgumentCaptor<Specification<Row>> spec = ArgumentCaptor.forClass(Specification.class);
+        ArgumentCaptor<Pageable> passed = ArgumentCaptor.forClass(Pageable.class);
+        verify(repo).findAll(spec.capture(), passed.capture());
+        assertThat(spec.getValue()).isNotNull();
+        assertThat(passed.getValue()).isEqualTo(pageable);
+        verify(client, never()).allowAll(any()); // pure-SQL, no batch
+    }
+
+    @Test // U2 — paged with a subtreeSpec → the widened composition reaches the repo, still no batch
+    void paged_withSubtreeSpec_composesAndDoesNotBatch() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
+        when(repo.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(new Row("a")), pageable, 1));
+        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
+
+        Page<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context(), subtree, pageable);
+
+        assertThat(result.getContent()).extracting(Row::id).containsExactly("a");
+        verify(repo).findAll(any(Specification.class), any(Pageable.class));
+        verify(client, never()).allowAll(any());
+    }
+
+    @Test // U3 — the guard: an unsorted PageRequest and Pageable.unpaged() both throw BEFORE any OPA/repo call
+    void paged_unsortedPageable_throwsBeforeAnyCall() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        AbacQueryService svc = service(client, AbacQueryService.PartialEvalSettings.defaults());
+
+        assertThatThrownBy(() -> svc.findAuthorized(
+                        repo, (r, q, cb) -> null, context(), null, PageRequest.of(0, 20)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sorted Pageable");
+        assertThatThrownBy(() -> svc.findAuthorized(
+                        repo, (r, q, cb) -> null, context(), null, Pageable.unpaged()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sorted Pageable");
+
+        Mockito.verifyNoInteractions(repo);
+        verify(client, never()).compile(any());
+        verify(client, never()).allow(any());
+        verify(client, never()).allowAll(any());
+    }
+
+    @Test // U4 — fallback path: candidates fetched WITH the pageable's sort; survivors sliced in order;
+    // totalElements == the filtered size (4), not the candidate count (5)
+    void paged_fallback_slicesFilteredSurvivorsInOrder() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class), any(Sort.class)))
+                .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c"), new Row("d"), new Row("e")));
+        // batch drops b: survivors a, c, d, e
+        OpaClient client = stub(PartialResult.unsupported(), List.of(true, false, true, true, true), false);
+        AbacQueryService svc = service(client, new AbacQueryService.PartialEvalSettings(true, true));
+
+        Page<Row> page0 = svc.findAuthorized(
+                repo, (r, q, cb) -> null, context(), null, PageRequest.of(0, 2, DEFAULT_ORDER));
+        Page<Row> page1 = svc.findAuthorized(
+                repo, (r, q, cb) -> null, context(), null, PageRequest.of(1, 2, DEFAULT_ORDER));
+
+        assertThat(page0.getContent()).extracting(Row::id).containsExactly("a", "c");
+        assertThat(page1.getContent()).extracting(Row::id).containsExactly("d", "e");
+        assertThat(page0.getTotalElements()).isEqualTo(4);
+        assertThat(page1.getTotalElements()).isEqualTo(4);
+        // the candidate fetch carried the pageable's sort — path-independent order, never unsorted
+        ArgumentCaptor<Sort> sort = ArgumentCaptor.forClass(Sort.class);
+        verify(repo, Mockito.times(2)).findAll(any(Specification.class), sort.capture());
+        assertThat(sort.getAllValues()).allSatisfy(s -> assertThat(s).isEqualTo(DEFAULT_ORDER));
+    }
+
+    @Test // U4 — fallback OFF + not-fully-SQL residual, paged → no batch; the always-false spec pages empty
+    void paged_fallbackOff_deniesWithoutBatch() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
+        when(repo.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true), false));
+
+        Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, false))
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
+        verify(client, never()).allowAll(any());
+    }
+
+    @Test // U5 — fallback past-the-end: a window beyond the survivors → empty content, exact total
+    void paged_fallback_pastTheEnd_keepsExactCount() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class), any(Sort.class)))
+                .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c"), new Row("d"), new Row("e")));
+        OpaClient client = stub(PartialResult.unsupported(), List.of(true, false, true, true, true), false);
+
+        Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, true))
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, PageRequest.of(5, 2, DEFAULT_ORDER));
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(4); // the exact count survives an empty page
+    }
+
+    @Test // U6 — kill-switch, coarse deny → empty page, count 0, no repo call
+    void paged_killSwitch_denyEmptiesPageWithoutRepo() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        OpaClient client = Mockito.spy(stub(PartialResult.allowAll(), null, false)); // allow() → false
+
+        Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(false, true))
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, PageRequest.of(0, 20, DEFAULT_ORDER));
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
+        Mockito.verifyNoInteractions(repo);
+        verify(client, never()).compile(any());
+    }
+
+    @Test // U6 — kill-switch, coarse allow → scope.and(notDenied) paged; the deny stays AND-ed even degraded
+    void paged_killSwitch_allowPagesScopeAndNotDenied() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
+        when(repo.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(new Row("a")), pageable, 1));
+        OpaClient client = Mockito.spy(stub(PartialResult.allowAll(), null, true)); // allow() → true
+
+        Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(false, true))
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
+
+        assertThat(result.getContent()).extracting(Row::id).containsExactly("a");
+        verify(client).allow(any());
+        verify(client, never()).compile(any());
+        verify(repo).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test // U7 — fromError, paged (allowlist ON) → empty page, count 0, NO repo call, NO batch:
+    // a failed compile empties the page INCLUDING the count, and an outage never triggers the fallback
+    void paged_fromError_emptiesPageAndCountWithoutRepo() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        OpaClient client = Mockito.spy(stub(PartialResult.error(), List.of(true), false));
+
+        Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, true))
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, PageRequest.of(0, 20, DEFAULT_ORDER));
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
+        Mockito.verifyNoInteractions(repo);
+        verify(client, never()).allowAll(any());
+    }
+
     // --- helpers -------------------------------------------------------------
+
+    /** The fixed total order every paged call carries (ADR 0012 §4): {@code createdAt ASC, id ASC}. */
+    private static final Sort DEFAULT_ORDER =
+            Sort.by("createdAt").ascending().and(Sort.by("id").ascending());
 
     private AbacQueryService hierService(
             OpaClient client, AbacQueryService.PartialEvalSettings settings, AncestorResolver resolver) {

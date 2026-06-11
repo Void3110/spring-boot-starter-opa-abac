@@ -44,7 +44,7 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('200 OK', () => pm.response.code === 200);",
-              "const ids = pm.response.json().map(c => c.id);",
+              "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
               "pm.test('does NOT see the APAC category', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
               "pm.test('does NOT see the AMER category', () => pm.expect(ids).to.not.include(pm.variables.get('amer_category_id')));",
@@ -83,7 +83,7 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('200 OK', () => pm.response.code === 200);",
-              "const ids = pm.response.json().map(c => c.id);",
+              "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
               "pm.test('does NOT see the EMEA category', () => pm.expect(ids).to.not.include(pm.variables.get('emea_category_id')));",
               "pm.test('exactly one row (a DIFFERENT set than reader EMEA)', () => pm.expect(ids.length).to.eql(1));"
@@ -121,7 +121,7 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('200 OK', () => pm.response.code === 200);",
-              "const ids = pm.response.json().map(c => c.id);",
+              "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
               "pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
               "pm.test('sees the AMER category', () => pm.expect(ids).to.include(pm.variables.get('amer_category_id')));",
@@ -160,7 +160,7 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('200 OK (the coarse type-level read gate passes; the residual empties the list)', () => pm.response.code === 200);",
-              "const ids = pm.response.json().map(c => c.id);",
+              "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('the filter rule has no subject-roles fallback -> EMPTY list, never the whole table', () => pm.expect(ids.length).to.eql(0));"
             ]
           }

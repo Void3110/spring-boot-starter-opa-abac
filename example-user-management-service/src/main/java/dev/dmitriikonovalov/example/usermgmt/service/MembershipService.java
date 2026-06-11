@@ -6,8 +6,9 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembershipRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,10 +46,11 @@ public class MembershipService {
         this.subsetGuard = subsetGuard;
     }
 
+    /** The team's members, paged (5.95); each row carries its bound role's code. */
     @Transactional(readOnly = true)
-    public List<MembershipView> list(UUID teamId) {
+    public Page<MembershipView> list(UUID teamId, Pageable pageable) {
         requireTeam(teamId);
-        return memberships.findByTeamId(teamId).stream().map(this::toView).toList();
+        return memberships.findByTeamId(teamId, pageable).map(this::toView);
     }
 
     /**

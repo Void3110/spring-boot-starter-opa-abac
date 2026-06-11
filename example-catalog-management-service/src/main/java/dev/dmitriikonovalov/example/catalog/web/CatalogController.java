@@ -5,9 +5,9 @@ import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.openapi.api.CatalogApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Catalog;
+import dev.dmitriikonovalov.example.catalog.openapi.model.CatalogPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CatalogRequest;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,9 +26,9 @@ public class CatalogController implements CatalogApi {
 
     @Override
     @OpaPreAuthorize(action = "catalog:read", resourceType = "'catalog'")
-    public ResponseEntity<List<Catalog>> listCatalogs() {
-        var result = catalogs.findAll().stream().map(CatalogMapper::toDto).toList();
-        return ResponseEntity.ok(result);
+    public ResponseEntity<CatalogPage> listCatalogs(Integer page, Integer perPage) {
+        var result = catalogs.findAll(PageDefaults.pageRequest(page, perPage));
+        return ResponseEntity.ok(CatalogMapper.toCatalogPage(result));
     }
 
     @Override

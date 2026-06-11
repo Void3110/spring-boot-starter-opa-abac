@@ -9,10 +9,11 @@ import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -65,13 +66,17 @@ public class CategoryListAuthorizer {
     }
 
     /**
-     * The Categories under {@code catalogId} (optionally under {@code parentId}) the current subject may
-     * read, filtered in SQL by the partial-eval residual.
+     * The page of Categories under {@code catalogId} (optionally under {@code parentId}) the current
+     * subject may read, filtered in SQL by the partial-eval residual and windowed by {@code pageable}
+     * (Phase 5.95). The page's {@code totalElements} is the subject's <em>authorized</em> total — the
+     * residual cut applies to the count exactly as to the rows. The {@code pageable} must carry the
+     * service's fixed total order ({@code createdAt ASC, id ASC}); the library seam rejects an unsorted
+     * one.
      */
-    public List<CategoryEntity> readable(UUID catalogId, UUID parentId) {
+    public Page<CategoryEntity> readable(UUID catalogId, UUID parentId, Pageable pageable) {
         AbacContext.Subject subject = currentSubject();
         if (subject == null) {
-            return List.of(); // unauthenticated → empty (the @OpaPreAuthorize gate already ran)
+            return Page.empty(pageable); // unauthenticated → empty (the @OpaPreAuthorize gate already ran)
         }
 
         // Resolve the role on the GOVERNING CATALOG (the team target), exactly as CategoryAuthorizer does.
@@ -94,7 +99,7 @@ public class CategoryListAuthorizer {
         Specification<CategoryEntity> subtreeSpec = resolveSubtreeSpec(subject, catalogId);
 
         Specification<CategoryEntity> scope = scopedTo(catalogId, parentId);
-        return queryService.findAuthorized(categories, scope, queryContext, subtreeSpec);
+        return queryService.findAuthorized(categories, scope, queryContext, subtreeSpec, pageable);
     }
 
     /** The hierarchy widening for this catalog, or {@code null} when hierarchy is off / not granted. */

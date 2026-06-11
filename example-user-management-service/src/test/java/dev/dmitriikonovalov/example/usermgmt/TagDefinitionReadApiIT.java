@@ -47,23 +47,24 @@ class TagDefinitionReadApiIT extends AbstractSecuredPostgresIT {
         String subject = "sub-reader-" + UUID.randomUUID();
 
         var globals = rest.exchange(
-                "/api/v1/tag-definitions",
+                "/api/v1/tag-definitions?perPage=100",
                 HttpMethod.GET,
                 AbacTestConfig.as(subject),
-                dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition[].class);
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinitionPage.class);
         assertThat(globals.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(globals.getBody()).isNotNull();
-        assertThat(globals.getBody()).anyMatch(d -> d.getKey().equals("sensitivity"));
-        assertThat(globals.getBody()).noneMatch(d -> d.getKey().startsWith("tier-"));
+        assertThat(globals.getBody().getItems()).anyMatch(d -> d.getKey().equals("sensitivity"));
+        assertThat(globals.getBody().getItems()).noneMatch(d -> d.getKey().startsWith("tier-"));
 
         var withTeam = rest.exchange(
-                "/api/v1/tag-definitions?teamId={t}",
+                "/api/v1/tag-definitions?perPage=100&teamId={t}",
                 HttpMethod.GET,
                 AbacTestConfig.as(subject),
-                dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition[].class,
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinitionPage.class,
                 t.getId());
-        assertThat(withTeam.getBody()).anyMatch(d -> d.getKey().startsWith("tier-"));
-        assertThat(withTeam.getBody()).anyMatch(d -> d.getKey().equals("sensitivity"));
+        assertThat(withTeam.getBody()).isNotNull();
+        assertThat(withTeam.getBody().getItems()).anyMatch(d -> d.getKey().startsWith("tier-"));
+        assertThat(withTeam.getBody().getItems()).anyMatch(d -> d.getKey().equals("sensitivity"));
     }
 
     @Test

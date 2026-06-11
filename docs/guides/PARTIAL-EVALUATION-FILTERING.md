@@ -211,6 +211,32 @@ the residual model, the operator set, and `RoleDefinition` are untouched. Wiring
 `notDenied`, AND-with-scope no-leak, re-parent-on-list) and the e2e
 `scripts/postman/run-hierarchy-list-matrix.sh`.
 
+## The paged composition (Phase 5.95)
+
+The filtered list is also **paginated** — the additive 5-arg
+`findAuthorized(repo, scope, queryContext, subtreeSpec, Pageable) → Page<T>` windows the *filtered* row
+set, and `Page.getTotalElements()` is the **exact, subject-relative authorized total on every path**
+(never the page's own size, never an estimate — pinned by ADR [[adr/0012-pagination-envelope|0012]]):
+
+| Path | Paged behavior | the count |
+|---|---|---|
+| **Pure-SQL** | `repo.findAll(combined, pageable)` — the same `scope.and(tagResidual.or(subtreeSpec)).and(notDenied)` composition; Spring Data derives the `COUNT` from it | exact, from SQL |
+| **Allowlist fallback** | the candidates are fetched **SQL-sorted** (`findAll(scope, pageable.getSort())` — so the page order is identical to the pure-SQL path's), batch-filtered (order-preserving), and the window sliced in memory | exact = the survivor count; the fetch-all cost is the path's existing Phase-5 degradation — pagination adds nothing, the in-memory slice is what keeps the count exact |
+| **Kill-switch** (`partialEval.enabled=false`) | coarse `allow`, then `scope.and(notDenied)` paged — the deny-override stays AND-ed even degraded | exact under the degraded policy |
+| **`fromError`** (failed compile) | an empty page, **no repository call** — a failed compile empties the page *including the count* (no count leak) | `0` |
+
+- **The unsorted-`Pageable` guard:** the paged seam **throws `IllegalArgumentException`** on an unsorted
+  (or unpaged) `Pageable` before any OPA or repository call. Paginating without a total order is a
+  correctness bug — rows silently repeat or vanish across pages — so the seam refuses it, fail-loud at
+  dev time. The services pass the fixed total order **`createdAt ASC, id ASC`** (one `PageDefaults`
+  constant per service; see [[REST-API-DESIGN]] §7 for the wire contract).
+- **Fail-closed, paged:** no path returns a wider page or a larger count on an error than on success —
+  a short/all-false batch decision drops rows from both the page and the count; past-the-end is an empty
+  page with the exact total, not a probe.
+- Proven by the paged unit cases in `AbacQueryServiceTest`, `PaginationListIT` (real Postgres: the
+  two-subject count contrast 5-vs-3, the `perPage=2` stability walk, fallback/pure-SQL parity,
+  past-the-end) and the e2e `scripts/postman/run-pagination-matrix.sh`.
+
 ## What this slice does NOT do
 
 Action enrichment (Phase 6) · coarse permission categories (Phase 6.5) · ReBAC-in-Rego / mid-tree per-node
@@ -221,6 +247,7 @@ not already use this partial-eval path (e.g. the product list's plain scoped que
 
 - ADR [[adr/0005-partial-eval-to-jpa-specification|0005]] (the pinned fork) · ADR
   [[adr/0006-three-layer-enforcement-model|0006]] (the three layers — this is the DB layer) · ADR
-  [[adr/0010-hierarchy-aware-list-filter|0010]] (the hierarchy-aware list widening above) ·
+  [[adr/0010-hierarchy-aware-list-filter|0010]] (the hierarchy-aware list widening above) · ADR
+  [[adr/0012-pagination-envelope|0012]] (the paged composition above) ·
   [[TWO-LAYER-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[TAG-BASED-AUTHORIZATION]] ·
-  [[HIERARCHICAL-AUTHORIZATION]] · [[E2E-TESTING]] · [[POC-ROADMAP]].
+  [[HIERARCHICAL-AUTHORIZATION]] · [[REST-API-DESIGN]] · [[E2E-TESTING]] · [[POC-ROADMAP]].

@@ -274,7 +274,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
-                  "const ids = pm.response.json().map(p => p.id);",
+                  "const ids = pm.response.json().items.map(p => p.id);",
                   "pm.test('created product present', () => pm.expect(ids).to.include(pm.collectionVariables.get('product_id')));"
                 ]
               }

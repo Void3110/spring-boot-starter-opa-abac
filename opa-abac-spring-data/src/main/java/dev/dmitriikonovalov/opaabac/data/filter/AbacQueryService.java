@@ -11,6 +11,9 @@ import jakarta.persistence.criteria.Expression;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
@@ -164,13 +167,110 @@ public class AbacQueryService {
         }
 
         // Pure-SQL path: scope.and( tagResidual.or(subtreeSpec) ).and( notDenied ).
+        return repo.findAll(authorizedSpec(scope, residual, subtreeSpec));
+    }
+
+    /**
+     * The paged variant of {@link #findAuthorized(JpaSpecificationExecutor, Specification, AbacContext,
+     * Specification)} (Phase 5.95): the same four query paths, the same compositions, plus a page window —
+     * additive, so every unpaged caller compiles and behaves unchanged.
+     *
+     * <p>{@link Page#getTotalElements()} is the <strong>exact, subject-relative authorized total</strong>
+     * on every path — never the page's own size, never an estimate:
+     * <ul>
+     *   <li><strong>Pure-SQL:</strong> {@code repo.findAll(combined, pageable)} — Spring Data issues the
+     *       {@code COUNT} over the same combined specification.</li>
+     *   <li><strong>Allowlist fallback:</strong> all scoped candidates are fetched <em>SQL-sorted</em>
+     *       ({@code findAll(scope, pageable.getSort())} — so the page order is identical to the pure-SQL
+     *       path's), batch-filtered (order-preserving), and the requested window sliced in memory; the
+     *       total is the survivor count. The fetch-all cost is the path's existing Phase-5 degradation —
+     *       pagination adds nothing to it; the in-memory slice is what keeps the count exact.</li>
+     *   <li><strong>Kill-switch</strong> ({@code partialEval.enabled=false}): a coarse {@code allow}
+     *       check, then {@code scope.and(notDenied)} paged — the deny-override stays AND-ed even degraded.</li>
+     *   <li><strong>Failed compile</strong> ({@code fromError}): an empty page with total {@code 0} and
+     *       <em>no repository call</em> — the fail-closed cut includes the count.</li>
+     * </ul>
+     *
+     * <p><strong>The {@code Pageable} must carry a sort.</strong> Paginating without a total order is a
+     * correctness bug — rows silently repeat or vanish across pages as the database reorders — so an
+     * unsorted (or unpaged) {@code Pageable} is refused with an {@link IllegalArgumentException} before
+     * any OPA or repository call. Callers pass a fixed total order (e.g. {@code createdAt ASC, id ASC}).
+     *
+     * @param pageable the page window; must be sorted (a total order), e.g.
+     *     {@code PageRequest.of(page, perPage, Sort.by("createdAt").ascending().and(Sort.by("id").ascending()))}
+     * @return the authorized page, never {@code null}; {@code getTotalElements()} is the subject's exact
+     *     authorized total under {@code scope} (a past-the-end request returns an empty page with that
+     *     same total)
+     * @throws IllegalArgumentException if {@code pageable} carries no sort
+     */
+    public <T extends AbacDataObject> Page<T> findAuthorized(
+            JpaSpecificationExecutor<T> repo,
+            Specification<T> scope,
+            AbacContext queryContext,
+            Specification<T> subtreeSpec,
+            Pageable pageable) {
+
+        if (pageable.getSort().isUnsorted()) {
+            throw new IllegalArgumentException(
+                    "paged findAuthorized requires a sorted Pageable — pagination without a total order"
+                            + " is nondeterministic (rows can repeat or vanish across pages)");
+        }
+
+        if (!settings.enabled()) {
+            // Kill-switch: the same coarse degradation as the unpaged path, paged. Deny → empty page
+            // (count 0, no repo call); the deny-override stays AND-ed so the toggle never makes a denied
+            // row listable — or countable.
+            if (!opaClient.allow(queryContext)) {
+                return Page.empty(pageable);
+            }
+            return repo.findAll(scopeOnly(scope).and(notDenied()), pageable);
+        }
+
+        PartialResult residual = opaClient.compile(queryContext);
+
+        if (residual.fromError()) {
+            // No policy answer at all → no rows AND no count: a failed compile must not leak how many
+            // rows the subject could otherwise see.
+            return Page.empty(pageable);
+        }
+
+        if (!residual.fullySupported() && settings.allowlistFallback()) {
+            // Fetch the candidates SQL-sorted so the fallback pages the same sequence the pure-SQL path
+            // would (path-independent order), batch-recheck, then slice the window in memory. The
+            // survivor count IS the exact total — a short/all-false decision list narrows both the page
+            // and the count, never widens.
+            List<T> candidates = repo.findAll(scopeOnly(scope), pageable.getSort());
+            List<T> allowed = batchFilter(candidates, queryContext);
+            return sliceInMemory(allowed, pageable);
+        }
+
+        // Pure-SQL path: the identical composition, paged — Spring Data derives the COUNT from it.
+        return repo.findAll(authorizedSpec(scope, residual, subtreeSpec), pageable);
+    }
+
+    /**
+     * The one definition point of the pure-SQL authorization composition —
+     * {@code scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )} — shared by the unpaged and paged
+     * paths so the two can never drift: the widening OR-ed <em>inside</em> {@code scope.and(...)} (it
+     * cannot escape scope), the deny AND-ed <em>outside</em> the OR (it overrides the widening).
+     */
+    private <T> Specification<T> authorizedSpec(
+            Specification<T> scope, PartialResult residual, Specification<T> subtreeSpec) {
         Specification<T> tagResidual = specificationFactory.from(residual);
         Specification<T> widened =
                 subtreeSpec == null ? tagResidual : Specification.where(tagResidual).or(subtreeSpec);
-        Specification<T> combined = (scope == null ? Specification.<T>where(null) : scope)
-                .and(widened)
-                .and(notDenied());
-        return repo.findAll(combined);
+        return scopeOnly(scope).and(widened).and(notDenied());
+    }
+
+    /** The requested window over an already-filtered, already-ordered list; the list size is the total. */
+    private static <T> Page<T> sliceInMemory(List<T> allowed, Pageable pageable) {
+        long offset = pageable.getOffset();
+        if (offset >= allowed.size()) {
+            return new PageImpl<>(List.of(), pageable, allowed.size());
+        }
+        int from = (int) offset;
+        int to = Math.min(from + pageable.getPageSize(), allowed.size());
+        return new PageImpl<>(List.copyOf(allowed.subList(from, to)), pageable, allowed.size());
     }
 
     /**
