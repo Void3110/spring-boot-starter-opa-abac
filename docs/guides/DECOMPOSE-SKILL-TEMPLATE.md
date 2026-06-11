@@ -67,8 +67,8 @@ monolith); this template is distilled from both.
 | 2 | Package root + layout | `docs/to-do/planning/<SLICE>/` → `implemented/` when shipped | Any layout; keep the planning→implemented lifecycle move |
 | 3 | Structural-decision record | Immutable ADRs in `docs/architecture/adr/` | A "considered & rejected" section in the design note is the lighter substitute |
 | 4 | User stories | Required, phase-tagged (`USER-STORIES.md`) | Optional where stories live upstream (a ticket tracker) |
-| 5 | Scaffold | Copy the most similar shipped package | A deterministic scaffold script (folder + stubs + valid frontmatter) is better — the second instantiation ships one; idempotent, `--force` to overwrite |
-| 6 | Verify gates | §6 bash template: files, frontmatter, clean-room scan, count match, no unfilled slots | Keep the base four; swap clean-room for repo-specific scans; promote the template to a committed script |
+| 5 | Scaffold | `scripts/planning/scaffold-package.py` — idempotent, `--force` to overwrite, `--with-design` for the phase-① stubs | A deterministic scaffold script (folder + stubs + valid frontmatter) beats copying a shipped package by hand |
+| 6 | Verify gates | `scripts/planning/verify-package.sh` — files, frontmatter, clean-room scan (private blocklist in a gitignored `.local`, fail-closed), no unfilled «slots», prompt invariants, count match | Keep the base four; swap clean-room for repo-specific scans; commit the script, keep the blocklist out of the public repo |
 | 7 | Test conventions the QA cases honor | In-process OPA stub, Testcontainers Postgres, `opa test`, e2e asserts the *cut* | Name the repo's exact stack — the QA cases are only as good as the conventions they encode |
 | 8 | Branch / identity / commit | `feature/void3110/<slice>`, identity pinned, `Co-Authored-By` welcome | Some repos forbid AI trailers — make it explicit either way |
 | 9 | Mulch domains to prime | `ml prime opa-abac` (+ `autonomous-runs`) | List the domains the slice's surface touches |

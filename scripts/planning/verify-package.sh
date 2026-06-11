@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Deterministic gates for a slice's decomposition package — the /decompose skill's verify
+# step, as a committed script. Code is deterministic; language interpretation isn't, so the
+# gates that decide "the package is done" are scripted, not prose.
+#
+# Usage:  scripts/planning/verify-package.sh <SLICE | path/to/package-folder>
+#         A bare slice name resolves to docs/to-do/planning/<SLICE>; a path (e.g.
+#         docs/to-do/implemented/<SLICE>) is used as-is.
+# Exit:   0 = all gates green · 1 = problems found (printed). Read-only — never edits.
+#
+# Clean-room gate: a few generic patterns (secrets, local absolute paths) are built in;
+# the private blocklist of terms that must never appear in this public repo lives in
+# scripts/planning/cleanroom-patterns.local — gitignored, one extended-regex alternation
+# on its first non-comment line. Bootstrap it from the committed .example. The gate FAILS
+# when the file is missing: fail closed, like everything else in this repo.
+
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+ARG="${1:?usage: verify-package.sh <SLICE | path/to/package-folder>}"
+case "$ARG" in
+  */*) DIR="${ARG%/}" ;;
+  *)   DIR="docs/to-do/planning/$ARG" ;;
+esac
+SLICE="$(basename "$DIR")"
+FAIL=0
+ok()  { printf '  \033[0;32m✓\033[0m %s\n' "$1"; }
+bad() { printf '  \033[0;31m✗\033[0m %s\n' "$1"; FAIL=1; }
+
+[ -d "$DIR" ] || { echo "no such package folder: $DIR"; exit 1; }
+echo "Verifying package: $DIR"
+
+# ── 1. Required files ───────────────────────────────────────────────────────────
+echo "[1] required files"
+for f in "$SLICE.md" 00-DESIGN.md 01-DECOMPOSITION.md 10-QA-TEST-CASES.md AUTONOMOUS-IMPLEMENTATION-PROMPT.md; do
+  if [ -f "$DIR/$f" ]; then ok "$f"; else bad "missing $f"; fi
+done
+STATUS_COUNT=$(find "$DIR" -maxdepth 1 -name 'STATUS-*.md' | wc -l | tr -d ' ')
+if [ "$STATUS_COUNT" -ge 1 ]; then ok "STATUS stubs: $STATUS_COUNT"; else bad "no STATUS-NN.md stubs"; fi
+
+# ── 2. Frontmatter: every note has one status/, one type/, >=1 area/ ────────────
+echo "[2] frontmatter (one status/, one type/, >=1 area/)"
+for f in "$DIR"/*.md; do
+  base=$(basename "$f")
+  fm=$(awk 'NR==1 && $0=="---" {in_fm=1; next} in_fm && $0=="---" {exit} in_fm {print}' "$f")
+  s=$(printf '%s\n' "$fm" | grep -c 'status/')
+  t=$(printf '%s\n' "$fm" | grep -c 'type/')
+  a=$(printf '%s\n' "$fm" | grep -c 'area/')
+  if [ "$s" -eq 1 ] && [ "$t" -eq 1 ] && [ "$a" -ge 1 ]; then ok "$base"
+  else bad "$base frontmatter (status=$s type=$t area=$a — want 1/1/>=1)"; fi
+done
+
+# ── 3. Clean-room scan (this repo is public — MUST be empty) ────────────────────
+echo "[3] clean-room scan"
+GENERIC='glpat-[A-Za-z0-9_-]|ghp_[A-Za-z0-9]|/Users/[a-z]'
+BLOCKFILE="scripts/planning/cleanroom-patterns.local"
+if [ -f "$BLOCKFILE" ]; then
+  PRIVATE=$(grep -vE '^\s*(#|$)' "$BLOCKFILE" | head -1)
+  PATTERN="$GENERIC${PRIVATE:+|$PRIVATE}"
+  HITS=$(grep -rnEi "$PATTERN" "$DIR" || true)
+  if [ -z "$HITS" ]; then ok "clean (generic + private blocklist)"
+  else bad "clean-room violations:"; printf '%s\n' "$HITS" | sed 's/^/      /'; fi
+else
+  bad "no $BLOCKFILE — copy the .example and tailor it (the gate fails closed)"
+fi
+
+# ── 4. No unfilled placeholders («…» guillemets are the scaffold/slot marker) ───
+echo "[4] no unfilled placeholders"
+LEFT=$(grep -rln '«' "$DIR" 2>/dev/null || true)
+if [ -z "$LEFT" ]; then ok "no unfilled «slots» remain"
+else bad "unfilled «slots» in:"; printf '%s\n' "$LEFT" | sed 's/^/      /'; fi
+
+# ── 5. The prompt carries the invariant skeleton ────────────────────────────────
+echo "[5] prompt invariants"
+P="$DIR/AUTONOMOUS-IMPLEMENTATION-PROMPT.md"
+if [ -f "$P" ]; then
+  grep -q  'feature/void3110/'  "$P" && ok "names the feature/void3110/<slice> branch" || bad "prompt: branch missing"
+  grep -qi 'per-ticket loop'    "$P" && ok "has the per-ticket loop"                   || bad "prompt: no per-ticket loop"
+  grep -qiE 'fail.?closed'      "$P" && ok "states the fail-closed invariant"          || bad "prompt: no fail-closed invariant"
+  grep -qiE 'do NOT push'       "$P" && ok "has the do-NOT-push rule"                  || bad "prompt: missing 'do NOT push'"
+  grep -qi 'ARCHITECTURE REVIEW' "$P" && ok "has the ★ architecture-review gate"       || bad "prompt: no ★ architecture-review gate"
+  grep -qi 'CHECKPOINT'         "$P" && ok "has checkpoints"                           || bad "prompt: no CHECKPOINT step"
+  grep -qi 'Co-Authored-By'     "$P" && ok "addresses the commit-trailer convention"   || bad "prompt: no Co-Authored-By note"
+else bad "no prompt to check"
+fi
+
+# ── 6. Decomposition: tickets well-formed, count matches STATUS stubs ───────────
+echo "[6] decomposition tickets"
+D="$DIR/01-DECOMPOSITION.md"
+if [ -f "$D" ]; then
+  TICKETS=$(grep -cE '^#{2,4} T[0-9]+' "$D")
+  if [ "$TICKETS" -ge 1 ]; then ok "ticket headings: $TICKETS"; else bad "no '## T<n>' headings"; fi
+  for field in 'Goal' 'Deliverables' 'Acceptance' 'NOT to touch'; do
+    c=$(grep -c "$field" "$D")
+    if [ "$c" -ge "$TICKETS" ]; then ok "every ticket has '$field' ($c)"
+    else bad "'$field' appears $c times — fewer than $TICKETS tickets"; fi
+  done
+  if [ "$TICKETS" -eq "$STATUS_COUNT" ]; then ok "ticket count ($TICKETS) == STATUS stubs ($STATUS_COUNT)"
+  else bad "ticket count ($TICKETS) != STATUS stubs ($STATUS_COUNT)"; fi
+  grep -qi 'critical path' "$D" && ok "has a critical path" || bad "no critical-path section"
+fi
+
+echo
+if [ "$FAIL" -eq 0 ]; then printf '\033[0;32mPACKAGE OK\033[0m — ready for the maintainer / the autonomous run\n'
+else printf '\033[0;31mPACKAGE INCOMPLETE\033[0m — fix the ✗ items above\n'; fi
+exit "$FAIL"

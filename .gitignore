@@ -35,6 +35,7 @@ local.properties
 .env
 .env.*
 !.env.example
+scripts/planning/cleanroom-patterns.local
 
 # Docker / compose local volumes
 example/**/pgdata/

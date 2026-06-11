@@ -109,7 +109,8 @@ effort: high
       where they overlap** — the skill must never contradict the prompt it runs.
 - [ ] 3. Add the repo's review skills to the ★gate table (slot 3); confirm the heavy path
       reviews committed diff.
-- [ ] 4. `ml add run-retrospective` if the domain doesn't exist yet.
+- [ ] 4. Check `ml status` for an existing retrospective domain first — the name varies per repo
+      (this repo's is `autonomous-runs`); `ml add run-retrospective` only if none exists.
 - [ ] 5. Dry-run against the most recently shipped package: Phase 0 must pass its verify
       gates; the loop's commands must be copy-paste runnable.
 
