@@ -200,7 +200,10 @@ You are implementing **«the slice»** on branch `feature/void3110/«slice»`.
 headline of why it matters. State the scope boundary — what this is and what is explicitly NOT in it
 (deferred to a later phase).»
 
-Implement the core work directly. Do not delegate the implementation to a sub-agent.
+Implement the core work directly. Do not delegate the implementation to a sub-agent. Sub-agents are
+welcome for **read-only scouting** (e.g. "find every place across the suite that asserts X") and for
+**log-noisy validation** (e.g. run a newman matrix / a long build and report back only the failure
+summary) — their findings come back to you; the code, tests, and docs are written in this loop.
 
 ### Read before you start (in order)
 
@@ -313,6 +316,9 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **«Rig / e2e specifics»** — in-network token, OPA restart, two-services, etc.
 - **CI does not run the rig yet** — the newman matrix is a local/manual gate; a compose-up→newman CI
   job is a tracked follow-up.
+- **Context management** — if the window grows long mid-run, finish the ticket, stop at its checkpoint,
+  and resume in a **fresh session** (the ticket status table + STATUS notes are the handoff); sub-agents
+  are for scouting/validation only, never the implementation.
 - **Workflow-as-artifact:** keep this prompt verbatim; the `STATUS-0N.md` notes record each ticket's
   outcome. Move the folder to `docs/to-do/implemented/` on ship.
 ````
@@ -328,7 +334,9 @@ them; only the bracketed content varies per slice.
    feature/void3110/<slice>`, verify `git config --local user.email`, then paste the **PROMPT**.
 2. **"You are implementing … on branch …"** + a **The problem** paragraph that names the gap, the
    mechanism, the headline, and the explicit scope boundary (what's deferred).
-3. **"Implement the core work directly. Do not delegate the implementation to a sub-agent."**
+3. **"Implement the core work directly. Do not delegate the implementation to a sub-agent."** — with
+   the standing carve-out (see §7): sub-agents may *scout* (read-only fan-outs) and *validate*
+   (log-noisy runs, failure-summary back); they never write the code.
 4. **Read-before-you-start, in order** — index, design, decomposition, the pinned ADR(s), QA cases, the
    patterns-you're-checked-against, root `CLAUDE.md` (IP boundary + commit identity), `infra/README.md`,
    `ml prime opa-abac`.
@@ -427,6 +435,17 @@ skeleton itself is next revised.
   test green. The hard rule: *"if you think you need a non-additive change, STOP and report."*
 - **The Mulch swept-staged trap.** `ml sync` commits must touch `.mulch/` **only** — `git restore
   --staged .` before `ml sync`, or the sync commit sweeps in unrelated staged code (`mx-d8a173`).
+- **Sub-agents scout and validate; the implementer implements.** Across the shipped runs the recorded
+  failure modes were unpinned design semantics and rig gotchas — never context exhaustion — while
+  **cross-ticket continuity** (T1's micro-decisions silently shaping T3/T4) is what keeps a run
+  coherent; a fresh sub-agent per ticket re-derives that from docs alone and drifts at every seam, at
+  roughly the same token cost (it must re-read the whole package + re-prime Mulch each time). So the
+  core implementation stays in the main loop. Delegate **read-only scouting** (a fan-out like "which
+  collections assert list bodies") and **log-noisy validation** (run the matrix, return only the
+  failure summary). If the window genuinely grows long, prefer **stopping at a checkpoint and resuming
+  in a fresh session** — the ticket status table + the `STATUS-0N.md` notes are a complete handoff (the
+  method is doc-first precisely so the window is cache, not the source of truth) — over delegating
+  implementation mid-ticket. (Decided 2026-06-11, planning Phase 5.95.)
 - **Match-in-Rego, decisions in the policy.** ANY_OF/ALL_OF via `some in` / `every` lives in Rego, not
   Java — it's the OPA-native expression and the bridge to later in-policy joins. The slice-invariant
   pattern: keep the *decision* in the policy, the *plumbing* in Java.

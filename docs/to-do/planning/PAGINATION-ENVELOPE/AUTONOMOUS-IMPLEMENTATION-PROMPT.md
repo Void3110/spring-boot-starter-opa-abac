@@ -35,7 +35,10 @@ no authorization behavior changes anywhere (`listCategories` stays the only resi
 zero Rego changes, no client `?sort=` (deferred target), no `/internal/**` pagination (plain by design),
 no `_actions` metadata (Phase 6 lands on this envelope).
 
-Implement the core work directly. Do not delegate the implementation to a sub-agent.
+Implement the core work directly. Do not delegate the implementation to a sub-agent. Sub-agents are
+welcome for **read-only scouting** (e.g. T5's sweep — "which collections assert list bodies, and where")
+and for **log-noisy validation** (e.g. run a newman matrix / a long build and report back only the
+failure summary) — their findings come back to you; the code, tests, and docs are written in this loop.
 
 ### Read before you start (in order)
 
@@ -214,5 +217,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   the fixture registry — do not fatten shared fixtures (other matrices pin exact counts on them).
 - **CI does not run the rig yet** — the newman matrix is a local/manual gate; a compose-up→newman CI
   job is a tracked follow-up.
+- **Context management** — if the window grows long mid-run, finish the ticket, stop at its checkpoint,
+  and resume in a **fresh session** (the ticket status table + STATUS notes are the handoff); the
+  natural seams for this slice are after T2 (library landed) and after T4 (both services adopted).
+  Sub-agents are for scouting/validation only — T5's collection sweep and the newman runs are the
+  obvious candidates — never the implementation.
 - **Workflow-as-artifact:** keep this prompt verbatim; the `STATUS-0N.md` notes record each ticket's
   outcome. Move the folder to `docs/to-do/implemented/` on ship.
