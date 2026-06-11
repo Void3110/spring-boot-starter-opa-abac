@@ -6,6 +6,8 @@ import dev.dmitriikonovalov.opaabac.security.AbstractProblemAdvice;
 import dev.dmitriikonovalov.opaabac.security.LibraryErrorCode;
 import dev.dmitriikonovalov.opaabac.security.ProblemDetail;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,6 +40,29 @@ public class ApiExceptionHandler extends AbstractProblemAdvice {
                 .map(f -> f.getField() + ": " + f.getDefaultMessage())
                 .orElse("Validation failed");
         return problem(LibraryErrorCode.VALIDATION_FAILED, detail, request);
+    }
+
+    /**
+     * A constraint violation on a request <em>parameter</em> (e.g. the paged lists' {@code page >= 0} /
+     * {@code 1 <= perPage <= 100} bounds, generated from the spec into the {@code @Validated} API
+     * interface — violations surface as a {@link ConstraintViolationException} from method validation).
+     * Same typed code as a body violation: {@code 400 VALIDATION_FAILED}, no clamping.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ProblemDetail> handleParameterValidation(
+            ConstraintViolationException ex, HttpServletRequest request) {
+        var detail = ex.getConstraintViolations().stream()
+                .findFirst()
+                .map(ApiExceptionHandler::violationDetail)
+                .orElse("Validation failed");
+        return problem(LibraryErrorCode.VALIDATION_FAILED, detail, request);
+    }
+
+    /** {@code listCategories.perPage: must be …} → {@code perPage: must be …} (the param, not the method). */
+    private static String violationDetail(ConstraintViolation<?> violation) {
+        String path = String.valueOf(violation.getPropertyPath());
+        String param = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+        return param + ": " + violation.getMessage();
     }
 
     /** An illegal assigned tag (unknown key / enum miss / cardinality / pattern). → 422; never stored. */

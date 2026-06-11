@@ -52,13 +52,14 @@ class CatalogCrudIT extends AbstractPostgresIT {
                 "/api/v1/catalogs/" + catalogId + "/categories",
                 "{\"name\":\"Laptops\",\"parentId\":\"" + rootCategoryId + "\"}");
 
-        // Children-only filter returns just the laptop sub-category.
+        // Children-only filter returns just the laptop sub-category (in the 5.95 list envelope).
         mockMvc.perform(get("/api/v1/catalogs/{c}/categories", catalogId)
                         .param("parentId", rootCategoryId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].id").value(childCategoryId))
-                .andExpect(jsonPath("$[0].parentId").value(rootCategoryId));
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].id").value(childCategoryId))
+                .andExpect(jsonPath("$.items[0].parentId").value(rootCategoryId));
 
         // --- Product under the child category ---
         String productId = create(
