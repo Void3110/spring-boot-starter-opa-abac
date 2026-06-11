@@ -1,0 +1,351 @@
+{
+  "info": {
+    "name": "Pagination matrix (the 5.95 list envelope through the gateway)",
+    "description": "Proves the {count, page, perPage, items} envelope end to end (ADR 0012): two tag-gated readers hit the SAME paged list URL and get DIFFERENT counts (the count is the count of rows YOU may see); a perPage=2 walk returns disjoint pages whose union is exactly the single-page set with the count stable on every page (and past-the-end is 200 + empty + the same exact count); and an out-of-bounds perPage is a live 400 VALIDATION_FAILED problem+json through APISIX (no clamping). Run via run-pagination-matrix.sh, which mints tokens, bootstraps the team + region-gated roles, and seeds the dedicated pagination fixture set (5 EMEA + 3 APAC categories under catalog 7777…).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:9085"
+    },
+    {
+      "key": "collection_base_url",
+      "value": "{{gateway}}/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "E1a - Reader EMEA lists categories -> count is THEIR authorized total (5)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?perPage=100",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "perPage",
+              "value": "100"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('count is the EMEA reader\\'s authorized total: exactly 5', () => pm.expect(body.count).to.eql(5));",
+              "pm.test('page/perPage echo the request', () => { pm.expect(body.page).to.eql(0); pm.expect(body.perPage).to.eql(100); });",
+              "pm.test('all 5 authorized rows on one page', () => pm.expect(body.items.length).to.eql(5));",
+              "pm.collectionVariables.set('emea_all_ids', JSON.stringify(body.items.map(c => c.id)));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E1b - Reader APAC, SAME URL -> a DIFFERENT count (3): subject-relative totals",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_apac_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?perPage=100",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "perPage",
+              "value": "100"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('count is the APAC reader\\'s authorized total: exactly 3 (not 5, not 8)', () => pm.expect(body.count).to.eql(3));",
+              "pm.test('exactly the 3 APAC rows', () => pm.expect(body.items.length).to.eql(3));",
+              "const emeaIds = JSON.parse(pm.collectionVariables.get('emea_all_ids'));",
+              "const apacIds = body.items.map(c => c.id);",
+              "pm.test('the two readers\\' row sets are disjoint (same URL, same policy)', () => pm.expect(apacIds.filter(id => emeaIds.includes(id))).to.be.empty);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2a - Paged walk page 0 (perPage=2): first window, exact count",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?page=0&perPage=2",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "0"
+            },
+            {
+              "key": "perPage",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('count stays the full authorized total (5) on a 2-row window', () => pm.expect(body.count).to.eql(5));",
+              "pm.test('window of 2', () => pm.expect(body.items.length).to.eql(2));",
+              "pm.collectionVariables.set('walk_ids', JSON.stringify(body.items.map(c => c.id)));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2b - Paged walk page 1: disjoint from page 0, count stable",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?page=1&perPage=2",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "perPage",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('count stable across pages (5)', () => pm.expect(body.count).to.eql(5));",
+              "pm.test('window of 2', () => pm.expect(body.items.length).to.eql(2));",
+              "const walked = JSON.parse(pm.collectionVariables.get('walk_ids'));",
+              "const ids = body.items.map(c => c.id);",
+              "pm.test('page 1 is disjoint from page 0 (no repeated row)', () => pm.expect(ids.filter(id => walked.includes(id))).to.be.empty);",
+              "pm.collectionVariables.set('walk_ids', JSON.stringify(walked.concat(ids)));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2c - Paged walk page 2 (last): union == the single-page set, in the same order",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?page=2&perPage=2",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "2"
+            },
+            {
+              "key": "perPage",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('count stable across pages (5)', () => pm.expect(body.count).to.eql(5));",
+              "pm.test('the last window carries the remaining 1 row', () => pm.expect(body.items.length).to.eql(1));",
+              "const walked = JSON.parse(pm.collectionVariables.get('walk_ids')).concat(body.items.map(c => c.id));",
+              "const single = JSON.parse(pm.collectionVariables.get('emea_all_ids'));",
+              "pm.test('the walk visited the authorized set exactly once, in the single-page order (no repeat, no drop)', () => pm.expect(walked).to.eql(single));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2d - Past-the-end page -> 200 + empty items + the same exact count (never 404)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?page=7&perPage=2",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "7"
+            },
+            {
+              "key": "perPage",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK (not 404 - the last page is subject-relative under ABAC)', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('empty items', () => pm.expect(body.items).to.be.empty);",
+              "pm.test('the exact count survives an empty page (5)', () => pm.expect(body.count).to.eql(5));",
+              "pm.test('page echoes the request (7)', () => pm.expect(body.page).to.eql(7));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E3 - perPage=500 -> a live 400 VALIDATION_FAILED problem+json through APISIX (no clamping)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{reader_emea_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories?perPage=500",
+          "host": [
+            "{{collection_base_url}}"
+          ],
+          "path": [
+            "catalogs",
+            "{{catalog_id}}",
+            "categories"
+          ],
+          "query": [
+            {
+              "key": "perPage",
+              "value": "500"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request (strict bounds, no clamping)', () => pm.response.to.have.status(400));",
+              "pm.test('application/problem+json through the gateway', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+              "const body = pm.response.json();",
+              "pm.test('typed errorCode VALIDATION_FAILED', () => pm.expect(body.errorCode).to.eql('VALIDATION_FAILED'));",
+              "pm.test('status member matches', () => pm.expect(body.status).to.eql(400));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
