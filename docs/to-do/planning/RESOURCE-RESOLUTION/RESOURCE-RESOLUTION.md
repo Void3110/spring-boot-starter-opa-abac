@@ -9,10 +9,11 @@ tags:
 
 # Resource resolution — attribute-rich pre-authorization
 
-> **Status: Planning (direction set 2026-06-12; not yet decomposed).** Phase 5.97 of [[POC-ROADMAP]].
-> This note captures the agreed direction + the open design questions; the full work package
-> (grill-me → ADR → 00-DESIGN → /decompose) follows when the slice is picked up. **Sequenced before
-> Phase 6** — action enrichment consumes what this ships.
+> **Status: Design settled (grill-me 2026-06-12) — ready for /decompose.** Phase 5.97 of
+> [[POC-ROADMAP]]. Every fork below is now pinned by **ADR
+> [[0013-attribute-rich-pre-authorization|0013]]** and elaborated in [[00-DESIGN]]; what remains is the
+> decomposition package (tickets + QA + prompt + STATUS stubs). **Sequenced before Phase 6** — action
+> enrichment consumes what this ships (order **5.97 → 6.5 → 6**).
 
 ## What it is
 
@@ -64,25 +65,28 @@ Two additive library pieces:
   `RoleDefinitionSupplier`) vs. where the request-scoped cache lives (spring-security) is a design
   fork, but the module-dependency direction is not negotiable.
 
-## Open questions (settle at grill-me)
+## Forks resolved (grill-me 2026-06-12 → ADR [[0013-attribute-rich-pre-authorization|0013]])
 
-- **Cache mechanism.** Request-scoped bean vs `RequestContextHolder` vs ThreadLocal; behavior outside
-  a request context (batch jobs, scheduled work, tests); async/dispatch boundaries.
-- **SPI shape.** One resolver bean dispatching on `resourceType` vs per-type resolvers; exact return
-  contract (the `AbacDataObject` itself vs a found/not-found envelope).
-- **Hierarchy interplay.** Does the resolver also supply the ancestor chain (folding into the 5.5
-  `AncestorResolver` flow), or do ancestors stay a separate input to context construction?
-- **What remains of layer 3.** Tag checks move to the gate; transactional/state guards stay
-  programmatic. Does the three-layer model (ADR [[0006-three-layer-enforcement-model|0006]]) need a
-  superseding note in the new slice ADR?
-- **Mutation semantics.** The cached instance is an *authorization-time snapshot* resolved outside the
-  handler's transaction — pin the reuse rules for mutating handlers (re-load-for-update vs reuse;
-  optimistic-version interplay).
-- **List-path population.** Does `AbacQueryService.findAuthorized` populate the cache with the rows it
-  returns (so Phase-6 enrichment reads attributes with zero extra SQL), or does enrichment
-  batch-resolve? Lean: populate at the query layer — the rows are already in hand.
-- **Proof shape.** The decisive e2e contrast: a tag-dependent action allowed/denied **at the gate**
-  (today only decidable post-load), plus evidence the double load is gone.
+All the formerly-open questions are pinned; see [[00-DESIGN]] for the mechanism and the behavior matrix:
+
+- **Scope: full resolved context** — tags **and** ancestors; role on the **governing root** (tags-only
+  would deny inherited grants; rejected).
+- **SPI: split contract** — the app implements one `AbacResourceResolver` bean (instance lookup,
+  type-dispatching); the **starter** binds `AncestorChainSupplier` to the 5.5 `AncestorResolver`.
+  Failure semantics split: instance failure → **deny**; ancestor failure → **collapse to direct-only**.
+- **Cache: request-attributes** (`RequestContextHolder`), write-through on allow, typed accessor,
+  no-op outside web requests, never read by decisions.
+- **Version binding (the maintainer's core concern):** reads return the snapshot; mutations load fresh
+  and **guard against the snapshot's version** → `409 STATE_CONFLICT` on drift. One version field — the
+  existing JPA `@Version` (an ABAC-only counter was rejected as a silent-fail-open trap).
+- **Layer 3:** `CategoryAuthorizer` deleted; `HierarchicalAuthorizer` stays (programmatic alternative);
+  ADR 0006 not superseded — 0013 records the redrawn 2/3 boundary.
+- **List-path cache population: deferred to Phase 6** (its consumer); `AbacQueryService` untouched.
+- **Kill-switch:** `opa.abac.resource-resolution.enabled` (default on) → baseline semantics.
+- **Discovered during design:** under the HTTP role source, id'd gate decisions for members currently
+  fall through to the policy's **realm-role fallback (tag-blind)** — `ExactTeamTargetMatcher` means a
+  leaf lookup finds no role. The governing-root lookup closes that hole; the behavior matrix (flip +
+  narrowing + unchanged cells) is pinned in [[00-DESIGN]] §3.
 
 ## Dependencies & sequencing
 

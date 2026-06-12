@@ -65,6 +65,10 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   is rejected (422), never stored. — **Phase 4.5** ✅
 - **C3** *As a member with a tag-gated role*, I can read a category tagged `region=emea` but the **same
   role** denies a category tagged `region=apac` — the resource's tags drive the grant. — **Phase 4.5** ✅
+- **C4** *As a member with a tag-gated role that grants write*, I can **update** a category whose tags
+  match my grant and am denied on one whose tags don't — decided **at the gate**, declaratively; and my
+  realm role no longer leaks write access my team role doesn't grant. — **Phase 5.97**
+  ([[RESOURCE-RESOLUTION]], ADR [[0013-attribute-rich-pre-authorization|0013]]) 🔜 planned
 
 ### Epic D — "Lists show me only what I may see" (data filtering)
 
