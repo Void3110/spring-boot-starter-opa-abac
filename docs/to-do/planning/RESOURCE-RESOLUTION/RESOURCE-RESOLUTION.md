@@ -89,8 +89,10 @@ Two additive library pieces:
 - **Builds on:** the Phase-3 spine (`@OpaPreAuthorize` manager), Phase 4.5 (tags as the attributes
   worth resolving), Phase 5.5 (hierarchy model, if ancestors fold in).
 - **Feeds:** Phase 6 [[ACTION-ENRICHMENT]] — **required**; enrichment contexts are attribute-rich by
-  decision. Sequence: 5.97 → 6.
-- **Independent of:** 6.5 (permission categories), 7 (publish), 8 (ReBAC).
+  decision. Slice order: **5.97 → 6.5 → 6** (settled 2026-06-12).
+- **Independent of (mechanically):** 6.5 (permission categories — orthogonal surfaces; it slots between
+  this slice and Phase 6 for action-vocabulary stability, and its repo-wide action-string sweep will
+  mechanically rename the action strings this slice's tests use), 7 (publish), 8 (ReBAC).
 
 ## Related
 

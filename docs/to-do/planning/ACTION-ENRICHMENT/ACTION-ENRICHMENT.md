@@ -12,9 +12,12 @@ tags:
 > **Status: Planning (design-direction set; not yet decomposed).** Phase 6 of [[POC-ROADMAP]]. This note
 > captures the agreed direction + the open design questions; a full work package (00-DESIGN /
 > 01-DECOMPOSITION / prompt / QA / STATUS stubs) is written once the open questions settle. The Phase-5
-> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]) has shipped; the remaining prerequisite is
+> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]) has shipped; the remaining prerequisites are
 > **[[RESOURCE-RESOLUTION]] (Phase 5.97)** — the resolver SPI + request-scoped cache that supply the
-> resolved attributes enrichment evaluates against (direction point 4 below).
+> resolved attributes enrichment evaluates against (direction point 4 below) — and **Phase 6.5**
+> (ADR [[0007-coarse-grained-permission-categories|0007]]) — the category model that fixes the
+> fine-action vocabulary the action registry enumerates. Slice order: **5.97 → 6.5 → 6**
+> (settled 2026-06-12).
 
 ## What it is
 
@@ -125,7 +128,12 @@ starter aims for. (`x-closeable`-style companion extensions, as the credentials 
   building batch twice. ✅ Shipped.
 - **Depends on:** [[RESOURCE-RESOLUTION]] (Phase 5.97) — the `AbacResourceResolver` SPI + request-scoped
   cache that supply each resource's **resolved attributes** to the enrichment context (direction
-  point 4). Sequence: 5.97 → 6.
+  point 4).
+- **Depends on:** Phase 6.5 (ADR [[0007-coarse-grained-permission-categories|0007]]) — replaces flat
+  `read`/`write` with the category-expanded fine-action vocabulary (`view`/`list`/`create`/`update`/
+  `delete`/`define-tags`/`assign-tags`/`assign-roles`) that the action registry and `_actions` keys
+  enumerate; landing 6.5 first avoids reworking the registry, Rego tests, and e2e matrices — and its
+  "which roles may I assign?" affordance lands here. Slice order: **5.97 → 6.5 → 6**.
 - **Feeds:** the user-facing stories in [[USER-STORIES]] under the "show me only the buttons I can use"
   epic.
 - **Distinct from:** enforcement (ADR 0006 three layers) and data filtering (ADR 0005) — enrichment is
