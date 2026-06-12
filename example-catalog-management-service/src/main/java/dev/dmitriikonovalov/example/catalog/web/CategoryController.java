@@ -78,11 +78,13 @@ public class CategoryController implements CategoryApi {
                 request.getName(),
                 request.getDescription());
         // Validate + assign tags against the dictionary before persisting (fail-closed: an illegal tag
-        // throws 422 and a definitions-fetch failure throws 503 — nothing is stored either way).
+        // throws 422 and a definitions-fetch failure throws 503 — nothing is stored either way). The
+        // remote call stays OUTSIDE the create transaction below.
         entity.setTags(tagAssignment.validateAndBuild(
                 "category", categoryId.toString(), request.getTags()));
-        hierarchy.assignPath(entity); // path = parent (category or catalog) path || category_<id>
-        var saved = categories.save(entity);
+        // Path derivation + INSERT in one transaction, parent row locked — a concurrent re-parent of
+        // the parent cannot leave this child under a branch that no longer exists.
+        var saved = hierarchy.createWithPath(entity, categories::save);
         var location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(saved.getId())

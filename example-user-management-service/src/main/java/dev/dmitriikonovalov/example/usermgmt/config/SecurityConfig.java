@@ -24,7 +24,10 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
  * {@code @OpaPreAuthorize} (via {@link EnableMethodSecurity}) makes the per-endpoint team decision. The
  * <b>internal</b> resolve API ({@code /internal/**}, ticket 7) is not gateway-fronted — it is an
  * in-network attribute source the catalog calls — so it is permitted here and isolated by the network
- * in the rig (it is never exposed through the gateway).
+ * in the rig (it is never exposed through the gateway). The catch-all is {@code authenticated()}, not
+ * {@code permitAll()}: the broad demo actuator surface (env/beans/mappings/…) must not be readable
+ * anonymously (retro-audit 2026-06-12) — local debugging uses a minted token. Error dispatches stay
+ * permitted so problem+json renders for anonymous callers.
  */
 @Configuration
 @EnableWebSecurity
@@ -38,6 +41,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                         .requestMatchers(
                                 "/actuator/health",
                                 "/actuator/health/**",
@@ -50,7 +54,8 @@ public class SecurityConfig {
                         // payloads on an isolated surface — the public list envelope does not apply here.
                         .requestMatchers("/internal/**").permitAll()
                         .requestMatchers("/api/v1/**").authenticated()
-                        .anyRequest().permitAll());
+                        // No permitAll catch-all: actuator beyond health (env/beans/…) needs a subject.
+                        .anyRequest().authenticated());
 
         AbacFilter filter = abacFilter.getIfAvailable();
         if (filter != null) {

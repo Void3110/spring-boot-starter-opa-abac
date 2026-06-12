@@ -83,6 +83,19 @@ class AbacFilterTest {
         assertThat(((AbacAuthentication) auth).getSubject().id()).isEqualTo("real-user");
     }
 
+    @Test // U19c — populates a FRESH context, never mutating the previously shared instance in place
+    void populatesFreshContext_neverMutatesSharedInstance() throws Exception {
+        var shared = SecurityContextHolder.getContext(); // the pre-filter (empty) context instance
+        AbacContext.Subject subject = new AbacContext.Subject("user-1", List.of("catalog-viewer"), Map.of());
+        AbacFilter filter = new AbacFilter(req -> Optional.of(subject));
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(SecurityContextHolder.getContext()).isNotSameAs(shared);
+        assertThat(shared.getAuthentication()).isNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isInstanceOf(AbacAuthentication.class);
+    }
+
     @Test // U20b — an extractor that throws does not break the request
     void extractorThrows_doesNotBreakChain() throws Exception {
         AbacFilter filter = new AbacFilter(req -> {

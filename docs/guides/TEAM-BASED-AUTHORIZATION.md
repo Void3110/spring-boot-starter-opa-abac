@@ -58,6 +58,17 @@ person and is transferable.
    access derived through it; the resolve API always re-derives (no stale denormalized grants).
 5. **Authorize the actor of a grant, not the service identity** (confused-deputy guard). Every
    management endpoint is `@OpaPreAuthorize`-secured against the *calling* subject.
+6. **Decide grant mutations under the team-row lock.** Every team-scoped grant mutation (membership
+   add/change/remove, transfer-ownership, custom-role writes) locks the `Team` row `FOR UPDATE`
+   before the subset/ceiling decision, so a concurrent demotion of the actor cannot land between the
+   check and the grant (retro-audit 2026-06-12; `CONCURRENCY-AND-LOCKING` Rule 1).
+
+> **Known demo limitation — team-target squatting.** `POST /teams` is deliberately ungated
+> (bootstrap: creating your first team precedes any membership to authorize against), and the
+> `(targetType, targetId)` uniqueness means whoever binds a team to a target first governs it. A
+> production deployment must verify the caller's right over the target before binding — e.g. a
+> cross-service ownership check on the catalog, or an invite/claim flow. The example keeps the
+> bootstrap simple and documents the gap instead (retro-audit 2026-06-12).
 
 ## The integration point — app-resolved
 

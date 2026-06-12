@@ -46,12 +46,21 @@ OWNER_USER="${OWNER_USER:-editor}";   OWNER_PASS="${OWNER_PASS:-editor}"
 READER_USER="${READER_USER:-viewer}"; READER_PASS="${READER_PASS:-viewer}"
 
 GRANTED_CATALOG_ID="${GRANTED_CATALOG_ID:-33333333-3333-3333-3333-333333333333}"
-# The FOREIGN catalog must be one NO matrix ever grants the reader ('viewer') a role on. The user-service
-# DB persists across runs, so fixture ids collide ACROSS matrices: 4444 is run-hierarchy-list-matrix.sh's
-# GRANTED root — a past list-matrix run leaves a team granting 'viewer' an inheritable role on it, which
-# silently flips this matrix's re-parent assert from 403 to a legitimate 200. Fixture-id registry:
+# The FOREIGN catalog must be one NO matrix ever GRANTS the reader ('viewer') a usable role on. The
+# user-service DB persists across runs, so fixture ids collide ACROSS matrices: 4444 is
+# run-hierarchy-list-matrix.sh's GRANTED root — a past list-matrix run leaves a team granting 'viewer'
+# an inheritable role on it, which silently flips this matrix's re-parent assert from 403 to a
+# legitimate 200. Fixture-id registry:
 # 1111 team-matrix · 2222 tag-matrix · 3333 filter + this matrix's granted · 4444 list-granted ·
-# 5555 list-foreign · 6666 THIS matrix's foreign (keep unique, never grant on it).
+# 5555 list-foreign · 6666 THIS matrix's foreign (keep unique; only this matrix's NO-GRANT binding).
+#
+# Phase 5.97 NOTE: with gate-side resolution, an id'd read's role is looked up on the GOVERNING ROOT,
+# and "no role definition at the root" means the REALM FALLBACK decides (the pinned E4 semantic) — so
+# a team-LESS foreign catalog is readable by the realm-viewer reader, and the flip would legitimately
+# answer 200. To keep the flip provable, this runner binds the reader to a NO-GRANT role on a team
+# governing the foreign catalog: a present role definition disables the fallback (the pinned E3
+# semantic), so the moved subtree answers 403 — because the root CHANGED and the reader's role on the
+# new root grants nothing.
 FOREIGN_CATALOG_ID="${FOREIGN_CATALOG_ID:-66666666-6666-6666-6666-666666666666}"
 
 # --- preflight ---------------------------------------------------------------
@@ -139,6 +148,17 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"catalog-reader\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $GRANTED_CATALOG_ID."
+
+# --- bootstrap the NO-GRANT team on the foreign Catalog (the 5.97 flip pin) --
+# See the FOREIGN_CATALOG_ID note above: the reader needs a PRESENT role definition on the foreign
+# root that grants nothing, so the post-move decision is role-driven (fallback disabled) -> 403.
+echo "==> Bootstrapping the no-grant team on the foreign Catalog ..."
+FOREIGN_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hierarchy foreign\",\"targetType\":\"catalog\",\"targetId\":\"$FOREIGN_CATALOG_ID\"}" | json_field teamId)"
+post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+  "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"code\":\"no-access\",\"permissions\":{}}" >/dev/null
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"no-access\"}" >/dev/null
+echo "  team $FOREIGN_TEAM_ID governs catalog $FOREIGN_CATALOG_ID (reader: no-access)."
 
 # --- create Categories via the gateway (owner) -------------------------------
 echo "==> Creating Categories (open / denied / sibling / movable) through the gateway ..."

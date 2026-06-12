@@ -59,8 +59,9 @@ public class ProductController implements ProductApi {
                 request.getSku(),
                 request.getPriceCents(),
                 request.getCurrency());
-        hierarchy.assignPath(entity); // path = category path || product_<id> (encodes the full lineage)
-        var saved = products.save(entity);
+        // Path derivation (category path || product_<id>) + INSERT in one transaction, the parent
+        // category row locked — see CatalogHierarchyService.createWithPath.
+        var saved = hierarchy.createWithPath(entity, products::save);
         var location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(saved.getId())

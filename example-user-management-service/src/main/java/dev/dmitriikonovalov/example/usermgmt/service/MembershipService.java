@@ -21,6 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
  * decision on the controller (against the calling subject's resolved team role). This service enforces
  * the orthogonal invariant: the role being assigned may not exceed the <em>actor's own</em> effective
  * permissions on the team (the subset rule), so even an authorized manager cannot escalate.
+ *
+ * <p><b>Decide under protection</b> (CONCURRENCY-AND-LOCKING Rule 1, retro-audit 2026-06-12): every
+ * mutating flow locks the <em>team row</em> {@code FOR UPDATE} first, and so does every other
+ * team-scoped grant mutation ({@code TeamService.transferOwnership}, the custom-role definition
+ * writes). The subset/ceiling decision therefore reads actor state no concurrent demotion can change
+ * before this transaction commits — without the lock, a parallel demotion of the actor could land
+ * between the check and the grant, letting an ex-administrator confer roles they no longer hold.
  */
 @Service
 public class MembershipService {
@@ -60,7 +67,7 @@ public class MembershipService {
      */
     @Transactional
     public MembershipView addMember(UUID actorUserId, UUID teamId, UUID userId, String roleCode) {
-        requireTeam(teamId);
+        lockTeam(teamId);
         if (!users.existsById(userId)) {
             throw new IllegalArgumentException("User not found: " + userId);
         }
@@ -77,7 +84,7 @@ public class MembershipService {
     /** Change a member's role, subject to the subset rule. */
     @Transactional
     public MembershipView changeRole(UUID actorUserId, UUID teamId, UUID userId, String roleCode) {
-        requireTeam(teamId);
+        lockTeam(teamId);
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
         requireTargetIsNotTheOwner(membership, "demoted");
@@ -90,7 +97,7 @@ public class MembershipService {
     /** Remove a member — revokes all access derived through the team (resolve re-derives). */
     @Transactional
     public void removeMember(UUID teamId, UUID userId) {
-        requireTeam(teamId);
+        lockTeam(teamId);
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
         requireTargetIsNotTheOwner(membership, "removed");
@@ -118,6 +125,15 @@ public class MembershipService {
         if (!teams.existsById(teamId)) {
             throw new IllegalArgumentException("Team not found: " + teamId);
         }
+    }
+
+    /**
+     * Lock the team row {@code FOR UPDATE} for the rest of the transaction — the serialization point
+     * for ALL team-scoped grant mutations (see the class doc). Doubles as the existence check.
+     */
+    private void lockTeam(UUID teamId) {
+        teams.findByIdForUpdate(teamId)
+                .orElseThrow(() -> new IllegalArgumentException("Team not found: " + teamId));
     }
 
     /**

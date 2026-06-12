@@ -57,7 +57,7 @@ public class RoleDefinitionService {
             Map<String, List<String>> permissions,
             Map<String, List<String>> requiredTags,
             String matchMode) {
-        requireTeam(teamId);
+        lockTeam(teamId);
         if (roles.findBySystemTrueAndCode(code).isPresent()) {
             throw new RoleConflictException("'" + code + "' is a reserved system role code");
         }
@@ -81,7 +81,7 @@ public class RoleDefinitionService {
             Map<String, List<String>> permissions,
             Map<String, List<String>> requiredTags,
             String matchMode) {
-        requireTeam(teamId);
+        lockTeam(teamId);
         RoleDefinitionEntity role = requireCustomRole(teamId, code);
         subsetGuard.requireWithinActorPermissions(actorUserId, teamId, permissions);
         role.setAttributes(attributes);
@@ -108,15 +108,29 @@ public class RoleDefinitionService {
     /** Delete a team-scoped custom role. System roles are immutable. */
     @Transactional
     public void delete(UUID teamId, String code) {
-        requireTeam(teamId);
+        lockTeam(teamId);
         RoleDefinitionEntity role = requireCustomRole(teamId, code);
         roles.delete(role);
+        // Flush HERE so deleting an in-use role (the team_membership FK) raises a translated
+        // DataIntegrityViolationException inside the method — the starter advice maps it to 409.
+        // Deferred to commit, the violation can surface as an untranslated wrapper → 500.
+        roles.flush();
     }
 
     private void requireTeam(UUID teamId) {
         if (!teams.existsById(teamId)) {
             throw new IllegalArgumentException("Team not found: " + teamId);
         }
+    }
+
+    /**
+     * Lock the team row {@code FOR UPDATE} for the rest of the transaction — role definitions feed the
+     * subset/ceiling decisions, so their writes serialize with every other team-scoped grant mutation
+     * (see {@code MembershipService}'s class doc). Doubles as the existence check.
+     */
+    private void lockTeam(UUID teamId) {
+        teams.findByIdForUpdate(teamId)
+                .orElseThrow(() -> new IllegalArgumentException("Team not found: " + teamId));
     }
 
     /**

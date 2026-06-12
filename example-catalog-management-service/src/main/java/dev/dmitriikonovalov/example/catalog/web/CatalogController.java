@@ -45,8 +45,8 @@ public class CatalogController implements CatalogApi {
                 UUID.randomUUID(),
                 request.getName(),
                 request.getDescription());
-        hierarchy.assignPath(entity); // a root: path = catalog_<id>
-        var saved = catalogs.save(entity);
+        // A root (no parent to lock): path = catalog_<id>, derived + inserted in one transaction.
+        var saved = hierarchy.createWithPath(entity, catalogs::save);
         var location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(saved.getId())

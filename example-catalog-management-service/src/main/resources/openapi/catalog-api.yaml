@@ -621,6 +621,7 @@ components:
             - VALIDATION_FAILED
             - TAG_VALUE_ILLEGAL
             - DEPENDENCY_UNAVAILABLE
+            - STATE_CONFLICT
         timestamp:
           type: string
           format: date-time

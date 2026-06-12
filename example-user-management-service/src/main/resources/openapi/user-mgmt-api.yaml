@@ -998,6 +998,7 @@ components:
             - TAG_KEY_CONFLICT
             - TAG_DEFINITION_IMMUTABLE
             - TAG_DEFINITION_INVALID
+            - STATE_CONFLICT
         timestamp:
           type: string
           format: date-time

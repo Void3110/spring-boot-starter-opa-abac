@@ -199,6 +199,49 @@ class HttpOpaClientTest {
         assertThat(capturedPath.get()).isEqualTo("/v1/data/product");
     }
 
+    @Test // U9 — unsafe path segment (traversal) denies without an HTTP call
+    void failClosed_onTraversalResourceType() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+
+        assertThat(clientFor(base, "catalog").allow(contextWithType("product/../secret"))).isFalse();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test // U9b — a dot in the type could splice into the compile query → denied everywhere
+    void failClosed_onDottedResourceType() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+
+        assertThat(clientFor(base, "catalog").allow(contextWithType("product.admin"))).isFalse();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test // U9c — empty resolved path (no prefix, no type) would address the whole data document
+    void failClosed_onEmptyResolvedPath() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+
+        assertThat(clientFor(base, "").allow(contextWithType(""))).isFalse();
+        assertThat(hits.get()).isZero();
+    }
+
+    private AbacContext contextWithType(String type) {
+        AbacContext.Subject subject =
+                new AbacContext.Subject("user-1", List.of("catalog-viewer"), Map.of("username", "alice"));
+        AbacContext.Resource resource = new AbacContext.Resource(type, "p-1", Map.of());
+        return new AbacContext(subject, "product:read", resource, null, Map.of());
+    }
+
     @FunctionalInterface
     private interface StubHandler {
         void handle(HttpExchange exchange) throws IOException;

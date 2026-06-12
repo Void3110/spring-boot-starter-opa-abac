@@ -79,9 +79,10 @@ public class TeamService {
      */
     @Transactional
     public void transferOwnership(UUID teamId, UUID newOwnerUserId) {
-        if (!teams.existsById(teamId)) {
-            throw new IllegalArgumentException("Team not found: " + teamId);
-        }
+        // The team-row lock serializes this with every other team-scoped grant mutation
+        // (MembershipService, the custom-role writes) — decide-under-protection, Rule 1.
+        teams.findByIdForUpdate(teamId)
+                .orElseThrow(() -> new IllegalArgumentException("Team not found: " + teamId));
         TeamMembership newOwnerMembership = memberships.findByTeamIdAndUserId(teamId, newOwnerUserId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, newOwnerUserId));
 
