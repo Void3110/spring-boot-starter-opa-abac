@@ -10,6 +10,7 @@ import jakarta.persistence.PersistenceContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,14 +36,47 @@ public class CatalogHierarchyService {
     }
 
     /**
-     * Derive and set the entity's path from its declared parent before it is persisted. For a root (a
-     * Catalog) the path is just its own label; otherwise {@code parent.path || self-label}. Must be called
-     * within the same transaction as the save so the parent's path is visible.
+     * Create a hierarchical row with its path derived from the declared parent — path read, derivation
+     * and INSERT in <strong>one transaction</strong>, with the parent row locked {@code FOR UPDATE}
+     * first. The lock is what makes the path read decision-safe (CONCURRENCY-AND-LOCKING.md Rule 1): a
+     * concurrent re-parent of the parent serializes against it, so the child lands either under the
+     * parent's old branch (and is swept by the move's subtree rewrite) or under the new one — never
+     * under a branch that no longer exists.
+     *
+     * @param entity the new, unsaved entity (parent declared via {@code abacParent()})
+     * @param save   the repository save, e.g. {@code categories::save}
+     */
+    @Transactional
+    public <T extends AbstractHierarchicalEntity> T createWithPath(T entity, UnaryOperator<T> save) {
+        entity.abacParent().ifPresent(this::lockParentRow);
+        maintainer.assignPath(entity);
+        return save.apply(entity);
+    }
+
+    /**
+     * Derive and set the entity's path from its declared parent before it is persisted. Must be called
+     * within the same transaction as the save so the parent's path is visible and stable — production
+     * create flows go through {@link #createWithPath} (which also locks the parent); this remains for
+     * callers already inside one transaction (test seeding).
      */
     @Transactional
     public <T extends AbstractHierarchicalEntity> T assignPath(T entity) {
         maintainer.assignPath(entity);
         return entity;
+    }
+
+    /** Lock the declared parent's row for the rest of the transaction (whitelisted table per type). */
+    private void lockParentRow(ParentRef parent) {
+        String table = switch (parent.type()) {
+            case "catalog" -> "catalog";
+            case "category" -> "category";
+            default -> throw new IllegalArgumentException("unknown parent type: " + parent.type());
+        };
+        // An empty result means a missing parent — assignPath then throws the broken-lineage error.
+        entityManager
+                .createNativeQuery("SELECT id FROM " + table + " WHERE id = CAST(? AS uuid) FOR UPDATE")
+                .setParameter(1, parent.id())
+                .getResultList();
     }
 
     /**

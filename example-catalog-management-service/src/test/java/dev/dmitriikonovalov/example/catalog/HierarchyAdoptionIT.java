@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
@@ -12,9 +13,17 @@ import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Verifies the catalog app's Phase 5.5-A adoption end-to-end against <strong>real Postgres + the ltree
@@ -41,6 +50,9 @@ class HierarchyAdoptionIT extends AbstractPostgresIT {
 
     @Autowired
     private AncestorResolver ancestorResolver;
+
+    @Autowired
+    private PlatformTransactionManager txManager;
 
     private static String hex(UUID id) {
         return id.toString().replace("-", "");
@@ -114,6 +126,62 @@ class HierarchyAdoptionIT extends AbstractPostgresIT {
                         new ParentRef("catalog", catId.toString()),
                         new ParentRef("category", parentB.toString()),
                         new ParentRef("category", childCategory.toString()));
+    }
+
+    @Test // latch-based (guide Rule 6): create-under-moving-parent serializes on the parent row lock
+    void createUnderMovingParentSerializesOnTheParentLock() throws Exception {
+        UUID catId = UUID.randomUUID();
+        UUID parentP = UUID.randomUUID();
+        UUID parentQ = UUID.randomUUID();
+        UUID childId = UUID.randomUUID();
+
+        saveCatalog(catId, "Race");
+        saveCategory(parentP, catId, null);
+        saveCategory(parentQ, catId, null);
+
+        CountDownLatch moved = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // T1: move P under Q, then HOLD the transaction open (the FOR UPDATE locks on P + Q with it).
+            Future<?> mover = pool.submit(() -> new TransactionTemplate(txManager)
+                    .executeWithoutResult(status -> {
+                        hierarchy.reparentCategory(parentP, parentQ);
+                        moved.countDown();
+                        try {
+                            if (!release.await(10, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("release latch timed out");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(e);
+                        }
+                    }));
+            assertThat(moved.await(10, TimeUnit.SECONDS)).isTrue();
+
+            // T2: create a child under P. Without the parent lock this would read P's PRE-move path and
+            // commit a child the move's subtree rewrite (already executed) can never sweep — a stale
+            // lineage. With the lock it must BLOCK until the move commits.
+            Future<CategoryEntity> creator = pool.submit(() -> hierarchy.createWithPath(
+                    new CategoryEntity(childId, catId, parentP, "child-under-moving-parent", null),
+                    categories::save));
+            assertThatThrownBy(() -> creator.get(300, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+
+            release.countDown();
+            mover.get(10, TimeUnit.SECONDS);
+            CategoryEntity child = creator.get(10, TimeUnit.SECONDS);
+
+            // The child landed under P's NEW branch (through Q) — never the branch that no longer exists.
+            assertThat(child.getPath())
+                    .startsWith("catalog_" + hex(catId)
+                            + ".category_" + hex(parentQ)
+                            + ".category_" + hex(parentP))
+                    .endsWith(".category_" + hex(childId));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
     }
 
     // --- helpers (each its own committed unit so the resolver's separate reads see them) -------------
