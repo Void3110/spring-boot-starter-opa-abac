@@ -87,7 +87,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         User owner = user("owner");
         User member = user("member");
         grant(team, owner, SystemRoles.OWNER_ID);
-        grant(team, member, SystemRoles.VIEWER_ID);
+        grant(team, member, SystemRoles.READER_ID);
 
         var change = rest.exchange(
                 "/api/v1/teams/{t}/members/{u}",
@@ -113,7 +113,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(
                         admin.getSubject(),
-                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.VIEWER)),
+                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.READER)),
                 Membership.class,
                 team.getId());
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -131,7 +131,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(
                         member.getSubject(),
-                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.VIEWER)),
+                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.READER)),
                 String.class,
                 team.getId());
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
@@ -141,7 +141,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
     void viewerCannotManage() {
         Team team = team();
         User viewer = user("viewer");
-        grant(team, viewer, SystemRoles.VIEWER_ID);
+        grant(team, viewer, SystemRoles.READER_ID);
 
         var list = rest.exchange(
                 "/api/v1/teams/{t}/members",
@@ -158,7 +158,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         User admin = user("admin");
         grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
         User target = user("target");
-        grant(team, target, SystemRoles.VIEWER_ID);
+        grant(team, target, SystemRoles.READER_ID);
 
         // A team-scoped custom role that exceeds the admin's own perms (a verb they don't hold).
         RoleDefinitionEntity superRole = roles.save(new RoleDefinitionEntity(
@@ -271,7 +271,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         User caller = user("caller");
         User someoneElse = user("else");
         grant(teamA, caller, SystemRoles.OWNER_ID);
-        grant(teamB, caller, SystemRoles.VIEWER_ID);
+        grant(teamB, caller, SystemRoles.READER_ID);
 
         var onB = rest.exchange(
                 "/api/v1/teams/{t}/members",

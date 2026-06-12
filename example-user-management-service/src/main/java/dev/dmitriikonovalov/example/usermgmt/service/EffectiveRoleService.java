@@ -121,7 +121,9 @@ public class EffectiveRoleService {
     /**
      * The caller's <b>resource</b> role for a team-target — the bound role's stored permissions, with
      * the wildcard {@code "*"} expanded to {@code targetType} so the catalog policy can read
-     * {@code permissions[targetType]}.
+     * {@code permissions[targetType]}. Wildcard expansion applies to {@code denied_actions} exactly
+     * as to the grants (Phase 6.5) — a {@code "*"}-scoped denial must narrow the resolved role, or
+     * the wire role would read WIDER than the stored one.
      */
     public RoleDefinition resourceRole(TeamMembership membership, String targetType) {
         RoleDefinitionEntity role = roleOf(membership);
@@ -129,6 +131,7 @@ public class EffectiveRoleService {
                 role.getCode(),
                 role.getAttributes(),
                 expandWildcard(role.getPermissions(), targetType),
+                expandWildcard(role.getDeniedActions(), targetType),
                 role.getRequiredTags(),
                 parseMatchMode(role.getMatchMode()));
     }
@@ -152,11 +155,17 @@ public class EffectiveRoleService {
         }
     }
 
+    /**
+     * Expand a {@code "*"} wildcard key to the concrete {@code targetType}. A present concrete key
+     * WINS over the wildcard — the same shadowing as the policy-side {@code permissions.tokens_for}
+     * (one seam, one semantic), so the resolve wire and raw-row evaluation can never diverge on a
+     * mixed map.
+     */
     private static Map<String, List<String>> expandWildcard(
-            Map<String, List<String>> permissions, String targetType) {
-        if (permissions.containsKey("*")) {
-            return Map.of(targetType, permissions.get("*"));
+            Map<String, List<String>> map, String targetType) {
+        if (map.containsKey("*") && !map.containsKey(targetType)) {
+            return Map.of(targetType, map.get("*"));
         }
-        return permissions;
+        return map;
     }
 }

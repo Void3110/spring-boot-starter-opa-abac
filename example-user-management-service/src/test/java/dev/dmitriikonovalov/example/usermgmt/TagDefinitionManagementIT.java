@@ -115,7 +115,7 @@ class TagDefinitionManagementIT extends AbstractSecuredPostgresIT {
     void viewerCannotDefine() {
         Team team = team();
         User viewer = user("viewer");
-        grant(team, viewer, SystemRoles.VIEWER_ID);
+        grant(team, viewer, SystemRoles.READER_ID);
 
         var create = rest.exchange(
                 "/api/v1/teams/{t}/tag-definitions",

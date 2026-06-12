@@ -1,0 +1,118 @@
+databaseChangeLog:
+  # Phase 6.5 (ADR 0007 + addendum): the permission-categories clean cut.
+  #
+  # 1. role_definition gains denied_actions (jsonb, default {}, non-null) — deny-overrides,
+  #    subtracted AFTER category expansion in OPA.
+  # 2. The system-role seeds migrate NON-additively to the coarse category vocabulary
+  #    (READ/WRITE/TAG/GRANT) and the five-tier ladder: senior (25) is inserted, viewer
+  #    renames to reader. Membership FKs are by role ID — the rename touches no membership row.
+  # 3. A defensive sweep rewrites stray flat tokens in NON-system rows (dev DBs persist across
+  #    runs). Best-effort by the pinned migration rule (read → READ; write → WRITE+TAG); whatever
+  #    it cannot fix still lands on the ∅-expansion floor (a stale token decides nothing — deny).
+
+  - changeSet:
+      id: 0006-add-role-denied-actions
+      author: user-management-service
+      changes:
+        - addColumn:
+            tableName: role_definition
+            columns:
+              - column:
+                  name: denied_actions
+                  type: jsonb
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 0006-migrate-system-role-owner
+      author: user-management-service
+      changes:
+        - update:
+            tableName: role_definition
+            columns:
+              - column: {name: permissions, value: "{\"*\": [\"READ\", \"WRITE\", \"TAG\", \"GRANT\"]}"}
+            where: id = '00000000-0000-0000-0000-000000000001'
+
+  - changeSet:
+      id: 0006-migrate-system-role-administrator
+      author: user-management-service
+      changes:
+        - update:
+            tableName: role_definition
+            columns:
+              - column: {name: permissions, value: "{\"*\": [\"READ\", \"WRITE\", \"TAG\", \"GRANT\"]}"}
+            where: id = '00000000-0000-0000-0000-000000000002'
+
+  - changeSet:
+      id: 0006-seed-system-role-senior
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: role_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-000000000005"}
+              - column: {name: code, value: senior}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: team_id, value: null}
+              - column: {name: attributes, value: "{\"role_level\": 25}"}
+              - column: {name: permissions, value: "{\"*\": [\"READ\", \"WRITE\", \"TAG\"]}"}
+              - column: {name: denied_actions, value: "{}"}
+              - column: {name: version, valueNumeric: 0}
+
+  - changeSet:
+      id: 0006-migrate-system-role-member
+      author: user-management-service
+      changes:
+        - update:
+            tableName: role_definition
+            columns:
+              - column: {name: permissions, value: "{\"*\": [\"READ\", \"WRITE\", \"TAG\"]}"}
+            where: id = '00000000-0000-0000-0000-000000000003'
+
+  - changeSet:
+      id: 0006-migrate-system-role-viewer-to-reader
+      author: user-management-service
+      changes:
+        - update:
+            tableName: role_definition
+            columns:
+              - column: {name: code, value: reader}
+              - column: {name: permissions, value: "{\"*\": [\"READ\"]}"}
+            where: id = '00000000-0000-0000-0000-000000000004'
+
+  - changeSet:
+      id: 0006-sweep-stale-flat-tokens
+      author: user-management-service
+      changes:
+        - sql:
+            comment: >-
+              Best-effort rewrite of stray pre-6.5 flat tokens in NON-system rows by the pinned
+              migration rule (read -> READ; write -> WRITE + TAG; valid category tokens kept).
+              Rows it cannot fix still deny via the ∅-expansion floor.
+            sql: >-
+              UPDATE role_definition SET permissions = sub.migrated
+              FROM (
+                SELECT rd.id,
+                       (SELECT coalesce(jsonb_object_agg(e.key,
+                          (SELECT coalesce(to_jsonb(array_agg(DISTINCT toks.tok)), '[]'::jsonb)
+                           FROM (
+                             SELECT 'READ'::text AS tok WHERE jsonb_exists(e.value, 'read')
+                             UNION ALL
+                             SELECT 'WRITE' WHERE jsonb_exists(e.value, 'write')
+                             UNION ALL
+                             SELECT 'TAG' WHERE jsonb_exists(e.value, 'write')
+                             UNION ALL
+                             SELECT t.value FROM jsonb_array_elements_text(e.value) AS t
+                               WHERE t.value IN ('READ', 'WRITE', 'TAG', 'GRANT')
+                           ) toks)
+                        ), '{}'::jsonb)
+                        FROM jsonb_each(rd.permissions) e) AS migrated
+                FROM role_definition rd
+                WHERE rd.is_system = false
+                  AND EXISTS (
+                    SELECT 1 FROM jsonb_each(rd.permissions) e2,
+                                  jsonb_array_elements_text(e2.value) t2
+                    WHERE t2.value IN ('read', 'write'))
+              ) sub
+              WHERE role_definition.id = sub.id

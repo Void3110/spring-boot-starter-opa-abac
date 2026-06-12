@@ -52,6 +52,15 @@ public class RoleDefinitionEntity extends AbstractAuditableEntity {
     private Map<String, List<String>> permissions = Map.of();
 
     /**
+     * Deny-overrides: {@code resourceType -> [denied fine actions]}, subtracted AFTER category
+     * expansion in OPA (ADR 0007, Phase 6.5); never null (empty = nothing withheld). Denials only
+     * ever narrow what the granted categories produced.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "denied_actions", columnDefinition = "jsonb", nullable = false)
+    private Map<String, List<String>> deniedActions = Map.of();
+
+    /**
      * Optional tag requirement: {@code tagKey -> [acceptable values]}; never null (empty = no
      * requirement). Carried verbatim into the resolved {@code core.RoleDefinition} (Phase 4.5).
      */
@@ -134,6 +143,14 @@ public class RoleDefinitionEntity extends AbstractAuditableEntity {
 
     public void setPermissions(Map<String, List<String>> permissions) {
         this.permissions = permissions == null ? Map.of() : permissions;
+    }
+
+    public Map<String, List<String>> getDeniedActions() {
+        return deniedActions;
+    }
+
+    public void setDeniedActions(Map<String, List<String>> deniedActions) {
+        this.deniedActions = deniedActions == null ? Map.of() : deniedActions;
     }
 
     public Map<String, List<String>> getRequiredTags() {

@@ -36,7 +36,7 @@ public final class TeamRoleCapabilities {
             SystemRoles.OWNER, List.of("read", MANAGE, DEFINE_ROLES, DEFINE_TAGS, TRANSFER_OWNERSHIP),
             SystemRoles.ADMINISTRATOR, List.of("read", MANAGE, DEFINE_TAGS),
             SystemRoles.MEMBER, List.of("read"),
-            SystemRoles.VIEWER, List.of("read"));
+            SystemRoles.READER, List.of("read"));
 
     private TeamRoleCapabilities() {
     }

@@ -61,7 +61,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("catalog-editor")
                         .attributes(Map.of("role_level", 25))
-                        .permissions(Map.of("catalog", List.of("read", "write")))),
+                        .permissions(Map.of("catalog", List.of("READ", "WRITE")))),
                 RoleDefinition.class,
                 team.getId());
         assertThat(create.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -75,13 +75,13 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.PUT,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionUpdate()
                         .attributes(Map.of("role_level", 26))
-                        .permissions(Map.of("catalog", List.of("read")))),
+                        .permissions(Map.of("catalog", List.of("READ")))),
                 RoleDefinition.class,
                 team.getId(),
                 "catalog-editor");
         assertThat(update.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(update.getBody()).isNotNull();
-        assertThat(update.getBody().getPermissions()).containsEntry("catalog", List.of("read"));
+        assertThat(update.getBody().getPermissions()).containsEntry("catalog", List.of("READ"));
 
         // Delete.
         var delete = rest.exchange(
@@ -124,7 +124,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(admin.getSubject(), new RoleDefinitionRequest()
                         .code("whatever")
-                        .permissions(Map.of("catalog", List.of("read")))),
+                        .permissions(Map.of("catalog", List.of("READ")))),
                 String.class,
                 team.getId());
         // define-roles is owner-only (not in the admin's management ladder).
@@ -143,7 +143,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code(SystemRoles.OWNER)
-                        .permissions(Map.of("catalog", List.of("read")))),
+                        .permissions(Map.of("catalog", List.of("READ")))),
                 String.class,
                 team.getId());
         assertThat(create.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -153,10 +153,10 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 "/api/v1/teams/{t}/role-definitions/{c}",
                 HttpMethod.PUT,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionUpdate()
-                        .permissions(Map.of("catalog", List.of("read")))),
+                        .permissions(Map.of("catalog", List.of("READ")))),
                 String.class,
                 team.getId(),
-                SystemRoles.VIEWER);
+                SystemRoles.READER);
         assertThat(update.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
@@ -171,7 +171,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("regional-reader")
-                        .permissions(Map.of("catalog", List.of("read")))
+                        .permissions(Map.of("catalog", List.of("READ")))
                         .requiredTags(Map.of("region", List.of("emea")))
                         .matchMode(RoleDefinitionRequest.MatchModeEnum.ALL_OF)),
                 RoleDefinition.class,
@@ -207,7 +207,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("plain-reader")
-                        .permissions(Map.of("catalog", List.of("read")))),
+                        .permissions(Map.of("catalog", List.of("READ")))),
                 RoleDefinition.class,
                 team.getId());
         assertThat(create.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -227,7 +227,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("catalog-editor")
-                        .permissions(Map.of("catalog", List.of("read", "write")))),
+                        .permissions(Map.of("catalog", List.of("READ", "WRITE")))),
                 RoleDefinition.class,
                 team.getId());
 
@@ -239,8 +239,8 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 team.getId());
         assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(list.getBody()).isNotNull();
-        // The four system roles + the one custom role (count is the envelope's exact total).
-        assertThat(list.getBody().getCount()).isEqualTo(5);
+        // The five system roles + the one custom role (count is the envelope's exact total).
+        assertThat(list.getBody().getCount()).isEqualTo(6);
         assertThat(list.getBody().getItems())
                 .anyMatch(r -> r.getCode().equals("catalog-editor") && !r.getSystem());
         assertThat(list.getBody().getItems())

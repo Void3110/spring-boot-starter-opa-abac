@@ -802,6 +802,12 @@ components:
           format: uuid
           nullable: true
           description: Null for system roles; set for team-scoped custom roles.
+        roleLevel:
+          type: integer
+          nullable: true
+          description: >-
+            The role's tier on the five-tier ladder (10 reader / 20 member / 25 senior /
+            30 administrator / 40 owner), read from attributes.role_level.
         attributes:
           type: object
           additionalProperties: true
@@ -811,7 +817,16 @@ components:
             type: array
             items:
               type: string
-          description: resourceType -> [allowed action verbs].
+          description: resourceType -> [granted permission categories (READ/WRITE/TAG/GRANT)].
+        deniedActions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: >-
+            Deny-overrides — resourceType -> [denied fine actions], subtracted after category
+            expansion. Empty = nothing withheld.
         requiredTags:
           type: object
           additionalProperties:

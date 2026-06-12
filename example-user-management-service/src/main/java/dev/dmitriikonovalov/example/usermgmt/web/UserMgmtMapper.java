@@ -57,8 +57,10 @@ public final class UserMgmtMapper {
                 .code(e.getCode())
                 .system(e.isSystem())
                 .teamId(e.getTeamId())
+                .roleLevel(roleLevelOf(e))
                 .attributes(e.getAttributes())
                 .permissions(e.getPermissions())
+                .deniedActions(e.getDeniedActions())
                 .requiredTags(e.getRequiredTags());
         if (e.getMatchMode() != null) {
             dto.matchMode(
@@ -66,6 +68,12 @@ public final class UserMgmtMapper {
                             .valueOf(e.getMatchMode()));
         }
         return dto;
+    }
+
+    /** The G1 round-trip lens: roleLevel is read from {@code attributes.role_level} (null if unreadable). */
+    private static Integer roleLevelOf(RoleDefinitionEntity e) {
+        Object level = e.getAttributes().get("role_level");
+        return level instanceof Number n ? n.intValue() : null;
     }
 
     public static dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition toDto(
