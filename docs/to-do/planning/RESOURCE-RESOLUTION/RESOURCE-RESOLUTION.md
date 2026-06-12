@@ -9,11 +9,12 @@ tags:
 
 # Resource resolution — attribute-rich pre-authorization
 
-> **Status: Design settled (grill-me 2026-06-12) — ready for /decompose.** Phase 5.97 of
-> [[POC-ROADMAP]]. Every fork below is now pinned by **ADR
-> [[0013-attribute-rich-pre-authorization|0013]]** and elaborated in [[00-DESIGN]]; what remains is the
-> decomposition package (tickets + QA + prompt + STATUS stubs). **Sequenced before Phase 6** — action
-> enrichment consumes what this ships (order **5.97 → 6.5 → 6**).
+> **Status: Decomposed (2026-06-12) — ready for the autonomous run (phase ③).** Phase 5.97 of
+> [[POC-ROADMAP]]. Every fork is pinned by **ADR
+> [[0013-attribute-rich-pre-authorization|0013]]** and elaborated in [[00-DESIGN]]; the package below
+> (tickets + QA + prompt + STATUS stubs) is the work list — run via the
+> [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] on branch `feature/void3110/resource-resolution`. **Sequenced
+> before Phase 6** — action enrichment consumes what this ships (order **5.97 → 6.5 → 6**).
 
 ## What it is
 
@@ -98,7 +99,34 @@ All the formerly-open questions are pinned; see [[00-DESIGN]] for the mechanism 
   this slice and Phase 6 for action-vocabulary stability, and its repo-wide action-string sweep will
   mechanically rename the action strings this slice's tests use), 7 (publish), 8 (ReBAC).
 
-## Inputs from the retro-audit (2026-06-12) — fold into the QA baseline at /decompose
+## The decomposition package (2026-06-12)
+
+| File | Role |
+|------|------|
+| [[00-DESIGN]] | The mechanism, the behavior matrix, the proof obligations (phase-① deliverable). |
+| [[01-DECOMPOSITION]] | The seven tickets T1…T7 (Goal / Deliverables / Acceptance / What-NOT-to-touch), the critical path, **the two decomposition-pinned semantics** (missing-id `403`; the `tags_satisfied` conjunct). |
+| [[10-QA-TEST-CASES]] | U1–U18 / I1–I7 / P1–P5 / E1–E7 / D1–D3 + the retro-audit baseline cells B1–B3 + the fail-closed checklist. |
+| [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] | The self-contained phase-③ prompt (kept verbatim — a deliverable). |
+| `STATUS-01 … STATUS-07` | One stub per ticket, filled at each checkpoint during the run. |
+
+### Ticket status
+
+| Ticket | Status |
+|--------|--------|
+| T1 — Core: split SPI (`AbacResourceResolver`/`AncestorChainSupplier`) + `Versioned`/`VersionGuard` (Spring-free, additive) | ☐ |
+| T2 — spring-security: manager resolution flow + `AbacResourceCache` + `VersionConflictException` → 409 | ☐ |
+| T3 — starter: composition + kill-switch (`opa.abac.resource-resolution.enabled`) + persistence 409 advice | ☐ |
+| T4 — catalog adoption: resolver bean, `getCategory` to the gate, `CategoryAuthorizer` deleted, version guards + ITs | ☐ |
+| T5 — policies: `tags_satisfied` conjunct for `product.rego`/`catalog.rego` (retro-audit fold-in #3) | ☐ |
+| T6 — e2e: resource-resolution matrix (fixture `8888…`) + whole-suite coexistence | ☐ |
+| T7 — docs: `ATTRIBUTE-RICH-PRE-AUTHORIZATION` guide + reconciliations + roadmap/stories/Mulch + folder move | ☐ |
+
+**Critical path:** T1 → T2 → T3 → T4 → T6 → T7; **T5 parallel** (after T1, before T6). **T1+T2+T3**
+are the independently-landable subset (the complete dormant library mechanism). Conventions:
+clean-room (original names only), one focused commit per ticket, identity
+`Void3110 <void31102025@gmail.com>`, **no push** — the maintainer pushes.
+
+## Inputs from the retro-audit (2026-06-12) — folded into the package at /decompose
 
 [[RETRO-AUDIT-2026-06-12]] confirmed the fallback-hole class this slice closes and handed it four
 QA-baseline items (details + rationale in the report's "Folded into Phase 5.97" table):
@@ -115,6 +143,11 @@ QA-baseline items (details + rationale in the report's "Folded into Phase 5.97" 
 4. **Decide-under-protection TOCTOU cells** — the user-mgmt subset/ceiling checks read unlocked actor
    state; this slice's version-binding doctrine is the model for the fix; pin baseline QA cells so the
    gate work doesn't regress them.
+
+**Where each landed:** #1 → T2/T3 (cases U13/U17, I4/I5 — the mapped status reached on a non-happy
+path); #2 → QA baseline **B2** + the guide's scope-out caveat (D1); #3 → **T5** (the conjunct, chosen
+over the documented scope-out — [[01-DECOMPOSITION]] pinned semantic #2); #4 → QA baseline **B3**
+(the fix itself stays a tracked follow-up, not this slice).
 
 ## Related
 
