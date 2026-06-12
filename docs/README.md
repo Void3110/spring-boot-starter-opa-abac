@@ -18,6 +18,7 @@ to navigate with backlinks and graph view. `[[wikilinks]]` resolve to notes by t
 | [`guides/`](guides/) | How-to guides — adding an ABAC-secured endpoint, writing Rego policies, wiring Keycloak/APISIX/OPA, the OpenAPI codegen flow. |
 | [`api/`](api/) | Reserved for a written API reference (currently empty). Today the API contract lives in the **OpenAPI specs** (`example-*/src/main/resources/openapi/*.yaml`, the codegen source of truth) and each running service's Swagger UI at `/swagger-ui.html`. |
 | [`code-review/`](code-review/) | The review workflow and checklist used by the `/deep-review` skill. |
+| [`article/`](article/) | Working notes for the article series — arguments and worked examples accumulated while building, to be turned into publishable prose later. |
 | [`to-do/`](to-do/) | Feature work, organized by lifecycle. See below. |
 
 ## `to-do/` lifecycle
