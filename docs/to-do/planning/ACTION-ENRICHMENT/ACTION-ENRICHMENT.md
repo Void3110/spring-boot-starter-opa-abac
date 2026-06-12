@@ -11,8 +11,10 @@ tags:
 
 > **Status: Planning (design-direction set; not yet decomposed).** Phase 6 of [[POC-ROADMAP]]. This note
 > captures the agreed direction + the open design questions; a full work package (00-DESIGN /
-> 01-DECOMPOSITION / prompt / QA / STATUS stubs) is written once the open questions settle and the
-> Phase-5 batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]) exists to build on.
+> 01-DECOMPOSITION / prompt / QA / STATUS stubs) is written once the open questions settle. The Phase-5
+> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]) has shipped; the remaining prerequisite is
+> **[[RESOURCE-RESOLUTION]] (Phase 5.97)** — the resolver SPI + request-scoped cache that supply the
+> resolved attributes enrichment evaluates against (direction point 4 below).
 
 ## What it is
 
@@ -49,12 +51,20 @@ publish).
    cross-cutting (mirrors the reference platform's enrichment decorator, generalized).
 2. **Action source = a per-resource-type action registry.** A small dictionary
    (`resourceType → [its actions]`, e.g. `category → [category:read, category:write, category:delete]`)
-   generalizes the reference platform's `ActionName` enum + `ResourceTypeActions`. Enrichment evaluates
+   generalizes the reference platform's hardcoded action-enum approach. Enrichment evaluates
    that fixed set, so it can honestly report `delete: false` for an action the role never grants (a
    role-permissions-only source could only enumerate *granted* verbs). **Bonus:** the same registry is an
    **action-validation allowlist** — defense-in-depth, rejecting unknown action strings before they reach
    OPA.
 3. **Generated-DTO opt-in via an `x-implements` marker interface** (see next section).
+4. **Fully evaluated action list — contexts are attribute-rich, never reference-level** (settled
+   2026-06-12). Each `_actions` verdict is computed against the resource's **resolved attributes**
+   (tags; hierarchy per the 5.5 model) — the same context enforcement sees. A reference-level
+   `(type, id)` context would make the map lie: a tag-granted action would read `false`, a tag-keyed
+   deny would read `true`. The attributes come from the **request-scoped resource cache /
+   `AbacResourceResolver`** shipped by [[RESOURCE-RESOLUTION]] (Phase 5.97): list rows are already in
+   hand from the filtered query, single resources from the gate's resolution — the advice never
+   re-loads.
 
 ## The OpenAPI-codegen fit (the key open mechanism — `x-implements`)
 
@@ -94,9 +104,11 @@ starter aims for. (`x-closeable`-style companion extensions, as the credentials 
   setter) vs. a wrapping `Authorized<T>{ data, actions }` (cleaner separation, but changes every enriched
   endpoint's response schema). The `x-implements` marker leans toward inline; confirm against pagination
   (`Page<Enrichable>` → `_actions` per element).
-- **Batch context construction.** Enrichment needs each resource's tags as the OPA `resource` — for a page,
-  that's already loaded (the rows are in hand), so no extra fetch; pin that the advice reads tags off the
-  loaded `AbacDataObject`, never re-loads.
+- **Batch context lookup mechanics.** ~~Whether contexts are attribute-rich~~ — settled (direction
+  point 4: yes, via the [[RESOURCE-RESOLUTION]] cache). What remains: the advice sees generated
+  **DTOs**, not entities — pin the DTO → `(type, id)` → cache-lookup path, and the posture when a row
+  is *missing* from the cache (resolve on demand vs omit `_actions` for that element — enrichment is
+  affordance-grade, not enforcement-grade, so a gap must degrade visibly, never guess).
 - **Performance / opt-out.** One batch call per response is cheap, but a 200-element page × M actions is a
   large single input — cap, paginate, or make enrichment opt-in per endpoint (an annotation alongside the
   marker?). Decide the default.
@@ -110,7 +122,10 @@ starter aims for. (`x-closeable`-style companion extensions, as the credentials 
 
 - **Depends on:** [[DATA-FILTERING]] (Phase 5) — specifically `OpaClient.allowAll` (the batch primitive)
   and the per-type `bulk` rego rule. Enrichment is its first consumer; building Phase 5 first avoids
-  building batch twice.
+  building batch twice. ✅ Shipped.
+- **Depends on:** [[RESOURCE-RESOLUTION]] (Phase 5.97) — the `AbacResourceResolver` SPI + request-scoped
+  cache that supply each resource's **resolved attributes** to the enrichment context (direction
+  point 4). Sequence: 5.97 → 6.
 - **Feeds:** the user-facing stories in [[USER-STORIES]] under the "show me only the buttons I can use"
   epic.
 - **Distinct from:** enforcement (ADR 0006 three layers) and data filtering (ADR 0005) — enrichment is
@@ -118,6 +133,7 @@ starter aims for. (`x-closeable`-style companion extensions, as the credentials 
 
 ## Related
 - [[POC-ROADMAP]] — Phase 6.
+- [[RESOURCE-RESOLUTION]] — Phase 5.97, the resolver SPI + request cache this evaluates against.
 - [[DATA-FILTERING]] — the Phase-5 batch primitive this consumes.
 - [[USER-STORIES]] — the "which buttons" epic this delivers.
 - ADR [[0005-partial-eval-to-jpa-specification|0005]] (batch is shared with filtering) ·
