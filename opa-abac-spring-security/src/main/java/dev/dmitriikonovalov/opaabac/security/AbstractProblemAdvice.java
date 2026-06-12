@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security;
 
+import dev.dmitriikonovalov.opaabac.core.VersionConflictException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,19 @@ public abstract class AbstractProblemAdvice {
     public ResponseEntity<ProblemDetail> handleAccessDenied(
             RuntimeException ex, HttpServletRequest request) {
         return problem(LibraryErrorCode.ACCESS_DENIED, "Access denied", request);
+    }
+
+    /**
+     * Render a {@code 409 application/problem+json} for a detected version conflict: the resource
+     * changed between the authorization decision and the action ({@code VersionGuard}). The client
+     * re-reads and retries; the retry's gate decides on the new state. The detail is deliberately
+     * static — the body carries no versions or internals.
+     */
+    @ExceptionHandler(VersionConflictException.class)
+    public ResponseEntity<ProblemDetail> handleVersionConflict(
+            VersionConflictException ex, HttpServletRequest request) {
+        return problem(LibraryErrorCode.STATE_CONFLICT,
+                "The resource changed after it was authorized; re-read and retry", request);
     }
 
     /**
