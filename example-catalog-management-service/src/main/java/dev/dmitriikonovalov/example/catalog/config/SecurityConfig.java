@@ -19,7 +19,10 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
  *
  * <p>Stateless, CSRF off (a token-authenticated API behind a gateway). Health and API docs are open;
  * everything under {@code /api/v1/**} requires authentication, and method-level {@code @OpaPreAuthorize}
- * (enabled by {@link EnableMethodSecurity}) makes the fine-grained OPA decision per endpoint.
+ * (enabled by {@link EnableMethodSecurity}) makes the fine-grained OPA decision per endpoint. The
+ * catch-all is {@code authenticated()}, not {@code permitAll()}: the broad demo actuator surface
+ * (env/beans/mappings/…) must not be readable anonymously (retro-audit 2026-06-12) — local debugging
+ * uses a minted token. Error dispatches stay permitted so problem+json renders for anonymous callers.
  *
  * <p>{@code AbacFilter} is injected via {@link ObjectProvider} so a permissive test profile that turns
  * the starter off (no {@code AbacFilter} bean) still builds a valid chain.
@@ -36,6 +39,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                         .requestMatchers(
                                 "/actuator/health",
                                 "/actuator/health/**",
@@ -44,7 +48,8 @@ public class SecurityConfig {
                                 "/v3/api-docs/**")
                         .permitAll()
                         .requestMatchers("/api/v1/**").authenticated()
-                        .anyRequest().permitAll());
+                        // No permitAll catch-all: actuator beyond health (env/beans/…) needs a subject.
+                        .anyRequest().authenticated());
 
         AbacFilter filter = abacFilter.getIfAvailable();
         if (filter != null) {
