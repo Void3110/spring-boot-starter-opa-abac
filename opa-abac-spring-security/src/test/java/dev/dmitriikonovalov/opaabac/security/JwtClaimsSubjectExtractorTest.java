@@ -100,6 +100,23 @@ class JwtClaimsSubjectExtractorTest {
         assertThat(subject).isPresent();
     }
 
+    @Test // U15c — fail-closed: a missing exp is rejected while expiry validation is on
+    void missingExp_rejectedWhenValidationOn() {
+        assertThat(extract("{\"sub\":\"user-1\"}")).isEmpty();
+    }
+
+    @Test // U15d — fail-closed: a non-numeric exp is rejected while expiry validation is on
+    void nonNumericExp_rejectedWhenValidationOn() {
+        assertThat(extract("{\"sub\":\"user-1\",\"exp\":\"tomorrow\"}")).isEmpty();
+    }
+
+    @Test // U15e — expiry validation off → a token without exp still extracts
+    void missingExp_acceptedWhenValidationOff() {
+        JwtClaimsSubjectExtractor noExpiry = new JwtClaimsSubjectExtractor(
+                MAPPER, new SubjectClaimsConfig("sub", "realm_access.roles", "preferred_username", List.of(), false));
+        assertThat(noExpiry.extract(requestWithAuth("Bearer " + jwt("{\"sub\":\"user-1\"}")))).isPresent();
+    }
+
     @Test // U16a — 2-segment token
     void twoSegmentToken_empty() {
         String twoSeg = "header.payload";

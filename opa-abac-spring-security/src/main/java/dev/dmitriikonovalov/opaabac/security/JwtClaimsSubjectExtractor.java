@@ -27,7 +27,8 @@ import java.util.Optional;
  * verifying mode is reserved for a later phase.
  *
  * <p>Returns {@link Optional#empty()} on any problem (no/blank header, wrong segment count, non-JSON
- * payload, missing id, expired) — it never throws.
+ * payload, missing id, expired — including a missing or non-numeric {@code exp} while expiry
+ * validation is on) — it never throws.
  */
 public final class JwtClaimsSubjectExtractor implements AbacSubjectExtractor {
 
@@ -96,7 +97,9 @@ public final class JwtClaimsSubjectExtractor implements AbacSubjectExtractor {
     private boolean isExpired(JsonNode payload) {
         JsonNode exp = payload.get("exp");
         if (exp == null || !exp.isNumber()) {
-            return false; // no exp to validate against
+            // Fail closed: with expiry validation enabled, a token that carries no verifiable exp is
+            // rejected — accepting it would make the check trivially bypassable by dropping the claim.
+            return true;
         }
         return Instant.ofEpochSecond(exp.asLong()).isBefore(Instant.now());
     }

@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.Optional;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -38,8 +39,13 @@ public final class AbacFilter extends OncePerRequestFilter {
         if (shouldAttemptExtraction()) {
             try {
                 Optional<AbacContext.Subject> subject = extractor.extract(request);
-                subject.map(AbacAuthentication::new)
-                        .ifPresent(auth -> SecurityContextHolder.getContext().setAuthentication(auth));
+                // A fresh context, swapped in whole — mutating the shared context in place would let
+                // concurrent observers of the same instance see a half-initialized authentication.
+                subject.map(AbacAuthentication::new).ifPresent(auth -> {
+                    SecurityContext fresh = SecurityContextHolder.createEmptyContext();
+                    fresh.setAuthentication(auth);
+                    SecurityContextHolder.setContext(fresh);
+                });
             } catch (RuntimeException e) {
                 // Never let extraction break the request — leave the context as it was.
                 logger.debug("ABAC subject extraction failed; proceeding anonymously", e);
