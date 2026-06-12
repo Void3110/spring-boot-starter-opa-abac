@@ -16,8 +16,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>Imports {@link PermissiveSecurityTestConfig} so these persistence/concurrency tests pass through
  * the real (now secured) chain without a token — authorization is covered elsewhere.
+ *
+ * <p>Resource resolution (Phase 5.97) is <strong>off</strong> here: these suites test CRUD and
+ * persistence, not gate semantics, and with resolution on a missing id answers {@code 403} at the
+ * gate instead of the handler's {@code 404} they pin. Running them on the kill-switch off-state
+ * doubles as the byte-identical baseline proof; the gate semantics live in
+ * {@code ResourceResolutionGateIT}.
  */
-@SpringBootTest
+@SpringBootTest(properties = "opa.abac.resource-resolution.enabled=false")
 @Testcontainers
 @Import(PermissiveSecurityTestConfig.class)
 abstract class AbstractPostgresIT {

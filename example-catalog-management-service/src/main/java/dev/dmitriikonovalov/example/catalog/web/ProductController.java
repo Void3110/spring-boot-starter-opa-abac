@@ -9,8 +9,12 @@ import dev.dmitriikonovalov.example.catalog.openapi.api.ProductApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Product;
 import dev.dmitriikonovalov.example.catalog.openapi.model.ProductPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.ProductRequest;
+import dev.dmitriikonovalov.opaabac.core.VersionGuard;
+import dev.dmitriikonovalov.opaabac.security.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -22,13 +26,16 @@ public class ProductController implements ProductApi {
     private final ProductService productService;
     private final CategoryRepository categories;
     private final CatalogHierarchyService hierarchy;
+    private final ObjectProvider<AbacResourceCache> resourceCache;
 
     public ProductController(ProductRepository products, ProductService productService,
-                             CategoryRepository categories, CatalogHierarchyService hierarchy) {
+                             CategoryRepository categories, CatalogHierarchyService hierarchy,
+                             ObjectProvider<AbacResourceCache> resourceCache) {
         this.products = products;
         this.productService = productService;
         this.categories = categories;
         this.hierarchy = hierarchy;
+        this.resourceCache = resourceCache;
     }
 
     @Override
@@ -64,8 +71,12 @@ public class ProductController implements ProductApi {
     @Override
     @OpaPreAuthorize(action = "product:read", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Product> getProduct(UUID catalogId, UUID categoryId, UUID productId) {
+        // URL-scope rule stays in the handler (the resolver loads by id alone); the response is the
+        // snapshot the gate authorized (Phase 5.97), with a repository fallback for resolution-off.
         requireCategory(catalogId, categoryId);
-        var entity = requireProduct(categoryId, productId);
+        var entity = cachedProduct(productId)
+                .filter(cached -> cached.getCategoryId().equals(categoryId))
+                .orElseGet(() -> requireProduct(categoryId, productId));
         return ResponseEntity.ok(CatalogMapper.toDto(entity));
     }
 
@@ -75,9 +86,14 @@ public class ProductController implements ProductApi {
         // Scope the product to its category/catalog (404 if it doesn't belong) before mutating.
         requireCategory(catalogId, categoryId);
         requireProduct(categoryId, productId);
+        // Version binding (Phase 5.97): the guard runs INSIDE mutate's locked transaction, against the
+        // row it locked — the decision basis is checked under the same protection the write holds
+        // (decide-under-protection). Drift → 409; the snapshot is never persisted.
+        var snapshot = cachedProduct(productId);
         // mutate() locks the row for update, applies the change, and saves in one transaction, so
         // concurrent updates of the same product serialize instead of racing on a stale @Version.
         var updated = productService.mutate(productId, entity -> {
+            snapshot.ifPresent(s -> VersionGuard.requireUnchanged(s, entity));
             entity.setName(request.getName());
             entity.setDescription(request.getDescription());
             entity.setSku(request.getSku());
@@ -92,6 +108,7 @@ public class ProductController implements ProductApi {
     public ResponseEntity<Void> deleteProduct(UUID catalogId, UUID categoryId, UUID productId) {
         requireCategory(catalogId, categoryId);
         var entity = requireProduct(categoryId, productId);
+        guardGateSnapshot(entity);
         products.delete(entity);
         return ResponseEntity.noContent().build();
     }
@@ -104,5 +121,18 @@ public class ProductController implements ProductApi {
     private ProductEntity requireProduct(UUID categoryId, UUID productId) {
         return products.findByIdAndCategoryId(productId, categoryId)
                 .orElseThrow(() -> new NotFoundException("Product not found: " + productId));
+    }
+
+    /** The gate's authorized snapshot for this request, when resolution populated the cache. */
+    private Optional<ProductEntity> cachedProduct(UUID productId) {
+        AbacResourceCache cache = resourceCache.getIfAvailable();
+        return cache == null
+                ? Optional.empty()
+                : cache.get("product", productId.toString(), ProductEntity.class);
+    }
+
+    /** Bind the gate's decision to this transaction's state (no snapshot → today's window, documented). */
+    private void guardGateSnapshot(ProductEntity fresh) {
+        cachedProduct(fresh.getId()).ifPresent(snapshot -> VersionGuard.requireUnchanged(snapshot, fresh));
     }
 }

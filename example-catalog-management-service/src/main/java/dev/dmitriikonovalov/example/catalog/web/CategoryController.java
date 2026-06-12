@@ -1,7 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
 import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
-import dev.dmitriikonovalov.example.catalog.config.CategoryAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.CategoryListAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.TagAssignmentService;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
@@ -11,9 +10,13 @@ import dev.dmitriikonovalov.example.catalog.openapi.api.CategoryApi;
 import dev.dmitriikonovalov.example.catalog.openapi.model.Category;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryRequest;
+import dev.dmitriikonovalov.opaabac.core.VersionGuard;
+import dev.dmitriikonovalov.opaabac.security.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -24,23 +27,23 @@ public class CategoryController implements CategoryApi {
     private final CategoryRepository categories;
     private final CatalogRepository catalogs;
     private final TagAssignmentService tagAssignment;
-    private final CategoryAuthorizer categoryAuthorizer;
     private final CategoryListAuthorizer categoryListAuthorizer;
     private final CatalogHierarchyService hierarchy;
+    private final ObjectProvider<AbacResourceCache> resourceCache;
 
     public CategoryController(
             CategoryRepository categories,
             CatalogRepository catalogs,
             TagAssignmentService tagAssignment,
-            CategoryAuthorizer categoryAuthorizer,
             CategoryListAuthorizer categoryListAuthorizer,
-            CatalogHierarchyService hierarchy) {
+            CatalogHierarchyService hierarchy,
+            ObjectProvider<AbacResourceCache> resourceCache) {
         this.categories = categories;
         this.catalogs = catalogs;
         this.tagAssignment = tagAssignment;
-        this.categoryAuthorizer = categoryAuthorizer;
         this.categoryListAuthorizer = categoryListAuthorizer;
         this.hierarchy = hierarchy;
+        this.resourceCache = resourceCache;
     }
 
     @Override
@@ -88,12 +91,19 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
+    @OpaPreAuthorize(action = "category:read", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> getCategory(UUID catalogId, UUID categoryId) {
-        // Load-then-check: the Category's TAGS drive the decision, so we authorize the loaded instance
-        // (its tags reach OPA), resolving the role via the governing Catalog. This is the per-instance,
-        // tag-based grant — the pre-invocation @OpaPreAuthorize can't see the tags (Phase 4.5).
-        var entity = requireCategory(catalogId, categoryId);
-        categoryAuthorizer.require("read", entity);
+        // The gate resolved the instance and decided on its tags + ancestors (Phase 5.97) — the
+        // load-then-check CategoryAuthorizer this handler used to call is gone. The response is the
+        // authorized snapshot from the request cache; the repository fallback covers resolution-off /
+        // non-web paths. The URL-scope rule stays HERE: the resolver loads by id alone, so an existing
+        // category under the wrong catalog path is still this handler's 404, never a grant.
+        var entity = cachedCategory(categoryId)
+                .orElseGet(() -> categories.findById(categoryId)
+                        .orElseThrow(() -> new NotFoundException("Category not found: " + categoryId)));
+        if (!entity.getCatalogId().equals(catalogId)) {
+            throw new NotFoundException("Category not found: " + categoryId);
+        }
         return ResponseEntity.ok(CatalogMapper.toDto(entity));
     }
 
@@ -101,6 +111,10 @@ public class CategoryController implements CategoryApi {
     @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> updateCategory(UUID catalogId, UUID categoryId, CategoryRequest request) {
         var entity = requireCategory(catalogId, categoryId);
+        // Version binding (Phase 5.97): the freshly loaded row must still be the version the gate
+        // authorized — drift means a parallel writer won the window, and the answer is 409 (retry
+        // re-runs the gate on the new state), never a silent overwrite. Before any write.
+        guardGateSnapshot(entity);
         // Tag validation calls the tag-definition service (slow, fail-closed) — it must run before,
         // never inside, the locked re-parent transaction below.
         var tags = tagAssignment.validateAndBuild(
@@ -127,6 +141,7 @@ public class CategoryController implements CategoryApi {
     @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Void> deleteCategory(UUID catalogId, UUID categoryId) {
         var entity = requireCategory(catalogId, categoryId);
+        guardGateSnapshot(entity);
         categories.delete(entity);
         return ResponseEntity.noContent().build();
     }
@@ -140,5 +155,23 @@ public class CategoryController implements CategoryApi {
     private CategoryEntity requireCategory(UUID catalogId, UUID categoryId) {
         return categories.findByIdAndCatalogId(categoryId, catalogId)
                 .orElseThrow(() -> new NotFoundException("Category not found: " + categoryId));
+    }
+
+    /** The gate's authorized snapshot for this request, when resolution populated the cache. */
+    private Optional<CategoryEntity> cachedCategory(UUID categoryId) {
+        AbacResourceCache cache = resourceCache.getIfAvailable();
+        return cache == null
+                ? Optional.empty()
+                : cache.get("category", categoryId.toString(), CategoryEntity.class);
+    }
+
+    /**
+     * Bind the gate's decision to this transaction's state: if the request cache holds the snapshot
+     * the gate authorized, its version must match the fresh load. No snapshot (resolution off,
+     * non-web) → today's load-then-check window, documented, never silent. The snapshot itself is
+     * never persisted.
+     */
+    private void guardGateSnapshot(CategoryEntity fresh) {
+        cachedCategory(fresh.getId()).ifPresent(snapshot -> VersionGuard.requireUnchanged(snapshot, fresh));
     }
 }
