@@ -64,7 +64,10 @@ On Category create/update the caller supplies a `tags` map. Before persisting, t
 validates each entry (known key, value type, cardinality, regex). Valid tags land in the Category's `tags`
 JSONB.
 
-- **Authorization to assign = a normal `write`** — the existing `@OpaPreAuthorize(category:write)`; the
+- **Authorization to assign = the `assign-tags` decision** (Phase 6.5, [[PERMISSION-MODEL]]): the
+  category update handler dispatches on the request's deltas — a tags delta asks
+  `category:assign-tags` (the `TAG` category), a content delta asks `category:update` (`WRITE`) —
+  so tag curation and content editing are separately grantable, both directions. The
   dictionary only constrains *what* is legal, not *who* may attach. No new capability.
 - **Fail-closed:** an unknown key / enum miss / cardinality mismatch → **422** (naming the offending key;
   never silently stored). A definitions-fetch failure → **503** (the write is rejected — a validation-input
@@ -126,7 +129,7 @@ GET /categories/X   where X is tagged region=apac
   2. load Category X, read its tags                 → {region: apac}
   3. POST to OPA: { role_definition:{permissions, required_tags, match_mode},
                     resource:{ attributes:{region: apac} } }
-  4. rego:  granted = (read ∈ permissions[category])   ✅
+  4. rego:  granted = (view ∈ effective_actions(role, category))   ✅
                       AND tags_satisfied                ❌   (apac ∉ [emea])
   5. → deny (403)
 
@@ -202,7 +205,7 @@ because the gate was attribute-blind and was deleted with the flip; the library'
 
 | Operation | Capability | Mechanism |
 |-----------|-----------|-----------|
-| Define/edit a **team-scoped** tag key | `owner` or `administrator` | `@OpaPreAuthorize(team:define-tags)` on the user-service |
+| Define/edit a **team-scoped** tag key | `owner` or `administrator` | `@OpaPreAuthorize(team:define-tags)` on the user-service — the management verb; the resource-side `define-tags` fine action ships in the 6.5 expansion math, its endpoint enforcement deferred to the control-plane slice (Phase 6.7) |
 | Edit a **GLOBAL/system** key | nobody (seeded, immutable) | update/delete a `system` key → 409 |
 | **Assign** validated values to a resource | `write` on that resource | the existing `@OpaPreAuthorize(<type>:write)` |
 | Set a role's **`requiredTags`** | the role-def management capability (`owner`) | extends the Phase-4 role-def API |

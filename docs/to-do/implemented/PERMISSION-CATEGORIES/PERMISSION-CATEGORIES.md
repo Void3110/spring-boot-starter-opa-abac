@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -9,13 +9,13 @@ tags:
 
 # Permission categories + delegation (Phase 6.5)
 
-> **Status: 🔜 DECOMPOSED (2026-06-12) — ready for the autonomous run.** The model is ADR
-> [[0007-coarse-grained-permission-categories|0007]] (+ its Phase-6.5 addendum); the ten
-> implementation forks were resolved in the 2026-06-12 design interrogation and pinned in
-> [[00-DESIGN]] §2/§7; the work list is [[01-DECOMPOSITION]] (T1–T8, incl. five pinned
-> decomposition semantics). Run via [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] on branch
-> `feature/void3110/permission-categories`. Stories: [[USER-STORIES]] Epic G (G1–G4).
-> Order: 5.97 → **6.5** → 6 ([[POC-ROADMAP]]).
+> **Status: ✅ SHIPPED (2026-06-12)** — implemented T1–T8 by the autonomous run on branch
+> `feature/void3110/permission-categories` (per [[AUTONOMOUS-IMPLEMENTATION-PROMPT]]). The model
+> is ADR [[0007-coarse-grained-permission-categories|0007]] (+ its Phase-6.5 addendum); the ten
+> forks were pinned in [[00-DESIGN]] §2/§7; the work record is the STATUS notes (one per ticket).
+> The shipped contract is the guide [[PERMISSION-MODEL]]; the live proof is
+> `scripts/postman/run-permission-categories-matrix.sh` (fixture `9999…`, green twice) + the whole
+> migrated suite. Stories: [[USER-STORIES]] Epic G (G1–G4 ✅).
 
 **The slice in one sentence**: replace the flat `read`/`write` vocabulary with the four coarse
 categories (`READ`/`WRITE`/`TAG`/`GRANT`) expanding to fine actions in OPA `data`, refined by
@@ -43,7 +43,7 @@ starter is unpublished).
 | T5 — user-mgmt: hybrid assignment gates + `data.role.assignable` + latch-race re-proof | ✅ |
 | T6 — catalog: action sweep + the delta-aware `assign-tags` second decision | ✅ |
 | T7 — e2e: `run-permission-categories-matrix.sh` (fixture `9999…`) + nine-runner migration | ✅ |
-| T8 — docs: `PERMISSION-MODEL.md` guide + reconciliations + stories/roadmap + folder move | ☐ |
+| T8 — docs: `PERMISSION-MODEL.md` guide + reconciliations + stories/roadmap + folder move | ✅ |
 
 **Critical path:** T1 → T3 → T4 → T5 (the user-mgmt chain); T2 independent (before T5/T6);
 T6 parallel to T3–T5; T7 needs everything; T8 closes. **No independently-landable subset** —
