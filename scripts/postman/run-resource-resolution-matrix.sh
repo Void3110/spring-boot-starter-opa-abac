@@ -18,7 +18,8 @@
 # Prereq: the full rig is up WITH OIDC + OPA + the user-service, with the 5.97 images:
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 #   ./deploy.sh build          # force the 5.97 app code into the pods
-#   (restart OPA if the T5 policies changed after the rig came up)
+# The runner restarts OPA itself before running (the deny cells E2/E6a assert the T5 tags_satisfied
+# conjunct in catalog.rego/product.rego — OPA has no --watch, and deploy.sh build never reloads it).
 #
 # Fixture set (registered in scripts/postman/README.md — dedicated, no shared fixtures touched):
 #   88888888-8888-8888-8888-888888888888  the team-governed catalog (emea/apac categories + products)
@@ -72,6 +73,21 @@ RUNTIME=""
 for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; break; }; done
 [ -n "$RUNTIME" ] || { echo "ERROR: need docker or podman to mint in-network tokens." >&2; exit 1; }
 
+# --- make the policy state self-contained --------------------------------------
+# The deny cells (E2/E6a) assert the 5.97 tags_satisfied conjunct is live in catalog.rego /
+# product.rego. OPA loads /policies once (no --watch) and deploy.sh never restarts it on `build`,
+# so an already-up rig may serve stale policy — restart and wait for health before minting tokens.
+OPA_CONTAINER="${OPA_CONTAINER:-opa-abac-opa}"
+echo "==> Restarting OPA ($OPA_CONTAINER) so the matrix runs against the current policies ..."
+"$RUNTIME" restart "$OPA_CONTAINER" >/dev/null
+for _ in $(seq 1 30); do
+  curl -sf "http://localhost:28181/health" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -sf "http://localhost:28181/health" >/dev/null 2>&1 || {
+  echo "ERROR: OPA did not become healthy after restart." >&2; exit 1;
+}
+
 # --- helpers -----------------------------------------------------------------
 mint_token() {
   local user="$1" pass="$2" json
@@ -122,10 +138,12 @@ echo "  subjects: writer-viewer=$WRITER_VIEWER_SUB writer-editor=$WRITER_EDITOR_
 # --- seed the two fixture catalogs --------------------------------------------
 # Seeded WITH the ltree path (the run-pagination-matrix.sh model) — a direct-SQL catalog row without
 # a path breaks category creation fail-closed ("parent has no path"). The conflict arm repairs the
-# path in case a prior run left it NULL. Only the 8888… fixture pair is touched.
+# path in case a prior run left it NULL. A prior run's categories/products are deleted first so
+# re-runs never accumulate (the category FKs cascade to products) — only the 8888… pair is touched.
 echo "==> Seeding fixture catalogs $RR_CATALOG_ID (team-governed) + $FREE_CATALOG_ID (team-less) ..."
 "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
 CREATE EXTENSION IF NOT EXISTS ltree;
+DELETE FROM category WHERE catalog_id IN ('$RR_CATALOG_ID', '$FREE_CATALOG_ID');
 INSERT INTO catalog (id, name, created_at, version, tags, path)
 VALUES ('$RR_CATALOG_ID', 'Resource-resolution demo catalog', now(), 0, '{}'::jsonb,
         CAST('catalog_' || replace('$RR_CATALOG_ID','-','') AS ltree))
