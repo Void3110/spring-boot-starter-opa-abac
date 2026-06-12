@@ -53,7 +53,7 @@ never be an id another matrix **grants on**. Current registry — keep it unique
 | `3333…` | `run-filter-matrix.sh` + `run-hierarchy-matrix.sh` | demo / granted root |
 | `4444…` | `run-hierarchy-list-matrix.sh` | granted root |
 | `5555…` | `run-hierarchy-list-matrix.sh` | foreign (never granted) |
-| `6666…` | `run-hierarchy-matrix.sh` | foreign (never granted) |
+| `6666…` | `run-hierarchy-matrix.sh` | foreign — the reader is bound to a deliberate NO-GRANT role on it (5.97: a present role-def disables the realm fallback, keeping the re-parent flip at 403); no matrix may grant a USABLE role on it |
 | `7777…` | `run-pagination-matrix.sh` | demo (granted) — the dedicated pagination fixture set (5+3 categories; counts pinned, so no other matrix may touch it) |
 | `8888…8888` | `run-resource-resolution-matrix.sh` | team-governed (tag-gated write role + root read role granted) — the 5.97 fixture tree (emea/apac categories + products + a nested category) |
 | `8888…8889` | `run-resource-resolution-matrix.sh` | team-LESS (must never be granted on — it is the live realm-fallback "non-member unchanged" cell) |
