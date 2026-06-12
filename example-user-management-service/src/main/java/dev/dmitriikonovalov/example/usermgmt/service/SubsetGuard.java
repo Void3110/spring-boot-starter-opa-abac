@@ -1,8 +1,6 @@
 package dev.dmitriikonovalov.example.usermgmt.service;
 
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -21,19 +19,9 @@ public class SubsetGuard {
         this.effectiveRoles = effectiveRoles;
     }
 
-    /**
-     * Reject {@code candidate} unless it is a subset of the actor's own effective permissions on the
-     * team. An actor with no membership holds nothing and so can grant nothing.
-     *
-     * @throws SubsetRuleViolationException if the actor is not a member, or the candidate exceeds them
-     */
-    public void requireWithinActorPermissions(
-            UUID actorUserId, UUID teamId, Map<String, List<String>> candidate) {
-        if (!PermissionSubset.isSubset(candidate, actorRole(actorUserId, teamId).getPermissions())) {
-            throw new SubsetRuleViolationException(
-                    "The role exceeds the actor's own permissions (subset rule)");
-        }
-    }
+    // Phase 6.5: the authoring-time requireWithinActorPermissions check was removed — vestigial under
+    // owner-only authoring; the level ceiling (RoleDefinitionService.validateContract) is the real
+    // bound (00-DESIGN §2.8). The assignment-time check below is replaced by the hybrid gates in T5.
 
     /**
      * The subset rule for <em>assigning an existing role</em> (add member / change role): the candidate

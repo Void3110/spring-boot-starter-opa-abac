@@ -5,7 +5,6 @@ import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinition;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionUpdate;
-import dev.dmitriikonovalov.example.usermgmt.service.CallerIdentity;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
 import java.util.UUID;
@@ -20,19 +19,16 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
  * verb, so administrators (who can manage members) cannot define roles — matching the system-role table
  * in {@code 00-DESIGN.md}.
  *
- * <p>The orthogonal subset-of-own guard and the system-role-immutability rule live in
- * {@link RoleDefinitionService}. Controllers stay thin.
+ * <p>The Phase-6.5 authoring contract (level ceiling, category tokens, strict denials) and the
+ * system-role-immutability rule live in {@link RoleDefinitionService}. Controllers stay thin.
  */
 @RestController
 public class RoleDefinitionController implements RoleDefinitionApi {
 
     private final RoleDefinitionService roleDefinitions;
-    private final CallerIdentity callerIdentity;
 
-    public RoleDefinitionController(
-            RoleDefinitionService roleDefinitions, CallerIdentity callerIdentity) {
+    public RoleDefinitionController(RoleDefinitionService roleDefinitions) {
         this.roleDefinitions = roleDefinitions;
-        this.callerIdentity = callerIdentity;
     }
 
     @Override
@@ -47,9 +43,9 @@ public class RoleDefinitionController implements RoleDefinitionApi {
     @OpaPreAuthorize(action = "team:define-roles", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<RoleDefinition> createRoleDefinition(
             UUID teamId, RoleDefinitionRequest request) {
-        UUID actor = actor();
         var created = roleDefinitions.create(
-                actor, teamId, request.getCode(), request.getAttributes(), request.getPermissions(),
+                teamId, request.getCode(), request.getRoleLevel(), request.getAttributes(),
+                request.getPermissions(), request.getDeniedActions(),
                 request.getRequiredTags(), matchModeOf(request.getMatchMode()));
         var dto = UserMgmtMapper.toDto(created);
         // A role definition is addressed by its code (GET /teams/{teamId}/role-definitions/{code}).
@@ -64,9 +60,9 @@ public class RoleDefinitionController implements RoleDefinitionApi {
     @OpaPreAuthorize(action = "team:define-roles", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<RoleDefinition> updateRoleDefinition(
             UUID teamId, String code, RoleDefinitionUpdate request) {
-        UUID actor = actor();
         var updated = roleDefinitions.update(
-                actor, teamId, code, request.getAttributes(), request.getPermissions(),
+                teamId, code, request.getRoleLevel(), request.getAttributes(),
+                request.getPermissions(), request.getDeniedActions(),
                 request.getRequiredTags(), matchModeOf(request.getMatchMode()));
         return ResponseEntity.ok(UserMgmtMapper.toDto(updated));
     }
@@ -84,11 +80,5 @@ public class RoleDefinitionController implements RoleDefinitionApi {
     public ResponseEntity<Void> deleteRoleDefinition(UUID teamId, String code) {
         roleDefinitions.delete(teamId, code);
         return ResponseEntity.noContent().build();
-    }
-
-    private UUID actor() {
-        return callerIdentity.currentUserId()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No acting user: the request subject does not map to a known user"));
     }
 }

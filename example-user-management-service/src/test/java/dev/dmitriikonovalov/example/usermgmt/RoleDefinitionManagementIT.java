@@ -54,13 +54,13 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
         User owner = user("owner");
         grant(team, owner, SystemRoles.OWNER_ID);
 
-        // Create (within the owner's read+write perms).
+        // Create (level 25 senior tier, category tokens).
         var create = rest.exchange(
                 "/api/v1/teams/{t}/role-definitions",
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("catalog-editor")
-                        .attributes(Map.of("role_level", 25))
+                        .roleLevel(25)
                         .permissions(Map.of("catalog", List.of("READ", "WRITE")))),
                 RoleDefinition.class,
                 team.getId());
@@ -68,13 +68,15 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
         assertThat(create.getBody()).isNotNull();
         assertThat(create.getBody().getSystem()).isFalse();
         assertThat(create.getBody().getTeamId()).isEqualTo(team.getId());
+        assertThat(create.getBody().getRoleLevel()).isEqualTo(25);
 
-        // Update.
+        // Update — U8: the explicit roleLevel overwrites an attributes-supplied role_level.
         var update = rest.exchange(
                 "/api/v1/teams/{t}/role-definitions/{c}",
                 HttpMethod.PUT,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionUpdate()
-                        .attributes(Map.of("role_level", 26))
+                        .roleLevel(20)
+                        .attributes(Map.of("role_level", 40))
                         .permissions(Map.of("catalog", List.of("READ")))),
                 RoleDefinition.class,
                 team.getId(),
@@ -82,6 +84,8 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
         assertThat(update.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(update.getBody()).isNotNull();
         assertThat(update.getBody().getPermissions()).containsEntry("catalog", List.of("READ"));
+        assertThat(update.getBody().getRoleLevel()).isEqualTo(20);
+        assertThat(update.getBody().getAttributes()).containsEntry("role_level", 20);
 
         // Delete.
         var delete = rest.exchange(
@@ -95,10 +99,29 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
         assertThat(roles.findByTeamIdAndCode(team.getId(), "catalog-editor")).isEmpty();
     }
 
-    @Test
-    void customRoleExceedingOwnPermsIsDenied() {
+    @Test // flipped from the pre-6.5 author-subset cell: the LEVEL CEILING is the bound now (U6/I5)
+    void customRoleExceedingLevelCeilingIsDenied() {
         Team team = team();
-        // An owner's system perms are {"*": [read, write]} → "delete" is beyond them.
+        User owner = user("owner");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        // GRANT is only authorable at level 30 — a level-20 role granting it violates the ceiling.
+        var create = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions",
+                HttpMethod.POST,
+                AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
+                        .code("superpower")
+                        .roleLevel(20)
+                        .permissions(Map.of("catalog", List.of("READ", "GRANT")))),
+                String.class,
+                team.getId());
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(create.getBody()).contains("ROLE_DEFINITION_INVALID");
+    }
+
+    @Test // I4 — the authoring round-trip: a senior-level role with a denial, read back whole
+    void seniorRoleWithDenialRoundTrips() {
+        Team team = team();
         User owner = user("owner");
         grant(team, owner, SystemRoles.OWNER_ID);
 
@@ -106,11 +129,65 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 "/api/v1/teams/{t}/role-definitions",
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
-                        .code("superpower")
-                        .permissions(Map.of("catalog", List.of("read", "write", "delete")))),
-                String.class,
+                        .code("no-delete-senior")
+                        .roleLevel(25)
+                        .permissions(Map.of("catalog", List.of("READ", "WRITE", "TAG")))
+                        .deniedActions(Map.of("catalog", List.of("delete")))),
+                RoleDefinition.class,
                 team.getId());
-        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(create.getBody()).isNotNull();
+        assertThat(create.getBody().getRoleLevel()).isEqualTo(25);
+        assertThat(create.getBody().getDeniedActions()).containsEntry("catalog", List.of("delete"));
+        assertThat(create.getBody().getAttributes()).containsEntry("role_level", 25);
+
+        // Read back via the list (the persisted row, not the create echo).
+        var list = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions",
+                HttpMethod.GET,
+                AbacTestConfig.as(owner.getSubject()),
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionPage.class,
+                team.getId());
+        assertThat(list.getBody()).isNotNull();
+        assertThat(list.getBody().getItems()).anyMatch(r ->
+                r.getCode().equals("no-delete-senior")
+                        && Integer.valueOf(25).equals(r.getRoleLevel())
+                        && List.of("delete").equals(r.getDeniedActions().get("catalog")));
+    }
+
+    @Test // I5 — each authoring-contract violation answers 422 problem+json ROLE_DEFINITION_INVALID
+    void contractViolationsAnswer422RoleDefinitionInvalid() {
+        Team team = team();
+        User owner = user("owner");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        record Cell(String name, RoleDefinitionRequest request) {}
+        var cells = List.of(
+                new Cell("missing roleLevel", new RoleDefinitionRequest()
+                        .code("c1").permissions(Map.of("catalog", List.of("READ")))),
+                new Cell("off-ladder level", new RoleDefinitionRequest()
+                        .code("c2").roleLevel(15).permissions(Map.of("catalog", List.of("READ")))),
+                new Cell("flat verb token", new RoleDefinitionRequest()
+                        .code("c3").roleLevel(20).permissions(Map.of("catalog", List.of("read")))),
+                new Cell("ceiling violation", new RoleDefinitionRequest()
+                        .code("c4").roleLevel(10).permissions(Map.of("catalog", List.of("WRITE")))),
+                new Cell("denial not a subset", new RoleDefinitionRequest()
+                        .code("c5").roleLevel(20)
+                        .permissions(Map.of("catalog", List.of("READ")))
+                        .deniedActions(Map.of("catalog", List.of("delete")))));
+
+        for (Cell cell : cells) {
+            var response = rest.exchange(
+                    "/api/v1/teams/{t}/role-definitions",
+                    HttpMethod.POST,
+                    AbacTestConfig.as(owner.getSubject(), cell.request()),
+                    String.class,
+                    team.getId());
+            assertThat(response.getStatusCode()).as(cell.name()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getBody()).as(cell.name()).contains("ROLE_DEFINITION_INVALID");
+            assertThat(response.getHeaders().getContentType().toString())
+                    .as(cell.name()).contains("problem+json");
+        }
     }
 
     @Test
@@ -124,6 +201,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(admin.getSubject(), new RoleDefinitionRequest()
                         .code("whatever")
+                        .roleLevel(10)
                         .permissions(Map.of("catalog", List.of("READ")))),
                 String.class,
                 team.getId());
@@ -143,6 +221,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code(SystemRoles.OWNER)
+                        .roleLevel(10)
                         .permissions(Map.of("catalog", List.of("READ")))),
                 String.class,
                 team.getId());
@@ -153,6 +232,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 "/api/v1/teams/{t}/role-definitions/{c}",
                 HttpMethod.PUT,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionUpdate()
+                        .roleLevel(10)
                         .permissions(Map.of("catalog", List.of("READ")))),
                 String.class,
                 team.getId(),
@@ -171,6 +251,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("regional-reader")
+                        .roleLevel(10)
                         .permissions(Map.of("catalog", List.of("READ")))
                         .requiredTags(Map.of("region", List.of("emea")))
                         .matchMode(RoleDefinitionRequest.MatchModeEnum.ALL_OF)),
@@ -207,6 +288,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("plain-reader")
+                        .roleLevel(10)
                         .permissions(Map.of("catalog", List.of("READ")))),
                 RoleDefinition.class,
                 team.getId());
@@ -227,6 +309,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(owner.getSubject(), new RoleDefinitionRequest()
                         .code("catalog-editor")
+                        .roleLevel(20)
                         .permissions(Map.of("catalog", List.of("READ", "WRITE")))),
                 RoleDefinition.class,
                 team.getId());

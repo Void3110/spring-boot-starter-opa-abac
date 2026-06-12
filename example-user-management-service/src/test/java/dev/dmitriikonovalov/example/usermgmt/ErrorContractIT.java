@@ -107,6 +107,7 @@ class ErrorContractIT extends AbstractPostgresIT {
 
         var roleRequest = new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionRequest()
                 .code("in-use-role")
+                .roleLevel(10)
                 .permissions(java.util.Map.of("catalog", java.util.List.of("READ")));
         var role = rest.exchange(
                 "/api/v1/teams/{t}/role-definitions", HttpMethod.POST,

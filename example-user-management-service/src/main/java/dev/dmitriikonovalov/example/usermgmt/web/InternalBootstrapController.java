@@ -8,6 +8,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembershipRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
+import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,16 +33,19 @@ public class InternalBootstrapController {
     private final TeamRepository teams;
     private final TeamMembershipRepository memberships;
     private final RoleDefinitionRepository roles;
+    private final RoleDefinitionService roleDefinitions;
 
     public InternalBootstrapController(
             UserRepository users,
             TeamRepository teams,
             TeamMembershipRepository memberships,
-            RoleDefinitionRepository roles) {
+            RoleDefinitionRepository roles,
+            RoleDefinitionService roleDefinitions) {
         this.users = users;
         this.teams = teams;
         this.memberships = memberships;
         this.roles = roles;
+        this.roleDefinitions = roleDefinitions;
     }
 
     /** Idempotently ensure a user with the given IdP subject exists; returns its id. */
@@ -67,29 +71,24 @@ public class InternalBootstrapController {
     }
 
     /**
-     * Idempotently ensure a team-scoped custom role exists; returns its id. {@code permissions} uses the
-     * {@code {resourceType:[verbs]}} shape. Optionally carries a tag requirement
-     * ({@code requiredTags}/{@code matchMode}, Phase 4.5) so the matrix can seed a tag-gated role.
+     * Idempotently ensure a team-scoped custom role exists; returns its id. {@code permissions} uses
+     * the {@code {resourceType: [category tokens]}} shape (Phase 6.5) with a required {@code roleLevel}
+     * and optional {@code deniedActions}/{@code requiredTags}/{@code matchMode}. Routes through
+     * {@link RoleDefinitionService} so the authoring contract applies here too — the bootstrap is
+     * <b>not</b> a validation bypass (an invalid payload answers 422 exactly like the management API).
      */
     @PostMapping("/internal/bootstrap/custom-roles")
     @Transactional
     public ResponseEntity<Map<String, UUID>> ensureCustomRole(@RequestBody EnsureCustomRole body) {
-        Map<String, List<String>> requiredTags =
-                body.requiredTags() == null ? Map.of() : body.requiredTags();
-        String matchMode = requiredTags.isEmpty()
-                ? null
-                : (body.matchMode() == null ? "ANY_OF" : body.matchMode());
-        UUID id = roles.findByTeamIdAndCode(body.teamId(), body.code())
-                .map(existing -> {
-                    existing.setPermissions(body.permissions());
-                    existing.setRequiredTags(requiredTags);
-                    existing.setMatchMode(matchMode);
-                    return roles.save(existing).getId();
-                })
-                .orElseGet(() -> roles.save(new RoleDefinitionEntity(
-                        UUID.randomUUID(), body.code(), false, body.teamId(),
-                        Map.of(), body.permissions(), requiredTags, matchMode)).getId());
-        return ResponseEntity.ok(Map.of("roleId", id));
+        boolean exists = roles.findByTeamIdAndCode(body.teamId(), body.code()).isPresent();
+        RoleDefinitionEntity role = exists
+                ? roleDefinitions.update(
+                        body.teamId(), body.code(), body.roleLevel(), Map.of(),
+                        body.permissions(), body.deniedActions(), body.requiredTags(), body.matchMode())
+                : roleDefinitions.create(
+                        body.teamId(), body.code(), body.roleLevel(), Map.of(),
+                        body.permissions(), body.deniedActions(), body.requiredTags(), body.matchMode());
+        return ResponseEntity.ok(Map.of("roleId", role.getId()));
     }
 
     /** Idempotently ensure a membership (by team+user) bound to a role code (system or this team's custom). */
@@ -118,7 +117,9 @@ public class InternalBootstrapController {
     public record EnsureCustomRole(
             UUID teamId,
             String code,
+            Integer roleLevel,
             Map<String, List<String>> permissions,
+            Map<String, List<String>> deniedActions,
             Map<String, List<String>> requiredTags,
             String matchMode) {
     }
