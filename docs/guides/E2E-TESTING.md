@@ -211,6 +211,31 @@ Since 5.95 every list-consuming collection asserts the envelope (`json.items.…
 is gone suite-wide, with every pre-existing row-count expectation numerically unchanged. Guides:
 [[REST-API-DESIGN]] §7 (the wire contract) · [[PARTIAL-EVALUATION-FILTERING]] (the paged composition).
 
+### Resource-resolution matrix (Phase 5.97)
+
+`run-resource-resolution-matrix.sh` proves **attribute-rich pre-authorization** (ADR
+[[adr/0013-attribute-rich-pre-authorization|0013]], [[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]) live: with
+the catalog's `AbacResourceResolver` registered, id'd `@OpaPreAuthorize` decisions resolve the
+**instance** and decide on its real tags + ancestors, the role looked up once on the governing root.
+Same full rig; run `./deploy.sh build` first so the pods carry the 5.97 app code. It seeds the
+dedicated `8888…` fixture pair (registered; the team-less `8889` must never be granted on) and three
+subjects, then asserts the behavior-matrix cells:
+
+| # | Case | Asserts |
+|---|------|---------|
+| E1 | **the headline flip** — viewer-realm member, tag-matched write role, PUT the emea Category | **200** (pre-5.97: 403 — the leaf lookup found no role and the tag-blind fallback denied) |
+| E2 | **the hole closes** — editor-realm member, same role, PUT the apac Category | **403** (pre-5.97: 200 — the realm fallback leaked a write the team role's tags deny) |
+| E3 | the narrowing — read-only team role + editor realm, PUT | **403** (role definition present → fallback disabled) |
+| E4 | non-member unchanged — editor realm, PUT in the team-**less** catalog | **200** via the fallback (byte-identical cell) |
+| E5 | hierarchy parity — catalog-root read grant, GET a nested Category | **200 via the gate** (the inherited grant survived the move from layer 3) |
+| E6 | the product sibling (T5's `tags_satisfied` conjunct, live) | apac product write **403** / emea **200** |
+| — | the pinned missing-id posture | a nonexistent id behind an annotated `resourceId` → **403**, was 404 |
+
+One pre-existing cell flipped suite-wide on the same pinned semantic: `catalog-e2e`'s
+get-product-after-delete now expects the gate's 403 (commented in place). Every other matrix is
+byte-identical and green — the team matrix doubles as the user-mgmt coexistence proof (it registers no
+resolver and keeps today's semantics end to end).
+
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.
 

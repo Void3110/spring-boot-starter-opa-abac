@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -9,12 +9,14 @@ tags:
 
 # Resource resolution — attribute-rich pre-authorization
 
-> **Status: Decomposed (2026-06-12) — ready for the autonomous run (phase ③).** Phase 5.97 of
-> [[POC-ROADMAP]]. Every fork is pinned by **ADR
-> [[0013-attribute-rich-pre-authorization|0013]]** and elaborated in [[00-DESIGN]]; the package below
-> (tickets + QA + prompt + STATUS stubs) is the work list — run via the
-> [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] on branch `feature/void3110/resource-resolution`. **Sequenced
-> before Phase 6** — action enrichment consumes what this ships (order **5.97 → 6.5 → 6**).
+> **Status: ✅ SHIPPED (2026-06-12)** — implemented end-to-end on branch
+> `feature/void3110/resource-resolution`, one commit per ticket T1–T7. Phase 5.97 of [[POC-ROADMAP]],
+> pinned by **ADR [[0013-attribute-rich-pre-authorization|0013]]**; the mechanism guide is
+> [[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]. The gate now resolves the instance behind a declared
+> `resourceId` and decides on its real tags + ancestors (role on the governing root); the catalog
+> adopted it (story C4 ✅ — the realm-fallback hole closed live, cell E2), user-mgmt deliberately did
+> not (the opt-in coexistence proof, B1 green). **Next: 6.5** (order **5.97 → 6.5 → 6**) — action
+> enrichment consumes the cache this shipped.
 
 ## What it is
 
@@ -119,7 +121,7 @@ All the formerly-open questions are pinned; see [[00-DESIGN]] for the mechanism 
 | T4 — catalog adoption: resolver bean, `getCategory` to the gate, `CategoryAuthorizer` deleted, version guards + ITs | ✅ |
 | T5 — policies: `tags_satisfied` conjunct for `product.rego`/`catalog.rego` (retro-audit fold-in #3) | ✅ |
 | T6 — e2e: resource-resolution matrix (fixture `8888…`) + whole-suite coexistence | ✅ |
-| T7 — docs: `ATTRIBUTE-RICH-PRE-AUTHORIZATION` guide + reconciliations + roadmap/stories/Mulch + folder move | ☐ |
+| T7 — docs: `ATTRIBUTE-RICH-PRE-AUTHORIZATION` guide + reconciliations + roadmap/stories/Mulch + folder move | ✅ |
 
 **Critical path:** T1 → T2 → T3 → T4 → T6 → T7; **T5 parallel** (after T1, before T6). **T1+T2+T3**
 are the independently-landable subset (the complete dormant library mechanism). Conventions:
