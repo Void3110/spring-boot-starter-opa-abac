@@ -7,8 +7,10 @@ import dev.dmitriikonovalov.opaabac.data.hierarchy.HierarchicalPathMaintainer;
 import dev.dmitriikonovalov.opaabac.data.model.AbstractHierarchicalEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,12 +54,23 @@ public class CatalogHierarchyService {
      */
     @Transactional
     public CategoryEntity reparentCategory(UUID categoryId, UUID newParentCategoryId) {
-        // Lock the moving Category FOR UPDATE as the first entity-touching read (the repo's lock-first
-        // mutate posture, AbstractCrudService.mutate): two concurrent re-parents of the same Category then
-        // serialize at the row lock instead of racing on a stale @Version. The subtree path rewrite (step 3)
-        // happens in this same transaction.
-        CategoryEntity category = categories.findByIdForUpdate(categoryId).orElseThrow(
-                () -> new IllegalArgumentException("Category not found: " + categoryId));
+        // Lock the moving Category AND the new-parent Category FOR UPDATE, in deterministic id order
+        // (deadlock avoidance), as the first entity-touching reads. Locking only the moving row is not
+        // enough: the cycle guard + new-parent path (step 3) are DECISIONS, and they must be computed
+        // under the same locks that hold through the rewrite (CONCURRENCY-AND-LOCKING.md Rule 1) —
+        // otherwise two crossing re-parents (A→B, B→A) each pass the cycle check against the other's
+        // pre-move path and commit a cycle (retro-audit 2026-06-12).
+        List<UUID> lockOrder = newParentCategoryId == null || newParentCategoryId.equals(categoryId)
+                ? List.of(categoryId)
+                : Stream.of(categoryId, newParentCategoryId).sorted().toList();
+        CategoryEntity category = null;
+        for (UUID id : lockOrder) {
+            CategoryEntity locked = categories.findByIdForUpdate(id).orElseThrow(
+                    () -> new IllegalArgumentException("Category not found: " + id));
+            if (id.equals(categoryId)) {
+                category = locked;
+            }
+        }
         String oldPath = category.getPath();
 
         Optional<ParentRef> newParent = newParentCategoryId == null

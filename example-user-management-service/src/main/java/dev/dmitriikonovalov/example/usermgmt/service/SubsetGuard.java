@@ -29,14 +29,39 @@ public class SubsetGuard {
      */
     public void requireWithinActorPermissions(
             UUID actorUserId, UUID teamId, Map<String, List<String>> candidate) {
-        Map<String, List<String>> actorPerms = effectiveRoles.membership(teamId, actorUserId)
-                .map(effectiveRoles::roleOf)
-                .map(RoleDefinitionEntity::getPermissions)
-                .orElseThrow(() -> new SubsetRuleViolationException(
-                        "Actor has no membership on team " + teamId + " and cannot grant roles"));
-        if (!PermissionSubset.isSubset(candidate, actorPerms)) {
+        if (!PermissionSubset.isSubset(candidate, actorRole(actorUserId, teamId).getPermissions())) {
             throw new SubsetRuleViolationException(
                     "The role exceeds the actor's own permissions (subset rule)");
         }
+    }
+
+    /**
+     * The subset rule for <em>assigning an existing role</em> (add member / change role): the candidate
+     * role must not exceed the actor in EITHER dimension — its resource permissions (as above) AND its
+     * management-capability ladder ({@link TeamRoleCapabilities}, keyed on the role <em>code</em>).
+     * Comparing only the resource permissions is the escalation hole the 2026-06-12 retro-audit found:
+     * owner and administrator carry identical resource permissions, so an administrator could confer
+     * the owner code — and with it {@code define-roles} + {@code transfer-ownership} — on themselves.
+     *
+     * @throws SubsetRuleViolationException if the actor is not a member, or the candidate exceeds them
+     */
+    public void requireAssignableByActor(UUID actorUserId, UUID teamId, RoleDefinitionEntity candidate) {
+        RoleDefinitionEntity actorRole = actorRole(actorUserId, teamId);
+        if (!PermissionSubset.isSubset(candidate.getPermissions(), actorRole.getPermissions())) {
+            throw new SubsetRuleViolationException(
+                    "The role exceeds the actor's own permissions (subset rule)");
+        }
+        if (!TeamRoleCapabilities.forCode(actorRole.getCode())
+                .containsAll(TeamRoleCapabilities.forCode(candidate.getCode()))) {
+            throw new SubsetRuleViolationException(
+                    "The role's management capabilities exceed the actor's own (subset rule)");
+        }
+    }
+
+    private RoleDefinitionEntity actorRole(UUID actorUserId, UUID teamId) {
+        return effectiveRoles.membership(teamId, actorUserId)
+                .map(effectiveRoles::roleOf)
+                .orElseThrow(() -> new SubsetRuleViolationException(
+                        "Actor has no membership on team " + teamId + " and cannot grant roles"));
     }
 }

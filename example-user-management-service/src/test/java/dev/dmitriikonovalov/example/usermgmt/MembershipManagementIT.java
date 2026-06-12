@@ -181,6 +181,87 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
     }
 
     @Test
+    void administratorCannotSelfPromoteToOwner() {
+        // Retro-audit 2026-06-12 (Critical): owner and administrator carry IDENTICAL resource
+        // permissions ({"*": [read, write]}), so the resource-permission subset check alone passes —
+        // only the owner-assignment guard / capability-ladder rule stops the escalation to
+        // define-roles + transfer-ownership.
+        Team team = team();
+        User admin = user("admin");
+        grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
+
+        var promote = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.PUT,
+                AbacTestConfig.as(admin.getSubject(), new ChangeRoleRequest().roleCode(SystemRoles.OWNER)),
+                String.class,
+                team.getId(),
+                admin.getId());
+        assertThat(promote.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // The membership row is unchanged — still bound to the administrator role.
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), admin.getId()))
+                .get()
+                .extracting(TeamMembership::getRoleDefinitionId)
+                .isEqualTo(SystemRoles.ADMINISTRATOR_ID);
+    }
+
+    @Test
+    void ownerCannotBeDemotedOrRemovedViaMembershipEndpoints() {
+        // The mirror of the owner-assignment guard: stripping or demoting the sole owner would leave
+        // the team ownerless — ownership moves only through the transfer-ownership flow.
+        Team team = team();
+        User owner = user("owner");
+        User admin = user("admin");
+        grant(team, owner, SystemRoles.OWNER_ID);
+        grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
+
+        var demote = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.PUT,
+                AbacTestConfig.as(admin.getSubject(), new ChangeRoleRequest().roleCode(SystemRoles.MEMBER)),
+                String.class,
+                team.getId(),
+                owner.getId());
+        assertThat(demote.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        var strip = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.DELETE,
+                AbacTestConfig.as(admin.getSubject()),
+                String.class,
+                team.getId(),
+                owner.getId());
+        assertThat(strip.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // The owner's membership row is intact, still bound to the owner role.
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), owner.getId()))
+                .get()
+                .extracting(TeamMembership::getRoleDefinitionId)
+                .isEqualTo(SystemRoles.OWNER_ID);
+    }
+
+    @Test
+    void ownerRoleIsNotAssignableEvenByAnOwner() {
+        // Adding a second owner would break the exactly-one-owner invariant; ownership moves only
+        // through the transfer-ownership flow (which downgrades the previous owner atomically).
+        Team team = team();
+        User owner = user("owner");
+        User other = user("other");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        var mint = rest.exchange(
+                "/api/v1/teams/{t}/members",
+                HttpMethod.POST,
+                AbacTestConfig.as(
+                        owner.getSubject(),
+                        new AddMemberRequest().userId(other.getId()).roleCode(SystemRoles.OWNER)),
+                String.class,
+                team.getId());
+        assertThat(mint.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), other.getId())).isEmpty();
+    }
+
+    @Test
     void decisionAuthorizesTheActorNotTheService() {
         // Two teams. The caller owns team A but is a mere viewer on team B. Managing team B must be
         // denied even though the same service identity could, in principle, write anything — the

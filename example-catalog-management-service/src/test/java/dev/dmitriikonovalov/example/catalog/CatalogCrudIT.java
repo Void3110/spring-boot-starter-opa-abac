@@ -7,8 +7,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
+import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -31,6 +37,12 @@ class CatalogCrudIT extends AbstractPostgresIT {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    CategoryRepository categories;
+
+    @Autowired
+    ProductRepository products;
 
     @Test
     void fullHierarchyCrud() throws Exception {
@@ -84,6 +96,38 @@ class CatalogCrudIT extends AbstractPostgresIT {
                         "/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
                         catalogId, childCategoryId, productId))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void updateCategoryReparentRewritesTheAuthorizationLineage() throws Exception {
+        // PUT with a changed parentId must go through the atomic re-parent (adjacency + ltree subtree
+        // rewrite in one transaction) — a bare setParentId+save would leave the category's and its
+        // products' `path` (the authorization lineage) on the OLD branch (retro-audit 2026-06-12).
+        String catalogId = create("/api/v1/catalogs", """
+                {"name":"Reparent","description":null}""");
+        String parentA = create("/api/v1/catalogs/" + catalogId + "/categories", """
+                {"name":"Parent A"}""");
+        String parentB = create("/api/v1/catalogs/" + catalogId + "/categories", """
+                {"name":"Parent B"}""");
+        String child = create(
+                "/api/v1/catalogs/" + catalogId + "/categories",
+                "{\"name\":\"Child\",\"parentId\":\"" + parentA + "\"}");
+        String productId = create(
+                "/api/v1/catalogs/" + catalogId + "/categories/" + child + "/products", """
+                {"name":"Widget","sku":"W-1","priceCents":100,"currency":"USD"}""");
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}", catalogId, child)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Child\",\"parentId\":\"" + parentB + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parentId").value(parentB));
+
+        String segmentA = "category_" + parentA.replace("-", "");
+        String segmentB = "category_" + parentB.replace("-", "");
+        String childPath = categories.findById(UUID.fromString(child)).orElseThrow().getPath();
+        String productPath = products.findById(UUID.fromString(productId)).orElseThrow().getPath();
+        assertThat(childPath).contains(segmentB).doesNotContain(segmentA);
+        assertThat(productPath).contains(segmentB).doesNotContain(segmentA);
     }
 
     @Test

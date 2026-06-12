@@ -12,6 +12,7 @@ import dev.dmitriikonovalov.example.catalog.openapi.model.Category;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryPage;
 import dev.dmitriikonovalov.example.catalog.openapi.model.CategoryRequest;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -100,16 +101,25 @@ public class CategoryController implements CategoryApi {
     @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> updateCategory(UUID catalogId, UUID categoryId, CategoryRequest request) {
         var entity = requireCategory(catalogId, categoryId);
-        if (request.getParentId() != null) {
-            categories.findByIdAndCatalogId(request.getParentId(), catalogId)
-                    .orElseThrow(() -> new NotFoundException(
-                            "Parent category not found in catalog: " + request.getParentId()));
+        // Tag validation calls the tag-definition service (slow, fail-closed) — it must run before,
+        // never inside, the locked re-parent transaction below.
+        var tags = tagAssignment.validateAndBuild(
+                "category", categoryId.toString(), request.getTags());
+        if (!Objects.equals(entity.getParentId(), request.getParentId())) {
+            if (request.getParentId() != null) {
+                // New parent must exist within the same catalog.
+                categories.findByIdAndCatalogId(request.getParentId(), catalogId)
+                        .orElseThrow(() -> new NotFoundException(
+                                "Parent category not found in catalog: " + request.getParentId()));
+            }
+            // A parent change must rewrite the subtree's ltree paths (the authorization lineage)
+            // atomically with the adjacency change — a bare setParentId+save would leave every
+            // hierarchy decision under this subtree following the OLD branch (and skip the cycle guard).
+            entity = hierarchy.reparentCategory(categoryId, request.getParentId());
         }
-        entity.setParentId(request.getParentId());
         entity.setName(request.getName());
         entity.setDescription(request.getDescription());
-        entity.setTags(tagAssignment.validateAndBuild(
-                "category", categoryId.toString(), request.getTags()));
+        entity.setTags(tags);
         return ResponseEntity.ok(CatalogMapper.toDto(categories.save(entity)));
     }
 

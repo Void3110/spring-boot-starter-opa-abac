@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.example.usermgmt.service;
 
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionRepository;
+import dev.dmitriikonovalov.example.usermgmt.domain.SystemRoles;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembership;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembershipRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
@@ -68,7 +69,7 @@ public class MembershipService {
                     "User " + userId + " is already a member of team " + teamId);
         }
         RoleDefinitionEntity role = resolveAssignableRole(teamId, roleCode);
-        subsetGuard.requireWithinActorPermissions(actorUserId, teamId, role.getPermissions());
+        subsetGuard.requireAssignableByActor(actorUserId, teamId, role);
         var saved = memberships.save(new TeamMembership(UUID.randomUUID(), teamId, userId, role.getId()));
         return new MembershipView(saved, role.getCode());
     }
@@ -79,8 +80,9 @@ public class MembershipService {
         requireTeam(teamId);
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
+        requireTargetIsNotTheOwner(membership, "demoted");
         RoleDefinitionEntity role = resolveAssignableRole(teamId, roleCode);
-        subsetGuard.requireWithinActorPermissions(actorUserId, teamId, role.getPermissions());
+        subsetGuard.requireAssignableByActor(actorUserId, teamId, role);
         membership.setRoleDefinitionId(role.getId());
         return new MembershipView(memberships.save(membership), role.getCode());
     }
@@ -91,7 +93,21 @@ public class MembershipService {
         requireTeam(teamId);
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
+        requireTargetIsNotTheOwner(membership, "removed");
         memberships.delete(membership);
+    }
+
+    /**
+     * The mirror of the owner-assignment guard: the sole owner can be neither demoted nor removed
+     * through membership endpoints (the team would be left ownerless) — ownership moves only via the
+     * transfer-ownership flow.
+     */
+    private void requireTargetIsNotTheOwner(TeamMembership membership, String operation) {
+        if (SystemRoles.OWNER.equals(effectiveRoles.roleOf(membership).getCode())) {
+            throw new IllegalArgumentException(
+                    "The team owner cannot be " + operation + " through membership endpoints;"
+                            + " use the transfer-ownership operation");
+        }
     }
 
     private MembershipView toView(TeamMembership membership) {
@@ -104,8 +120,17 @@ public class MembershipService {
         }
     }
 
-    /** A system role (by code) or this team's custom role (by code). */
+    /**
+     * A system role (by code) or this team's custom role (by code). The {@code owner} code is never
+     * assignable here: the team has exactly one owner (set at creation), and ownership moves only
+     * through the transfer-ownership flow, which atomically downgrades the previous owner.
+     */
     private RoleDefinitionEntity resolveAssignableRole(UUID teamId, String roleCode) {
+        if (SystemRoles.OWNER.equals(roleCode)) {
+            throw new IllegalArgumentException(
+                    "The 'owner' role cannot be assigned through membership endpoints;"
+                            + " use the transfer-ownership operation");
+        }
         return roles.findBySystemTrueAndCode(roleCode)
                 .or(() -> roles.findByTeamIdAndCode(teamId, roleCode))
                 .orElseThrow(() -> new IllegalArgumentException(
