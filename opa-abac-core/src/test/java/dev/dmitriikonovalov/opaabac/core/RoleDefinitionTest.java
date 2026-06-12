@@ -128,4 +128,76 @@ class RoleDefinitionTest {
                 new RoleDefinition("r", Map.of(), Map.of(), Map.of(), TagMatchMode.ALL_OF);
         assertThat(def.matchMode()).isNull();
     }
+
+    // --- deny-overrides (Phase 6.5, T1) ---------------------------------------
+
+    @Test // U1 — a role without denials serializes string-equal to the pre-6.5 form
+    void denialFreeRoleSerializesAsBefore() throws Exception {
+        RoleDefinition threeArg = new RoleDefinition(
+                "catalog-viewer", Map.of("role_level", 10), Map.of("category", List.of("READ")));
+        RoleDefinition fiveArg = new RoleDefinition(
+                "regional-reader",
+                Map.of(),
+                Map.of("category", List.of("READ")),
+                Map.of("region", List.of("emea")),
+                TagMatchMode.ANY_OF);
+
+        assertThat(MAPPER.writeValueAsString(threeArg)).doesNotContain("denied_actions");
+        assertThat(MAPPER.writeValueAsString(fiveArg)).doesNotContain("denied_actions");
+        assertThat(MAPPER.readTree(MAPPER.writeValueAsString(threeArg)).fieldNames())
+                .toIterable()
+                .containsExactlyInAnyOrder("code", "attributes", "permissions");
+    }
+
+    @Test // U2 — JSON without denied_actions deserializes to an empty map, never null
+    void missingDeniedActionsDeserializesToEmpty() throws Exception {
+        String json = "{\"code\":\"r\",\"attributes\":{},\"permissions\":{\"category\":[\"READ\"]}}";
+        RoleDefinition def = MAPPER.readValue(json, RoleDefinition.class);
+        assertThat(def.deniedActions()).isNotNull().isEmpty();
+    }
+
+    @Test // U3 — denials round-trip under the snake_case wire name
+    void deniedActionsRoundTrip() throws Exception {
+        RoleDefinition def = new RoleDefinition(
+                "no-delete-editor",
+                Map.of("role_level", 30),
+                Map.of("category", List.of("READ", "WRITE")),
+                Map.of("category", List.of("delete")),
+                Map.of(),
+                null);
+
+        String json = MAPPER.writeValueAsString(def);
+        assertThat(json).contains("denied_actions").doesNotContain("deniedActions");
+
+        RoleDefinition back = MAPPER.readValue(json, RoleDefinition.class);
+        assertThat(back.deniedActions()).containsEntry("category", List.of("delete"));
+    }
+
+    @Test // null denials normalize to empty; both convenience constructors leave them empty
+    void nullAndConvenienceDenialsNormalizeToEmpty() {
+        RoleDefinition canonical = new RoleDefinition("r", null, null, null, null, null);
+        RoleDefinition threeArg = new RoleDefinition("r", Map.of(), Map.of());
+        RoleDefinition fiveArg =
+                new RoleDefinition("r", Map.of(), Map.of(), Map.of("k", List.of("v")), null);
+        assertThat(canonical.deniedActions()).isEmpty();
+        assertThat(threeArg.deniedActions()).isEmpty();
+        assertThat(fiveArg.deniedActions()).isEmpty();
+    }
+
+    @Test // denials are defensively copied + immutable, mirroring requiredTags
+    void deniedActionsDefensiveCopyAndImmutable() {
+        Map<String, List<String>> denied = new HashMap<>();
+        denied.put("category", new ArrayList<>(List.of("delete")));
+        RoleDefinition def =
+                new RoleDefinition("r", Map.of(), Map.of(), denied, Map.of(), null);
+
+        denied.put("injected", List.of("x"));
+        denied.get("category").add("update");
+
+        assertThat(def.deniedActions()).containsOnlyKeys("category");
+        assertThat(def.deniedActions().get("category")).containsExactly("delete");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> def.deniedActions().put("x", List.of()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

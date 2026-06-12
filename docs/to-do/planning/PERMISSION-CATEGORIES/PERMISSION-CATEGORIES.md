@@ -36,7 +36,7 @@ starter is unpublished).
 
 | Ticket | Status |
 |---|---|
-| T1 — Core: `RoleDefinition.deniedActions` (the flagged build-breaker) | ☐ |
+| T1 — Core: `RoleDefinition.deniedActions` (the flagged build-breaker) | ✅ |
 | T2 — Policies: expansion table + `permissions.rego` + the per-type clean cut + PE fold | ☐ |
 | T3 — user-mgmt: schema + seed migration (senior 25, `viewer`→`reader`) + resolve wire | ☐ |
 | T4 — user-mgmt: the authoring contract (ceiling, category tokens, strict denials) | ☐ |
