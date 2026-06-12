@@ -168,6 +168,8 @@ class AbstractHierarchicalEntityIT {
     @Test // I7 — re-parent rewrites the whole moved subtree; the resolver returns the NEW chain
     void reparentRewritesSubtreeAndResolverSeesNewChain() throws SQLException {
         String oldCategoryPath = readPath(categoryId).orElseThrow();
+        int categoryVersionBefore = readVersion(categoryId);
+        int productVersionBefore = readVersion(productId);
 
         int rewritten = tx.execute(status -> newMaintainer().reparent(
                 "node", oldCategoryPath, Optional.of(new ParentRef("catalog", otherCatalogId.toString()))));
@@ -177,6 +179,9 @@ class AbstractHierarchicalEntityIT {
         assertThat(readPath(productId).orElseThrow())
                 .startsWith("catalog_" + hex(otherCatalogId))
                 .endsWith(".product_" + hex(productId));
+        // the rewrite bumps @Version on every rewritten row, so a pre-move optimistic snapshot conflicts
+        assertThat(readVersion(categoryId)).isEqualTo(categoryVersionBefore + 1);
+        assertThat(readVersion(productId)).isEqualTo(productVersionBefore + 1);
         // the resolver now returns the NEW root
         assertThat(resolver.ancestorsOf("product", productId.toString()))
                 .containsExactly(
@@ -245,6 +250,21 @@ class AbstractHierarchicalEntityIT {
         NodeEntity e = new NodeEntity(id, type, parent);
         maintainer.assignPath(e);
         repository.saveAndFlush(e);
+    }
+
+    private int readVersion(UUID id) {
+        try (Connection c = dataSource.getConnection();
+                var ps = c.prepareStatement("SELECT version FROM node WHERE id = ?")) {
+            ps.setObject(1, id);
+            try (var rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    throw new IllegalStateException("no node row for " + id);
+                }
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private Optional<String> readPath(UUID id) {

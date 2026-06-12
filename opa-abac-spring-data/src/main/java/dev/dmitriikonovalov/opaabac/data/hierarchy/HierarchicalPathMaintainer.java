@@ -148,13 +148,19 @@ public class HierarchicalPathMaintainer {
      * moved node itself {@code nlevel(path) == oldDepth}, and ltree's {@code subpath(path, oldDepth)} is an
      * INVALID position (offset must be {@code < nlevel}) — so a CASE handles the node itself (suffix empty →
      * just {@code newSelfPath}) separately from its descendants (nlevel > oldDepth → subpath is valid).
+     *
+     * <p>Every rewritten row also gets {@code version = version + 1}: the lineage is decision-relevant
+     * state, so a concurrent optimistic transaction holding a pre-move snapshot must conflict, exactly as
+     * if the row had been mutated through JPA. Callers must therefore not flush managed entities of
+     * rewritten rows afterwards — detach/clear first and re-read (the re-parent flows do).
      */
     private int rewriteSubtree(String table, String oldSelfPath, String newSelfPath) {
         int oldDepth = oldSelfPath.split("\\.").length;
         String sql = "UPDATE " + table
                 + " SET path = CASE WHEN nlevel(path) = ?"
                 + "                  THEN CAST(? AS ltree)"
-                + "                  ELSE CAST(? AS ltree) || subpath(path, ?) END"
+                + "                  ELSE CAST(? AS ltree) || subpath(path, ?) END,"
+                + "     version = version + 1"
                 + " WHERE path <@ CAST(? AS ltree)";
         return entityManager.createNativeQuery(sql)
                 .setParameter(1, oldDepth)
