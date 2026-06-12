@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +40,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class EffectiveRoleService {
+
+    private static final Logger log = LoggerFactory.getLogger(EffectiveRoleService.class);
 
     private final TeamMembershipRepository memberships;
     private final RoleDefinitionRepository roles;
@@ -129,7 +133,13 @@ public class EffectiveRoleService {
                 parseMatchMode(role.getMatchMode()));
     }
 
-    /** A stored {@code match_mode} string → the enum; null/blank/unknown → null (no requirement / default). */
+    /**
+     * A stored {@code match_mode} string → the enum; null/blank → null (no requirement / default).
+     * An UNKNOWN non-blank value maps to {@link TagMatchMode#ALL_OF} — the narrower mode — never to
+     * null: null would let {@code core.RoleDefinition} default a present tag requirement to the wider
+     * {@code ANY_OF}, silently widening access on a corrupted row (fail-open). Failing the resolution
+     * entirely would be wider still: "no role definition" re-enables the realm fallback.
+     */
     private static TagMatchMode parseMatchMode(String matchMode) {
         if (matchMode == null || matchMode.isBlank()) {
             return null;
@@ -137,7 +147,8 @@ public class EffectiveRoleService {
         try {
             return TagMatchMode.valueOf(matchMode);
         } catch (IllegalArgumentException e) {
-            return null;
+            log.warn("Unknown stored match_mode '{}' — narrowing to ALL_OF (fail-closed)", matchMode);
+            return TagMatchMode.ALL_OF;
         }
     }
 

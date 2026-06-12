@@ -130,6 +130,30 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
         assertThat(json.get("match_mode").asText()).isEqualTo("ALL_OF");
     }
 
+    @Test // RD3 — an UNKNOWN stored match_mode narrows to ALL_OF (fail-closed), never widens to ANY_OF
+    void unknownStoredMatchModeNarrowsToAllOf() {
+        UUID target = UUID.randomUUID();
+        Team team = teamFor(target);
+        User member = user("corrupted-mode");
+        RoleDefinitionEntity custom = roles.save(new RoleDefinitionEntity(
+                UUID.randomUUID(),
+                "corrupted-mode-reader",
+                false,
+                team.getId(),
+                Map.of(),
+                Map.of("catalog", List.of("read")),
+                Map.of("region", List.of("emea")),
+                "BOGUS")); // unknown but fits the varchar(10) column — a corrupted/future value
+        grant(team, member, custom.getId());
+
+        var res = rest.getForEntity(url(member, "catalog", target), RoleDefinition.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isNotNull();
+        // null would let core.RoleDefinition default the present requirement to the WIDER ANY_OF.
+        assertThat(res.getBody().matchMode())
+                .isEqualTo(dev.dmitriikonovalov.opaabac.core.TagMatchMode.ALL_OF);
+    }
+
     @Test
     void noMatchingTeamResolvesEmpty() {
         User stranger = user("stranger");

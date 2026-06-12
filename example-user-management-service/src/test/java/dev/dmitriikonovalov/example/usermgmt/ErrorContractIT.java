@@ -89,6 +89,49 @@ class ErrorContractIT extends AbstractPostgresIT {
         assertThat(body.get("status").asInt()).isEqualTo(409);
     }
 
+    // I5c — deleting a custom role still bound to a member → 409 STATE_CONFLICT problem+json (the
+    // team_membership FK conflict is a client-resolvable state conflict, not a 500; retro-audit
+    // follow-up, mapped by the starter's PersistenceConflictProblemAdvice).
+    @Test
+    void deletingAnInUseCustomRoleIsProblemJsonWithStateConflict() throws Exception {
+        String ownerSubject = "kc-" + UUID.randomUUID();
+        UUID ownerId = createUser(ownerSubject);
+        UUID memberId = createUser("kc-" + UUID.randomUUID());
+
+        var teamRequest = new CreateTeamRequest().name("Conflict").targetType("catalog")
+                .targetId(UUID.randomUUID()).creatorUserId(ownerId);
+        var team = rest.exchange(
+                "/api/v1/teams", HttpMethod.POST, AbacTestConfig.as(SUBJECT, teamRequest),
+                dev.dmitriikonovalov.example.usermgmt.openapi.model.Team.class);
+        UUID teamId = team.getBody().getId();
+
+        var roleRequest = new dev.dmitriikonovalov.example.usermgmt.openapi.model.RoleDefinitionRequest()
+                .code("in-use-role")
+                .permissions(java.util.Map.of("catalog", java.util.List.of("read")));
+        var role = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions", HttpMethod.POST,
+                AbacTestConfig.as(ownerSubject, roleRequest), String.class, teamId);
+        assertThat(role.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        var add = rest.exchange(
+                "/api/v1/teams/{t}/members", HttpMethod.POST,
+                AbacTestConfig.as(ownerSubject,
+                        new dev.dmitriikonovalov.example.usermgmt.openapi.model.AddMemberRequest()
+                                .userId(memberId).roleCode("in-use-role")),
+                String.class, teamId);
+        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        var del = rest.exchange(
+                "/api/v1/teams/{t}/role-definitions/{code}", HttpMethod.DELETE,
+                AbacTestConfig.as(ownerSubject), String.class, teamId, "in-use-role");
+
+        assertThat(del.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertProblem(del.getHeaders().getContentType());
+        JsonNode body = MAPPER.readTree(del.getBody());
+        assertThat(body.get("errorCode").asText()).isEqualTo("STATE_CONFLICT");
+        assertThat(body.get("status").asInt()).isEqualTo(409);
+    }
+
     // I6 — a subject with no team role calling a gated mutation → 403 ACCESS_DENIED problem+json.
     @Test
     void deniedGatedCallIsProblemJsonWithAccessDenied() throws Exception {
@@ -118,7 +161,11 @@ class ErrorContractIT extends AbstractPostgresIT {
     }
 
     private UUID createUser() {
-        var request = new UserRequest().subject("kc-" + UUID.randomUUID()).displayName("Creator");
+        return createUser("kc-" + UUID.randomUUID());
+    }
+
+    private UUID createUser(String subject) {
+        var request = new UserRequest().subject(subject).displayName("Creator");
         var created = rest.exchange(
                 "/api/v1/users", HttpMethod.POST, AbacTestConfig.as(SUBJECT, request), User.class);
         return created.getBody().getId();
