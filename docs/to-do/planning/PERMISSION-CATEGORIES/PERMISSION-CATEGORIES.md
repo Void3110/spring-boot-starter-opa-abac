@@ -9,10 +9,13 @@ tags:
 
 # Permission categories + delegation (Phase 6.5)
 
-> **Status: 🔜 DESIGN SETTLED (2026-06-12) — ready for `/decompose`.** The model is ADR
-> [[0007-coarse-grained-permission-categories|0007]]; the ten implementation forks were resolved in
-> the 2026-06-12 design interrogation and pinned in [[00-DESIGN]] §2/§7. Stories: [[USER-STORIES]]
-> Epic G (G1–G4). Order: 5.97 → **6.5** → 6 ([[POC-ROADMAP]]).
+> **Status: 🔜 DECOMPOSED (2026-06-12) — ready for the autonomous run.** The model is ADR
+> [[0007-coarse-grained-permission-categories|0007]] (+ its Phase-6.5 addendum); the ten
+> implementation forks were resolved in the 2026-06-12 design interrogation and pinned in
+> [[00-DESIGN]] §2/§7; the work list is [[01-DECOMPOSITION]] (T1–T8, incl. five pinned
+> decomposition semantics). Run via [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] on branch
+> `feature/void3110/permission-categories`. Stories: [[USER-STORIES]] Epic G (G1–G4).
+> Order: 5.97 → **6.5** → 6 ([[POC-ROADMAP]]).
 
 **The slice in one sentence**: replace the flat `read`/`write` vocabulary with the four coarse
 categories (`READ`/`WRITE`/`TAG`/`GRANT`) expanding to fine actions in OPA `data`, refined by
@@ -33,9 +36,29 @@ starter is unpublished).
 
 | Ticket | Status |
 |---|---|
-| *(produced by `/decompose`)* | — |
+| T1 — Core: `RoleDefinition.deniedActions` (the flagged build-breaker) | ☐ |
+| T2 — Policies: expansion table + `permissions.rego` + the per-type clean cut + PE fold | ☐ |
+| T3 — user-mgmt: schema + seed migration (senior 25, `viewer`→`reader`) + resolve wire | ☐ |
+| T4 — user-mgmt: the authoring contract (ceiling, category tokens, strict denials) | ☐ |
+| T5 — user-mgmt: hybrid assignment gates + `data.role.assignable` + latch-race re-proof | ☐ |
+| T6 — catalog: action sweep + the delta-aware `assign-tags` second decision | ☐ |
+| T7 — e2e: `run-permission-categories-matrix.sh` (fixture `9999…`) + nine-runner migration | ☐ |
+| T8 — docs: `PERMISSION-MODEL.md` guide + reconciliations + stories/roadmap + folder move | ☐ |
+
+**Critical path:** T1 → T3 → T4 → T5 (the user-mgmt chain); T2 independent (before T5/T6);
+T6 parallel to T3–T5; T7 needs everything; T8 closes. **No independently-landable subset** —
+the clean cut ships whole.
 
 ## Files
 
 - [[00-DESIGN]] — the settled design (ten forks, behavior matrix, proof obligations)
-- `01-DECOMPOSITION` / `10-QA-TEST-CASES` / `AUTONOMOUS-IMPLEMENTATION-PROMPT` / `STATUS-*` — produced by `/decompose`
+- [[01-DECOMPOSITION]] — T1–T8 + the five pinned decomposition semantics + the critical path
+- [[10-QA-TEST-CASES]] — U1–U9 · P1–P13 · I1–I16 · E1–E7 · D1–D3 (+ the pinned-contract table)
+- [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] — the phase-③ runner prompt (kept verbatim)
+- `STATUS-01 … STATUS-08` — one per ticket, filled at each checkpoint
+
+## Conventions
+
+Clean-room (original names only; the verify gate's scan must stay empty) · commit identity
+`Void3110 <void31102025@gmail.com>` (repo-local) · one focused commit per ticket · **no push** —
+the maintainer pushes/merges.
