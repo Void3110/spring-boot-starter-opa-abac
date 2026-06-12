@@ -18,8 +18,11 @@ import java.lang.annotation.Target;
  * An annotation evaluated before the method runs cannot see a return value or a not-yet-loaded entity,
  * so {@link #resourceType()} / {@link #resourceId()} name the resource coarsely while the <em>decision</em>
  * is rich (role-definition driven). For callers that already hold the instance, {@link #resource()} may
- * name an {@link dev.dmitriikonovalov.opaabac.core.AbacDataObject} directly. Per-instance, attribute-based
- * checks on a loaded entity are a later phase.
+ * name an {@link dev.dmitriikonovalov.opaabac.core.AbacDataObject} directly. With an
+ * {@link dev.dmitriikonovalov.opaabac.core.AbacResourceResolver} registered (opt-in), a declared
+ * {@link #resourceId()} is <em>resolved</em>: the gate decides on the instance's real attributes and
+ * ancestor chain, the role looked up once on the governing root — see the attribute-rich
+ * pre-authorization guide. A missing instance then denies at the gate (403, never the handler's 404).
  *
  * <p>{@code resourceType}, {@code resourceId}, and {@code resource} are SpEL expressions evaluated
  * against the method arguments (e.g. {@code resourceType = "'product'"}, {@code resourceId = "#productId"}).

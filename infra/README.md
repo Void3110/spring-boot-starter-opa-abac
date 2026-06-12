@@ -91,6 +91,19 @@ governs assignment + decisions immediately, no redeploy. See [[TAG-BASED-AUTHORI
 `category.rego` (with the `tags_satisfied` match) is served by the shared OPA container — restart OPA
 after editing it.
 
+The **resource-resolution** matrix (Phase 5.97) proves the attribute-rich gate: id'd decisions resolve
+the instance and decide on its real tags + ancestors (role on the governing root), so the team/tag
+model governs id'd writes — the headline flip, the closed realm-fallback hole, and the missing-id 403
+posture, live:
+
+```bash
+# The resource-resolution matrix (seeds the 8888… fixture pair + three subjects, asserts):
+cd scripts/postman && ./run-resource-resolution-matrix.sh
+```
+
+See [[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]. Note `product.rego`/`catalog.rego` now carry the same
+`tags_satisfied` match as `category.rego` — restart OPA after editing any of them.
+
 > The `team.rego` policy the user-service dogfoods is served by the shared OPA container — it lives in
 > both `../example-user-management-service/src/main/resources/opa/policies/` (the source of truth) and
 > `opa/policies/` (mounted into the rig's OPA). Restart OPA after editing it (`docker restart

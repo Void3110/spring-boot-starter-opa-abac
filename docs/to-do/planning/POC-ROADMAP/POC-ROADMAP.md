@@ -172,16 +172,15 @@ model) + ADR [[adr/0010-hierarchy-aware-list-filter|0010]] (the 5.5-B list forks
 [[USER-STORIES]] (Epic H). Per-node independent grants (a mid-tree node with its own team) are deferred to
 **Phase 8** (ReBAC-in-Rego).
 
-**Then Phase 5.97 — attribute-rich pre-authorization (resource resolution).** An opt-in
-**`AbacResourceResolver` SPI** + a **request-scoped resource cache**: the `@OpaPreAuthorize` gate resolves
-the *instance* behind a declared `resourceId` and decides on its **real attributes** (today the
-pre-invocation check sends empty attributes, so tag-dependent rules wait for the post-load layer-3 check),
-then caches the loaded resource so the handler — and the Phase-6 enrichment advice — reuse it without a
-second SELECT. Fail-closed (resolution failure → deny, never an attribute-less fallback), additive,
-zero Rego. **Design settled** (ADR [[0013-attribute-rich-pre-authorization|0013]] +
-[[RESOURCE-RESOLUTION]], grill-me 2026-06-12 — incl. version binding via the one JPA `@Version` → `409`
-on drift, and the discovery that the governing-root lookup closes the realm-fallback hole on id'd member
-decisions); ready for /decompose. It runs **first** of the three pending slices (**5.97 → 6.5 → 6**).
+**Then Phase 5.97 — attribute-rich pre-authorization (resource resolution). ✅ SHIPPED (2026-06-12).**
+An opt-in **`AbacResourceResolver` SPI** + a **request-scoped resource cache**: the `@OpaPreAuthorize`
+gate resolves the *instance* behind a declared `resourceId` and decides on its **real attributes** and
+ancestors (role on the governing root), then caches the authorized snapshot so the handler — and the
+Phase-6 enrichment advice — reuse it without a second SELECT, with mutations version-guarded (`409
+STATE_CONFLICT` on drift). Fail-closed split semantics, additive, kill-switched. The catalog adopted
+(one resolver bean, `CategoryAuthorizer` deleted, story C4 ✅ — the realm-fallback hole on id'd member
+decisions closed); user-mgmt deliberately did not (the live opt-in proof). See
+[[ATTRIBUTE-RICH-PRE-AUTHORIZATION]] + [[RESOURCE-RESOLUTION]]. **Next: 6.5** (of 5.97 → 6.5 → 6).
 
 **Then Phase 6.5 — coarse permission categories + delegation** *(pulled ahead of Phase 6, 2026-06-12)*.
 Replace flat `read`/`write` with four coarse buckets (`READ`/`WRITE`/`TAG`/`GRANT`) that expand to fine
@@ -255,7 +254,7 @@ documentation is a first-class goal alongside correctness.
 - Shipped slice: [[DATA-FILTERING]] — Phase 5 partial-eval + batch data filtering (✅ merged, PR #11)
 - Phase 5.5 direction: ADR [[adr/0008-hierarchical-resource-authorization|0008]] — N-level ancestor-chain authorization (Epic H in [[USER-STORIES]])
 - Phase 5.95 shipped: ADR [[adr/0012-pagination-envelope|0012]] + [[PAGINATION-ENVELOPE]] — the exact-count pagination envelope composed with the partial-eval filter (Epic D5 in [[USER-STORIES]]); next: 5.97 → 6.5 → Phase 6 action enrichment lands on this envelope
-- Phase 5.97 design: ADR [[0013-attribute-rich-pre-authorization|0013]] + [[RESOURCE-RESOLUTION]] — attribute-rich pre-authorization (`AbacResourceResolver` SPI + request cache + version binding); prerequisite for Phase 6; **runs first**, ready for /decompose
+- Phase 5.97 **shipped** (2026-06-12): ADR [[0013-attribute-rich-pre-authorization|0013]] + [[RESOURCE-RESOLUTION]] + the [[ATTRIBUTE-RICH-PRE-AUTHORIZATION]] guide — attribute-rich pre-authorization (`AbacResourceResolver` SPI + request cache + version binding); the Phase-6 prerequisite is in place; **next: 6.5**
 - Phase 6.5 direction: ADR [[0007-coarse-grained-permission-categories|0007]] — coarse permission categories + delegation; **sequenced before Phase 6** (defines the fine-action vocabulary enrichment enumerates)
 - Phase 6 direction: [[ACTION-ENRICHMENT]] — affordance metadata via batch eval + an `x-implements` marker, evaluated on 5.97-resolved attributes over the 6.5 vocabulary
 - Product lens: [[USER-STORIES]] — the catalog service from the user's perspective, per phase

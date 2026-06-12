@@ -112,6 +112,10 @@ echo "  subjects: owner=$OWNER_SUB reader=$READER_SUB"
 echo "==> Seeding the granted + foreign Catalogs into the catalog DB ..."
 "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
 CREATE EXTENSION IF NOT EXISTS ltree;
+-- A prior run's Categories are deleted first so re-runs never accumulate (the FKs cascade to
+-- products). The granted catalog is shared with the filter matrix, which also deletes-then-seeds
+-- everything it asserts, so cross-cleanup is safe.
+DELETE FROM category WHERE catalog_id IN ('$GRANTED_CATALOG_ID', '$FOREIGN_CATALOG_ID');
 INSERT INTO catalog (id, name, created_at, version, tags, path)
 VALUES ('$GRANTED_CATALOG_ID', 'Granted', now(), 0, '{}'::jsonb,
         CAST('catalog_' || replace('$GRANTED_CATALOG_ID','-','') AS ltree))

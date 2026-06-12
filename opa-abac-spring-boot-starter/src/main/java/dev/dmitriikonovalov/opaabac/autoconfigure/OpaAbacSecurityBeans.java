@@ -8,10 +8,12 @@ import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.JwtClaimsSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.OpaMethodSecurityConfiguration;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorizeAuthorizationManager;
+import dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport;
 import dev.dmitriikonovalov.opaabac.security.SubjectClaimsConfig;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -67,10 +69,19 @@ public class OpaAbacSecurityBeans {
         return new AbacFilter(abacSubjectExtractor);
     }
 
+    /**
+     * The {@code @OpaPreAuthorize} manager. The {@link ResourceResolutionSupport} is present only when
+     * the app registered an {@code AbacResourceResolver} and the {@code resource-resolution} kill-switch
+     * is on; absent ({@code null}) the manager's behavior — and the OPA input it builds — is
+     * byte-identical to the pre-resolution baseline.
+     */
     @Bean
     @ConditionalOnMissingBean
     public OpaPreAuthorizeAuthorizationManager opaPreAuthorizeAuthorizationManager(
-            OpaClient opaClient, RoleDefinitionSupplier roleDefinitionSupplier) {
-        return new OpaPreAuthorizeAuthorizationManager(opaClient, roleDefinitionSupplier);
+            OpaClient opaClient,
+            RoleDefinitionSupplier roleDefinitionSupplier,
+            ObjectProvider<ResourceResolutionSupport> resolutionSupport) {
+        return new OpaPreAuthorizeAuthorizationManager(
+                opaClient, roleDefinitionSupplier, resolutionSupport.getIfAvailable());
     }
 }

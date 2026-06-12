@@ -2,10 +2,13 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -33,6 +36,19 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * else type/id via SpEL); looks up the caller's {@link RoleDefinition}; builds the single
  * {@link AbacContext}; and asks the {@link OpaClient}.
  *
+ * <h2>Resource resolution (opt-in)</h2>
+ * With a {@link ResourceResolutionSupport} present, a check that declares a {@code resourceId} resolves
+ * the <em>instance</em> behind it and decides on its real attributes and ancestor chain, the role
+ * looked up <strong>once on the governing root</strong> — {@code ancestors.isEmpty() ? leaf :
+ * ancestors.get(0)}, exactly {@code HierarchicalAuthorizer}'s rule. The two failure semantics are
+ * split and must never be confused: instance resolution empty/throws → <strong>deny</strong> (never an
+ * attribute-less context, which could skip attribute-keyed deny rules); ancestor resolution throws →
+ * the chain <strong>collapses to empty</strong> and the decision proceeds direct-grant-only (never a
+ * partial chain, never a stripped direct grant). On allow the instance is written through to the
+ * {@link AbacResourceCache} for handler reuse — the gate itself never reads the cache. Without
+ * support (or with the kill-switch off), the built context is byte-identical to the pre-resolution
+ * manager's; type-level checks (no {@code resourceId}) never engage the resolver.
+ *
  * <h2>Fail-closed</h2>
  * Unauthenticated, an unresolvable resource, a declared {@code resourceId} expression that resolves to
  * null/blank, a pointcut match without a resolvable annotation, or <em>any</em> exception while building
@@ -46,14 +62,27 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
 
     private final OpaClient opaClient;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
+    private final ResourceResolutionSupport resolutionSupport;
     private final ExpressionParser expressionParser = new SpelExpressionParser();
     private final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
     public OpaPreAuthorizeAuthorizationManager(
             OpaClient opaClient, RoleDefinitionSupplier roleDefinitionSupplier) {
+        this(opaClient, roleDefinitionSupplier, null);
+    }
+
+    /**
+     * @param resolutionSupport the resolution collaborators, or {@code null} for the pre-resolution,
+     *                          reference-based behavior (byte-identical contexts)
+     */
+    public OpaPreAuthorizeAuthorizationManager(
+            OpaClient opaClient,
+            RoleDefinitionSupplier roleDefinitionSupplier,
+            ResourceResolutionSupport resolutionSupport) {
         this.opaClient = Objects.requireNonNull(opaClient, "opaClient");
         this.roleDefinitionSupplier =
                 Objects.requireNonNull(roleDefinitionSupplier, "roleDefinitionSupplier");
+        this.resolutionSupport = resolutionSupport;
     }
 
     /**
@@ -79,21 +108,28 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 return DENY;
             }
 
-            AbacContext.Resource resource = resolveResource(annotation, invocation);
-            if (resource == null) {
+            ResolvedCheck resolved = resolveCheck(annotation, invocation);
+            if (resolved == null) {
                 log.debug("OPA pre-authorize denied: resource could not be resolved for action '{}'",
                         annotation.action());
                 return DENY;
             }
 
             RoleDefinition roleDefinition = roleDefinitionSupplier
-                    .lookup(subject.id(), resource.type(), resource.id())
+                    .lookup(subject.id(), resolved.roleType(), resolved.roleId())
                     .orElse(null);
 
             AbacContext context =
-                    new AbacContext(subject, annotation.action(), resource, roleDefinition, Map.of());
+                    new AbacContext(subject, annotation.action(), resolved.resource(), roleDefinition, Map.of());
 
-            return new AuthorizationDecision(opaClient.allow(context));
+            boolean allowed = opaClient.allow(context);
+            if (allowed && resolutionSupport != null && resolved.instance() != null) {
+                // Write-through on allow only: the handler may reuse the authorized snapshot. The gate
+                // itself never reads this cache, so it can never become an input to a decision.
+                resolutionSupport.cache().put(resolved.resource().type(), resolved.resource().id(),
+                        resolved.instance());
+            }
+            return new AuthorizationDecision(allowed);
         } catch (Exception e) {
             // Fail-closed: any failure building the context or calling OPA denies.
             log.warn("OPA pre-authorize denied (fail-closed): {}", e.getClass().getSimpleName());
@@ -122,17 +158,26 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         return null;
     }
 
-    private AbacContext.Resource resolveResource(OpaPreAuthorize annotation, MethodInvocation invocation) {
+    /**
+     * Everything one check resolved to: the context resource, the {@code (type, id)} the role is looked
+     * up on (the governing root under resolution; the resource's own coordinates otherwise), and the
+     * loaded instance to cache on allow ({@code null} when there is none).
+     */
+    private record ResolvedCheck(AbacContext.Resource resource, String roleType, String roleId, Object instance) {}
+
+    private ResolvedCheck resolveCheck(OpaPreAuthorize annotation, MethodInvocation invocation) {
         // Bind the invocation's arguments once; reuse for every SpEL expression on this annotation.
         StandardEvaluationContext spelContext = new StandardEvaluationContext();
         bindArguments(spelContext, invocation);
 
-        // 1) An AbacDataObject named by resource() wins (the caller holds the instance).
+        // 1) An AbacDataObject named by resource() wins (the caller holds the instance). Decision
+        //    inputs are unchanged by resolution support; the instance is cached on allow.
         if (!annotation.resource().isBlank()) {
             Object value = evaluate(annotation.resource(), spelContext);
             if (value instanceof AbacDataObject dataObject) {
-                return new AbacContext.Resource(
+                AbacContext.Resource resource = new AbacContext.Resource(
                         dataObject.abacResourceType(), dataObject.abacResourceId(), dataObject.abacAttributes());
+                return new ResolvedCheck(resource, resource.type(), resource.id(), dataObject);
             }
             return null; // declared but unresolvable → deny
         }
@@ -142,7 +187,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             return null; // no resource type → cannot decide
         }
         if (annotation.resourceId().isBlank()) {
-            return new AbacContext.Resource(type, null, Map.of()); // type-level check, by declaration
+            // Type-level check, by declaration — never engages the resolver, caches nothing.
+            return new ResolvedCheck(new AbacContext.Resource(type, null, Map.of()), type, null, null);
         }
         String id = asText(evaluate(annotation.resourceId(), spelContext));
         if (id == null || id.isBlank()) {
@@ -152,7 +198,44 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             // unresolvable resource() branch above.
             return null;
         }
-        return new AbacContext.Resource(type, id, Map.of());
+        if (resolutionSupport == null) {
+            // Pre-resolution, reference-based behavior — byte-identical context, leaf role lookup.
+            return new ResolvedCheck(new AbacContext.Resource(type, id, Map.of()), type, id, null);
+        }
+        return resolveInstance(type, id);
+    }
+
+    /**
+     * The full per-instance resolution for a declared {@code resourceId}: instance → ancestors →
+     * governing root. The two failure semantics are split — instance empty returns {@code null} (deny;
+     * a resolver throw propagates to the fail-closed catch, also deny), an ancestor failure only
+     * collapses the chain — and must never be confused in either direction.
+     */
+    private ResolvedCheck resolveInstance(String type, String id) {
+        AbacDataObject instance = resolutionSupport.resolver().resolve(type, id).orElse(null);
+        if (instance == null) {
+            log.debug("OPA pre-authorize denied (fail-closed): resource '{}/{}' did not resolve", type, id);
+            return null;
+        }
+        List<ParentRef> ancestors = List.of();
+        AncestorChainSupplier chainSupplier = resolutionSupport.ancestorChainSupplier();
+        if (chainSupplier != null) {
+            try {
+                List<ParentRef> chain = chainSupplier.ancestorsOf(type, id);
+                ancestors = chain == null ? List.<ParentRef>of() : chain;
+            } catch (RuntimeException e) {
+                // Ancestor failure collapses to the empty chain — direct-grant-only, never a partial
+                // chain, never a deny by itself (that would strip direct grants).
+                log.debug("OPA pre-authorize: ancestor chain for '{}/{}' collapsed to empty ({})",
+                        type, id, e.getClass().getSimpleName());
+            }
+        }
+        // The role is resolved ONCE, on the governing root — HierarchicalAuthorizer's rule verbatim:
+        // "the chain's first element, or the leaf itself when there is no inheritable lineage."
+        ParentRef governingRoot = ancestors.isEmpty() ? new ParentRef(type, id) : ancestors.get(0);
+        AbacContext.Resource resource =
+                new AbacContext.Resource(type, id, instance.abacAttributes(), ancestors);
+        return new ResolvedCheck(resource, governingRoot.type(), governingRoot.id(), instance);
     }
 
     /** Evaluate a SpEL expression against a pre-bound context; blank expression → null. */

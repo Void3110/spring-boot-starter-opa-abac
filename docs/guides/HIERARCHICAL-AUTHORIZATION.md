@@ -135,6 +135,14 @@ so a UUID's hyphens are stripped; `HierarchyLabels` is the shared encode/decode)
 5. Replace any hard-coded one-step parent hop with the `HierarchicalAuthorizer` walk.
 6. Add the `inherited_grant` + `deny-overrides` Rego clause and ship the `inheritable` OPA data.
 
+> **Gate vs programmatic (since Phase 5.97).** With an `AbacResourceResolver` registered
+> ([[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]), an id'd `@OpaPreAuthorize` makes this same decision **at the
+> gate**: the starter binds the gate's ancestor source to the 5.5 `AncestorResolver`, the role is
+> looked up once on the governing root (this guide's rule, verbatim), and inherited grants pass
+> declaratively — the catalog example's per-instance handler check was deleted on that flip.
+> `HierarchicalAuthorizer` remains the **programmatic** seam for non-annotation flows (services,
+> batch jobs, tests).
+
 ## The list analogue (Slice 5.5-B)
 
 The decision above is **single-resource** (`GET …/{id}`). Its **list** counterpart — an ancestor grant

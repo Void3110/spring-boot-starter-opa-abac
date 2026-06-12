@@ -103,8 +103,12 @@ public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UU
 (`AuthorizationManager<MethodInvocation>`) reads the subject, resolves the resource, looks up the role
 definition, builds the `AbacContext`, and asks OPA; deny surfaces as `AccessDeniedException` → 403.
 
-**Pre-invocation ⇒ the resource is named by type (+ optional id), the *decision* is rich.** A
-per-instance, attribute-based check on a loaded entity is a later phase. A minimal opt-in
+**Pre-invocation ⇒ the resource is named by type (+ optional id), the *decision* is rich.** And since
+Phase 5.97 ([[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]), an app may register an `AbacResourceResolver` bean:
+a declared `resourceId` is then **resolved at the gate**, the decision made on the instance's real
+attributes + ancestor chain with the role looked up once on the governing root — per-instance,
+attribute-based checks become declarative (the layer-2/3 boundary of ADR 0006 redrawn by ADR 0013:
+layer 3 keeps list filtering, mid-transaction state guards, and the version guard). A minimal opt-in
 `OpaAuthorizationManager` (request-level: HTTP method → action, path-prefix → type) is also provided for
 apps that want a coarse request rule.
 

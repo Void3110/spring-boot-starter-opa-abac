@@ -187,15 +187,16 @@ tags_satisfied if { not has_required_tags }   # vacuous — back-compat for unta
   4). A *malformed* requirement (unknown/missing `match_mode`) matches none of the rules → `tags_satisfied`
   fails → **deny** (fail-closed). `default allow := false` is preserved.
 
-### Getting the tags to OPA — the per-instance load-then-check
+### Getting the tags to OPA — resolved at the gate (Phase 5.97)
 
-A tag decision needs the resource's **tags**, which are only known after the entity is loaded. The
-pre-invocation `@OpaPreAuthorize` is type-level (it sees method arguments, not the loaded row), so the
-catalog's `getCategory` does an explicit **load-then-check** (`CategoryAuthorizer`, example-app code on the
-library's `OpaClient` + `RoleDefinitionSupplier` beans): it loads the Category, resolves the role against
-the **governing Catalog** (a small demo-scoped hierarchy step), and calls OPA with the loaded Category as
-the resource so its tags reach `input.resource.attributes`. The general per-instance/hierarchy path is
-Phase 5; this is the minimal demo of the grant.
+A tag decision needs the resource's **tags**, which are only known once the instance is loaded. Since
+Phase 5.97 ([[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]), the pre-invocation gate does that itself: with an
+`AbacResourceResolver` registered, a declared `resourceId` is **resolved** and the decision is made on
+the instance's real tags (and ancestors), the role looked up once on the governing root — so tag
+grants and tag-keyed denies are **decided declaratively at `@OpaPreAuthorize`**, no handler code. The
+earlier post-load layer-3 check this guide used to describe (`CategoryAuthorizer`) existed only
+because the gate was attribute-blind and was deleted with the flip; the library's
+`HierarchicalAuthorizer` remains the programmatic alternative for non-annotation flows.
 
 ## Who manages what
 

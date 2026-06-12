@@ -281,6 +281,166 @@ class OpaAbacAutoConfigurationTest {
         });
     }
 
+    // --- resource-resolution beans (5.97) -------------------------------------
+
+    @Test // U14 — no AbacResourceResolver bean → no support bean; the manager is wired as pre-5.97
+    void resourceResolutionAbsent_withoutResolverBean() {
+        runner.run(context -> {
+            assertThat(context).doesNotHaveBean(
+                    dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport.class);
+            assertThat(context).doesNotHaveBean(
+                    dev.dmitriikonovalov.opaabac.security.AbacResourceCache.class);
+            assertThat(context).hasSingleBean(OpaPreAuthorizeAuthorizationManager.class);
+        });
+    }
+
+    @Test // U15 — resolver bean registered → support wired; without an AncestorResolver the chain
+    // supplier is absent (the gate then always sees an empty chain)
+    void resourceResolutionWired_withResolverBean() {
+        runner.withUserConfiguration(ResolverConfig.class).run(context -> {
+            assertThat(context).hasSingleBean(
+                    dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport.class);
+            dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport support =
+                    context.getBean(dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport.class);
+            assertThat(support.resolver()).isSameAs(ResolverConfig.RESOLVER);
+            assertThat(support.ancestorChainSupplier()).isNull();
+            assertThat(support.cache()).isInstanceOf(
+                    dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache.class);
+        });
+    }
+
+    @Test // U15 — with an AncestorResolver bean present, the bound AncestorChainSupplier delegates to it
+    void resourceResolutionBindsAncestorResolver_whenPresent() {
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+                .withUserConfiguration(ResolverConfig.class, UserResolverConfig.class)
+                .run(context -> {
+                    dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport support =
+                            context.getBean(dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport.class);
+                    assertThat(support.ancestorChainSupplier()).isNotNull();
+                    // the bound supplier delegates to the AncestorResolver bean — same chain
+                    assertThat(support.ancestorChainSupplier().ancestorsOf("category", "c-1"))
+                            .isEqualTo(UserResolverConfig.RESOLVER.ancestorsOf("category", "c-1"));
+                });
+    }
+
+    @Test // U16 — kill-switch off + resolver bean → NO support (baseline restored, beans untouched)
+    void resourceResolutionKillSwitch_disablesDespiteResolverBean() {
+        runner.withPropertyValues("opa.abac.resource-resolution.enabled=false")
+                .withUserConfiguration(ResolverConfig.class)
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(
+                            dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport.class);
+                    assertThat(context).hasSingleBean(OpaPreAuthorizeAuthorizationManager.class);
+                });
+    }
+
+    @Test // a user-supplied AbacResourceCache overrides the request-attributes default
+    void userResourceCacheWins() {
+        runner.withUserConfiguration(ResolverConfig.class, UserCacheConfig.class).run(context ->
+                assertThat(context.getBean(dev.dmitriikonovalov.opaabac.security.AbacResourceCache.class))
+                        .isSameAs(UserCacheConfig.CACHE));
+    }
+
+    @Test // U18 — the kill-switch property binds and defaults to true
+    void resourceResolutionPropertyBindsAndDefaultsTrue() {
+        runner.run(context -> assertThat(
+                context.getBean(OpaAbacProperties.class).getResourceResolution().isEnabled()).isTrue());
+        runner.withPropertyValues("opa.abac.resource-resolution.enabled=false").run(context ->
+                assertThat(context.getBean(OpaAbacProperties.class).getResourceResolution().isEnabled())
+                        .isFalse());
+    }
+
+    @Test // U18 — the generated configuration metadata carries the new property
+    void configurationMetadataCarriesResourceResolutionProperty() throws Exception {
+        try (java.io.InputStream in = getClass()
+                .getResourceAsStream("/META-INF/spring-configuration-metadata.json")) {
+            assertThat(in).as("spring-configuration-metadata.json on the classpath").isNotNull();
+            String metadata = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(metadata).contains("opa.abac.resource-resolution.enabled");
+        }
+    }
+
+    // --- persistence-conflict advice (5.97, retro-audit fold-in #1) -----------
+
+    private final org.springframework.boot.test.context.runner.WebApplicationContextRunner webRunner =
+            new org.springframework.boot.test.context.runner.WebApplicationContextRunner()
+                    .withConfiguration(AutoConfigurations.of(OpaAbacAutoConfiguration.class));
+
+    @Test // U17 — present by default in a servlet web app; maps BOTH dao conflicts → 409 STATE_CONFLICT
+    void persistenceConflictAdvicePresent_andMapsBothConflicts() {
+        webRunner.run(context -> {
+            assertThat(context).hasSingleBean(PersistenceConflictProblemAdvice.class);
+            PersistenceConflictProblemAdvice advice = context.getBean(PersistenceConflictProblemAdvice.class);
+
+            var optimistic = advice.handlePersistenceConflict(
+                    new org.springframework.dao.OptimisticLockingFailureException("row version moved"),
+                    new org.springframework.mock.web.MockHttpServletRequest("PUT", "/catalogs/1"));
+            assertThat(optimistic.getStatusCode().value()).isEqualTo(409);
+            assertThat(optimistic.getBody().errorCode()).isEqualTo("STATE_CONFLICT");
+
+            var integrity = advice.handlePersistenceConflict(
+                    new org.springframework.dao.DataIntegrityViolationException("fk violated"),
+                    new org.springframework.mock.web.MockHttpServletRequest("DELETE", "/roles/1"));
+            assertThat(integrity.getStatusCode().value()).isEqualTo(409);
+            assertThat(integrity.getBody().errorCode()).isEqualTo("STATE_CONFLICT");
+            // no internals leak: the static detail carries no exception text
+            assertThat(integrity.getBody().detail()).doesNotContain("fk violated");
+        });
+    }
+
+    @Test // U17 — absent when the dao classes are off the classpath
+    void persistenceConflictAdviceAbsent_withoutDaoClasses() {
+        webRunner.withClassLoader(new FilteredClassLoader(
+                        org.springframework.dao.OptimisticLockingFailureException.class))
+                .run(context ->
+                        assertThat(context).doesNotHaveBean(PersistenceConflictProblemAdvice.class));
+    }
+
+    @Test // U17 — absent in a non-web context
+    void persistenceConflictAdviceAbsent_withoutWeb() {
+        runner.run(context ->
+                assertThat(context).doesNotHaveBean(PersistenceConflictProblemAdvice.class));
+    }
+
+    @Test // U17 — a user-supplied advice bean overrides the starter's
+    void userPersistenceConflictAdviceWins() {
+        webRunner.withUserConfiguration(UserAdviceConfig.class).run(context ->
+                assertThat(context.getBean(PersistenceConflictProblemAdvice.class))
+                        .isSameAs(UserAdviceConfig.ADVICE));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ResolverConfig {
+        static final dev.dmitriikonovalov.opaabac.core.AbacResourceResolver RESOLVER =
+                (type, id) -> Optional.empty();
+
+        @Bean
+        dev.dmitriikonovalov.opaabac.core.AbacResourceResolver abacResourceResolver() {
+            return RESOLVER;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserCacheConfig {
+        static final dev.dmitriikonovalov.opaabac.security.AbacResourceCache CACHE =
+                new dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache();
+
+        @Bean
+        dev.dmitriikonovalov.opaabac.security.AbacResourceCache abacResourceCache() {
+            return CACHE;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserAdviceConfig {
+        static final PersistenceConflictProblemAdvice ADVICE = new PersistenceConflictProblemAdvice();
+
+        @Bean
+        PersistenceConflictProblemAdvice persistenceConflictProblemAdvice() {
+            return ADVICE;
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class LtreeSourceConfig {
         @Bean
