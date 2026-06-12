@@ -74,7 +74,11 @@ public class SubtreeSpecResolver {
      * @param childType     the ABAC type of the rows being listed (e.g. {@code "category"}) — the type whose
      *     inheritance from the governing root is gated
      * @param governingRoot the root the list scopes to (e.g. {@code (catalog, catalogId)})
-     * @param verb          the action verb (e.g. {@code "read"})
+     * @param verb          the permission token the root-resolved role must carry for the governing
+     *     root's type. The check is RAW token membership — under coarse-category roles (Phase 6.5)
+     *     pass the category token (e.g. {@code READ}), and the caller is responsible for pre-gating
+     *     anything token membership cannot see (deny-overrides, tag requirements) before widening —
+     *     see the catalog example's {@code CategoryListAuthorizer}
      * @param <T>           the queried entity type
      * @return {@code Optional.of(subtreeSpec)} when the inheritable gate passes; {@link Optional#empty()}
      *     otherwise (fail-closed) — never {@code null}
@@ -123,7 +127,7 @@ public class SubtreeSpecResolver {
         return ancestors != null && ancestors.contains(ancestorType);
     }
 
-    /** The role grants {@code verb} on {@code resourceType} (the same check the Rego permission clause does). */
+    /** Raw token membership: the role's permission list for {@code resourceType} contains {@code verb}. */
     private static boolean grantsVerb(RoleDefinition roleDefinition, String resourceType, String verb) {
         List<String> verbs = roleDefinition.permissions().get(resourceType);
         return verbs != null && verbs.contains(verb);

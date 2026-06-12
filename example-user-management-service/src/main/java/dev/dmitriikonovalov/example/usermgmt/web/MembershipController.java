@@ -17,11 +17,13 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
  * Team-membership management — the service <strong>dogfooding</strong> the starter. Each mutating
  * endpoint is {@code @OpaPreAuthorize(action="team:manage", resourceType="'team'", resourceId="#teamId")}:
  * the library resolves the <em>calling subject's</em> role on this team (via the user-service's own
- * {@code RoleDefinitionSupplier}) and OPA's {@code team.rego} grants manage for owner/administrator
- * only. The decision authorizes the <b>actor</b>, never the service identity.
+ * {@code RoleDefinitionSupplier}) and OPA's {@code team.rego} grants manage for the
+ * owner/administrator/senior codes (Phase 6.5). The decision authorizes the <b>actor</b>, never the
+ * service identity.
  *
- * <p>The orthogonal no-self-escalation subset rule lives in {@link MembershipService} (a manager still
- * cannot assign a role exceeding their own permissions). Controllers stay thin and delegate.
+ * <p>The orthogonal escalation bounds live in {@link MembershipService}: the hybrid assignment gates
+ * (cross-tier + the senior subset verdict) on what may be <em>granted</em>, and the target-tier gate
+ * on whom an existing member may be <em>demoted or removed by</em>. Controllers stay thin and delegate.
  */
 @RestController
 public class MembershipController implements MembershipApi {
@@ -69,7 +71,10 @@ public class MembershipController implements MembershipApi {
     @Override
     @OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<Void> removeMember(UUID teamId, UUID userId) {
-        membershipService.removeMember(teamId, userId);
+        // DELETE carries no body, so the actor is the authenticated subject only — needed for the
+        // target-tier gate (a senior must not remove an administrator).
+        UUID actor = callerIdentity.requireActingUserId(null);
+        membershipService.removeMember(actor, teamId, userId);
         return ResponseEntity.noContent().build();
     }
 }

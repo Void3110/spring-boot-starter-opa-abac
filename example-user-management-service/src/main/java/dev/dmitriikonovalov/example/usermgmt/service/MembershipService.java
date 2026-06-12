@@ -91,20 +91,22 @@ public class MembershipService {
                     "User " + userId + " is already a member of team " + teamId);
         }
         RoleDefinitionEntity role = resolveAssignableRole(teamId, roleCode);
-        requireAssignableByActor(actorUserId, teamId, role);
+        requireAssignableByActor(requireActorRole(teamId, actorUserId), role);
         var saved = memberships.save(new TeamMembership(UUID.randomUUID(), teamId, userId, role.getId()));
         return new MembershipView(saved, role.getCode());
     }
 
-    /** Change a member's role, subject to the hybrid assignment gates. */
+    /** Change a member's role, subject to the hybrid assignment gates + the target-tier gate. */
     @Transactional
     public MembershipView changeRole(UUID actorUserId, UUID teamId, UUID userId, String roleCode) {
         lockTeam(teamId);
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
         requireTargetIsNotTheOwner(membership, "demoted");
+        RoleDefinitionEntity actorRole = requireActorRole(teamId, actorUserId);
+        requireTargetDoesNotOutrankActor(actorRole, membership, "demoted");
         RoleDefinitionEntity role = resolveAssignableRole(teamId, roleCode);
-        requireAssignableByActor(actorUserId, teamId, role);
+        requireAssignableByActor(actorRole, role);
         membership.setRoleDefinitionId(role.getId());
         return new MembershipView(memberships.save(membership), role.getCode());
     }
@@ -123,11 +125,7 @@ public class MembershipService {
      * The level gate runs first, so {@code assignable} is never consulted when the tier already
      * rejects (and never for non-senior actors).
      */
-    private void requireAssignableByActor(UUID actorUserId, UUID teamId, RoleDefinitionEntity candidate) {
-        RoleDefinitionEntity actorRole = effectiveRoles.membership(teamId, actorUserId)
-                .map(effectiveRoles::roleOf)
-                .orElseThrow(() -> new SubsetRuleViolationException(
-                        "Actor has no membership on team " + teamId + " and cannot grant roles"));
+    private void requireAssignableByActor(RoleDefinitionEntity actorRole, RoleDefinitionEntity candidate) {
         int actorLevel = levelOf(actorRole, "actor");
         int candidateLevel = levelOf(candidate, "candidate");
         if (actorLevel <= candidateLevel) {
@@ -160,14 +158,48 @@ public class MembershipService {
                         + "' carries no numeric role_level — assignment rejected (fail-closed)");
     }
 
-    /** Remove a member — revokes all access derived through the team (resolve re-derives). */
+    /**
+     * Remove a member — revokes all access derived through the team (resolve re-derives). Subject to
+     * the target-tier gate: removal is management OF the target, so the target must not outrank the
+     * actor (a senior cannot remove an administrator).
+     */
     @Transactional
-    public void removeMember(UUID teamId, UUID userId) {
+    public void removeMember(UUID actorUserId, UUID teamId, UUID userId) {
         lockTeam(teamId);
         TeamMembership membership = memberships.findByTeamIdAndUserId(teamId, userId)
                 .orElseThrow(() -> new MembershipNotFoundException(teamId, userId));
         requireTargetIsNotTheOwner(membership, "removed");
+        requireTargetDoesNotOutrankActor(requireActorRole(teamId, actorUserId), membership, "removed");
         memberships.delete(membership);
+    }
+
+    /** The actor's own role on this team (lock-read) — an actor with no membership cannot manage. */
+    private RoleDefinitionEntity requireActorRole(UUID teamId, UUID actorUserId) {
+        return effectiveRoles.membership(teamId, actorUserId)
+                .map(effectiveRoles::roleOf)
+                .orElseThrow(() -> new SubsetRuleViolationException(
+                        "Actor has no membership on team " + teamId + " and cannot manage members"));
+    }
+
+    /**
+     * The demote/remove mirror of the cross-tier gate (review fix, 2026-06-12): a manager may not act
+     * <b>on</b> a member whose CURRENT tier is above their own. Phase 6.5 made this reachable: the
+     * senior tier is the first manage-holder that sits below another non-owner tier, and without this
+     * gate a senior could demote or remove an administrator. Peers stay manageable (an admin can
+     * remove a peer admin — the pre-6.5 behavior, unchanged). The asymmetry with {@link #levelOf} is
+     * deliberate: an unreadable TARGET level never outranks — removal/demotion only <em>narrows</em>
+     * the target's access, and a member holding a corrupted role must stay removable. The ACTOR side
+     * stays strict (an actor with an unreadable level cannot manage anyone).
+     */
+    private void requireTargetDoesNotOutrankActor(
+            RoleDefinitionEntity actorRole, TeamMembership target, String operation) {
+        int actorLevel = levelOf(actorRole, "actor");
+        Object targetLevel = effectiveRoles.roleOf(target).getAttributes().get("role_level");
+        if (targetLevel instanceof Number n && n.intValue() > actorLevel) {
+            throw new SubsetRuleViolationException(
+                    "The member's current tier is above the actor's and cannot be " + operation
+                            + " (target-tier rule)");
+        }
     }
 
     /**

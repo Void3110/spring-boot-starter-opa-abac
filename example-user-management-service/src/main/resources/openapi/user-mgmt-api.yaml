@@ -183,7 +183,7 @@ paths:
           $ref: '#/components/responses/BadRequest'
     post:
       tags: [Membership]
-      summary: Add a member (owner/administrator; subject to the subset rule)
+      summary: Add a member (owner/administrator/senior; subject to the assignment gates)
       operationId: addMember
       requestBody:
         required: true
@@ -252,7 +252,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
     post:
       tags: [RoleDefinition]
-      summary: Define a team-scoped custom role (owner; subject to the subset rule)
+      summary: Define a team-scoped custom role (owner; subject to the authoring contract)
       operationId: createRoleDefinition
       requestBody:
         required: true
@@ -286,7 +286,7 @@ paths:
           type: string
     put:
       tags: [RoleDefinition]
-      summary: Update a team-scoped custom role (owner; subset rule; system roles immutable)
+      summary: Update a team-scoped custom role (owner; authoring contract; system roles immutable)
       operationId: updateRoleDefinition
       requestBody:
         required: true
@@ -469,7 +469,7 @@ paths:
       - $ref: '#/components/parameters/UserId'
     put:
       tags: [Membership]
-      summary: Change a member's role (owner/administrator; subject to the subset rule)
+      summary: Change a member's role (owner/administrator/senior; assignment + target-tier gates)
       operationId: changeMemberRole
       requestBody:
         required: true
@@ -492,7 +492,7 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
     delete:
       tags: [Membership]
-      summary: Remove a member (owner/administrator) — revokes derived access
+      summary: Remove a member (owner/administrator/senior; target-tier gate) — revokes derived access
       operationId: removeMember
       responses:
         '204':

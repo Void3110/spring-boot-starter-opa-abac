@@ -55,7 +55,9 @@ person and is transferable.
    `attributes.role_level`; an unreadable level rejects) plus, at the **senior** tier only, OPA's
    `data.role.assignable` subset-on-effective verdict (any OPA non-answer rejects). Every rejection is
    `422 ROLE_SUBSET_VIOLATION`. Authoring is bounded by the **level ceiling**, not by the author's own
-   permissions (owner-only authoring made the author-subset check vestigial).
+   permissions (owner-only authoring made the author-subset check vestigial). Acting on an
+   **existing** member is additionally bounded by the **target-tier gate**: a member whose *current*
+   tier is above the actor's cannot be demoted or removed by them (peers stay manageable).
 3. **Transfer-ownership is first-class.** A dedicated operation: the new owner gets `owner`, the old
    owner is downgraded to `administrator`. Prevents orphaned resources.
 4. **Revocation = membership is the single source of truth.** Removing a `TeamMembership` revokes all

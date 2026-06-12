@@ -102,12 +102,20 @@ snapshots (decide-under-protection; the latch IT proves a stale snapshot would h
    (≤ 20) **and** OPA's `data.role.assignable` verdict must answer `true` — the candidate's
    effective actions a subset of the senior's, per type, over the two **raw row snapshots**
    (the policy does the wildcard + denial math; Java never reimplements set algebra).
+3. **Acting on an existing member** (`changeRole` / `removeMember`) additionally applies the
+   **target-tier gate**: a member whose *current* `role_level` is **above** the actor's cannot be
+   demoted or removed by them — a senior cannot demote or remove an administrator. Peers stay
+   manageable (an administrator can remove a peer administrator, the pre-6.5 cell). The asymmetry
+   is deliberate: an unreadable **target** level never outranks (revocation only narrows access,
+   and a member holding a corrupted role must stay removable), while an unreadable **actor** level
+   still rejects.
 
-Every rejection — level, the senior bound, the subset verdict, **and any OPA error/timeout
-during the verdict** — is the one `422 ROLE_SUBSET_VIOLATION` contract: an OPA outage is
-deliberately indistinguishable from "not assignable" (fail-closed by indistinguishability). The
-verdict call is the app-side `RoleAssignableClient` (short timeouts; any non-answer → `false`);
-the level gates run first, so the verdict is never consulted when the tier already rejects.
+Every rejection — level, the senior bound, the subset verdict, the target-tier rule, **and any
+OPA error/timeout during the verdict** — is the one `422 ROLE_SUBSET_VIOLATION` contract: an OPA
+outage is deliberately indistinguishable from "not assignable" (fail-closed by
+indistinguishability). The verdict call is the app-side `RoleAssignableClient` (short timeouts; any
+non-answer → `false`); the level gates run first, so the verdict is never consulted when the tier
+already rejects.
 
 **Tier is power; ceiling is not.** Admin delegation is seniority, not subset — an administrator
 whose own role denies `delete` still assigns full `WRITE` (the designed cell). And a **custom**
@@ -131,7 +139,10 @@ Create keeps its static `category:create` annotation plus a conditional **type-l
 the tag validation, and any mutation. The dispatch lives on the **category** handlers only —
 catalog/product requests carry no tags field, so their PUTs keep a static `<type>:update` (and,
 because the load necessarily precedes an in-handler dispatch, the category PUT's missing-id
-answer is the handler's **404**; the annotated GET keeps the 5.97 **403** pin).
+answer is the handler's **404**; the annotated GET keeps the 5.97 **403** pin). The accepted
+trade-off of that 404: the category PUT is an **id-existence oracle** for callers with no grant
+(missing id → 404, existing-but-denied → 403) — deliberate and bounded to this one endpoint;
+every statically annotated handler keeps the uniform 403.
 
 ## `define-tags`: shipped in the math, enforcement deferred
 

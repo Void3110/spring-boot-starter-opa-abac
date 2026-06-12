@@ -11,6 +11,7 @@ import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
+import dev.dmitriikonovalov.opaabac.core.VersionConflictException;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -115,8 +116,10 @@ class HierarchyAdoptionIT extends AbstractPostgresIT {
                         new ParentRef("category", parentA.toString()),
                         new ParentRef("category", childCategory.toString()));
 
-        // Move childCategory (and its product) under parentB.
-        CategoryEntity moved = hierarchy.reparentCategory(childCategory, parentB);
+        // Move childCategory (and its product) under parentB. The fresh load is the decision snapshot
+        // (no concurrent writer here, so the in-lock version check passes).
+        CategoryEntity moved = hierarchy.reparentCategory(
+                childCategory, parentB, categories.findById(childCategory).orElseThrow());
         // the moved category's own path now sits under parentB
         assertThat(moved.getPath()).contains(".category_" + hex(parentB) + ".");
 
@@ -126,6 +129,36 @@ class HierarchyAdoptionIT extends AbstractPostgresIT {
                         new ParentRef("catalog", catId.toString()),
                         new ParentRef("category", parentB.toString()),
                         new ParentRef("category", childCategory.toString()));
+    }
+
+    @Test // Rules 1-2: the decision snapshot must still be the LOCKED row's version — drift answers
+    // VersionConflictException (409), never a silent overwrite of the racer's committed write.
+    void reparentRejectsAStaleDecisionSnapshot() {
+        UUID catId = UUID.randomUUID();
+        UUID parentA = UUID.randomUUID();
+        UUID parentB = UUID.randomUUID();
+        UUID child = UUID.randomUUID();
+
+        saveCatalog(catId, "Stale");
+        saveCategory(parentA, catId, null);
+        saveCategory(parentB, catId, null);
+        saveCategory(child, catId, parentA);
+
+        // The caller's read — the basis of its delta dispatch + gate decisions.
+        CategoryEntity snapshot = categories.findById(child).orElseThrow();
+
+        // A parallel writer commits in the window between that read and the re-parent lock.
+        CategoryEntity racer = categories.findById(child).orElseThrow();
+        racer.setName("racer-won-the-window");
+        categories.save(racer);
+
+        assertThatThrownBy(() -> hierarchy.reparentCategory(child, parentB, snapshot))
+                .isInstanceOf(VersionConflictException.class);
+
+        // The move did NOT happen — the racer's write survives untouched.
+        CategoryEntity after = categories.findById(child).orElseThrow();
+        assertThat(after.getParentId()).isEqualTo(parentA);
+        assertThat(after.getName()).isEqualTo("racer-won-the-window");
     }
 
     @Test // latch-based (guide Rule 6): create-under-moving-parent serializes on the parent row lock
@@ -146,7 +179,8 @@ class HierarchyAdoptionIT extends AbstractPostgresIT {
             // T1: move P under Q, then HOLD the transaction open (the FOR UPDATE locks on P + Q with it).
             Future<?> mover = pool.submit(() -> new TransactionTemplate(txManager)
                     .executeWithoutResult(status -> {
-                        hierarchy.reparentCategory(parentP, parentQ);
+                        hierarchy.reparentCategory(
+                                parentP, parentQ, categories.findById(parentP).orElseThrow());
                         moved.countDown();
                         try {
                             if (!release.await(10, TimeUnit.SECONDS)) {

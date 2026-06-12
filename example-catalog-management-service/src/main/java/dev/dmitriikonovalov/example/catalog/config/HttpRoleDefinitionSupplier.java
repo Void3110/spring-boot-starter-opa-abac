@@ -24,12 +24,19 @@ import org.springframework.stereotype.Component;
  * not a library change — the library SPI was built for exactly this single-bean swap; the demo supplier
  * stays available behind {@code catalog.role-source=demo} (the default).
  *
- * <h2>Fail-closed</h2>
- * The cardinal rule, end to end: a non-200 (incl. the 204 no-match), a timeout, a connection refused, a
- * malformed body — <em>any</em> failure resolves to {@link Optional#empty()}, which the
- * {@code @OpaPreAuthorize} manager treats as "no role definition" and the policy default-denies. This
- * method never throws for a transport/parse failure; it logs a warning (status only, never the token).
- * Built on the JDK {@link HttpClient} + Jackson — no Feign/RestTemplate/WebClient.
+ * <h2>Failure posture — NOT fully fail-closed (tracked: B2)</h2>
+ * A non-200 (incl. the 204 no-match), a timeout, a connection refused, a malformed body — <em>any</em>
+ * failure resolves to {@link Optional#empty()}, which the {@code @OpaPreAuthorize} manager passes to
+ * the policies as "no role definition". For most subjects that default-denies — but the catalog
+ * policies keep a <b>JWT realm-role fallback</b> for exactly that state ({@code catalog-viewer} →
+ * READ, {@code catalog-editor} → READ+WRITE+TAG), so for a subject carrying those realm roles a
+ * resolve <em>outage</em> is indistinguishable from an authoritative "no role" and lands on the
+ * fallback — wider than their resolved role (whose deny-overrides and tag requirements vanish with
+ * it). Distinguishing outage (throw → deny) from no-role (empty → fallback) is an SPI-contract
+ * change, tracked as follow-up B2 (retro-audit 2026-06-12); until then this seam is fail-closed only
+ * for subjects without fallback realm roles. The method never throws for a transport/parse failure;
+ * it logs a warning (status only, never the token). Built on the JDK {@link HttpClient} + Jackson —
+ * no Feign/RestTemplate/WebClient.
  */
 @Component
 @ConditionalOnProperty(name = "catalog.role-source", havingValue = "http")
@@ -76,10 +83,11 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
             if (status != 204 && status != 200) {
                 log.warn("Effective-role resolve returned HTTP {} — failing closed (no role)", status);
             }
-            return Optional.empty(); // 204 no-match, or 200 with an empty body → no role → default deny
+            return Optional.empty(); // 204 no-match, or 200 with an empty body → no role
         } catch (Exception e) {
-            // Fail-closed: any transport/parse failure → no role → the policy default-denies.
-            log.warn("Effective-role resolve failed ({}), failing closed", e.getClass().getSimpleName());
+            // Any transport/parse failure → "no role". Deny for most subjects, but the policies'
+            // realm-role fallback may still engage (see the class doc — tracked as B2).
+            log.warn("Effective-role resolve failed ({}) — treating as no role", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }

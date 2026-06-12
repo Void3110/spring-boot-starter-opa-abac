@@ -163,7 +163,10 @@ public class CategoryController implements CategoryApi {
             // A parent change must rewrite the subtree's ltree paths (the authorization lineage)
             // atomically with the adjacency change — a bare setParentId+save would leave every
             // hierarchy decision under this subtree following the OLD branch (and skip the cycle guard).
-            entity = hierarchy.reparentCategory(categoryId, request.getParentId());
+            // The pre-dispatch entity is the decision snapshot: the deltas + gate decisions above were
+            // computed on its version, and the locked row must still carry it (drift -> 409) — the
+            // fresh re-read below would otherwise absorb a racer and the save would overwrite it.
+            entity = hierarchy.reparentCategory(categoryId, request.getParentId(), entity);
         }
         entity.setName(request.getName());
         entity.setDescription(request.getDescription());

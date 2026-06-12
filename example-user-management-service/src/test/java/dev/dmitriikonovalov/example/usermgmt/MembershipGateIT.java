@@ -13,6 +13,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.AddMemberRequest;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.ChangeRoleRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.Membership;
 import dev.dmitriikonovalov.example.usermgmt.support.AbacTestConfig;
 import java.io.IOException;
@@ -42,8 +43,8 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 class MembershipGateIT extends AbstractSecuredPostgresIT {
 
-    /** Programmable stub behaviors. */
-    private enum Verdict { TRUE, FALSE, SERVER_ERROR, MISSING_RESULT }
+    /** Programmable stub behaviors. {@code TIMEOUT} answers true — but only after the client gave up. */
+    private enum Verdict { TRUE, FALSE, SERVER_ERROR, MISSING_RESULT, TIMEOUT }
 
     private static final HttpServer OPA_STUB;
     private static volatile Supplier<Verdict> verdictSupplier = () -> Verdict.FALSE;
@@ -58,8 +59,17 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         OPA_STUB.createContext("/v1/data/role/assignable", exchange -> {
             assignableCalls.incrementAndGet();
             Verdict verdict = verdictSupplier.get();
+            if (verdict == Verdict.TIMEOUT) {
+                // Stall past the client's 2s read timeout, then answer a POSITIVE verdict — the
+                // client must already have failed closed; the late "true" must change nothing.
+                try {
+                    Thread.sleep(2500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             String body = switch (verdict) {
-                case TRUE -> "{\"result\": true}";
+                case TRUE, TIMEOUT -> "{\"result\": true}";
                 case FALSE -> "{\"result\": false}";
                 case SERVER_ERROR -> "boom";
                 case MISSING_RESULT -> "{}";
@@ -191,6 +201,22 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         }
     }
 
+    @Test // I9's third leg (review fix, 2026-06-12): the verdict call TIMES OUT → fail-closed 422,
+    // even though the stub eventually answers a positive verdict.
+    void seniorRejectedWhenOpaTimesOut() {
+        verdictSupplier = () -> Verdict.TIMEOUT;
+        Team team = team();
+        User senior = user("senior");
+        User target = user("target");
+        grant(team, senior, SystemRoles.SENIOR_ID);
+
+        var add = addMemberAs(senior, team, target, SystemRoles.MEMBER);
+        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(add.getBody()).contains("ROLE_SUBSET_VIOLATION");
+        assertThat(assignableCalls.get()).isEqualTo(1);
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), target.getId())).isEmpty();
+    }
+
     // --- I10: the admin tier — strict <, no OPA consult, the designed denial cell ---------
 
     @Test
@@ -272,5 +298,92 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         // 403 at the team:manage gate — TeamRoleCapabilities gives custom codes no manage verb.
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(assignableCalls.get()).isZero();
+    }
+
+    // --- The target-tier gate (review fix, 2026-06-12): managing is bounded by the TARGET's ---
+    // --- current tier too — a senior must not demote or remove an administrator. -------------
+
+    @Test
+    void seniorCannotDemoteAnAdministrator() {
+        verdictSupplier = () -> Verdict.TRUE; // even a positive subset verdict must not matter
+        Team team = team();
+        User senior = user("senior");
+        User admin = user("admin");
+        grant(team, senior, SystemRoles.SENIOR_ID);
+        grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
+
+        var demote = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.PUT,
+                AbacTestConfig.as(senior.getSubject(), new ChangeRoleRequest().roleCode(SystemRoles.READER)),
+                String.class,
+                team.getId(),
+                admin.getId());
+        assertThat(demote.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(demote.getBody()).contains("ROLE_SUBSET_VIOLATION");
+        // The target gate fired before the candidate gates — OPA was never consulted.
+        assertThat(assignableCalls.get()).isZero();
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), admin.getId()))
+                .get()
+                .extracting(TeamMembership::getRoleDefinitionId)
+                .isEqualTo(SystemRoles.ADMINISTRATOR_ID);
+    }
+
+    @Test
+    void seniorCannotRemoveAnAdministrator() {
+        Team team = team();
+        User senior = user("senior");
+        User admin = user("admin");
+        grant(team, senior, SystemRoles.SENIOR_ID);
+        grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
+
+        var remove = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.DELETE,
+                AbacTestConfig.as(senior.getSubject()),
+                String.class,
+                team.getId(),
+                admin.getId());
+        assertThat(remove.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(remove.getBody()).contains("ROLE_SUBSET_VIOLATION");
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), admin.getId())).isPresent();
+    }
+
+    @Test // peers stay manageable — the pre-6.5 cell, unchanged by the target gate
+    void adminRemovesAPeerAdministrator() {
+        Team team = team();
+        User admin = user("admin");
+        User peer = user("peer-admin");
+        grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
+        grant(team, peer, SystemRoles.ADMINISTRATOR_ID);
+
+        var remove = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.DELETE,
+                AbacTestConfig.as(admin.getSubject()),
+                Void.class,
+                team.getId(),
+                peer.getId());
+        assertThat(remove.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), peer.getId())).isEmpty();
+    }
+
+    @Test // the senior's designed power is intact: members at/below their tier stay manageable
+    void seniorRemovesAMember() {
+        Team team = team();
+        User senior = user("senior");
+        User member = user("member");
+        grant(team, senior, SystemRoles.SENIOR_ID);
+        grant(team, member, SystemRoles.MEMBER_ID);
+
+        var remove = rest.exchange(
+                "/api/v1/teams/{t}/members/{u}",
+                HttpMethod.DELETE,
+                AbacTestConfig.as(senior.getSubject()),
+                Void.class,
+                team.getId(),
+                member.getId());
+        assertThat(remove.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), member.getId())).isEmpty();
     }
 }
