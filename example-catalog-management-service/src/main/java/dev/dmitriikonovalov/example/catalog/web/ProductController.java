@@ -39,7 +39,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:read", resourceType = "'product'")
+    @OpaPreAuthorize(action = "product:list", resourceType = "'product'")
     public ResponseEntity<ProductPage> listProducts(
             UUID catalogId, UUID categoryId, Integer page, Integer perPage) {
         requireCategory(catalogId, categoryId);
@@ -48,7 +48,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:write", resourceType = "'product'")
+    @OpaPreAuthorize(action = "product:create", resourceType = "'product'")
     public ResponseEntity<Product> createProduct(UUID catalogId, UUID categoryId, ProductRequest request) {
         requireCategory(catalogId, categoryId);
         var entity = new ProductEntity(
@@ -70,7 +70,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:read", resourceType = "'product'", resourceId = "#productId")
+    @OpaPreAuthorize(action = "product:view", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Product> getProduct(UUID catalogId, UUID categoryId, UUID productId) {
         // URL-scope rule stays in the handler (the resolver loads by id alone); the response is the
         // snapshot the gate authorized (Phase 5.97), with a repository fallback for resolution-off.
@@ -82,7 +82,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:write", resourceType = "'product'", resourceId = "#productId")
+    @OpaPreAuthorize(action = "product:update", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UUID productId, ProductRequest request) {
         // Scope the product to its category/catalog (404 if it doesn't belong) before mutating.
         requireCategory(catalogId, categoryId);
@@ -105,7 +105,7 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:write", resourceType = "'product'", resourceId = "#productId")
+    @OpaPreAuthorize(action = "product:delete", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Void> deleteProduct(UUID catalogId, UUID categoryId, UUID productId) {
         requireCategory(catalogId, categoryId);
         var entity = requireProduct(categoryId, productId);

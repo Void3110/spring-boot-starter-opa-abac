@@ -40,7 +40,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>Hierarchy-aware (Slice 5.5-B).</b> When the hierarchy starter is enabled, this also asks the
  * {@link SubtreeSpecResolver} whether the subject's role on the governing Catalog <em>inheritably</em> grants
- * {@code category:read}; if so, the resolved {@code subtreeSpec} is passed into the <b>4-arg</b>
+ * {@code category:list}; if so, the resolved {@code subtreeSpec} is passed into the <b>4-arg</b>
  * {@code findAuthorized} so the list is <em>widened</em> to the whole catalog subtree (still AND-ed with the
  * {@code catalogId} scope, still minus any {@code abac_deny} row). With hierarchy disabled (no resolver
  * bean), the {@code subtreeSpec} is simply absent and the list behaves exactly as the tag-only Phase-5 path.
@@ -88,7 +88,7 @@ public class CategoryListAuthorizer {
         // so the policy path resolves to `category`.
         AbacContext queryContext = new AbacContext(
                 subject,
-                "category:read",
+                "category:list",
                 new AbacContext.Resource("category", null, Map.of()),
                 roleDefinition,
                 Map.of());

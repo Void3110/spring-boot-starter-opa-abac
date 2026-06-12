@@ -41,7 +41,7 @@ starter is unpublished).
 | T3 — user-mgmt: schema + seed migration (senior 25, `viewer`→`reader`) + resolve wire | ✅ |
 | T4 — user-mgmt: the authoring contract (ceiling, category tokens, strict denials) | ✅ |
 | T5 — user-mgmt: hybrid assignment gates + `data.role.assignable` + latch-race re-proof | ✅ |
-| T6 — catalog: action sweep + the delta-aware `assign-tags` second decision | ☐ |
+| T6 — catalog: action sweep + the delta-aware `assign-tags` second decision | ✅ |
 | T7 — e2e: `run-permission-categories-matrix.sh` (fixture `9999…`) + nine-runner migration | ☐ |
 | T8 — docs: `PERMISSION-MODEL.md` guide + reconciliations + stories/roadmap + folder move | ☐ |
 

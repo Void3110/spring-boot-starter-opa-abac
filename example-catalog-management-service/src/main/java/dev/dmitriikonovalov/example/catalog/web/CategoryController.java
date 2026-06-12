@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.catalog.web;
 import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
 import dev.dmitriikonovalov.example.catalog.config.CategoryListAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.TagAssignmentService;
+import dev.dmitriikonovalov.example.catalog.config.TagDecisionGate;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
@@ -30,6 +31,7 @@ public class CategoryController implements CategoryApi {
     private final CategoryListAuthorizer categoryListAuthorizer;
     private final CatalogHierarchyService hierarchy;
     private final ObjectProvider<AbacResourceCache> resourceCache;
+    private final TagDecisionGate tagDecisionGate;
 
     public CategoryController(
             CategoryRepository categories,
@@ -37,17 +39,19 @@ public class CategoryController implements CategoryApi {
             TagAssignmentService tagAssignment,
             CategoryListAuthorizer categoryListAuthorizer,
             CatalogHierarchyService hierarchy,
-            ObjectProvider<AbacResourceCache> resourceCache) {
+            ObjectProvider<AbacResourceCache> resourceCache,
+            TagDecisionGate tagDecisionGate) {
         this.categories = categories;
         this.catalogs = catalogs;
         this.tagAssignment = tagAssignment;
         this.categoryListAuthorizer = categoryListAuthorizer;
         this.hierarchy = hierarchy;
         this.resourceCache = resourceCache;
+        this.tagDecisionGate = tagDecisionGate;
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:read", resourceType = "'category'")
+    @OpaPreAuthorize(action = "category:list", resourceType = "'category'")
     public ResponseEntity<CategoryPage> listCategories(
             UUID catalogId, UUID parentId, Integer page, Integer perPage) {
         requireCatalog(catalogId);
@@ -61,9 +65,14 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:write", resourceType = "'category'")
+    @OpaPreAuthorize(action = "category:create", resourceType = "'category'")
     public ResponseEntity<Category> createCategory(UUID catalogId, CategoryRequest request) {
         requireCatalog(catalogId);
+        // Tag-on-create (Phase 6.5): a request that CARRIES tags needs the TYPE-LEVEL assign-tags
+        // decision on top of the static create gate above (no instance exists yet to resolve).
+        if (request.getTags() != null && !request.getTags().isEmpty()) {
+            tagDecisionGate.requireCategoryAssignTagsForCreate();
+        }
         if (request.getParentId() != null) {
             // Parent must exist within the same catalog.
             categories.findByIdAndCatalogId(request.getParentId(), catalogId)
@@ -93,7 +102,7 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:read", resourceType = "'category'", resourceId = "#categoryId")
+    @OpaPreAuthorize(action = "category:view", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> getCategory(UUID catalogId, UUID categoryId) {
         // The gate resolved the instance and decided on its tags + ancestors (Phase 5.97) — the
         // load-then-check CategoryAuthorizer this handler used to call is gone. The response is the
@@ -109,16 +118,39 @@ public class CategoryController implements CategoryApi {
         return ResponseEntity.ok(CatalogMapper.toDto(entity));
     }
 
+    /**
+     * <b>No static annotation</b> (Phase 6.5, pinned semantic #2): authorization is the delta-aware
+     * dispatch below — a static {@code category:update} could never let a TAG-without-WRITE role
+     * relabel tags, nor stop it from editing content. Every decision still runs through the manager
+     * seam (the {@link TagDecisionGate} methods carry the annotations) and precedes any mutation.
+     */
     @Override
-    @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Category> updateCategory(UUID catalogId, UUID categoryId, CategoryRequest request) {
         var entity = requireCategory(catalogId, categoryId);
+        // The deltas decide which authorization question(s) to ask. Tags compare RAW request map vs
+        // the entity's current tags (null = empty; clearing tags IS a tags change) — raw-side compare
+        // can only over-ask (more authz = narrower), never under-ask. Content = any non-tag field.
+        boolean tagsDelta = !Objects.equals(
+                request.getTags() == null ? java.util.Map.of() : request.getTags(),
+                entity.getTags().asMap());
+        boolean contentDelta = !Objects.equals(entity.getName(), request.getName())
+                || !Objects.equals(entity.getDescription(), request.getDescription())
+                || !Objects.equals(entity.getParentId(), request.getParentId());
+        // Dispatch: content → update; tags → assign-tags; both → both (update first); an EMPTY delta
+        // → update (the conservative default — a no-op PUT by a TAG-only holder answers 403).
+        if (contentDelta || !tagsDelta) {
+            tagDecisionGate.requireCategoryUpdate(categoryId);
+        }
+        if (tagsDelta) {
+            tagDecisionGate.requireCategoryAssignTags(categoryId);
+        }
         // Version binding (Phase 5.97): the freshly loaded row must still be the version the gate
         // authorized — drift means a parallel writer won the window, and the answer is 409 (retry
         // re-runs the gate on the new state), never a silent overwrite. Before any write.
         guardGateSnapshot(entity);
         // Tag validation calls the tag-definition service (slow, fail-closed) — it must run before,
-        // never inside, the locked re-parent transaction below.
+        // never inside, the locked re-parent transaction below (and AFTER authorization, so an
+        // unauthorized caller learns nothing from the 422 vocabulary).
         var tags = tagAssignment.validateAndBuild(
                 "category", categoryId.toString(), request.getTags());
         if (!Objects.equals(entity.getParentId(), request.getParentId())) {
@@ -140,7 +172,7 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:write", resourceType = "'category'", resourceId = "#categoryId")
+    @OpaPreAuthorize(action = "category:delete", resourceType = "'category'", resourceId = "#categoryId")
     public ResponseEntity<Void> deleteCategory(UUID catalogId, UUID categoryId) {
         var entity = requireCategory(catalogId, categoryId);
         guardGateSnapshot(entity);

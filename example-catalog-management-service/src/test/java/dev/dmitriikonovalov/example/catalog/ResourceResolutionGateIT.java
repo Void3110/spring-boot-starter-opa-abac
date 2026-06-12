@@ -100,7 +100,7 @@ class ResourceResolutionGateIT {
         ProgrammableOpaClient.rule = ctx -> false; // fail-closed default; each case sets its rule
         ProgrammableOpaClient.captured.clear();
         RecordingRoleSupplier.lookups.clear();
-        RaceInjector.BEFORE_HANDLER.set(null);
+        RaceInjector.BEFORE_CATALOG_HANDLER.set(null);
         RaceInjector.BEFORE_SAVE.set(null);
         RaceInjector.BEFORE_MUTATE.set(null);
     }
@@ -178,21 +178,23 @@ class ResourceResolutionGateIT {
 
     // --- I4: the deterministic version-guard race ------------------------------
 
-    @Test // I4 — an out-of-band bump between gate and handler → 409, the mutation does NOT apply
+    @Test // I4 — an out-of-band bump between gate and handler → 409, the mutation does NOT apply.
+    // Phase 6.5 moved this cell from the category PUT to the CATALOG PUT: the category update now
+    // dispatches its decisions IN-handler (delta-aware), so the annotation-gate→handler window this
+    // cell pins only exists on the statically-annotated handlers (catalog/product update).
     void gateWindowRaceAnswers409AndMutationDoesNotApply() throws Exception {
         var catalog = seedCatalog();
-        var emea = seedCategory(catalog.getId(), null, "emea-cat", Map.of("region", "emea"));
         ProgrammableOpaClient.rule = ctx -> true;
-        RaceInjector.BEFORE_HANDLER.set(() -> jdbc.update(
-                "update category set version = version + 1, name = 'raced' where id = ?", emea.getId()));
+        RaceInjector.BEFORE_CATALOG_HANDLER.set(() -> jdbc.update(
+                "update catalog set version = version + 1, name = 'raced' where id = ?", catalog.getId()));
 
-        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{id}", catalog.getId(), emea.getId())
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"mine\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errorCode").value("STATE_CONFLICT"));
 
-        var row = categories.findById(emea.getId()).orElseThrow();
+        var row = catalogs.findById(catalog.getId()).orElseThrow();
         assertThat(row.getName()).isEqualTo("raced"); // the out-of-band writer's state survived
     }
 
@@ -214,7 +216,10 @@ class ResourceResolutionGateIT {
 
     // --- I6: missing id behind an annotated resourceId → 403 (pinned semantic #1)
 
-    @Test // I6 — resolution on: a nonexistent id answers 403 at the gate, with NO OPA call
+    @Test // I6 — resolution on: a nonexistent id behind an ANNOTATED resourceId answers 403 at the
+    // gate, with NO OPA call. Phase 6.5: the category PUT no longer carries an annotated resourceId
+    // (its decisions are delta-dispatched in-handler AFTER the load), so its missing-id answer is the
+    // handler's 404 — the 403 pin holds exactly where the annotated precondition still exists (GET).
     void missingIdAnswers403WithoutOpaCall() throws Exception {
         var catalog = seedCatalog();
         ProgrammableOpaClient.rule = ctx -> true; // even an allow-all policy cannot reach this
@@ -225,7 +230,8 @@ class ResourceResolutionGateIT {
         mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{id}", catalog.getId(), UUID.randomUUID())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"x\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"));
 
         assertThat(ProgrammableOpaClient.captured)
                 .as("instance failure denies WITHOUT an OPA call — never an attribute-less context")
@@ -387,21 +393,23 @@ class ResourceResolutionGateIT {
     }
 
     /**
-     * Deterministic race injection. Both hooks fire at most once (get-and-clear). An unordered
-     * aspect is {@code LOWEST_PRECEDENCE}, so {@code BEFORE_HANDLER} runs <em>inside</em> the
+     * Deterministic race injection. Each hook fires at most once (get-and-clear). An unordered
+     * aspect is {@code LOWEST_PRECEDENCE}, so {@code BEFORE_CATALOG_HANDLER} runs <em>inside</em> the
      * order-190 method-security interceptor — i.e. after the gate decided and cached, before the
-     * handler loads (the I4 window). {@code BEFORE_SAVE} fires immediately before the repository
-     * save — after the handler's load and guard (the I5 window the {@code @Version} column owns).
+     * handler loads (the I4 window; on the CATALOG update since Phase 6.5 — the category update
+     * dispatches in-handler and no longer has this window). {@code BEFORE_SAVE} fires immediately
+     * before the repository save — after the handler's load and guard (the I5 window the
+     * {@code @Version} column owns).
      */
     @Aspect
     static class RaceInjector {
-        static final AtomicReference<Runnable> BEFORE_HANDLER = new AtomicReference<>();
+        static final AtomicReference<Runnable> BEFORE_CATALOG_HANDLER = new AtomicReference<>();
         static final AtomicReference<Runnable> BEFORE_SAVE = new AtomicReference<>();
         static final AtomicReference<Runnable> BEFORE_MUTATE = new AtomicReference<>();
 
-        @Before("execution(* dev.dmitriikonovalov.example.catalog.web.CategoryController.updateCategory(..))")
-        void beforeHandler() {
-            Runnable race = BEFORE_HANDLER.getAndSet(null);
+        @Before("execution(* dev.dmitriikonovalov.example.catalog.web.CatalogController.updateCatalog(..))")
+        void beforeCatalogHandler() {
+            Runnable race = BEFORE_CATALOG_HANDLER.getAndSet(null);
             if (race != null) {
                 race.run();
             }

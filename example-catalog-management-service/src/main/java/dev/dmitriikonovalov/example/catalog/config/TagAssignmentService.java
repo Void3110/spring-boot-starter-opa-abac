@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
  * (fail-closed: a fetch failure throws, so the write is rejected — never persisted untagged).
  *
  * <p>This is the <b>assignment</b> layer: the dictionary constrains <em>what</em> is legal; the existing
- * {@code @OpaPreAuthorize(category:write)} governs <em>who</em> may assign. Every submitted entry must
+ * {@code @OpaPreAuthorize(category:assign-tags)} (the delta-dispatched second decision) governs <em>who</em> may assign. Every submitted entry must
  * resolve to a known key and pass its value type / cardinality; an unknown key or illegal value throws
  * {@link IllegalTagAssignmentException} (→ 422), naming the offending key. Nothing is silently dropped.
  *
