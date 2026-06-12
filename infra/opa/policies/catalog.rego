@@ -2,8 +2,12 @@
 #
 # The app POSTs {"input": <AbacContext>} to /v1/data/catalog and reads result.allow.
 # Decisions are role-definition-driven: the caller's role_definition.permissions grants
-# action verbs per resource type. JWT roles are a fallback used only when no role
-# definition is present on the input.
+# COARSE permission categories (READ/WRITE/TAG/GRANT) per resource type, expanded to fine
+# actions (view/list/create/update/delete/define-tags/assign-tags/assign-roles) through
+# data.permission_categories and narrowed by denied_actions — the shared
+# permissions.effective_actions (Phase 6.5, ADR 0007). A stale/unknown token expands to
+# NOTHING (fail-closed ∅-expansion). JWT roles are a fallback used only when no role
+# definition is present on the input, expanded through the SAME table.
 #
 # Phase 5.97 — tag-based grants (the category.rego block, ported as-is; retro-audit fold-in #3).
 # A role may additionally REQUIRE tags: when input.role_definition.required_tags is present, the
@@ -19,35 +23,39 @@
 
 package catalog
 
+import data.permissions
+
 default allow := false
 
-# The action verb is the part after the ":" in input.action (e.g. "catalog:read" -> "read").
+# The fine action verb is the part after the ":" in input.action (e.g. "catalog:view" -> "view").
 verb := v if {
 	parts := split(input.action, ":")
 	count(parts) == 2
 	v := parts[1]
 }
 
-# PRIMARY: role-definition-driven. Allow when the verb is granted for this resource type
-# by the caller's role definition AND the resource's tags satisfy the role's tag requirement.
+# PRIMARY: role-definition-driven. Allow when the fine verb is in the role's EFFECTIVE actions
+# for this resource type (categories expanded minus denials) AND the resource's tags satisfy
+# the role's tag requirement.
 allow if {
-	verb in input.role_definition.permissions[input.resource.type]
+	verb in permissions.effective_actions(input.role_definition, input.resource.type)
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles.
-# viewer/editor may read; only editor may write.
+# FALLBACK: only when no role definition is present, decide from subject roles — through the
+# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
+# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
 allow if {
 	not has_role_definition
-	verb == "read"
 	some role in input.subject.roles
 	role in {"catalog-viewer", "catalog-editor"}
+	verb in permissions.effective_from_categories({"READ"})
 }
 
 allow if {
 	not has_role_definition
-	verb == "write"
 	"catalog-editor" in input.subject.roles
+	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
 }
 
 has_role_definition if {

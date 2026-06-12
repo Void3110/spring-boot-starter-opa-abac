@@ -3,87 +3,156 @@ package category_test
 import data.category
 
 # --- role-definition-driven (PRIMARY) ---------------------------------------
+#
+# Phase 6.5: roles grant COARSE categories (READ/WRITE/TAG/GRANT) expanded through
+# data.permission_categories; actions carry FINE verbs (view/list/create/update/delete/…).
+# Every pre-6.5 behavioral cell below is preserved, re-expressed at the new vocabulary.
 
 viewer_role_def := {
 	"code": "catalog-viewer",
 	"attributes": {"role_level": 10},
-	"permissions": {"catalog": ["read"], "category": ["read"], "product": ["read"]},
+	"permissions": {"catalog": ["READ"], "category": ["READ"], "product": ["READ"]},
 }
 
 editor_role_def := {
 	"code": "catalog-editor",
 	"attributes": {"role_level": 20},
 	"permissions": {
-		"catalog": ["read", "write"],
-		"category": ["read", "write"],
-		"product": ["read", "write"],
+		"catalog": ["READ", "WRITE", "TAG"],
+		"category": ["READ", "WRITE", "TAG"],
+		"product": ["READ", "WRITE", "TAG"],
 	},
 }
 
-test_viewer_role_def_reads if {
+test_viewer_role_def_views if {
 	category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "p1"},
 		"role_definition": viewer_role_def,
 		"environment": {},
 	}
 }
 
-test_viewer_role_def_cannot_write if {
+test_viewer_role_def_cannot_update if {
 	not category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:write",
+		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
 		"role_definition": viewer_role_def,
 		"environment": {},
 	}
 }
 
-test_editor_role_def_reads if {
+test_editor_role_def_views if {
 	category.allow with input as {
 		"subject": {"id": "u2", "roles": ["catalog-editor"]},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "p1"},
 		"role_definition": editor_role_def,
 		"environment": {},
 	}
 }
 
-test_editor_role_def_writes if {
+test_editor_role_def_updates if {
 	category.allow with input as {
 		"subject": {"id": "u2", "roles": ["catalog-editor"]},
-		"action": "category:write",
+		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
 		"role_definition": editor_role_def,
+		"environment": {},
+	}
+}
+
+# --- P3: a stale flat token decides NOTHING (the clean cut's ∅-expansion floor) ---
+
+stale_flat_role := {
+	"code": "stale-viewer",
+	"attributes": {"role_level": 10},
+	"permissions": {"category": ["read", "write"]},
+}
+
+test_stale_flat_token_denies_everything_it_once_granted if {
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:view",
+		"resource": {"type": "category", "id": "p1"},
+		"role_definition": stale_flat_role,
+		"environment": {},
+	}
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:update",
+		"resource": {"type": "category", "id": "p1"},
+		"role_definition": stale_flat_role,
+		"environment": {},
+	}
+}
+
+# --- P6: deny-overrides end-to-end — WRITE granted, delete denied -----------------
+
+no_delete_editor := {
+	"code": "no-delete-editor",
+	"attributes": {"role_level": 20},
+	"permissions": {"category": ["READ", "WRITE"]},
+	"denied_actions": {"category": ["delete"]},
+}
+
+test_denied_action_update_still_allows if {
+	category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:update",
+		"resource": {"type": "category", "id": "p1"},
+		"role_definition": no_delete_editor,
+		"environment": {},
+	}
+}
+
+test_denied_action_delete_denies if {
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:delete",
+		"resource": {"type": "category", "id": "p1"},
+		"role_definition": no_delete_editor,
+		"environment": {},
+	}
+}
+
+# The abac_deny resource veto is UNCHANGED by the category model (a separate deny mechanism).
+test_abac_deny_veto_beats_category_grant if {
+	not category.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "category:view",
+		"resource": {"type": "category", "id": "p1", "attributes": {"abac_deny": true}},
+		"role_definition": viewer_role_def,
 		"environment": {},
 	}
 }
 
 # --- fallback to subject roles (no role_definition) -------------------------
 
-test_fallback_viewer_reads if {
+test_fallback_viewer_views if {
 	category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "p1"},
 		"environment": {},
 	}
 }
 
-test_fallback_viewer_cannot_write if {
+test_fallback_viewer_cannot_update if {
 	not category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:write",
+		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
 		"environment": {},
 	}
 }
 
-test_fallback_editor_writes if {
+test_fallback_editor_updates if {
 	category.allow with input as {
 		"subject": {"id": "u2", "roles": ["catalog-editor"]},
-		"action": "category:write",
+		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
 		"environment": {},
 	}
@@ -94,7 +163,7 @@ test_fallback_editor_writes if {
 test_default_deny_unknown_role if {
 	not category.allow with input as {
 		"subject": {"id": "u3", "roles": ["random-role"]},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "p1"},
 		"environment": {},
 	}
@@ -103,7 +172,7 @@ test_default_deny_unknown_role if {
 test_default_deny_no_roles_no_role_def if {
 	not category.allow with input as {
 		"subject": {"id": "u3", "roles": []},
-		"action": "category:write",
+		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
 		"environment": {},
 	}
@@ -118,7 +187,7 @@ test_default_deny_no_roles_no_role_def if {
 regional_reader_any := {
 	"code": "regional-reader",
 	"attributes": {"role_level": 15},
-	"permissions": {"category": ["read"]},
+	"permissions": {"category": ["READ"]},
 	"required_tags": {"region": ["emea"]},
 	"match_mode": "ANY_OF",
 }
@@ -127,23 +196,23 @@ regional_reader_any := {
 strict_reader_all := {
 	"code": "strict-reader",
 	"attributes": {"role_level": 15},
-	"permissions": {"category": ["read"]},
+	"permissions": {"category": ["READ"]},
 	"required_tags": {"region": ["emea"], "sensitivity": ["public", "internal"]},
 	"match_mode": "ALL_OF",
 }
 
-# requires region ANY_OF [emea, apac] (either acceptable)
+# requires region:[emea] OR sensitivity:[public] (either acceptable)
 multi_region_any := {
 	"code": "multi-region",
 	"attributes": {"role_level": 15},
-	"permissions": {"category": ["read"]},
+	"permissions": {"category": ["READ"]},
 	"required_tags": {"region": ["emea"], "sensitivity": ["public"]},
 	"match_mode": "ANY_OF",
 }
 
 tag_input(role_def, tags) := {
 	"subject": {"id": "u1", "roles": []},
-	"action": "category:read",
+	"action": "category:view",
 	"resource": {"type": "category", "id": "p1", "attributes": tags},
 	"role_definition": role_def,
 	"environment": {},
@@ -180,11 +249,11 @@ test_multi_value_intersection if {
 	category.allow with input as tag_input(regional_reader_any, {"region": "emea"})
 }
 
-# T6 — no required tags (vacuous): a plain role behaves exactly as Phase 4 (allow on read).
+# T6 — no required tags (vacuous): a plain role behaves exactly as before (allow on view).
 test_vacuous_no_required_tags if {
 	category.allow with input as {
 		"subject": {"id": "u1", "roles": []},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": ["apac"]}},
 		"role_definition": viewer_role_def,
 		"environment": {},
@@ -196,11 +265,11 @@ test_permission_ok_tags_fail if {
 	not category.allow with input as tag_input(regional_reader_any, {"region": ["apac"]})
 }
 
-# T8 — tags ok but permission absent (write not granted) -> deny.
+# T8 — tags ok but permission absent (update not granted) -> deny.
 test_tags_ok_permission_fail if {
 	not category.allow with input as {
 		"subject": {"id": "u1", "roles": []},
-		"action": "category:write",
+		"action": "category:update",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": ["emea"]}},
 		"role_definition": regional_reader_any,
 		"environment": {},
@@ -212,7 +281,7 @@ test_malformed_required_tags_denies if {
 	not category.allow with input as tag_input(
 		{
 			"code": "broken",
-			"permissions": {"category": ["read"]},
+			"permissions": {"category": ["READ"]},
 			"required_tags": {"region": ["emea"]},
 			"match_mode": "WHATEVER",
 		},
@@ -225,7 +294,7 @@ test_required_tags_without_mode_denies if {
 	not category.allow with input as tag_input(
 		{
 			"code": "broken2",
-			"permissions": {"category": ["read"]},
+			"permissions": {"category": ["READ"]},
 			"required_tags": {"region": ["emea"]},
 		},
 		{"region": ["emea"]},
@@ -237,7 +306,7 @@ test_default_deny_missing_resource_tag if {
 	not category.allow with input as tag_input(regional_reader_any, {"sensitivity": "public"})
 }
 
-# ALL_OF with both keys satisfied (the positive of multi_region_any, region OR sensitivity).
+# P11 — tag matching composes with expansion unchanged: ANY_OF's second key rescues.
 test_any_of_second_key_hits if {
 	# region miss (apac) but sensitivity public hits -> ANY_OF allow.
 	category.allow with input as tag_input(
@@ -249,14 +318,16 @@ test_any_of_second_key_hits if {
 # --- Phase 5: filter entrypoint (list filtering) ----------------------------
 #
 # `filter` is concrete-evaluated here for coverage (the residual / partial-eval shape is asserted by the
-# Java HttpOpaClientCompileTest + the e2e matrix). The decisive property: filter is ROLE-DEFINITION-ONLY
-# (no subject-roles fallback) so a missing role definition fails CLOSED, and its membership tag match
-# matches a scalar OR an array tag — agreeing with the single-decision `allow`.
+# Java HttpOpaClientCompileTest + the P10 fold + the e2e matrix). The decisive properties: filter is
+# ROLE-DEFINITION-ONLY (no subject-roles fallback) so a missing role definition fails CLOSED; the
+# category expansion is consumed INLINE (the PE-friendly idiom — same data table as effective_actions);
+# "list" must be in the expanded-minus-denied set; and its membership tag match matches a scalar OR an
+# array tag — agreeing with the single-decision `allow`.
 
-# An unrestricted role (no required tags) -> filter true for any readable category.
-test_filter_unrestricted_reads if {
+# An unrestricted role (no required tags) -> filter true for any listable category.
+test_filter_unrestricted_lists if {
 	category.filter with input as {
-		"action": "category:read",
+		"action": "category:list",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
 		"role_definition": viewer_role_def,
 		"environment": {},
@@ -292,33 +363,68 @@ test_filter_agrees_with_allow_array if {
 }
 
 # U27 — the fail-open-leak guard: NO role_definition -> filter false (would be DENY_ALL on partial eval).
-# `allow` would grant this read via its subject-roles fallback, but `filter` must NOT — a list with no
+# `allow` would grant a view via its subject-roles fallback, but `filter` must NOT — a list with no
 # role definition is empty, never the whole table.
 test_filter_no_role_definition_denies if {
 	not category.filter with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:read",
+		"action": "category:list",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
 		"environment": {},
 	}
 }
 
-# Contrast: `allow` DOES grant the same no-role-def read (the fallback) — proving filter dropped it.
-test_allow_grants_no_role_def_read_that_filter_denies if {
+# Contrast: `allow` DOES grant the same no-role-def view (the fallback) — proving filter dropped it.
+test_allow_grants_no_role_def_view_that_filter_denies if {
 	category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
 		"environment": {},
 	}
 }
 
-# filter requires the read permission too: a role without category:read -> filter false.
-test_filter_requires_read_permission if {
+# P8 — filter requires "list" in the EFFECTIVE set: a TAG-only role (no READ) -> filter false.
+test_filter_tag_only_role_denies if {
 	not category.filter with input as {
-		"action": "category:read",
+		"action": "category:list",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
-		"role_definition": {"code": "x", "permissions": {"catalog": ["read"]}},
+		"role_definition": {"code": "x", "permissions": {"category": ["TAG"]}},
+		"environment": {},
+	}
+}
+
+# P8 — a grant on a DIFFERENT type does not open this type's list.
+test_filter_requires_grant_on_this_type if {
+	not category.filter with input as {
+		"action": "category:list",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": {"code": "x", "permissions": {"catalog": ["READ"]}},
+		"environment": {},
+	}
+}
+
+# P8 — a denial of "list" closes the filter even though READ grants it (deny-overrides at the
+# list boundary).
+test_filter_list_denied_closes if {
+	not category.filter with input as {
+		"action": "category:list",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": {
+			"code": "x",
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"category": ["list"]},
+		},
+		"environment": {},
+	}
+}
+
+# A stale flat token never opens the filter (∅-expansion at the list boundary).
+test_filter_stale_flat_token_denies if {
+	not category.filter with input as {
+		"action": "category:list",
+		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": stale_flat_role,
 		"environment": {},
 	}
 }
@@ -330,14 +436,14 @@ test_bulk_returns_positional_decisions if {
 	result := category.bulk with input as {"items": [
 		{
 			"subject": {"id": "u", "roles": []},
-			"action": "category:read",
+			"action": "category:view",
 			"resource": {"type": "category", "id": "a", "attributes": {}},
 			"role_definition": viewer_role_def,
 			"environment": {},
 		},
 		{
 			"subject": {"id": "u", "roles": []},
-			"action": "category:write",
+			"action": "category:update",
 			"resource": {"type": "category", "id": "b", "attributes": {}},
 			"role_definition": viewer_role_def,
 			"environment": {},
@@ -354,11 +460,11 @@ test_bulk_empty if {
 
 # --- Phase 5.5-A: N-level ancestor inheritance + deny-overrides --------------
 
-# A role resolved on the governing root (a Catalog) grants `read` on the catalog type only.
+# A role resolved on the governing root (a Catalog) grants READ on the catalog type only.
 cat_root_role := {
 	"code": "catalog-viewer",
 	"attributes": {},
-	"permissions": {"catalog": ["read"]},
+	"permissions": {"catalog": ["READ"]},
 }
 
 # category inherits from catalog (opt-in, default-off): supplied per-test via `with data`.
@@ -366,7 +472,7 @@ category_inherits_catalog := {"category": {"catalog": true}}
 
 deep_category_input(role_def, attrs) := {
 	"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-	"action": "category:read",
+	"action": "category:view",
 	"resource": {
 		"type": "category",
 		"id": "k1",
@@ -399,7 +505,7 @@ test_deny_overrides_beats_inherited if {
 test_no_ancestors_direct_only_deny if {
 	not category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "k1", "attributes": {}},
 		"role_definition": cat_root_role,
 		"environment": {},
@@ -407,11 +513,26 @@ test_no_ancestors_direct_only_deny if {
 		with data.category.inheritable as category_inherits_catalog
 }
 
+# A DENIAL on the ancestor type narrows the INHERITED grant too (effective_actions on the
+# ancestor type is expanded-minus-denied).
+test_inherited_grant_respects_ancestor_denial if {
+	not category.allow with input as deep_category_input(
+		{
+			"code": "no-view-root",
+			"attributes": {},
+			"permissions": {"catalog": ["READ"]},
+			"denied_actions": {"catalog": ["view"]},
+		},
+		{},
+	)
+		with data.category.inheritable as category_inherits_catalog
+}
+
 # TAG MATCH ON THE INHERITED PATH: a tag-gated root role only inherits where the LEAF's tags satisfy it.
 cat_root_role_tagged := {
 	"code": "regional-catalog-reader",
 	"attributes": {},
-	"permissions": {"catalog": ["read"]},
+	"permissions": {"catalog": ["READ"]},
 	"required_tags": {"region": ["emea"]},
 	"match_mode": "ANY_OF",
 }
@@ -433,14 +554,15 @@ test_inherited_grant_respects_leaf_tags_mismatch if {
 # The type-level @OpaPreAuthorize on a LIST endpoint asks `allow` with only a resource TYPE (no id).
 list_gate_input(role_def) := {
 	"subject": {"id": "u1", "roles": []},
-	"action": "category:read",
+	"action": "category:list",
 	"resource": {"type": "category"},
 	"role_definition": role_def,
 	"environment": {},
 }
 
-# A catalog-only role passes the COARSE list gate (it may read categories via the inheritable catalog grant).
-# The FINE which-rows cut still happens in SQL — this clause only OPENS the gate.
+# P9 — a catalog-only role passes the COARSE list gate (it may list categories via the inheritable
+# catalog grant — "list" opens it exactly as "read" did pre-6.5). The FINE which-rows cut still
+# happens in SQL — this clause only OPENS the gate.
 test_list_gate_passes_for_inheritable_ancestor_grant if {
 	category.allow with input as list_gate_input(cat_root_role)
 		with data.category.inheritable as category_inherits_catalog
@@ -456,7 +578,7 @@ test_list_gate_denies_when_inheritance_off if {
 test_list_gate_denies_stranger if {
 	not category.allow with input as {
 		"subject": {"id": "s", "roles": []},
-		"action": "category:read",
+		"action": "category:list",
 		"resource": {"type": "category"},
 		"environment": {},
 	}
@@ -467,7 +589,7 @@ test_list_gate_denies_stranger if {
 test_list_gate_respects_deny if {
 	not category.allow with input as {
 		"subject": {"id": "u1", "roles": []},
-		"action": "category:read",
+		"action": "category:list",
 		"resource": {"type": "category", "attributes": {"abac_deny": true}},
 		"role_definition": cat_root_role,
 		"environment": {},
@@ -480,10 +602,22 @@ test_list_gate_respects_deny if {
 test_list_gate_does_not_affect_single_resource if {
 	not category.allow with input as {
 		"subject": {"id": "u1", "roles": []},
-		"action": "category:read",
+		"action": "category:view",
 		"resource": {"type": "category", "id": "k1", "attributes": {}},
 		"role_definition": cat_root_role,
 		"environment": {},
 	}
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# A DENIAL of "list" on the ancestor type closes the coarse list gate (the gate consumes
+# effective_actions on the ancestor type too).
+test_list_gate_respects_ancestor_denial if {
+	not category.allow with input as list_gate_input({
+		"code": "no-list-root",
+		"attributes": {},
+		"permissions": {"catalog": ["READ"]},
+		"denied_actions": {"catalog": ["list"]},
+	})
 		with data.category.inheritable as category_inherits_catalog
 }
