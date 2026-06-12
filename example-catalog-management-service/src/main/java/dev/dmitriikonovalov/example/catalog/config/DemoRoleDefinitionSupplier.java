@@ -20,9 +20,12 @@ import org.springframework.stereotype.Component;
  * bean change, selected by the {@code catalog.role-source} property: {@code demo} (default, this bean)
  * vs {@code http}. Everything downstream depends only on the {@link RoleDefinitionSupplier} interface.
  *
+ * <p>Phase 6.5: permission tokens are the COARSE categories ({@code data.permission_categories}
+ * expands them to fine actions in OPA) — a flat verb here would ∅-expand and deny everything
+ * (the clean cut, ADR 0007). The reach mirrors the policies' realm fallback exactly:
  * <ul>
- *   <li>{@code catalog-viewer} → read on catalog/category/product</li>
- *   <li>{@code catalog-editor} → read + write (create/update/delete) on catalog/category/product</li>
+ *   <li>{@code catalog-viewer} → {@code READ} (view/list) on catalog/category/product</li>
+ *   <li>{@code catalog-editor} → {@code READ}+{@code WRITE}+{@code TAG} on catalog/category/product</li>
  * </ul>
  */
 @Component
@@ -34,12 +37,12 @@ public class DemoRoleDefinitionSupplier implements RoleDefinitionSupplier {
     private static final RoleDefinition VIEWER = new RoleDefinition(
             "catalog-viewer",
             Map.of("role_level", 10),
-            permissionsFor(List.of("read")));
+            permissionsFor(List.of("READ")));
 
     private static final RoleDefinition EDITOR = new RoleDefinition(
             "catalog-editor",
             Map.of("role_level", 20),
-            permissionsFor(List.of("read", "write")));
+            permissionsFor(List.of("READ", "WRITE", "TAG")));
 
     @Override
     public Optional<RoleDefinition> lookup(String userId, String resourceType, String resourceId) {

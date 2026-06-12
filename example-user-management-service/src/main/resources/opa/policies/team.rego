@@ -14,7 +14,8 @@
 # The capability ladder lives in the resolved role definition, not here:
 #   owner         -> ["read", "manage", "define-roles", "define-tags", "transfer-ownership"]
 #   administrator -> ["read", "manage", "define-tags"]
-#   member/viewer -> ["read"]
+#   senior        -> ["read", "manage"]   (Phase 6.5 — bounded by the service-side assignment gates)
+#   member/reader -> ["read"]
 #
 # OPA 1.x: `if`/`in`/`contains` are built-in keywords — no imports needed. Default deny.
 

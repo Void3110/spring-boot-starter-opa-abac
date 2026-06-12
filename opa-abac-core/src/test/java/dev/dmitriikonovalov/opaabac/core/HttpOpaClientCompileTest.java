@@ -304,6 +304,46 @@ class HttpOpaClientCompileTest {
                 .isEqualTo(PartialResult.Decision.DENY_ALL);
     }
 
+    @Test // review fix 2026-06-12 — a NEGATED equality folds into the operator (eq → neq): still a
+    // clean, fully-supported residual.
+    void conditional_negatedEqFoldsToNeq() throws IOException {
+        String negatedEq = COND_REGION_EQ_EMEA.replace(
+                "{\"index\":1,\"terms\"", "{\"index\":1,\"negated\":true,\"terms\"");
+        String body = "{\"result\":{\"queries\":[[" + negatedEq + "]]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.CONDITIONAL);
+        Condition c = result.clauses().get(0).conditions().get(0);
+        assertThat(c.operator()).isEqualTo(Condition.Operator.NEQ);
+        assertThat(c.path()).isEqualTo("tags.region");
+        assertThat(c.value()).isEqualTo("emea");
+    }
+
+    @Test // review fix 2026-06-12 — the fail-closed seat for `not filter_list_denied` (Phase 6.5): a
+    // NEGATED membership is not representable in the closed predicate set → DENY_ALL, not fully
+    // supported (the caller's allowlist path batch-rechecks), and NOT fromError (a policy answer).
+    void failClosed_onNegatedMembership() throws IOException {
+        String negatedIn =
+                "{\"index\":0,\"negated\":true,\"terms\":["
+                        + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"internal\"},"
+                        + "{\"type\":\"string\",\"value\":\"member_2\"}]},"
+                        + "{\"type\":\"string\",\"value\":\"list\"},"
+                        + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"input\"},"
+                        + "{\"type\":\"string\",\"value\":\"resource\"},"
+                        + "{\"type\":\"string\",\"value\":\"attributes\"},"
+                        + "{\"type\":\"string\",\"value\":\"denied\"}]}]}";
+        String body = "{\"result\":{\"queries\":[[" + negatedIn + "]]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+        assertThat(result.fromError()).isFalse();
+    }
+
     @Test // U9 — request shape: POST /v1/compile, unknowns ["input.resource"], no resource in input, per-type query
     void requestShape_pinned() throws IOException {
         AtomicReference<byte[]> captured = new AtomicReference<>();

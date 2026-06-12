@@ -2,8 +2,12 @@
 #
 # The app POSTs {"input": <AbacContext>} to /v1/data/category and reads result.allow.
 # Decisions are role-definition-driven: the caller's role_definition.permissions grants
-# action verbs per resource type. JWT roles are a fallback used only when no role
-# definition is present on the input.
+# COARSE permission categories (READ/WRITE/TAG/GRANT) per resource type, expanded to fine
+# actions (view/list/create/update/delete/define-tags/assign-tags/assign-roles) through
+# data.permission_categories and narrowed by denied_actions — the shared
+# permissions.effective_actions (Phase 6.5, ADR 0007). A stale/unknown token expands to
+# NOTHING (fail-closed ∅-expansion). JWT roles are a fallback used only when no role
+# definition is present on the input, expanded through the SAME table.
 #
 # Phase 4.5 — tag-based grants. A role may additionally REQUIRE tags: when
 # input.role_definition.required_tags is present, `allow` requires BOTH the permission AND
@@ -18,6 +22,8 @@
 
 package category
 
+import data.permissions
+
 default allow := false
 
 # final decision: a grant (direct, inherited, or the subject-roles fallback) that is NOT denied.
@@ -30,15 +36,15 @@ allow if {
 	not denied
 }
 
-# COARSE LIST GATE (Phase 5.5-B): the type-level `@OpaPreAuthorize(<type>:read)` on a LIST endpoint asks
+# COARSE LIST GATE (Phase 5.5-B): the type-level `@OpaPreAuthorize(<type>:list)` on a LIST endpoint asks
 # `allow` with only a resource TYPE (no id, no ancestors) — so `inherited_grant` (which needs ancestors)
-# can't fire, and a subject whose role grants read only on an inheritable ANCESTOR (e.g. a Catalog) would
-# be denied at the gate before the SQL `subtreeSpec` widening can run. This clause lets such a subject pass
-# the COARSE "may you read <type> at all" gate when its role inheritably grants the verb on a declared
-# ancestor type; the FINE which-rows cut still happens in SQL (the app-built subtreeSpec) — so this only
-# OPENS the gate, never widens the rows. It is scoped to a LIST request (no resource id) so single-resource
-# decisions are unchanged, and it is opt-in/default-off via the same data.category.inheritable. A true
-# stranger (no role / no inheritable grant) is still denied.
+# can't fire, and a subject whose role grants the verb only on an inheritable ANCESTOR (e.g. a Catalog)
+# would be denied at the gate before the SQL `subtreeSpec` widening can run. This clause lets such a
+# subject pass the COARSE "may you list <type> at all" gate when its role's EFFECTIVE actions on a declared
+# ancestor type contain the verb; the FINE which-rows cut still happens in SQL (the app-built subtreeSpec)
+# — so this only OPENS the gate, never widens the rows. It is scoped to a LIST request (no resource id) so
+# single-resource decisions are unchanged, and it is opt-in/default-off via the same
+# data.category.inheritable. A true stranger (no role / no inheritable grant) is still denied.
 allow if {
 	not input.resource.id
 	not denied
@@ -47,10 +53,10 @@ allow if {
 
 list_inheritable_grant if {
 	some ancestor_type, _ in data.category.inheritable[input.resource.type]
-	verb in input.role_definition.permissions[ancestor_type]
+	verb in permissions.effective_actions(input.role_definition, ancestor_type)
 }
 
-# The action verb is the part after the ":" in input.action (e.g. "category:read" -> "read").
+# The fine action verb is the part after the ":" in input.action (e.g. "category:view" -> "view").
 verb := v if {
 	parts := split(input.action, ":")
 	count(parts) == 2
@@ -70,33 +76,35 @@ granted if {
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles.
-# viewer/editor may read; only editor may write. (No tag requirement applies to the fallback.)
+# FALLBACK: only when no role definition is present, decide from subject roles — through the
+# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
+# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
+# (No tag requirement applies to the fallback.)
 granted if {
 	not has_role_definition
-	verb == "read"
 	some role in input.subject.roles
 	role in {"catalog-viewer", "catalog-editor"}
+	verb in permissions.effective_from_categories({"READ"})
 }
 
 granted if {
 	not has_role_definition
-	verb == "write"
 	"catalog-editor" in input.subject.roles
+	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
 }
 
 direct_grant if {
-	verb in input.role_definition.permissions[input.resource.type]
+	verb in permissions.effective_actions(input.role_definition, input.resource.type)
 	tags_satisfied
 }
 
 # An ancestor grant satisfies the leaf action when:
 #   - the ancestor's type is declared inheritable for the leaf type (OPT-IN, default-off), and
-#   - the root-resolved role grants the verb on that ancestor type.
+#   - the root-resolved role's EFFECTIVE actions on that ancestor type contain the verb.
 inherited_grant if {
 	some ancestor in input.resource.ancestors
 	data.category.inheritable[input.resource.type][ancestor.type]
-	verb in input.role_definition.permissions[ancestor.type]
+	verb in permissions.effective_actions(input.role_definition, ancestor.type)
 }
 
 has_role_definition if {
@@ -182,15 +190,33 @@ has_required_tags if {
 #      The membership compiles to the `?` existence operator, which matches BOTH a scalar tag and an
 #      array tag — so the list and a single-GET agree on which rows are visible.
 #
-# Flat-verb only: `filter` matches the current `category:read` verb. Coarse category expansion
-# (READ/WRITE/TAG/GRANT) is a later, additive retrofit (ADR 0007 / Phase 6.5) — not anticipated here.
+# Phase 6.5 — category expansion, INLINE (the PE-friendly idiom). `filter` decides "may this
+# role LIST rows of this type": the role's category tokens for the (unknown) type expand through
+# data.permission_categories to fine actions and must contain "list", minus an explicit denial.
+# The expansion is written as a positive membership CHAIN — NOT a call to
+# permissions.effective_actions — because OPA's partial evaluator does not inline user functions
+# over an unknown argument: the call form leaves un-foldable comprehensions in the residual and
+# every list would degrade to the batch fallback. Here the role and the table are fully known at
+# compile time, so the whole chain folds to the type-eq tautology + the tag conditions (the 5.x
+# residual shape, unchanged). Two consciously-accepted degradations, both FAIL-CLOSED to the
+# batch recheck (which uses `allow` — wildcard-aware and denial-aware): a role carrying a
+# DENIAL (the `not filter_list_denied` below survives PE as a negated type-eq → unsupported),
+# and a raw "*"-keyed role (the resolve API expands wildcards before the compile call, so this
+# does not occur on the wire path).
 
 default filter := false
 
 filter if {
 	has_role_definition
-	"read" in input.role_definition.permissions[input.resource.type]
+	some token in input.role_definition.permissions[input.resource.type]
+	"list" in data.permission_categories[token]
+	not filter_list_denied
 	filter_tags_satisfied
+}
+
+# The role explicitly withholds "list" for this type (deny-overrides at the list boundary).
+filter_list_denied if {
+	"list" in input.role_definition.denied_actions[input.resource.type]
 }
 
 # No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).

@@ -52,7 +52,7 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
     }
 
     @Test
-    void ownerResolvesWithReadWrite() {
+    void ownerResolvesWithAllFourCategories() {
         UUID target = UUID.randomUUID();
         Team team = teamFor(target);
         User owner = user("owner");
@@ -63,20 +63,21 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
         assertThat(res.getBody()).isNotNull();
         assertThat(res.getBody().code()).isEqualTo(SystemRoles.OWNER);
         // The "*" system-role permission is expanded to the concrete team-target type.
-        assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("read", "write"));
+        assertThat(res.getBody().permissions())
+                .containsEntry("catalog", List.of("READ", "WRITE", "TAG", "GRANT"));
     }
 
     @Test
-    void viewerResolvesReadOnly() {
+    void readerResolvesReadOnly() {
         UUID target = UUID.randomUUID();
         Team team = teamFor(target);
-        User viewer = user("viewer");
-        grant(team, viewer, SystemRoles.VIEWER_ID);
+        User reader = user("reader");
+        grant(team, reader, SystemRoles.READER_ID);
 
-        var res = rest.getForEntity(url(viewer, "catalog", target), RoleDefinition.class);
+        var res = rest.getForEntity(url(reader, "catalog", target), RoleDefinition.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(res.getBody()).isNotNull();
-        assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("read"));
+        assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("READ"));
     }
 
     @Test
@@ -90,14 +91,56 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
                 false,
                 team.getId(),
                 Map.of("role_level", 25),
-                Map.of("catalog", List.of("read", "write"))));
+                Map.of("catalog", List.of("READ", "WRITE"))));
         grant(team, member, custom.getId());
 
         var res = rest.getForEntity(url(member, "catalog", target), RoleDefinition.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(res.getBody()).isNotNull();
         assertThat(res.getBody().code()).isEqualTo("catalog-editor");
-        assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("read", "write"));
+        assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("READ", "WRITE"));
+    }
+
+    @Test // I3 — denied_actions ride the resolve wire (snake_case, wildcard-expanded like the grants)
+    void resolveCarriesWildcardExpandedDenials() {
+        UUID target = UUID.randomUUID();
+        Team team = teamFor(target);
+        User member = user("no-delete");
+        RoleDefinitionEntity custom = new RoleDefinitionEntity(
+                UUID.randomUUID(),
+                "no-delete-editor",
+                false,
+                team.getId(),
+                Map.of("role_level", 20),
+                Map.of("*", List.of("READ", "WRITE")));
+        custom.setDeniedActions(Map.of("*", List.of("delete")));
+        roles.save(custom);
+        grant(team, member, custom.getId());
+
+        var res = rest.getForEntity(url(member, "catalog", target), RoleDefinition.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isNotNull();
+        // Both maps expand "*" to the concrete team-target type.
+        assertThat(res.getBody().permissions()).containsEntry("catalog", List.of("READ", "WRITE"));
+        assertThat(res.getBody().deniedActions()).containsEntry("catalog", List.of("delete"));
+
+        // The wire shape is snake_case.
+        var json = rest.getForEntity(url(member, "catalog", target), JsonNode.class).getBody();
+        assertThat(json).isNotNull();
+        assertThat(json.has("denied_actions")).isTrue();
+        assertThat(json.get("denied_actions").get("catalog").get(0).asText()).isEqualTo("delete");
+    }
+
+    @Test // I3 — a denial-free role serializes WITHOUT the denied_actions field (NON_EMPTY)
+    void resolveOmitsEmptyDenials() {
+        UUID target = UUID.randomUUID();
+        Team team = teamFor(target);
+        User reader = user("plain-reader");
+        grant(team, reader, SystemRoles.READER_ID);
+
+        var json = rest.getForEntity(url(reader, "catalog", target), JsonNode.class).getBody();
+        assertThat(json).isNotNull();
+        assertThat(json.has("denied_actions")).isFalse();
     }
 
     @Test // RD2 — a role's requiredTags + matchMode ride through the resolve into the core.RoleDefinition
@@ -111,7 +154,7 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
                 false,
                 team.getId(),
                 Map.of(),
-                Map.of("catalog", List.of("read")),
+                Map.of("catalog", List.of("READ")),
                 Map.of("region", List.of("emea")),
                 "ALL_OF"));
         grant(team, member, custom.getId());
@@ -141,7 +184,7 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
                 false,
                 team.getId(),
                 Map.of(),
-                Map.of("catalog", List.of("read")),
+                Map.of("catalog", List.of("READ")),
                 Map.of("region", List.of("emea")),
                 "BOGUS")); // unknown but fits the varchar(10) column — a corrupted/future value
         grant(team, member, custom.getId());

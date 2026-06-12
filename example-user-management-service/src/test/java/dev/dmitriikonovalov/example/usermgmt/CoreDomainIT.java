@@ -39,31 +39,57 @@ class CoreDomainIT extends AbstractPostgresIT {
     @Autowired
     private TeamMembershipRepository memberships;
 
-    @Test
+    @Test // I1 — the five-tier seed ladder (Phase 6.5)
     void systemRolesAreSeeded() {
         List<RoleDefinitionEntity> systemRoles = roles.findBySystemTrue();
-        assertThat(systemRoles).hasSize(4);
+        assertThat(systemRoles).hasSize(5);
         assertThat(systemRoles).allSatisfy(r -> {
             assertThat(r.isSystem()).isTrue();
             assertThat(r.getTeamId()).isNull();
+            // I1 — every seed row carries an empty denied_actions (nothing withheld).
+            assertThat(r.getDeniedActions()).isEmpty();
         });
         assertThat(systemRoles.stream().map(RoleDefinitionEntity::getCode))
                 .containsExactlyInAnyOrder(
                         SystemRoles.OWNER,
                         SystemRoles.ADMINISTRATOR,
+                        SystemRoles.SENIOR,
                         SystemRoles.MEMBER,
-                        SystemRoles.VIEWER);
+                        SystemRoles.READER);
     }
 
-    @Test
+    @Test // I1 — stable ids, the category vocabulary, and the ladder levels
     void systemRoleSeedIdsAndPermissionsAreStable() {
         RoleDefinitionEntity owner = roles.findBySystemTrueAndCode(SystemRoles.OWNER).orElseThrow();
         assertThat(owner.getId()).isEqualTo(SystemRoles.OWNER_ID);
-        assertThat(owner.getPermissions()).containsEntry("*", List.of("read", "write"));
+        assertThat(owner.getPermissions())
+                .containsEntry("*", List.of("READ", "WRITE", "TAG", "GRANT"));
+        assertThat(owner.getAttributes()).containsEntry("role_level", 40);
 
-        RoleDefinitionEntity viewer = roles.findBySystemTrueAndCode(SystemRoles.VIEWER).orElseThrow();
-        assertThat(viewer.getId()).isEqualTo(SystemRoles.VIEWER_ID);
-        assertThat(viewer.getPermissions()).containsEntry("*", List.of("read"));
+        RoleDefinitionEntity admin =
+                roles.findBySystemTrueAndCode(SystemRoles.ADMINISTRATOR).orElseThrow();
+        assertThat(admin.getId()).isEqualTo(SystemRoles.ADMINISTRATOR_ID);
+        assertThat(admin.getPermissions())
+                .containsEntry("*", List.of("READ", "WRITE", "TAG", "GRANT"));
+        assertThat(admin.getAttributes()).containsEntry("role_level", 30);
+
+        // The NEW senior tier (25) — between member and administrator.
+        RoleDefinitionEntity senior = roles.findBySystemTrueAndCode(SystemRoles.SENIOR).orElseThrow();
+        assertThat(senior.getId()).isEqualTo(SystemRoles.SENIOR_ID);
+        assertThat(senior.getPermissions()).containsEntry("*", List.of("READ", "WRITE", "TAG"));
+        assertThat(senior.getAttributes()).containsEntry("role_level", 25);
+
+        RoleDefinitionEntity member = roles.findBySystemTrueAndCode(SystemRoles.MEMBER).orElseThrow();
+        assertThat(member.getId()).isEqualTo(SystemRoles.MEMBER_ID);
+        assertThat(member.getPermissions()).containsEntry("*", List.of("READ", "WRITE", "TAG"));
+        assertThat(member.getAttributes()).containsEntry("role_level", 20);
+
+        // viewer renamed to reader (same id — membership FKs untouched), level 10.
+        RoleDefinitionEntity reader = roles.findBySystemTrueAndCode(SystemRoles.READER).orElseThrow();
+        assertThat(reader.getId()).isEqualTo(SystemRoles.READER_ID);
+        assertThat(reader.getPermissions()).containsEntry("*", List.of("READ"));
+        assertThat(reader.getAttributes()).containsEntry("role_level", 10);
+        assertThat(roles.findBySystemTrueAndCode("viewer")).isEmpty();
     }
 
     @Test
@@ -74,12 +100,15 @@ class CoreDomainIT extends AbstractPostgresIT {
                 false,
                 null,
                 Map.of("role_level", 25),
-                Map.of("catalog", List.of("read", "write")));
+                Map.of("catalog", List.of("READ", "WRITE")));
+        role.setDeniedActions(Map.of("catalog", List.of("delete")));
         roles.save(role);
 
         var reloaded = roles.findById(role.getId()).orElseThrow();
-        assertThat(reloaded.getPermissions()).containsEntry("catalog", List.of("read", "write"));
+        assertThat(reloaded.getPermissions()).containsEntry("catalog", List.of("READ", "WRITE"));
         assertThat(reloaded.getAttributes()).containsEntry("role_level", 25);
+        // I1 — denied_actions rides through the jsonb mapping.
+        assertThat(reloaded.getDeniedActions()).containsEntry("catalog", List.of("delete"));
     }
 
     @Test

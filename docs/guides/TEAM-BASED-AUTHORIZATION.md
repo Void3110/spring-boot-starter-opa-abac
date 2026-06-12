@@ -50,8 +50,14 @@ person and is transferable.
 
 1. **Owner-on-create (bootstrap).** Creating a team-target is **one transaction**: create the `Team`
    and write the **owner** `TeamMembership` for the creator. There is never a grant-less resource.
-2. **No self-escalation (the Kubernetes subset rule).** An owner/admin may only assign or define a role
-   whose `permissions` are a **subset** of their own. Enforced by a single shared `SubsetGuard`.
+2. **No self-escalation (the hybrid assignment gates — Phase 6.5, [[PERMISSION-MODEL]]).** Assignment
+   is gated by a strict **cross-tier level compare** (`actorLevel > candidateLevel`, from
+   `attributes.role_level`; an unreadable level rejects) plus, at the **senior** tier only, OPA's
+   `data.role.assignable` subset-on-effective verdict (any OPA non-answer rejects). Every rejection is
+   `422 ROLE_SUBSET_VIOLATION`. Authoring is bounded by the **level ceiling**, not by the author's own
+   permissions (owner-only authoring made the author-subset check vestigial). Acting on an
+   **existing** member is additionally bounded by the **target-tier gate**: a member whose *current*
+   tier is above the actor's cannot be demoted or removed by them (peers stay manageable).
 3. **Transfer-ownership is first-class.** A dedicated operation: the new owner gets `owner`, the old
    owner is downgraded to `administrator`. Prevents orphaned resources.
 4. **Revocation = membership is the single source of truth.** Removing a `TeamMembership` revokes all
@@ -60,8 +66,9 @@ person and is transferable.
    management endpoint is `@OpaPreAuthorize`-secured against the *calling* subject.
 6. **Decide grant mutations under the team-row lock.** Every team-scoped grant mutation (membership
    add/change/remove, transfer-ownership, custom-role writes) locks the `Team` row `FOR UPDATE`
-   before the subset/ceiling decision, so a concurrent demotion of the actor cannot land between the
-   check and the grant (retro-audit 2026-06-12; `CONCURRENCY-AND-LOCKING` Rule 1).
+   before the gate decisions (both level gates AND the `assignable` snapshots read post-lock state),
+   so a concurrent demotion of the actor cannot land between the check and the grant (retro-audit
+   2026-06-12; `CONCURRENCY-AND-LOCKING` Rules 1–2).
 
 > **Known demo limitation — team-target squatting.** `POST /teams` is deliberately ungated
 > (bootstrap: creating your first team precedes any membership to authorize against), and the
@@ -104,7 +111,7 @@ The `user-management-service` is itself a secured Spring app: it adopts the star
 `SecurityFilterChain` + `AbacFilter`, and annotates its **management** controllers with
 `@OpaPreAuthorize` (`team:manage`, `team:define-roles`, `team:transfer-ownership`). Its *own*
 `RoleDefinitionSupplier` (`TeamRoleDefinitionSupplier`) resolves the caller's **management** role on the
-team being managed (a capability ladder: owner > administrator > member/viewer), and `team.rego` decides.
+team being managed (a capability ladder: owner > administrator > senior > member/reader), and `team.rego` decides.
 So the service that *produces* role definitions for the catalog is *also* a consumer of the same library
 — a clean, recursive demonstration that the starter works for a real second app, and that the
 subset/escalation rules are enforced by the same `@OpaPreAuthorize` mechanism.

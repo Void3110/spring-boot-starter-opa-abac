@@ -32,14 +32,14 @@ public class CatalogController implements CatalogApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "catalog:read", resourceType = "'catalog'")
+    @OpaPreAuthorize(action = "catalog:list", resourceType = "'catalog'")
     public ResponseEntity<CatalogPage> listCatalogs(Integer page, Integer perPage) {
         var result = catalogs.findAll(PageDefaults.pageRequest(page, perPage));
         return ResponseEntity.ok(CatalogMapper.toCatalogPage(result));
     }
 
     @Override
-    @OpaPreAuthorize(action = "catalog:write", resourceType = "'catalog'")
+    @OpaPreAuthorize(action = "catalog:create", resourceType = "'catalog'")
     public ResponseEntity<Catalog> createCatalog(CatalogRequest request) {
         var entity = new CatalogEntity(
                 UUID.randomUUID(),
@@ -55,7 +55,7 @@ public class CatalogController implements CatalogApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "catalog:read", resourceType = "'catalog'", resourceId = "#catalogId")
+    @OpaPreAuthorize(action = "catalog:view", resourceType = "'catalog'", resourceId = "#catalogId")
     public ResponseEntity<Catalog> getCatalog(UUID catalogId) {
         // The response is the snapshot the gate authorized (Phase 5.97); repository fallback covers
         // resolution-off / non-web paths.
@@ -66,7 +66,7 @@ public class CatalogController implements CatalogApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "catalog:write", resourceType = "'catalog'", resourceId = "#catalogId")
+    @OpaPreAuthorize(action = "catalog:update", resourceType = "'catalog'", resourceId = "#catalogId")
     public ResponseEntity<Catalog> updateCatalog(UUID catalogId, CatalogRequest request) {
         var entity = catalogs.findById(catalogId)
                 .orElseThrow(() -> new NotFoundException("Catalog not found: " + catalogId));
@@ -79,7 +79,7 @@ public class CatalogController implements CatalogApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "catalog:write", resourceType = "'catalog'", resourceId = "#catalogId")
+    @OpaPreAuthorize(action = "catalog:delete", resourceType = "'catalog'", resourceId = "#catalogId")
     public ResponseEntity<Void> deleteCatalog(UUID catalogId) {
         var entity = catalogs.findById(catalogId)
                 .orElseThrow(() -> new NotFoundException("Catalog not found: " + catalogId));

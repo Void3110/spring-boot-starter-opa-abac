@@ -122,21 +122,26 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 
 > The dev-team delegation flow: project owner = **owner**, lead/architect = **administrator**, senior dev =
 > **senior**, mid dev/analyst = **member**, stakeholder = **reader**. Pinned by ADR 0007. — **Phase 6.5**
-> ([[POC-ROADMAP]]) 🔜 planned
+> ([[POC-ROADMAP]]) ✅ shipped 2026-06-12 ([[PERMISSION-MODEL]])
 
 - **G1** *As a catalog owner authoring a role*, I pick a **level** (reader/member/senior/administrator) and
   the categories that level allows are pre-checked and **locked**; I then refine **downward** by denying
   specific fine actions (e.g. "member, but may not `delete`"). I grant by **bucket** (`READ`/`WRITE`/`TAG`/
-  `GRANT`), not action-by-action. — **Phase 6.5** 🔜
+  `GRANT`), not action-by-action. — **Phase 6.5** ✅ (the authoring contract: level ceiling, category
+  tokens, strict denials — `422 ROLE_DEFINITION_INVALID`)
 - **G2** *As an administrator*, I can assign any role **strictly below administrator** to a team member —
   but I **cannot** assign another administrator (the seniority ceiling), and I **cannot** author new role
-  definitions (only the owner does). — **Phase 6.5** 🔜
+  definitions (only the owner does). — **Phase 6.5** ✅ (the strict cross-tier gate; the designed cell:
+  an admin whose own role denies `delete` still assigns full `WRITE` — tier, not subset)
 - **G3** *As a senior dev*, I can onboard a new member by assigning them a role whose permissions are a
   **subset of mine** — but I can **never** hand out role-assignment power itself (`GRANT` is capped at
-  administrator), so I can't create another senior or an admin. — **Phase 6.5** 🔜
+  administrator), so I can't create another senior or an admin. — **Phase 6.5** ✅ (the `≤ member` bound +
+  the live `data.role.assignable` subset-on-effective verdict; OPA non-answers reject)
 - **G4** *As any user editing a category/product*, my role's `TAG` bucket lets me **assign** dictionary tags
   as part of the management flow, and (if granted `define-tags`) curate the tag vocabulary — the same
-  category that fences tag-curation from plain content `WRITE`. — **Phase 6.5** (builds on **Phase 4.5**) 🔜
+  category that fences tag-curation from plain content `WRITE`. — **Phase 6.5** ✅ (the delta-dispatched
+  `assign-tags` second decision, both directions; **`define-tags` ships in the expansion math only** —
+  the dictionary endpoints keep `team:define-tags` until the control-plane slice, Phase 6.7)
 
 ### Epic F — "It works from a clean clone" (adoption / publish)
 

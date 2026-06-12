@@ -60,11 +60,13 @@ public interface RoleDefinitionSupplier {
 ```
 
 The OPA `input` carries a `role_definition` object, so a policy decides on
-`role_definition.permissions[resource.type]`. The library ships a `NoOpRoleDefinitionSupplier` (returns
+`role_definition.permissions[resource.type]` — since Phase 6.5 through the shared category expansion,
+`permissions.effective_actions` ([[PERMISSION-MODEL]]). The library ships a `NoOpRoleDefinitionSupplier` (returns
 empty → a policy can fall back to subject roles). An application overrides it with **one bean**:
 
 - **now:** the catalog example's static `DemoRoleDefinitionSupplier` maps realm roles → a `RoleDefinition`
-  (`catalog-viewer` → read on each type; `catalog-editor` → +write);
+  (`catalog-viewer` → `READ` on each type; `catalog-editor` → + `WRITE`/`TAG` — **coarse category
+  tokens** that expand to fine actions in OPA `data`; see [[PERMISSION-MODEL]]);
 - **later (Phase 4):** an `HttpRoleDefinitionSupplier` calling a user-management service — a single-bean
   swap, because everything downstream depends only on the `RoleDefinitionSupplier` interface.
 
@@ -94,7 +96,7 @@ sit after Spring Security's `AnonymousAuthenticationFilter`.
 ## Enforcement — `@OpaPreAuthorize`
 
 ```java
-@OpaPreAuthorize(action = "product:write", resourceType = "'product'", resourceId = "#productId")
+@OpaPreAuthorize(action = "product:update", resourceType = "'product'", resourceId = "#productId")
 public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UUID productId, ...) { … }
 ```
 
@@ -116,7 +118,8 @@ apps that want a coarse request rule.
 
 One rego document per resource type (`infra/opa/policies/{catalog,category,product}.rego`),
 `default allow := false`, allowing when the action verb ∈
-`input.role_definition.permissions[input.resource.type]`, with a subject-role fallback when no role
+the role's **effective actions** for `input.resource.type` (category expansion minus denials,
+[[PERMISSION-MODEL]]), with a subject-role fallback when no role
 definition is present. See [[TWO-LAYER-AUTHORIZATION]].
 
 ## Adoption recipe

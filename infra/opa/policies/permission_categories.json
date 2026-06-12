@@ -1,0 +1,8 @@
+{
+  "permission_categories": {
+    "READ": ["view", "list"],
+    "WRITE": ["create", "update", "delete"],
+    "TAG": ["define-tags", "assign-tags"],
+    "GRANT": ["assign-roles"]
+  }
+}

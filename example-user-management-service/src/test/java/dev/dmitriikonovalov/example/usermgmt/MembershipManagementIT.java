@@ -87,7 +87,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         User owner = user("owner");
         User member = user("member");
         grant(team, owner, SystemRoles.OWNER_ID);
-        grant(team, member, SystemRoles.VIEWER_ID);
+        grant(team, member, SystemRoles.READER_ID);
 
         var change = rest.exchange(
                 "/api/v1/teams/{t}/members/{u}",
@@ -113,7 +113,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(
                         admin.getSubject(),
-                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.VIEWER)),
+                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.READER)),
                 Membership.class,
                 team.getId());
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -131,7 +131,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
                 HttpMethod.POST,
                 AbacTestConfig.as(
                         member.getSubject(),
-                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.VIEWER)),
+                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.READER)),
                 String.class,
                 team.getId());
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
@@ -141,7 +141,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
     void viewerCannotManage() {
         Team team = team();
         User viewer = user("viewer");
-        grant(team, viewer, SystemRoles.VIEWER_ID);
+        grant(team, viewer, SystemRoles.READER_ID);
 
         var list = rest.exchange(
                 "/api/v1/teams/{t}/members",
@@ -152,32 +152,39 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         assertThat(list.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
-    @Test
-    void subsetRuleBlocksAssigningASupersetRole() {
+    @Test // pinned semantic #5: a candidate snapshot with NO numeric role_level rejects — fail-closed
+    void roleWithoutLevelIsNotAssignable() {
         Team team = team();
         User admin = user("admin");
         grant(team, admin, SystemRoles.ADMINISTRATOR_ID);
         User target = user("target");
-        grant(team, target, SystemRoles.VIEWER_ID);
+        grant(team, target, SystemRoles.READER_ID);
 
-        // A team-scoped custom role that exceeds the admin's own perms (a verb they don't hold).
-        RoleDefinitionEntity superRole = roles.save(new RoleDefinitionEntity(
+        // A stale custom row (seeded directly, bypassing the authoring contract) carrying no
+        // role_level — the level gate must reject it, never treat the missing level as 0-and-pass.
+        RoleDefinitionEntity stale = roles.save(new RoleDefinitionEntity(
                 UUID.randomUUID(),
-                "superpower",
+                "stale-levelless",
                 false,
                 team.getId(),
                 Map.of(),
-                Map.of("catalog", List.of("read", "write", "delete"))));
+                Map.of("catalog", List.of("READ"))));
 
         var change = rest.exchange(
                 "/api/v1/teams/{t}/members/{u}",
                 HttpMethod.PUT,
-                AbacTestConfig.as(admin.getSubject(), new ChangeRoleRequest().roleCode(superRole.getCode())),
+                AbacTestConfig.as(admin.getSubject(), new ChangeRoleRequest().roleCode(stale.getCode())),
                 String.class,
                 team.getId(),
                 target.getId());
-        // Authorized to manage (admin), but the subset rule rejects the escalation.
+        // Authorized to manage (admin), but the level gate rejects (mechanism: missing role_level).
         assertThat(change.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(change.getBody()).contains("ROLE_SUBSET_VIOLATION");
+        // The target's membership row is unchanged.
+        assertThat(memberships.findByTeamIdAndUserId(team.getId(), target.getId()))
+                .get()
+                .extracting(TeamMembership::getRoleDefinitionId)
+                .isEqualTo(SystemRoles.READER_ID);
     }
 
     @Test
@@ -271,7 +278,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         User caller = user("caller");
         User someoneElse = user("else");
         grant(teamA, caller, SystemRoles.OWNER_ID);
-        grant(teamB, caller, SystemRoles.VIEWER_ID);
+        grant(teamB, caller, SystemRoles.READER_ID);
 
         var onB = rest.exchange(
                 "/api/v1/teams/{t}/members",

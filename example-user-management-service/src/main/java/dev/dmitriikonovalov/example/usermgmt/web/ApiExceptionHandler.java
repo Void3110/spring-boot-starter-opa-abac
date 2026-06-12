@@ -4,6 +4,7 @@ import dev.dmitriikonovalov.example.usermgmt.service.InvalidTagDefinitionExcepti
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipNotFoundException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleConflictException;
+import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionInvalidException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleNotFoundException;
 import dev.dmitriikonovalov.example.usermgmt.service.SubsetRuleViolationException;
 import dev.dmitriikonovalov.example.usermgmt.service.SystemRoleImmutableException;
@@ -98,6 +99,12 @@ public class ApiExceptionHandler extends AbstractProblemAdvice {
     public ResponseEntity<ProblemDetail> handleInvalidTagDefinition(
             InvalidTagDefinitionException ex, HttpServletRequest request) {
         return problem(UserMgmtErrorCode.TAG_DEFINITION_INVALID, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(RoleDefinitionInvalidException.class)
+    public ResponseEntity<ProblemDetail> handleRoleDefinitionInvalid(
+            RoleDefinitionInvalidException ex, HttpServletRequest request) {
+        return problem(UserMgmtErrorCode.ROLE_DEFINITION_INVALID, ex.getMessage(), request);
     }
 
     // --- 400 validation group → library VALIDATION_FAILED ---------------------

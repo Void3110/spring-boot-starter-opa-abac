@@ -137,11 +137,11 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Filte
 # permissions[category] — would see nothing under it. The demo's "allow-all" subject needs an UNGATED
 # `category` read (no requiredTags), so it gets a custom curator role with category read+write.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"curator\",\"permissions\":{\"catalog\":[\"read\",\"write\"],\"category\":[\"read\",\"write\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"curator\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"emea-reader\",\"permissions\":{\"catalog\":[\"read\"],\"category\":[\"read\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"emea-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"apac-reader\",\"permissions\":{\"catalog\":[\"read\"],\"category\":[\"read\"]},\"requiredTags\":{\"region\":[\"apac\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"apac-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"apac\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"curator\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_EMEA_UID\",\"roleCode\":\"emea-reader\"}" >/dev/null

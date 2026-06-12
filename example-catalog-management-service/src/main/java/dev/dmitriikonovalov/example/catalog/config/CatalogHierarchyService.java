@@ -3,6 +3,9 @@ package dev.dmitriikonovalov.example.catalog.config;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
+import dev.dmitriikonovalov.opaabac.core.VersionConflictException;
+import dev.dmitriikonovalov.opaabac.core.VersionGuard;
+import dev.dmitriikonovalov.opaabac.core.Versioned;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.HierarchicalPathMaintainer;
 import dev.dmitriikonovalov.opaabac.data.model.AbstractHierarchicalEntity;
 import jakarta.persistence.EntityManager;
@@ -84,10 +87,19 @@ public class CatalogHierarchyService {
      * {@code newParentCategoryId} is {@code null}): rewrite the moved subtree's paths AND update the
      * {@code parentId} in the same transaction. Fail-closed if the rewrite cannot complete.
      *
+     * <p>{@code decisionSnapshot} is the instance the caller's authorization decisions and delta
+     * dispatch were computed on. The moving row is required to STILL carry that version once the
+     * {@code FOR UPDATE} lock is held — drift means a parallel writer won the window between the
+     * caller's read and this lock (a window that contains the caller's slow tag-validation call), and
+     * the answer is {@code 409} via {@link VersionConflictException}, never a silent overwrite
+     * (CONCURRENCY-AND-LOCKING.md Rules 1–2). Without it, the fresh re-read returned below would
+     * absorb the racer's version and the caller's subsequent save would overwrite the racer's write —
+     * including across the Phase-6.5 WRITE/TAG boundary the delta dispatch decided on.
+     *
      * @return the moved Category, with its new path loaded
      */
     @Transactional
-    public CategoryEntity reparentCategory(UUID categoryId, UUID newParentCategoryId) {
+    public CategoryEntity reparentCategory(UUID categoryId, UUID newParentCategoryId, Versioned decisionSnapshot) {
         // Lock the moving Category AND the new-parent Category FOR UPDATE, in deterministic id order
         // (deadlock avoidance), as the first entity-touching reads. Locking only the moving row is not
         // enough: the cycle guard + new-parent path (step 3) are DECISIONS, and they must be computed
@@ -105,6 +117,9 @@ public class CatalogHierarchyService {
                 category = locked;
             }
         }
+        // Bind the caller's decision basis to the locked row BEFORE any write: the version the
+        // deltas/gates decided on must be the version the lock now holds (drift -> 409).
+        VersionGuard.requireUnchanged(decisionSnapshot, category);
         String oldPath = category.getPath();
 
         Optional<ParentRef> newParent = newParentCategoryId == null

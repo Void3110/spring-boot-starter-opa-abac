@@ -66,12 +66,12 @@ class HttpRoleDefinitionSupplierTest {
                 ex,
                 200,
                 "{\"code\":\"owner\",\"attributes\":{\"role_level\":40},"
-                        + "\"permissions\":{\"catalog\":[\"read\",\"write\"]}}"));
+                        + "\"permissions\":{\"catalog\":[\"READ\",\"WRITE\"]}}"));
 
         Optional<RoleDefinition> result = supplierFor(base).lookup("sub-1", "catalog", "c-1");
         assertThat(result).isPresent();
         assertThat(result.get().code()).isEqualTo("owner");
-        assertThat(result.get().permissions()).containsEntry("catalog", java.util.List.of("read", "write"));
+        assertThat(result.get().permissions()).containsEntry("catalog", java.util.List.of("READ", "WRITE"));
     }
 
     @Test // H2

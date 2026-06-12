@@ -1,0 +1,1225 @@
+{
+  "info": {
+    "name": "Permission-categories matrix (coarse categories + delegation, Phase 6.5)",
+    "description": "The live proof of ADR 0007 through the gateway: deny-overrides (E1), the TAG/WRITE boundary in both directions via delta-dispatch (E2), senior delegation with the LIVE data.role.assignable verdict (E3), the admin tier incl. the designed denial cell (E4), the stale flat role's empty-expansion floor (E5), and ladder parity (E6). The ladder subject is REBOUND between cell groups via the internal bootstrap API (one role per user per team). Run via run-permission-categories-matrix.sh.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "[bind] ladder subject -> pc-no-delete",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"pc-no-delete\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to pc-no-delete\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E1a. DENY-OVERRIDES, the grant half: WRITE-minus-delete member PUTs content -> 200",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e1_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e1_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"PC e1 renamed\", \"tags\": {\"region\": [\"emea\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"update flows from the WRITE category\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E1b. DENY-OVERRIDES, the denial half: the SAME role DELETEs -> 403 (mechanism: denial subtraction)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e1_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e1_id}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"delete was subtracted after expansion\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "[bind] ladder subject -> pc-writer-no-tag",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"pc-writer-no-tag\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to pc-writer-no-tag\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2a. WRITE-no-TAG edits CONTENT -> 200 (the update decision)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e2a_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e2a_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"PC e2a renamed\", \"tags\": {\"region\": [\"emea\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"content edit rides category:update\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2b. WRITE-no-TAG submits a TAGS DELTA -> 403 (mechanism: the assign-tags second decision)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e2a_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e2a_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"PC e2a renamed\", \"tags\": {\"region\": [\"emea\", \"amer\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the tags delta dispatched assign-tags, which WRITE does not grant\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "[bind] ladder subject -> pc-tagger-no-write",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"pc-tagger-no-write\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to pc-tagger-no-write\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2c. TAG-no-WRITE relabels TAGS-ONLY -> 200 (the assign-tags decision)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e2b_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e2b_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"PC e2b\", \"tags\": {\"region\": [\"emea\", \"amer\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"a pure relabel rides category:assign-tags\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2d. TAG-no-WRITE edits CONTENT -> 403 (mechanism: the delta-dispatched update denied)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e2b_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e2b_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"PC e2b edited\", \"tags\": {\"region\": [\"emea\", \"amer\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the content delta dispatched update, which TAG does not grant\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "[bind] ladder subject -> pc-stale",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"pc-stale\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to pc-stale\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E5a. STALE FLAT ROLE: GET what the row once granted -> 403 (mechanism: empty-expansion)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e5_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e5_id}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"a stale 'read' token expands to nothing - and the present role disables the fallback\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E5b. STALE FLAT ROLE: PUT -> 403 (the clean cut's fail-closed floor, live)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e5_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e5_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"PC e5 hacked\", \"tags\": {\"region\": [\"emea\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"a stale 'write' token expands to nothing\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "[bind] ladder subject -> reader",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"reader\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to reader\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6a. READER-bound: GET -> 200 (READ expands to view)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e6r_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e6r_id}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the reader tier reads\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6b. READER-bound: PUT -> 403 (READ expands without update)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e6r_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e6r_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"reader-edit\", \"tags\": {\"region\": [\"emea\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the reader tier cannot write\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6c. READER-bound: DELETE -> 403",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e6r_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e6r_id}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the reader tier cannot delete\", function () {",
+              "    pm.response.to.have.status(403);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ACCESS_DENIED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "[bind] ladder subject -> member",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"member\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to member\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6d. MEMBER-bound: PUT content -> 200 (WRITE expands to update)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e6m_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e6m_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"member-edit\", \"tags\": {\"region\": [\"emea\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the member tier writes\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6e. MEMBER-bound: PUT tags delta -> 200 (TAG expands to assign-tags)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e6m_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e6m_id}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"member-edit\", \"tags\": {\"region\": [\"emea\", \"amer\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the member tier relabels\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6f. MEMBER-bound: DELETE -> 204 (WRITE expands to delete)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{pc_catalog_id}}/categories/{{cat_e6d_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "catalogs",
+            "{{pc_catalog_id}}",
+            "categories",
+            "{{cat_e6d_id}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the member tier deletes\", function () {",
+              "    pm.response.to.have.status(204);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E3a. SENIOR grants a MEMBER-level role -> 201 (the assignable verdict LIVE: member's effective is a subset of senior's)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{senior_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"userId\": \"{{target1_uid}}\", \"roleCode\": \"member\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"both gates pass; data.role.assignable answered true\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E3b. SENIOR targets a SENIOR-level role -> 422 (mechanism: the cross-tier gate, 25 not > 25)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{senior_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members/{{target1_uid}}",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members",
+            "{{target1_uid}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"roleCode\": \"senior\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"a senior cannot mint a peer\", function () {",
+              "    pm.response.to.have.status(422);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ROLE_SUBSET_VIOLATION\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E3c. SENIOR targets an ADMIN-level role -> 422 (cross-tier)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{senior_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members/{{target1_uid}}",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members",
+            "{{target1_uid}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"roleCode\": \"administrator\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"a senior cannot escalate above itself\", function () {",
+              "    pm.response.to.have.status(422);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ROLE_SUBSET_VIOLATION\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E3d. SENIOR targets a SUBSET-VIOLATING candidate (GRANT at level 20, DB-seeded) -> 422 (mechanism: the subset verdict)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{senior_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members/{{target1_uid}}",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members",
+            "{{target1_uid}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"roleCode\": \"pc-super20\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"data.role.assignable answered false: assign-roles is not in the senior's effective set\", function () {",
+              "    pm.response.to.have.status(422);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ROLE_SUBSET_VIOLATION\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E4a. ADMIN assigns BELOW (member) -> 201 (strict <)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"userId\": \"{{target2_uid}}\", \"roleCode\": \"member\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"30 > 20 passes; no subset verdict at the admin tier\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E4b. ADMIN targets a PEER admin -> 422 (strict <: 30 not > 30)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members/{{target2_uid}}",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members",
+            "{{target2_uid}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"roleCode\": \"administrator\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"an admin cannot mint a peer\", function () {",
+              "    pm.response.to.have.status(422);",
+              "    pm.expect(pm.response.json().errorCode).to.eql(\"ROLE_SUBSET_VIOLATION\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E4c. THE DESIGNED CELL: the admin's OWN role denies delete, yet it assigns full WRITE -> 200 (tier, not subset)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members/{{target2_uid}}",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members",
+            "{{target2_uid}}"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"roleCode\": \"pc-full-write\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"admin power is the TIER: the denial narrows the admin's own actions, never its delegation\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

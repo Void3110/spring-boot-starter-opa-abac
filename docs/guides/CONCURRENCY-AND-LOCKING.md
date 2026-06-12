@@ -31,6 +31,12 @@ unprotected state.
 3. **Mutations go through `mutate(id, fn)`** — atomic lock-mutate-save; the safe path is the easy
    path. In a hand-rolled locking path, `getByIdForUpdate` is the first entity-touching call.
 4. **No slow/external work inside the locked transaction** — compute before, pass values in.
+   *One accepted, bounded exception* (Phase 6.5): the membership gates' `data.role.assignable`
+   verdict is an OPA HTTP call made **under the team-row lock**, because the verdict must be computed
+   over lock-read snapshots — when Rules 1 and 4 conflict, Rule 1 wins. The call is tightly bounded
+   (2s connect + 2s read timeout; any failure rejects, fail-closed `422`), holds only the one team
+   row, and takes no further locks — worst case extends that row's lock by ~4s, never a deadlock.
+   Recorded in the PERMISSION-CATEGORIES slice (STATUS-05).
 5. **Stay idempotent under client retries.** Any path that can answer a conflict will be retried: a
    replayed request converges (no double-apply, no duplicated side effects); e2e seeds re-run without
    accumulating.

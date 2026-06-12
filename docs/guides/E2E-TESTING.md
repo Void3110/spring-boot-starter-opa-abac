@@ -117,6 +117,12 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 
 # Pagination matrix (Phase 5.95 — the list envelope; same full rig; ./deploy.sh build first)
 ./run-pagination-matrix.sh
+
+# Resource-resolution matrix (Phase 5.97 — attribute-rich gate decisions; same full rig)
+./run-resource-resolution-matrix.sh
+
+# Permission-categories matrix (Phase 6.5 — categories/denials/delegation; rebuild BOTH images first)
+./run-permission-categories-matrix.sh
 ```
 
 > Since Phase 5.9 the matrices also assert the **RFC-7807 `problem+json` error contract** on deny
@@ -210,6 +216,23 @@ EMEA-tagged + 3 APAC-tagged Categories — and bootstraps a curator + two single
 Since 5.95 every list-consuming collection asserts the envelope (`json.items.…`) — the bare-array shape
 is gone suite-wide, with every pre-existing row-count expectation numerically unchanged. Guides:
 [[REST-API-DESIGN]] §7 (the wire contract) · [[PARTIAL-EVALUATION-FILTERING]] (the paged composition).
+
+### Permission-categories matrix (Phase 6.5)
+
+`run-permission-categories-matrix.sh` proves the **coarse-category model** (ADR
+[[adr/0007-coarse-grained-permission-categories|0007]], [[PERMISSION-MODEL]]) live through the
+gateway: deny-overrides (PUT 200 / DELETE 403 on the same role), the **TAG/WRITE boundary in both
+directions** (the delta-dispatched `assign-tags` second decision), **senior delegation** with the
+LIVE `data.role.assignable` verdict (one 201, three `422 ROLE_SUBSET_VIOLATION` cells), the admin
+tier including the designed cell (an admin whose own role denies `delete` still assigns full
+`WRITE` — tier, not subset), the **stale flat role** deciding nothing (∅-expansion), and ladder
+parity (reader/member). It REBINDS one ladder subject between cell groups (one role per user per
+team), seeds two sanctioned DB-bypass roles (a flat `pc-stale`, a `GRANT`-at-20 `pc-super20`), and
+holds a **trap-reverted** temporary delete-denial on the system administrator row for the designed
+cell. Fixture `9999…` (registered). Rebuild **both** app images first — `./deploy.sh build` covers
+the catalog only; build usermgmt explicitly. **Since 6.5 every runner's bootstrap payloads use
+category tokens** (`READ`/`WRITE`/`TAG` + `roleLevel`); flat verbs are rejected at the authoring
+boundary and decide nothing if stored.
 
 ### Resource-resolution matrix (Phase 5.97)
 

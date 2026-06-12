@@ -85,10 +85,10 @@ class PaginationEnvelopeIT extends AbstractSecuredPostgresIT {
                 team.getId());
         assertThat(full.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(full.getBody()).isNotNull();
-        assertThat(full.getBody().getCount()).isEqualTo(4); // the four system roles
+        assertThat(full.getBody().getCount()).isEqualTo(5); // the five system roles
         assertThat(full.getBody().getPage()).isZero();
         assertThat(full.getBody().getPerPage()).isEqualTo(20);
-        assertThat(full.getBody().getItems()).hasSize(4);
+        assertThat(full.getBody().getItems()).hasSize(5);
 
         var window = rest.exchange(
                 "/api/v1/teams/{t}/role-definitions?page=1&perPage=2",
@@ -97,7 +97,7 @@ class PaginationEnvelopeIT extends AbstractSecuredPostgresIT {
                 RoleDefinitionPage.class,
                 team.getId());
         assertThat(window.getBody()).isNotNull();
-        assertThat(window.getBody().getCount()).isEqualTo(4); // exact count survives the window
+        assertThat(window.getBody().getCount()).isEqualTo(5); // exact count survives the window
         assertThat(window.getBody().getPage()).isEqualTo(1);
         assertThat(window.getBody().getPerPage()).isEqualTo(2);
         assertThat(window.getBody().getItems()).hasSize(2);
@@ -136,7 +136,7 @@ class PaginationEnvelopeIT extends AbstractSecuredPostgresIT {
 
         assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(page.getBody()).isNotNull();
-        assertThat(page.getBody().getCount()).isEqualTo(4);
+        assertThat(page.getBody().getCount()).isEqualTo(5);
         assertThat(page.getBody().getPage()).isEqualTo(9);
         assertThat(page.getBody().getItems()).isEmpty();
     }

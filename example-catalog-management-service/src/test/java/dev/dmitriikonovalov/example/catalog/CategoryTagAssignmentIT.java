@@ -32,7 +32,7 @@ import org.springframework.test.web.servlet.MvcResult;
  * (scalar + array); an unknown key / enum miss / cardinality mismatch → 422; a definitions-fetch failure
  * → 503 (fail-closed, nothing stored).
  *
- * <p>A7 (a viewer cannot assign) is the existing {@code @OpaPreAuthorize(category:write)} authorization,
+ * <p>A7 (a viewer cannot assign) is the existing {@code assign-tags} second-decision authorization (Phase 6.5),
  * proven in the e2e matrix (ticket 6); here the permissive editor always has write.
  */
 @AutoConfigureMockMvc

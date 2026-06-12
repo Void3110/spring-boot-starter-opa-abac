@@ -104,6 +104,23 @@ cd scripts/postman && ./run-resource-resolution-matrix.sh
 See [[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]. Note `product.rego`/`catalog.rego` now carry the same
 `tags_satisfied` match as `category.rego` — restart OPA after editing any of them.
 
+The **permission-categories** matrix (Phase 6.5) proves the coarse-category model: `READ`/`WRITE`/
+`TAG`/`GRANT` tokens expanding to fine actions through `data.permission_categories`
+(`opa/policies/permission_categories.json` — a colocated data file, loaded with the policies),
+deny-overrides, the delta-dispatched `assign-tags` second decision, the five-tier ladder, and the
+hybrid delegation gates with the live `data.role.assignable` verdict:
+
+```bash
+# The permission-categories matrix (fixture 9999…; rebuild BOTH app images first):
+cd scripts/postman && ./run-permission-categories-matrix.sh
+```
+
+See [[PERMISSION-MODEL]]. Since 6.5 the policies are **category-token only** — every runner's
+bootstrap payloads send `READ`/`WRITE`/`TAG` (+ `roleLevel`); a stale flat `read`/`write` token
+expands to nothing and denies. This slice rewrote every catalog policy and added
+`permissions.rego`/`role.rego` + the data file — **restart OPA** after pulling it (the runner does
+so itself).
+
 > The `team.rego` policy the user-service dogfoods is served by the shared OPA container — it lives in
 > both `../example-user-management-service/src/main/resources/opa/policies/` (the source of truth) and
 > `opa/policies/` (mounted into the rig's OPA). Restart OPA after editing it (`docker restart

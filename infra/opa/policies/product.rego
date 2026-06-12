@@ -2,8 +2,12 @@
 #
 # The app POSTs {"input": <AbacContext>} to /v1/data/product and reads result.allow.
 # Decisions are role-definition-driven: the caller's role_definition.permissions grants
-# action verbs per resource type. JWT roles are a fallback used only when no role
-# definition is present on the input.
+# COARSE permission categories (READ/WRITE/TAG/GRANT) per resource type, expanded to fine
+# actions (view/list/create/update/delete/define-tags/assign-tags/assign-roles) through
+# data.permission_categories and narrowed by denied_actions — the shared
+# permissions.effective_actions (Phase 6.5, ADR 0007). A stale/unknown token expands to
+# NOTHING (fail-closed ∅-expansion). JWT roles are a fallback used only when no role
+# definition is present on the input, expanded through the SAME table.
 #
 # Phase 5.5-A — N-level hierarchical inheritance + deny-overrides.
 #   input.resource.ancestors is a root-first, leaf-excluded list of {type,id}. The role is
@@ -31,6 +35,8 @@
 
 package product
 
+import data.permissions
+
 default allow := false
 
 # final decision: a grant (direct, inherited, or the subject-roles fallback) that is NOT denied.
@@ -39,7 +45,7 @@ allow if {
 	not denied
 }
 
-# The action verb is the part after the ":" in input.action (e.g. "product:read" -> "read").
+# The fine action verb is the part after the ":" in input.action (e.g. "product:view" -> "view").
 verb := v if {
 	parts := split(input.action, ":")
 	count(parts) == 2
@@ -63,33 +69,34 @@ granted if {
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles.
-# viewer/editor may read; only editor may write.
+# FALLBACK: only when no role definition is present, decide from subject roles — through the
+# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
+# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
 granted if {
 	not has_role_definition
-	verb == "read"
 	some role in input.subject.roles
 	role in {"catalog-viewer", "catalog-editor"}
+	verb in permissions.effective_from_categories({"READ"})
 }
 
 granted if {
 	not has_role_definition
-	verb == "write"
 	"catalog-editor" in input.subject.roles
+	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
 }
 
 direct_grant if {
-	verb in input.role_definition.permissions[input.resource.type]
+	verb in permissions.effective_actions(input.role_definition, input.resource.type)
 	tags_satisfied
 }
 
 # An ancestor grant satisfies the leaf action when:
 #   - the ancestor's type is declared inheritable for the leaf type (OPT-IN, default-off), and
-#   - the root-resolved role grants the verb on that ancestor type.
+#   - the root-resolved role's EFFECTIVE actions on that ancestor type contain the verb.
 inherited_grant if {
 	some ancestor in input.resource.ancestors
 	data.product.inheritable[input.resource.type][ancestor.type]
-	verb in input.role_definition.permissions[ancestor.type]
+	verb in permissions.effective_actions(input.role_definition, ancestor.type)
 }
 
 has_role_definition if {

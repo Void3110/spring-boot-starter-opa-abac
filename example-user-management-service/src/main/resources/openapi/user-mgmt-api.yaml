@@ -183,7 +183,7 @@ paths:
           $ref: '#/components/responses/BadRequest'
     post:
       tags: [Membership]
-      summary: Add a member (owner/administrator; subject to the subset rule)
+      summary: Add a member (owner/administrator/senior; subject to the assignment gates)
       operationId: addMember
       requestBody:
         required: true
@@ -252,7 +252,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
     post:
       tags: [RoleDefinition]
-      summary: Define a team-scoped custom role (owner; subject to the subset rule)
+      summary: Define a team-scoped custom role (owner; subject to the authoring contract)
       operationId: createRoleDefinition
       requestBody:
         required: true
@@ -286,7 +286,7 @@ paths:
           type: string
     put:
       tags: [RoleDefinition]
-      summary: Update a team-scoped custom role (owner; subset rule; system roles immutable)
+      summary: Update a team-scoped custom role (owner; authoring contract; system roles immutable)
       operationId: updateRoleDefinition
       requestBody:
         required: true
@@ -469,7 +469,7 @@ paths:
       - $ref: '#/components/parameters/UserId'
     put:
       tags: [Membership]
-      summary: Change a member's role (owner/administrator; subject to the subset rule)
+      summary: Change a member's role (owner/administrator/senior; assignment + target-tier gates)
       operationId: changeMemberRole
       requestBody:
         required: true
@@ -492,7 +492,7 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
     delete:
       tags: [Membership]
-      summary: Remove a member (owner/administrator) — revokes derived access
+      summary: Remove a member (owner/administrator/senior; target-tier gate) — revokes derived access
       operationId: removeMember
       responses:
         '204':
@@ -802,6 +802,12 @@ components:
           format: uuid
           nullable: true
           description: Null for system roles; set for team-scoped custom roles.
+        roleLevel:
+          type: integer
+          nullable: true
+          description: >-
+            The role's tier on the five-tier ladder (10 reader / 20 member / 25 senior /
+            30 administrator / 40 owner), read from attributes.role_level.
         attributes:
           type: object
           additionalProperties: true
@@ -811,7 +817,16 @@ components:
             type: array
             items:
               type: string
-          description: resourceType -> [allowed action verbs].
+          description: resourceType -> [granted permission categories (READ/WRITE/TAG/GRANT)].
+        deniedActions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: >-
+            Deny-overrides — resourceType -> [denied fine actions], subtracted after category
+            expansion. Empty = nothing withheld.
         requiredTags:
           type: object
           additionalProperties:
@@ -833,15 +848,39 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        roleLevel:
+          type: integer
+          description: >-
+            REQUIRED (enforced as 422 ROLE_DEFINITION_INVALID, like every authoring-contract
+            violation — deliberately not a schema constraint so the whole contract answers
+            uniformly). The role's tier on the authorable ladder: 10 reader / 20 member /
+            25 senior / 30 administrator (owner 40 is never authorable). Bounds the grantable
+            categories (GRANT only at 30) and is the single source of attributes.role_level —
+            an attributes-supplied role_level is overwritten.
         attributes:
           type: object
           additionalProperties: true
+          description: Extensible role attributes. role_level is always overwritten from roleLevel.
         permissions:
           type: object
           additionalProperties:
             type: array
             items:
               type: string
+          description: >-
+            resourceType -> [granted permission categories]. Only the four category tokens
+            (READ/WRITE/TAG/GRANT) within the roleLevel's ceiling are accepted (422
+            ROLE_DEFINITION_INVALID otherwise).
+        deniedActions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: >-
+            Deny-overrides — resourceType -> [denied fine actions], subtracted after category
+            expansion. Each denied action must be granted by that type's categories (strict
+            subtraction; 422 otherwise).
         requiredTags:
           type: object
           additionalProperties:
@@ -858,15 +897,30 @@ components:
       type: object
       required: [permissions]
       properties:
+        roleLevel:
+          type: integer
+          description: >-
+            REQUIRED (enforced as 422 ROLE_DEFINITION_INVALID — see RoleDefinitionRequest).
+            The role's tier on the authorable ladder. Same contract as on create — the single
+            source of attributes.role_level.
         attributes:
           type: object
           additionalProperties: true
+          description: Extensible role attributes. role_level is always overwritten from roleLevel.
         permissions:
           type: object
           additionalProperties:
             type: array
             items:
               type: string
+          description: resourceType -> [granted permission categories] (the four tokens, ceiling-bounded).
+        deniedActions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Deny-overrides — must strictly subtract from the granted expansion.
         requiredTags:
           type: object
           additionalProperties:
@@ -998,6 +1052,7 @@ components:
             - TAG_KEY_CONFLICT
             - TAG_DEFINITION_IMMUTABLE
             - TAG_DEFINITION_INVALID
+            - ROLE_DEFINITION_INVALID
             - STATE_CONFLICT
         timestamp:
           type: string

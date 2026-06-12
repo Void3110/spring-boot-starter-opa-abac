@@ -115,13 +115,19 @@ deliberate differences from `allow`:
    array) compiles to a clean DNF the translator supports, instead of the single-decision `tags_satisfied`'s
    `is_array`/set-comprehension shape (which doesn't reduce to SQL).
 
-`filter` stays **flat-verb** (`category:read`); coarse category expansion (`READ`/`WRITE`/`TAG`/`GRANT`) is a
-later additive retrofit (ADR [[adr/0007-coarse-grained-permission-categories|0007]] / Phase 6.5).
+**Phase 6.5:** `filter` decides `"list" ∈` the role's **effective actions** — the category expansion
+(`READ`/`WRITE`/`TAG`/`GRANT` → fine actions, minus denials) consumed **inline** through
+`data.permission_categories`, not via the shared `effective_actions` function: OPA's partial evaluator
+does not inline user functions over an unknown argument, so the call form would leave un-foldable
+residuals and every list would degrade to the batch fallback. The known role + known table fold
+completely; the residual keeps this guide's exact shape. A denial-carrying role degrades fail-closed to
+the batch recheck. See [[PERMISSION-MODEL]] and ADR
+[[adr/0007-coarse-grained-permission-categories|0007]].
 
 ## The adoption recipe (the catalog)
 
 1. The repository extends `JpaSpecificationExecutor<T>` (additive — existing finders unchanged).
-2. The list handler builds a query context (subject from the `SecurityContext`, `action=<type>:read`,
+2. The list handler builds a query context (subject from the `SecurityContext`, `action=<type>:list`,
    resource **unknown**), resolves the role on the **governing parent**, and calls
    `AbacQueryService.findAuthorized(repo, scope, ctx)` where `scope` is the existing path filter
    (`catalogId`/`categoryId`).

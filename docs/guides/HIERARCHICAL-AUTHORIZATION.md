@@ -77,14 +77,14 @@ allow if { granted; not denied }
 granted if { direct_grant }
 granted if { inherited_grant }
 
-direct_grant if { verb in input.role_definition.permissions[input.resource.type] }
+direct_grant if { verb in permissions.effective_actions(input.role_definition, input.resource.type) }
 
 # OPT-IN: only ancestor types declared inheritable for this leaf type count. The role is root-resolved,
 # so role_definition.permissions is keyed by the ANCESTOR type.
 inherited_grant if {
     some ancestor in input.resource.ancestors
     data.<pkg>.inheritable[input.resource.type][ancestor.type]
-    verb in input.role_definition.permissions[ancestor.type]
+    verb in permissions.effective_actions(input.role_definition, ancestor.type)
 }
 
 # deny-overrides: an explicit leaf deny wins over any grant.

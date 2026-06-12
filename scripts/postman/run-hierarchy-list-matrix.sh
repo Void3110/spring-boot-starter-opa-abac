@@ -134,15 +134,15 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hiera
 
 # An UNGATED owner-curator (category read+write, no tag requirement) so the owner can create Categories.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"curator\",\"permissions\":{\"catalog\":[\"read\",\"write\"],\"category\":[\"read\",\"write\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"curator\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
 # The INHERIT reader: read on the CATALOG ONLY (no category grant). A readable Category in its list therefore
 # proves the decision came from the inheritable catalog grant (the subtreeSpec widening), not a direct tag
 # grant — this isolates the 5.5-B CUT.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-reader\",\"permissions\":{\"catalog\":[\"read\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"]}}" >/dev/null
 # The REGION reader: a direct category:read gated to region=emea (a tag-only Phase-5 reader, no widening).
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"emea-reader\",\"permissions\":{\"catalog\":[\"read\"],\"category\":[\"read\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"emea-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"curator\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$INHERIT_UID\",\"roleCode\":\"catalog-reader\"}" >/dev/null

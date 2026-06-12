@@ -9,6 +9,7 @@ import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
@@ -40,7 +41,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>Hierarchy-aware (Slice 5.5-B).</b> When the hierarchy starter is enabled, this also asks the
  * {@link SubtreeSpecResolver} whether the subject's role on the governing Catalog <em>inheritably</em> grants
- * {@code category:read}; if so, the resolved {@code subtreeSpec} is passed into the <b>4-arg</b>
+ * {@code category:list}; if so, the resolved {@code subtreeSpec} is passed into the <b>4-arg</b>
  * {@code findAuthorized} so the list is <em>widened</em> to the whole catalog subtree (still AND-ed with the
  * {@code catalogId} scope, still minus any {@code abac_deny} row). With hierarchy disabled (no resolver
  * bean), the {@code subtreeSpec} is simply absent and the list behaves exactly as the tag-only Phase-5 path.
@@ -88,7 +89,7 @@ public class CategoryListAuthorizer {
         // so the policy path resolves to `category`.
         AbacContext queryContext = new AbacContext(
                 subject,
-                "category:read",
+                "category:list",
                 new AbacContext.Resource("category", null, Map.of()),
                 roleDefinition,
                 Map.of());
@@ -96,21 +97,40 @@ public class CategoryListAuthorizer {
         // 5.5-B: ask whether an inheritable Catalog grant should WIDEN the list to the whole catalog subtree.
         // Resolved on the SAME governing Catalog the role is resolved on, so the list and a single-GET agree.
         // Absent (hierarchy off / no inheritable grant) → null → the tag-only 3-arg behavior.
-        Specification<CategoryEntity> subtreeSpec = resolveSubtreeSpec(subject, catalogId);
+        Specification<CategoryEntity> subtreeSpec = resolveSubtreeSpec(subject, catalogId, roleDefinition);
 
         Specification<CategoryEntity> scope = scopedTo(catalogId, parentId);
         return queryService.findAuthorized(categories, scope, queryContext, subtreeSpec, pageable);
     }
 
-    /** The hierarchy widening for this catalog, or {@code null} when hierarchy is off / not granted. */
-    private Specification<CategoryEntity> resolveSubtreeSpec(AbacContext.Subject subject, UUID catalogId) {
+    /**
+     * The hierarchy widening for this catalog, or {@code null} when hierarchy is off / not granted.
+     *
+     * <p>Phase 6.5 (review fix): permission tokens are now COARSE categories, so the resolver is asked
+     * for the {@code READ} token — {@code list} expands from {@code READ} and from no other category
+     * (pinned by {@code CategoryListWideningParityTest}). The token check alone cannot see the role's
+     * deny-overrides or tag requirement, and an over-widened {@code subtreeSpec} would leak rows (it is
+     * OR-ed with the residual) — so widening is attempted only for a role that carries <b>no</b>
+     * denial touching the governing-root type and <b>no</b> required tags. Anything subtler degrades
+     * FAIL-CLOSED to the narrower tag-only filter (and its batch recheck, which is wildcard-, denial-
+     * and tag-aware) — correct rows, just without the SQL widening.
+     */
+    private Specification<CategoryEntity> resolveSubtreeSpec(
+            AbacContext.Subject subject, UUID catalogId, RoleDefinition roleDefinition) {
         SubtreeSpecResolver resolver = subtreeSpecResolver.getIfAvailable();
         if (resolver == null) {
             return null; // hierarchy starter disabled → tag-only list
         }
+        if (roleDefinition == null || !roleDefinition.requiredTags().isEmpty()) {
+            return null; // no role / tag-gated role → never widen (fail-closed)
+        }
+        Map<String, List<String>> denied = roleDefinition.deniedActions();
+        if (denied.containsKey("catalog") || denied.containsKey("*")) {
+            return null; // a denial could subtract "list" from the root-type effective set → don't widen
+        }
         return resolver
                 .<CategoryEntity>subtreeSpec(
-                        subject, "category", new ParentRef("catalog", catalogId.toString()), "read")
+                        subject, "category", new ParentRef("catalog", catalogId.toString()), "READ")
                 .orElse(null);
     }
 
