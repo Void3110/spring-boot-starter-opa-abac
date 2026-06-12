@@ -102,6 +102,7 @@ class ResourceResolutionGateIT {
         RecordingRoleSupplier.lookups.clear();
         RaceInjector.BEFORE_HANDLER.set(null);
         RaceInjector.BEFORE_SAVE.set(null);
+        RaceInjector.BEFORE_MUTATE.set(null);
     }
 
     // --- I1/I2: the tag cells, decided AT THE GATE -----------------------------
@@ -279,6 +280,26 @@ class ResourceResolutionGateIT {
         assertThat(RecordingRoleSupplier.lookups.get(0).type()).isEqualTo("catalog");
     }
 
+    // --- I8: the update-vs-delete race → the starter's 404 advice, live -------------------------
+
+    @Test // I8 — the row vanishes between the handler's scope check and mutate()'s locked load →
+    // the LIBRARY EntityNotFoundException → the starter advice's 404 problem+json, not a 500
+    void updateVsDeleteRaceAnswers404NotF500() throws Exception {
+        var catalog = seedCatalog();
+        var root = seedCategory(catalog.getId(), null, "root-cat", Map.of());
+        var product = seedProduct(root.getId(), "vanishing");
+        ProgrammableOpaClient.rule = ctx -> true;
+        RaceInjector.BEFORE_MUTATE.set(() -> jdbc.update(
+                "delete from product where id = ?", product.getId()));
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), root.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"too late\",\"sku\":\"SKU-1\",\"priceCents\":100,\"currency\":\"USD\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"));
+    }
+
     // --- seeding ----------------------------------------------------------------
 
     private CatalogEntity seedCatalog() {
@@ -376,6 +397,7 @@ class ResourceResolutionGateIT {
     static class RaceInjector {
         static final AtomicReference<Runnable> BEFORE_HANDLER = new AtomicReference<>();
         static final AtomicReference<Runnable> BEFORE_SAVE = new AtomicReference<>();
+        static final AtomicReference<Runnable> BEFORE_MUTATE = new AtomicReference<>();
 
         @Before("execution(* dev.dmitriikonovalov.example.catalog.web.CategoryController.updateCategory(..))")
         void beforeHandler() {
@@ -388,6 +410,19 @@ class ResourceResolutionGateIT {
         @Before("this(dev.dmitriikonovalov.example.catalog.domain.CatalogRepository) && execution(* save(..))")
         void beforeSave() {
             Runnable race = BEFORE_SAVE.getAndSet(null);
+            if (race != null) {
+                race.run();
+            }
+        }
+
+        // The I8 window: after the handler's scope check, before mutate()'s locked load — the
+        // update-vs-delete race the starter's EntityNotFoundProblemAdvice owns. mutate() is DECLARED
+        // on the library base class, so the execution pattern must name it (a subclass pattern does
+        // not match inherited methods); target() scopes the hook to the product service.
+        @Before("execution(* dev.dmitriikonovalov.opaabac.data.service.AbstractCrudService.mutate(..))"
+                + " && target(dev.dmitriikonovalov.example.catalog.domain.ProductService)")
+        void beforeMutate() {
+            Runnable race = BEFORE_MUTATE.getAndSet(null);
             if (race != null) {
                 race.run();
             }
