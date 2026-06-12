@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +36,15 @@ public final class HttpOpaClient implements OpaClient {
 
     /** The single declared unknown for partial evaluation — the row being filtered. */
     private static final List<String> UNKNOWNS = List.of("input.resource");
+
+    /**
+     * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
+     * query string) — only {@code [A-Za-z0-9_-]} segments are accepted, whatever the
+     * {@link PolicyPathResolver} implementation returned. {@code .}/{@code ..} segments, dots, or URL
+     * metacharacters in a resource type could otherwise address a different OPA document or splice
+     * into the compile query.
+     */
+    private static final Pattern SAFE_PATH = Pattern.compile("[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*");
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -72,7 +82,7 @@ public final class HttpOpaClient implements OpaClient {
     public boolean allow(AbacContext context) {
         String path = null;
         try {
-            path = pathResolver.resolve(context);
+            path = requireSafePath(pathResolver.resolve(context));
             URI uri = URI.create(config.baseUrl() + "/v1/data/" + path);
             byte[] body = objectMapper.writeValueAsBytes(new OpaInput(context));
 
@@ -133,7 +143,7 @@ public final class HttpOpaClient implements OpaClient {
     public PartialResult compile(AbacContext context) {
         String path = null;
         try {
-            path = pathResolver.resolve(context);
+            path = requireSafePath(pathResolver.resolve(context));
             String query = "data." + path.replace('/', '.') + ".filter == true";
             URI uri = URI.create(config.baseUrl() + "/v1/compile");
             byte[] body = objectMapper.writeValueAsBytes(new CompileRequest(query, new CompileInput(context), UNKNOWNS));
@@ -191,7 +201,7 @@ public final class HttpOpaClient implements OpaClient {
                     return allFalse(n);
                 }
             }
-            path = pathResolver.resolve(contexts.get(0));
+            path = requireSafePath(pathResolver.resolve(contexts.get(0)));
             URI uri = URI.create(config.baseUrl() + "/v1/data/" + path + "/bulk");
             byte[] body = objectMapper.writeValueAsBytes(new BulkInput(new BulkItems(contexts)));
 
@@ -221,6 +231,14 @@ public final class HttpOpaClient implements OpaClient {
 
     private static String resourceTypeOf(AbacContext context) {
         return context.resource() == null ? null : context.resource().type();
+    }
+
+    /** Throws on an unsafe/empty path; the caller's fail-closed catch turns that into a deny. */
+    private static String requireSafePath(String path) {
+        if (path == null || !SAFE_PATH.matcher(path).matches()) {
+            throw new IllegalArgumentException("unsafe OPA policy path '" + path + "'");
+        }
+        return path;
     }
 
     private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {

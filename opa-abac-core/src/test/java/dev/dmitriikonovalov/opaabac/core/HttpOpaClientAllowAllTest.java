@@ -173,6 +173,21 @@ class HttpOpaClientAllowAllTest {
         assertThat(calls.get()).isZero();
     }
 
+    @Test // U12c — unsafe resource type in the batch denies all without an HTTP call
+    void failClosed_onTraversalResourceType() throws IOException {
+        AtomicInteger hits = new AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":[true,true]}");
+        });
+
+        List<Boolean> decisions = clientFor(base, "catalog")
+                .allowAll(List.of(ctxOfType("category/../admin", "c-1"), ctxOfType("category/../admin", "c-2")));
+
+        assertThat(decisions).containsExactly(false, false);
+        assertThat(hits.get()).isZero();
+    }
+
     @FunctionalInterface
     private interface StubHandler {
         void handle(HttpExchange exchange) throws IOException;

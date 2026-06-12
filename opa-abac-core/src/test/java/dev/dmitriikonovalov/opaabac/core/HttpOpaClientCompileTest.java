@@ -199,6 +199,28 @@ class HttpOpaClientCompileTest {
         assertThat(c.value()).isEqualTo("cat-123");
     }
 
+    @Test // U7 — fail-closed on an unsafe resource type (would splice into the compile query)
+    void failClosed_onTraversalResourceType() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":{\"queries\":[[]]}}");
+        });
+
+        AbacContext.Subject subject = new AbacContext.Subject("user-1", List.of("catalog-viewer"), Map.of());
+        AbacContext context = new AbacContext(
+                subject,
+                "category:read",
+                new AbacContext.Resource("category/../admin", null, Map.of()),
+                null,
+                Map.of());
+
+        PartialResult result = clientFor(base, "catalog").compile(context);
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fromError()).isTrue();
+        assertThat(hits.get()).isZero();
+    }
+
     @Test // U7 — fail-closed on HTTP 500, flagged fromError (a failed call, not a policy answer)
     void failClosed_onHttp500() throws IOException {
         String base = startServer(ex -> respond(ex, 500, "boom"));
