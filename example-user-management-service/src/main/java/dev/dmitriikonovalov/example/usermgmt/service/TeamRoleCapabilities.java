@@ -14,11 +14,15 @@ import java.util.Map;
  * <ul>
  *   <li>{@code owner}         → read, manage, define-roles, define-tags, transfer-ownership</li>
  *   <li>{@code administrator} → read, manage, define-tags</li>
- *   <li>{@code member} / {@code viewer} / custom → read</li>
+ *   <li>{@code senior}        → read, manage (Phase 6.5 — the coarse entry; the senior's
+ *       <em>constraint</em> — member-tier-only, subset-on-effective — lives in the assignment gates
+ *       of {@code MembershipService}, not in this verb)</li>
+ *   <li>{@code member} / {@code reader} / custom → read</li>
  * </ul>
  *
- * Custom (team-scoped) roles carry no management capability beyond read — they grant resource
- * permissions on the team-target, not team-administration rights.
+ * Custom (team-scoped) roles carry no management capability beyond read — a custom level-25 role has
+ * senior's authoring ceiling but no live assign power (ceiling ≠ capability; the pinned I12 cell).
+ * They grant resource permissions on the team-target, not team-administration rights.
  *
  * <p>{@code define-tags} (curate the team's tag dictionary) is a <em>management</em> capability granted to
  * both owner and administrator — matching governed-tag models where admins curate the vocabulary writers
@@ -35,6 +39,7 @@ public final class TeamRoleCapabilities {
     private static final Map<String, List<String>> BY_CODE = Map.of(
             SystemRoles.OWNER, List.of("read", MANAGE, DEFINE_ROLES, DEFINE_TAGS, TRANSFER_OWNERSHIP),
             SystemRoles.ADMINISTRATOR, List.of("read", MANAGE, DEFINE_TAGS),
+            SystemRoles.SENIOR, List.of("read", MANAGE),
             SystemRoles.MEMBER, List.of("read"),
             SystemRoles.READER, List.of("read"));
 
