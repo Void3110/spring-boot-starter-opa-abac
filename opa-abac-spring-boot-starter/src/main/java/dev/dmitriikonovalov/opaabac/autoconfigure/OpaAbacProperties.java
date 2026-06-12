@@ -61,6 +61,10 @@ public class OpaAbacProperties {
     @NestedConfigurationProperty
     private Hierarchy hierarchy = new Hierarchy();
 
+    /** Resource-resolution (attribute-rich pre-authorization) settings. */
+    @NestedConfigurationProperty
+    private ResourceResolution resourceResolution = new ResourceResolution();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -123,6 +127,14 @@ public class OpaAbacProperties {
 
     public void setHierarchy(Hierarchy hierarchy) {
         this.hierarchy = hierarchy;
+    }
+
+    public ResourceResolution getResourceResolution() {
+        return resourceResolution;
+    }
+
+    public void setResourceResolution(ResourceResolution resourceResolution) {
+        this.resourceResolution = resourceResolution;
     }
 
     /**
@@ -221,6 +233,27 @@ public class OpaAbacProperties {
 
         public void setInheritable(Map<String, List<String>> inheritable) {
             this.inheritable = inheritable;
+        }
+    }
+
+    /**
+     * Resource-resolution (attribute-rich pre-authorization) settings (Phase 5.97). The mechanism is
+     * opt-in by bean presence (an app registers an {@code AbacResourceResolver}); {@code enabled} is the
+     * <strong>kill-switch</strong> — default {@code true}, and turning it off restores the pre-resolution
+     * reference-based gate semantics with the beans untouched (the rollback path for a buggy or slow
+     * resolver, whose failures otherwise fail closed into 403s).
+     */
+    public static class ResourceResolution {
+
+        /** Kill-switch for gate-side resource resolution. Default {@code true}; off → baseline semantics. */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
         }
     }
 

@@ -32,16 +32,16 @@ public final class ResourceResolutionSupport {
         this.cache = Objects.requireNonNull(cache, "cache");
     }
 
-    AbacResourceResolver resolver() {
+    public AbacResourceResolver resolver() {
         return resolver;
     }
 
     /** May be {@code null} — no hierarchy configured; the chain is then always empty. */
-    AncestorChainSupplier ancestorChainSupplier() {
+    public AncestorChainSupplier ancestorChainSupplier() {
         return ancestorChainSupplier;
     }
 
-    AbacResourceCache cache() {
+    public AbacResourceCache cache() {
         return cache;
     }
 }

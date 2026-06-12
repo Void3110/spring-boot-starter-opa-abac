@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import dev.dmitriikonovalov.opaabac.core.HttpOpaClient;
 import dev.dmitriikonovalov.opaabac.core.NoOpRoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
@@ -17,12 +18,16 @@ import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreePathSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.ParentLinkSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.RecursiveCteAncestorResolver;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
+import dev.dmitriikonovalov.opaabac.security.AbacResourceCache;
+import dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache;
+import dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -185,6 +190,63 @@ public class OpaAbacAutoConfiguration {
                 OpaAbacProperties properties) {
             return new SubtreeSpecResolver(
                     ancestorResolver, roleDefinitionSupplier, properties.getHierarchy().getInheritable());
+        }
+    }
+
+    /**
+     * Resource-resolution (attribute-rich pre-authorization) beans (Phase 5.97). <strong>Opt-in by bean
+     * presence</strong>: active only when the app registers an {@link AbacResourceResolver} — and the
+     * {@code opa.abac.resource-resolution.enabled} kill-switch (default on) hasn't turned it off. With
+     * the condition unmet, no {@code ResourceResolutionSupport} bean exists and the
+     * {@code @OpaPreAuthorize} manager is wired exactly as before (the rollback path of ADR 0013).
+     * When a 5.5 {@code AncestorResolver} bean is present (hierarchy enabled), the gate's
+     * {@code AncestorChainSupplier} is bound to it — the same {@code ObjectProvider} idiom as the
+     * data-filtering wiring; hierarchy off → no supplier → the chain is always empty (flat resources).
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = {
+        "org.springframework.security.web.SecurityFilterChain",
+        "org.springframework.web.filter.OncePerRequestFilter"
+    })
+    @ConditionalOnBean(AbacResourceResolver.class)
+    @ConditionalOnProperty(prefix = "opa.abac.resource-resolution", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    static class ResourceResolutionAutoConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        public AbacResourceCache abacResourceCache() {
+            return new RequestAttributesResourceCache();
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public ResourceResolutionSupport resourceResolutionSupport(
+                AbacResourceResolver resolver,
+                ObjectProvider<AncestorResolver> ancestorResolver,
+                AbacResourceCache cache) {
+            AncestorResolver hierarchyResolver = ancestorResolver.getIfAvailable();
+            return new ResourceResolutionSupport(
+                    resolver, hierarchyResolver != null ? hierarchyResolver::ancestorsOf : null, cache);
+        }
+    }
+
+    /**
+     * The shared persistence-conflict mapping (retro-audit fold-in #1): optimistic-lock races and
+     * constraint violations answer {@code 409 STATE_CONFLICT} problem+json instead of {@code 500} —
+     * for every web adopter with Spring-DAO on the classpath, zero per-service code. Guarded by
+     * {@code @ConditionalOnClass} so non-JPA adopters never load the DAO exception types; a
+     * user-supplied bean overrides it.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @ConditionalOnClass(name = "org.springframework.dao.OptimisticLockingFailureException")
+    static class PersistenceConflictAdviceAutoConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        public PersistenceConflictProblemAdvice persistenceConflictProblemAdvice() {
+            return new PersistenceConflictProblemAdvice();
         }
     }
 }
