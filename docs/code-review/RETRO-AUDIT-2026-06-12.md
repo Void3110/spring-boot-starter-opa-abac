@@ -149,6 +149,14 @@ ungated by design; see `TEAM-BASED-AUTHORIZATION.md`).
 own design pass); no authn/trust documentation toward OPA; OPA-restart hygiene in sibling runners
 (documented-manual, deliberately not widened); CI does not run the e2e suite.
 
+**Found by this sweep's whole-suite validation** — the hierarchy matrix's re-parent flip cell still
+pinned the pre-5.97 layer-3 deny ("no role at the new root → 403"), which Phase 5.97 replaced with
+the realm-fallback-decides E4 semantic — on a rebuilt rig the cell legitimately answered 200. The
+product is correct per ADR 0013; the runner now binds the reader to a deliberate no-grant role on a
+team governing the foreign catalog (role-def-present disables the fallback, the E3 semantic), keeping
+the flip provable at 403. Lesson for future gate-semantics slices: sweep the *negative* e2e cells for
+which deny mechanism they actually pin.
+
 ## Refuted (examples)
 
 4 findings were killed by the refutation pass — e.g. "the gate ignores the supplied
