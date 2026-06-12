@@ -154,8 +154,35 @@ denials`.
   (Phase 6) reports against ("which of this role's actions may I perform?"), and the "which roles may I
   assign?" question is the same batch shape.
 
+## Implementation addendum (Phase 6.5 design interrogation, 2026-06-12)
+
+The slice design ([[PERMISSION-CATEGORIES]] / its 00-DESIGN) resolved the forks this ADR left to
+implementation; the structural ones are recorded here:
+
+- **Clean cut, no back-compat.** The starter is unpublished with zero adopters, so the repo's
+  additive-only doctrine is **consciously waived for this slice**: no legacy-verb aliases in the
+  expansion table, no compatibility clause in the rules. `permissions` carries only category
+  tokens; an unknown/stale token expands to ∅ and therefore **denies** (fail-closed). The seeds,
+  every annotation, policy, and fixture migrate in one slice.
+- **Gate placement is hybrid.** The level gates (cross-tier strict `<`; senior's `≤ member` bound)
+  run app-side inside the team-row-locked transaction (the decide-under-protection rule); the
+  senior-only subset-on-effective verdict runs in OPA via a new `data.role.assignable` entrypoint
+  over the two lock-read role snapshots — so `effective_actions` (expand-minus-deny) has exactly
+  one runtime home, the OPA `data` table. OPA failure rejects the assignment. The ADR's gate pair
+  *replaces* the previous always-on subset check; the documented consequence — an administrator
+  whose own role denies an action may still assign a role granting it — is designed cross-tier
+  behavior, pinned by a test cell.
+- **`define-tags` is enforcement-deferred.** The tag-dictionary endpoints stay on their
+  control-plane gate (`team:define-tags`) until the control-plane categorization slice; the action
+  participates fully in the effective-set math meanwhile.
+- **The realm fallback maps through the same expansion table** (`catalog-viewer → {READ}`,
+  `catalog-editor → {READ, WRITE, TAG}`), preserving the pre-6.5 fallback reach exactly.
+- **`viewer` renames to `reader`** (code ↔ tier alignment under the clean cut); `owner` keeps
+  level 40 (any value strictly above 30 satisfies the gate).
+
 ## Related
 - ADR 0003 (role ≠ grant; the subset rule and `role_level` this refines) · ADR 0004 (the `TAG` category's
   `define-tags`/`assign-tags`) · ADR 0006 (the enforcement layers that consume these permissions)
-- [[USER-STORIES]] (Epic G — the delegation flows) · [[ACTION-ENRICHMENT]] (the "which actions/roles may I
-  pick" UI machinery) · [[POC-ROADMAP]] (Phase 6.5) · [[USER-MANAGEMENT-SERVICE]] (where role definitions live)
+- [[USER-STORIES]] (Epic G — the delegation flows) · [[PERMISSION-CATEGORIES]] (the Phase-6.5 slice
+  design) · [[ACTION-ENRICHMENT]] (the "which actions/roles may I pick" UI machinery) ·
+  [[POC-ROADMAP]] (Phase 6.5) · [[USER-MANAGEMENT-SERVICE]] (where role definitions live)
