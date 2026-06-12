@@ -153,6 +153,13 @@ a **1:1 structural mirror** of every prior slice:
 - **Flag the build-breakers in the ticket that causes them.** If widening an interface breaks existing
   test stubs (it will — adding an abstract method un-functional-interfaces it), say so *in that ticket*,
   list the exact files, and require they land in the same commit. (DATA-FILTERING T1 is the model.)
+- **Name the wiring — a seam with zero callers is not done.** For every new seam a ticket introduces
+  (an SPI, a config property, a guard, an exception type + its advice mapping, a cache accessor, a rego
+  entrypoint, a declared retry/recovery edge), the **Deliverables name its consumers/call sites** and the
+  **Acceptance exercises at least one non-happy path through it** (the error mapping reached, the
+  off-state behavior, the recovery edge fired). Completeness rules framed around the happy round-trip
+  silently exclude exactly these — recovery and secondary paths are first-class links to trace, not an
+  appendix.
 
 **Conventions for every note:** valid frontmatter (one `status/`, one `type/`, ≥1 `area/`),
 `UPPER-KEBAB-CASE.md`, `[[wikilinks]]`, links back to `[[POC-ROADMAP]]`. A structural decision surfaced
@@ -245,6 +252,17 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
    pass, do NOT advance yet. Run a focused self-review, then refactor and re-test:
    - **«Fail-closed check — the slice's load-bearing invariant, stated concretely: every error/timeout/
      missing-input path lands on deny/empty, never on a wider result».**
+   - **«Security check — name the widening that would matter for this ticket (a weakened scope/ownership
+     check, an authorization fallback engaging wider than designed, a cache serving an authz artifact
+     across subjects/requests, an injection surface, a secret or internal detail reaching logs/error
+     bodies) and state why it cannot happen».**
+   - **«Concurrency / idempotency check — every decision that gates a mutation is computed under the same
+     lock or version guard that holds through the commit (`CONCURRENCY-AND-LOCKING.md` Rules 1–2 — code
+     that locks first but acts on a pre-lock decision is the defect); a gate-time snapshot is
+     version-guarded in the mutating transaction; a retried/replayed request converges».**
+   - **Wiring check** — every seam this ticket adds (an SPI, a property, a guard, an exception + advice
+     mapping, a cache accessor, a rego entrypoint, a recovery edge) has a **named consumer** and a test
+     through its **non-happy path**; zero call sites = the ticket is not done.
    - **«Boundary / additivity check — `opa-abac-core` stays Spring-free; the change is additive to the
      public API; name the byte-for-byte-unchanged surfaces and the one mechanical cost (e.g. widened
      test stubs)».**
@@ -343,9 +361,11 @@ them; only the bracketed content varies per slice.
 5. **The per-ticket loop, T1→TN, in order, STOP at each checkpoint** — the ten numbered steps:
    prime → build → test → **★review+refactor** → IT/e2e → docs → Mulch → commit → checkpoint.
 6. **The ★ architecture-review gate sits BEFORE integration/e2e** — unit-green → review → refactor →
-   re-test → *then* the heavier validation. Always with a fail-closed check, a boundary/additivity
+   re-test → *then* the heavier validation. Always with a fail-closed check, a **security check**, a
+   **concurrency/idempotency check** (the decide-under-protection invariant, not just lock mechanics),
+   a **wiring check** (every new seam has a consumer + a non-happy-path test), a boundary/additivity
    check, a pattern-reuse check, SOLID, "apply real refactoring, not ritual churn," and a written
-   `STATUS-0N.md` note.
+   `STATUS-0N.md` note. *(Security + concurrency/idempotency elevated 2026-06-12 — see §7.)*
 7. **Permissions / autonomy granted** — the explicit list of things to do *without asking* (edit code,
    stand up the rig, fix-until-green, commit per ticket).
 8. **Hard rules** — report-at-checkpoints; the review gate is mandatory and ordered; fix-until-green
@@ -446,6 +466,21 @@ skeleton itself is next revised.
   in a fresh session** — the ticket status table + the `STATUS-0N.md` notes are a complete handoff (the
   method is doc-first precisely so the window is cache, not the source of truth) — over delegating
   implementation mid-ticket. (Decided 2026-06-11, planning Phase 5.95.)
+- **Write invariants, not mechanisms (root-cause audit of the source platform's review stack, 2026-06).**
+  A strong implementer behind a multi-gate review still shipped a cluster of race/recovery defects there;
+  the audit found one root cause across guides, prompts, and review skills: every concurrency rule
+  encoded the *mechanical fix of one past incident* ("lock first", "re-fetch fresh inside the tx"), not
+  the *invariant that generates the defect class* — and **checklist-shaped rules get satisfied literally
+  by defective code** (the code locked first, then acted on decisions made on unlocked state; the rule's
+  own wording blessed the bug). What this repo bakes in as a consequence: the ★ gate and the review
+  lenses state the **generating invariant** with mechanisms as named instances
+  (`CONCURRENCY-AND-LOCKING.md` Rules — decide under the protection you act under; bind the decision
+  version to the acted-on version); **security + concurrency/idempotency run as first-class review
+  dimensions** on every non-docs diff, not as subsets of fail-closed; completeness rules must not be
+  happy-path-framed — declared **recovery/secondary paths and off-states are first-class links to
+  trace**, and a **seam with zero callers is not done** (the wiring check, §3); and a review fix in one
+  handler is **swept across its mirrored siblings in the same commit**, because adversarial refutation
+  can only narrow a finding set — widening is the completeness critic's job.
 - **Match-in-Rego, decisions in the policy.** ANY_OF/ALL_OF via `some in` / `every` lives in Rego, not
   Java — it's the OPA-native expression and the bridge to later in-policy joins. The slice-invariant
   pattern: keep the *decision* in the policy, the *plumbing* in Java.
@@ -518,8 +553,11 @@ harness." Its heavy path (`deep-review-workflow.js`) composes:
 2. **Adversarial verification** — every candidate finding is handed to a *separate skeptic* prompted to
    **refute** it; it survives only if re-confirmed from source. This is the direct counter to
    self-preferential bias and to plausible-but-wrong findings.
-3. **Completeness critic** — a synthesis pass over the survivors (deduped, severity-sorted) before
-   anything reaches the maintainer.
+3. **Completeness critic** — a dedicated *widening* pass after refutation: it hunts what no lens
+   reported (an unswept sibling of fixed code, a new seam with zero callers, an untested
+   off-state/recovery path, a QA case with no test), and its candidates face the same refutation; only
+   then are survivors deduped and severity-sorted for the maintainer. Refutation can only narrow a
+   finding set — the critic is the counterweight.
 
 The light path (single sub-agent, for small/low-risk diffs) is the same shape collapsed to one agent —
 "start simple, scale intelligently": don't spin up a workflow to review a 20-line docs change. The size/

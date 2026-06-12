@@ -32,17 +32,29 @@ is project-tuned and lives in `.claude/skills/`, **gitignored** — so this doc 
 
 ## The one idea that makes this worth more than "read the diff"
 
-A single agent reviewing its own (or anyone's) change has two well-documented weaknesses: it **misses
-things** on a confident single pass, and it **over-grades plausible-but-wrong findings**. This harness
-counters both structurally:
+A single agent reviewing its own (or anyone's) change has three well-documented weaknesses: it **misses
+things** on a confident single pass, it **over-grades plausible-but-wrong findings**, and — subtler — a
+refute-only pipeline **can only shrink the finding set, never grow it**, so whole defect classes no lens
+generated (an unswept sibling, a seam nobody wired) stay invisible. This harness counters all three
+structurally:
 
 - **Independent lenses** (fan-out) — several reviewers, each blind to the others, each hunting a *specific
   failure class*. Diversity surfaces what one pass overlooks.
 - **Adversarial verification** — every candidate finding is handed to a *separate skeptic* whose job is
   to **refute** it; it survives only if re-confirmed from the source. This is the filter that keeps
   noise out of the final report.
+- **A completeness critic that widens** — after refutation, one pass hunts what no lens reported:
+  the mirrored sibling of fixed code, a new seam with zero callers, an untested off-state or recovery
+  path. Its candidates face the same refutation.
 
-If you take nothing else from this template, take those two. The phases below are the scaffolding around
+One more, about how the lens prompts themselves are written: **state the invariant that generates the
+defect class, not the mechanical fix of one past incident**. A rule written from one bug's mechanics
+("acquire the lock first", "re-fetch inside the transaction") gets satisfied *literally* by code that
+still carries the defect (it locked first — then acted on a decision made on unlocked state). Checklist-
+shaped rules are load-bearing for an LLM reviewer: write them as invariants, keep mechanisms as named
+instances.
+
+If you take nothing else from this template, take those. The phases below are the scaffolding around
 them.
 
 ---
@@ -96,6 +108,8 @@ your surfaces):
 
 | Changed surface | Lens to apply |
 |-----------------|---------------|
+| **Any main-source change** | **security audit** (always on): weakened scope/ownership checks, a fallback engaging wider than designed, caches serving authz artifacts across subjects/requests, injection surfaces (expression languages, string-built queries), secrets/internal state in logs or error bodies, authn edges defaulting to a subject |
+| **Any mutating handler/service** | **concurrency & idempotency** (always on): every decision that gates a mutation computed under the lock/version-guard that holds through the commit — *locking first but acting on a pre-lock decision is the defect*; out-of-tx decisions version-bound to the acted-on row; retried/replayed requests converge |
 | Core / framework-agnostic module | **boundary**: does it stay free of the deps it forbids? Is the public API change *additive*? |
 | The security / decision path | **«LOAD-BEARING INVARIANT»**: trace every error/empty branch to its safe terminal |
 | Policy / rules | default-deny explicit? no unconditional allow? a test per new rule? |
@@ -141,8 +155,14 @@ Run as a dynamic workflow (or, without that feature, as several sequential sub-a
    prompted to **refute** it ("default to *refuted* unless you can re-confirm from source"). For a
    finding that can fail in more than one way, give skeptics *distinct lenses* (correctness / security /
    does-it-actually-reproduce) rather than N identical ones. A finding survives only on re-confirmation.
-3. **Completeness critic + synthesis** — a final pass over the survivors: dedupe, severity-sort, and ask
-   "what dimension didn't we run? what claim is still unverified?" Output `{ confirmed, refuted }`.
+3. **Completeness critic** — the *widening* pass refutation cannot provide. Given the diff and the
+   survivors so far, it hunts only what the per-file lenses are structurally blind to: **unswept
+   siblings** (the mirrored operation / same base class / the equivalent handler elsewhere, carrying the
+   same defect a lens found in one place); **zero-caller seams** (a new SPI, property, guard, exception
+   + advice mapping, accessor, or declared recovery edge with no non-test consumer — shipped but inert);
+   **untested off-states** (a kill-switch state, an error mapping, a retry path nobody exercises); and
+   acceptance cases with no corresponding test. Its candidates face the same adversarial refutation.
+4. **Synthesis** — dedupe, severity-sort, output `{ confirmed, refuted }`.
 
 Then **spot-verify the Criticals yourself** by reading the files. The harness cuts false positives; you
 still own the verdict — and you may hold context (from the change's description or the **«EXPERTISE
@@ -162,6 +182,13 @@ Review branch «BRANCH» vs «BASE».
 
 Check, with evidence (quote the code that proves each — empty list is valid):
 - «LOAD-BEARING INVARIANT»: does any path widen/weaken it on error or missing input?
+- Security: any weakened scope/ownership check? a fallback engaging wider than designed? a cache that
+  could serve an authz artifact across subjects/requests? user input reaching an expression language or
+  string-built query? secrets/internal state in logs or error bodies?
+- Concurrency/idempotency: is every decision that gates a mutation computed under the lock/version-guard
+  that holds through the commit (locking first but deciding pre-lock is the defect)? do retries converge?
+- Wiring: does every NEW seam (SPI, property, guard, advice, accessor, recovery edge) have a non-test
+  caller and a test through its non-happy path?
 - Boundary: does «pure module» stay free of «forbidden deps»?
 - Additivity: are public APIs changed additively (old tests unchanged-green)?
 - Narrow-not-widen: is any new filter AND-ed with existing scope, never a bare re-query?
@@ -187,6 +214,12 @@ Fix on the branch, in priority order:
 For each fix: add/adjust the test that would have caught it (the data-layer fix gets an **«IT»** against
 the *real* dependency; a policy gets a policy-test case). Delete dead code rather than deprecating it.
 Keep any clean-room / IP boundary the project has (no proprietary names, paths, ids, tokens).
+
+**Sibling sweep (mandatory per fix).** When a fix lands in X, grep the same pattern across X's mirrored
+siblings — same base class, same package, the mirrored operation (create/delete, assign/unassign, the
+equivalent handler in another service or module) — and fix them **in the same commit**. The skeptics can
+only narrow the finding set; the sweep is how a confirmed defect class gets applied to every instance.
+Record hits or "siblings clean" in the review note.
 
 ---
 
@@ -217,6 +250,9 @@ tags: [ status/active, type/review, area/«…» ]
 ## Critical Issues
 ## Medium Issues
 ## «LOAD-BEARING INVARIANT» verification   (every error/empty path → safe terminal)
+## Security audit                          (scope checks · fallback interplay · cache safety · injection · secrets/leaks)
+## Concurrency & idempotency               (decide-under-protection · version binding · retry convergence)
+## Wiring & sibling sweep                  (new seams have callers + non-happy-path tests; fixes swept across mirrors)
 ## Autonomous-run check                    (if applicable — laziness / self-pref bias / goal drift)
 ## What's done right
 ## Test results                            («BUILD» · policy tests · «E2E» matrix)
@@ -244,10 +280,15 @@ commit touch only the store, not swept-in staged code.)
 
 The phases are negotiable; **these are not** — they're what make the harness better than a careful read:
 
-- **Independent lenses, then adversarial refutation.** Fan-out for coverage, skeptics for precision.
+- **Independent lenses, then adversarial refutation, then a critic that widens.** Fan-out for coverage,
+  skeptics for precision, the critic for the classes no lens generated (siblings, wiring, off-states) —
+  refutation alone can only shrink the finding set.
 - **Name the one load-bearing invariant and trace every failure branch to its safe terminal.** Generic
   "be careful" is useless; "no path returns more access on error than on success — here are the exact
   branches" is the review.
+- **Write lens rules as invariants, not as one incident's mechanics.** A mechanism rule gets satisfied
+  literally by defective code; the invariant ("decide under the protection you act under") covers the
+  class. Keep security and concurrency/idempotency as first-class lenses, not subsets of the main invariant.
 - **Route by size/risk.** Cheap path for cheap diffs; the full harness only where the value justifies it.
 - **The review note is a deliverable**, committed with the fix — so the *why* survives.
 - **Prime before, record after.** The store is what compounds review quality across changes.

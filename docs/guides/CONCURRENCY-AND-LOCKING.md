@@ -11,6 +11,32 @@ tags:
 > the write path you should reach for first. The entities these operate on are described in
 > [[DOMAIN-MODEL]]; the first implementation shipped in [[DOMAIN-MODEL-FOUNDATION]].
 
+## Rules (read first)
+
+Numbered and imperative; the prose below is rationale and mechanics. A rule states the **invariant**,
+not just the mechanical fix of one past incident — code can satisfy a mechanism rule to the letter
+(lock acquired first, fresh re-fetch done) and still carry the defect if a *decision* was made on
+unprotected state.
+
+1. **Decide under the protection you act under.** Every check that decides *whether* or *which*
+   mutation fires — a state guard, an allow-list, a branch fork, an authorization-relevant re-check —
+   is computed from entity state read **under the same lock or version guard that holds through the
+   commit**. A pre-transaction check is a fast-path nicety and is **repeated under protection**.
+   Locking first and then acting on a decision carried in from unlocked state violates this rule.
+2. **Bind the decision version to the acted-on version.** When a decision is legitimately made outside
+   the mutating transaction (the `@OpaPreAuthorize` gate's resolved snapshot — ADR
+   [[0013-attribute-rich-pre-authorization|0013]]), the handler loads fresh inside its transaction and
+   **compares versions against the decision-time snapshot**: drift → `409 STATE_CONFLICT`, the client
+   retries, the retry decides on the new state. Never persist the snapshot itself.
+3. **Mutations go through `mutate(id, fn)`** — atomic lock-mutate-save; the safe path is the easy
+   path. In a hand-rolled locking path, `getByIdForUpdate` is the first entity-touching call.
+4. **No slow/external work inside the locked transaction** — compute before, pass values in.
+5. **Stay idempotent under client retries.** Any path that can answer a conflict will be retried: a
+   replayed request converges (no double-apply, no duplicated side effects); e2e seeds re-run without
+   accumulating.
+6. **Prove serialization with a latch-based IT on real Postgres** — overlap forced by a latch, never
+   `Thread.sleep`.
+
 ## The failure this prevents
 
 A classic lost-update race, generalized from a real production incident:
@@ -114,9 +140,14 @@ overlap with a latch/barrier — never `Thread.sleep`, or the test is flaky.
 
 ## Checklist
 
+The quick at-the-keyboard form of the **Rules (read first)** block above:
+
 - Reading only? `getById`. About to mutate a possibly-contended row? `mutate` / `getByIdForUpdate`.
+- Every decision the mutation depends on re-made under the lock/guard (Rule 1); a gate-time snapshot
+  version-guarded in the transaction (Rule 2).
 - Repository for a lockable entity extends `LockableJpaRepository`.
 - No slow/external call inside a `mutate` body.
+- Replays/retries converge (Rule 5).
 - Concurrency proven by a latch-based IT on real Postgres, not asserted by inspection.
 
 ## Related
