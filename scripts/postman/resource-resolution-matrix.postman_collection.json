@@ -1,0 +1,221 @@
+{
+  "info": {
+    "name": "Resource-resolution matrix (attribute-rich pre-authorization, Phase 5.97)",
+    "description": "Proves the 00-DESIGN §3 behavior matrix live through APISIX: with the catalog service's AbacResourceResolver registered, an id'd @OpaPreAuthorize decision is made on the RESOLVED instance (tags + ancestors) with the role looked up once on the governing root — the team/tag model finally governs id'd writes. Cells: the headline flip (E1), the closed realm-fallback hole (E2), the intended narrowing (E3), the unchanged non-member fallback (E4), hierarchy parity via the gate (E5), the T5 product-policy sibling (E6), and the pinned missing-id 403 posture. Fixture set: the dedicated 8888… catalog pair seeded by run-resource-resolution-matrix.sh.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "E1. THE HEADLINE FLIP: viewer-realm member, tag-gated write role, PUT the emea Category -> 200 (pre-5.97: 403)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writer_viewer_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"name\":\"EMEA root (updated by the gated writer)\",\"tags\":{\"region\":[\"emea\"]}}" },
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/{{emea_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "{{emea_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E1: the tag-matched write is ALLOWED at the gate (story C4) -> 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('E1: the handler ran on the authorized snapshot (name updated)', function () { pm.expect(pm.response.json().name).to.eql('EMEA root (updated by the gated writer)'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E2. THE HOLE CLOSES: editor-realm member, same tag-gated role, PUT the apac Category -> 403 (pre-5.97: 200 via the tag-blind fallback)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writer_editor_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"name\":\"should never apply\",\"tags\":{\"region\":[\"apac\"]}}" },
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/{{apac_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "{{apac_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E2: the realm role no longer leaks a write the team role\\'s tags deny -> 403', function () { pm.response.to.have.status(403); });",
+              "pm.test('E2: problem+json ACCESS_DENIED (a gate deny, not an error)', function () { pm.expect(pm.response.json().errorCode).to.eql('ACCESS_DENIED'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E3. THE NARROWING: read-only team role + editor realm, PUT -> 403 (role definition present, fallback disabled)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{reader_editor_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"name\":\"should never apply\",\"tags\":{\"region\":[\"emea\"]}}" },
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/{{emea_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "{{emea_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E3: a present role definition disables the realm fallback -> 403', function () { pm.response.to.have.status(403); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E4. NON-MEMBER UNCHANGED: editor realm, PUT a Category in the team-less catalog -> 200 (the fallback still decides)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{reader_editor_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"name\":\"Free catalog category (updated)\"}" },
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{free_catalog_id}}/categories/{{free_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{free_catalog_id}}", "categories", "{{free_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E4: no role definition at the root -> the realm fallback decides, byte-identical -> 200', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E5. HIERARCHY PARITY: root-granted member GETs a nested Category -> 200 VIA THE GATE (inherited grant survives the move from layer 3)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{reader_editor_token}}" }],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/{{nested_category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "{{nested_category_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E5: a catalog-root read grant authorizes the nested category AT THE GATE -> 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('E5: the response is the resolved snapshot', function () { pm.expect(pm.response.json().id).to.eql(pm.variables.get('nested_category_id')); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6a. THE PRODUCT SIBLING (T5 live): tag-gated writer PUTs the apac Product -> 403 (the ported conjunct denies)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writer_editor_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"name\":\"should never apply\",\"sku\":\"RR-APAC\",\"priceCents\":1000,\"currency\":\"USD\"}" },
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/{{apac_category_id}}/products/{{apac_product_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "{{apac_category_id}}", "products", "{{apac_product_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E6a: product.rego now carries tags_satisfied -> the apac product write denies -> 403', function () { pm.response.to.have.status(403); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E6b. THE PRODUCT SIBLING, allow half: the same writer PUTs the emea Product -> 200",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writer_editor_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"name\":\"EMEA widget (updated)\",\"sku\":\"RR-EMEA\",\"priceCents\":1500,\"currency\":\"USD\"}" },
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/{{emea_category_id}}/products/{{emea_product_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "{{emea_category_id}}", "products", "{{emea_product_id}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('E6b: the emea product write satisfies the conjunct -> 200', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. PINNED SEMANTIC: a missing id behind an annotated resourceId -> 403, not 404 (resolver empty => gate deny)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{writer_editor_token}}" }],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{rr_catalog_id}}/categories/00000000-0000-0000-0000-00000000dead",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{rr_catalog_id}}", "categories", "00000000-0000-0000-0000-00000000dead"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('missing id -> 403 (anti-enumeration; pre-5.97 this was 404)', function () { pm.response.to.have.status(403); });",
+              "pm.test('problem+json ACCESS_DENIED', function () { pm.expect(pm.response.json().errorCode).to.eql('ACCESS_DENIED'); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

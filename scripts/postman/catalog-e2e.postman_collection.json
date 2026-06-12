@@ -312,14 +312,17 @@
           }
         },
         {
-          "name": "Get product after delete (404)",
+          "name": "Get product after delete (403 — the gate denies a missing id, Phase 5.97)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                  "// Phase 5.97 (pinned semantic #1): with resource resolution active, a MISSING id behind an",
+                  "// annotated resourceId is denied AT THE GATE (resolver empty -> deny) — 403, not the handler's",
+                  "// 404 (anti-enumeration; the handler never runs). Pre-5.97 this cell pinned 404.",
+                  "pm.test('403 at the gate (missing id; was 404 pre-5.97)', () => pm.response.to.have.status(403));"
                 ]
               }
             }

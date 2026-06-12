@@ -118,7 +118,7 @@ All the formerly-open questions are pinned; see [[00-DESIGN]] for the mechanism 
 | T3 — starter: composition + kill-switch (`opa.abac.resource-resolution.enabled`) + persistence 409 advice | ✅ |
 | T4 — catalog adoption: resolver bean, `getCategory` to the gate, `CategoryAuthorizer` deleted, version guards + ITs | ✅ |
 | T5 — policies: `tags_satisfied` conjunct for `product.rego`/`catalog.rego` (retro-audit fold-in #3) | ✅ |
-| T6 — e2e: resource-resolution matrix (fixture `8888…`) + whole-suite coexistence | ☐ |
+| T6 — e2e: resource-resolution matrix (fixture `8888…`) + whole-suite coexistence | ✅ |
 | T7 — docs: `ATTRIBUTE-RICH-PRE-AUTHORIZATION` guide + reconciliations + roadmap/stories/Mulch + folder move | ☐ |
 
 **Critical path:** T1 → T2 → T3 → T4 → T6 → T7; **T5 parallel** (after T1, before T6). **T1+T2+T3**
