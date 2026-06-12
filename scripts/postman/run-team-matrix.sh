@@ -101,9 +101,10 @@ echo "  subjects: owner=$OWNER_SUB viewer=$VIEWER_SUB custom-editor=$EDITOR_SUB"
 # --- seed a stable demo catalog (the team-target) into the catalog DB --------
 echo "==> Seeding demo catalog $DEMO_CATALOG_ID into the catalog DB ..."
 "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
-INSERT INTO catalog (id, name, created_at, version, tags)
-VALUES ('$DEMO_CATALOG_ID', 'Team demo catalog', now(), 0, '{}'::jsonb)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+INSERT INTO catalog (id, name, created_at, version, tags, path)
+VALUES ('$DEMO_CATALOG_ID', 'Team demo catalog', now(), 0, '{}'::jsonb,
+        CAST('catalog_' || replace('$DEMO_CATALOG_ID','-','') AS ltree))
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, path = EXCLUDED.path;
 SQL
 
 # --- bootstrap the team + memberships via the user-service internal API ------

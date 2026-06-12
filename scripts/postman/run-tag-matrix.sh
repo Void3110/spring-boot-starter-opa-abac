@@ -113,9 +113,10 @@ echo "  subjects: owner=$OWNER_SUB reader=$READER_SUB strict=$STRICT_SUB"
 echo "==> Seeding demo catalog $DEMO_CATALOG_ID into the catalog DB ..."
 "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
 DELETE FROM category WHERE catalog_id = '$DEMO_CATALOG_ID';
-INSERT INTO catalog (id, name, created_at, version, tags)
-VALUES ('$DEMO_CATALOG_ID', 'Tag demo catalog', now(), 0, '{}'::jsonb)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+INSERT INTO catalog (id, name, created_at, version, tags, path)
+VALUES ('$DEMO_CATALOG_ID', 'Tag demo catalog', now(), 0, '{}'::jsonb,
+        CAST('catalog_' || replace('$DEMO_CATALOG_ID','-','') AS ltree))
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, path = EXCLUDED.path;
 SQL
 
 # --- bootstrap the team + tag-gated roles + memberships ----------------------
