@@ -98,6 +98,24 @@ All the formerly-open questions are pinned; see [[00-DESIGN]] for the mechanism 
   this slice and Phase 6 for action-vocabulary stability, and its repo-wide action-string sweep will
   mechanically rename the action strings this slice's tests use), 7 (publish), 8 (ReBAC).
 
+## Inputs from the retro-audit (2026-06-12) — fold into the QA baseline at /decompose
+
+[[RETRO-AUDIT-2026-06-12]] confirmed the fallback-hole class this slice closes and handed it four
+QA-baseline items (details + rationale in the report's "Folded into Phase 5.97" table):
+
+1. **409 advice wiring** — `OptimisticLockingFailureException` / `DataIntegrityViolationException` →
+   `409 STATE_CONFLICT` in the shared `AbstractProblemAdvice` (today: 500). Lands with the
+   `VersionGuard` ticket; acceptance must reach the mapped status (non-happy path), per the wiring rule.
+2. **Supplier outage ≠ no-role** — a `RoleDefinitionSupplier` failure is currently indistinguishable
+   from an authoritative empty result, and the catalog policies' JWT-roles fallback then *widens*; the
+   resolver-failure → DENY posture this slice pins must cover (or explicitly scope out) the supplier seam.
+3. **`tags_satisfied` only exists in `category.rego`** — the attribute-rich gate is only as good as the
+   policies; product/catalog need the conjunct (or a documented category-only scope) in this slice's
+   policy work.
+4. **Decide-under-protection TOCTOU cells** — the user-mgmt subset/ceiling checks read unlocked actor
+   state; this slice's version-binding doctrine is the model for the fix; pin baseline QA cells so the
+   gate work doesn't regress them.
+
 ## Related
 
 - [[POC-ROADMAP]] — Phase 5.97.

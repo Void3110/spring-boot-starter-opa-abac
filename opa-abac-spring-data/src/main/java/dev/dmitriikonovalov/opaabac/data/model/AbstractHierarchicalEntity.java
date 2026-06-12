@@ -37,8 +37,13 @@ public abstract class AbstractHierarchicalEntity extends AbstractSecuredEntity {
     /**
      * The materialized lineage path (an {@code ltree}). Stored/read as text; the write cast
      * ({@code ?::ltree}) keeps Hibernate's {@link String} binding compatible with the {@code ltree} column.
+     *
+     * <p>{@code updatable = false}: after the insert, the path changes ONLY through the maintainer's
+     * native subtree rewrite. The rewrite does not bump {@code @Version}, so if JPA could update this
+     * column, any full-entity merge holding a pre-rewrite snapshot would silently restore the OLD
+     * lineage past the optimistic guard (retro-audit 2026-06-12).
      */
-    @Column(name = "path", columnDefinition = "ltree")
+    @Column(name = "path", columnDefinition = "ltree", updatable = false)
     @ColumnTransformer(write = "?::ltree")
     private String path;
 
