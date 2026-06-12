@@ -123,6 +123,32 @@ library `EntityNotFoundException` unmapped (update-vs-delete race answers 500, n
 native subtree rewrite still doesn't bump `@Version` (clobber vector closed by `updatable=false`;
 the full fix bumps version in the rewrite SQL).
 
+## Disposition update (2026-06-12, the hardening follow-up branch)
+
+The tracked follow-ups above were swept after Phase 5.97 shipped (branch
+`feature/void3110/audit-followups-hardening`). Status per finding:
+
+**Fixed on the branch** — `AbacFilter` now swaps in a fresh `SecurityContext` (never mutates in
+place); actuator-beyond-health requires an authenticated subject in **both** services (pinned by an
+`ActuatorSecurityIT` each); the OPA policy path is validated fail-closed at the client (traversal /
+dots / empty → deny, no HTTP call); `validateExpiry` rejects a missing/non-numeric `exp` (fail
+closed); the library `EntityNotFoundException` maps to `404` via a starter advice (update-vs-delete
+race was a 500); an unknown stored `match_mode` narrows to `ALL_OF` (was silently widened to
+`ANY_OF`); the native subtree rewrite bumps `@Version` on every rewritten row; create flows derive
+the `ltree` path in the insert transaction with the parent row locked (create-under-moving-parent,
+pinned by a latch IT); the subset/ceiling TOCTOU is closed — every team-scoped grant mutation locks
+the team row first (the user-management service's first latch-based concurrency IT, guide Rule 6,
+pins it); deleting an in-use custom role answers `409 STATE_CONFLICT` (in-method flush + the 5.97
+starter advice, pinned in `ErrorContractIT`); the team/tag/filter matrix runners seed the demo
+catalog with its `ltree` path.
+
+**Documented as a demo limitation** — `POST /teams` target squatting (the bootstrap endpoint stays
+ungated by design; see `TEAM-BASED-AUTHORIZATION.md`).
+
+**Still tracked** — supplier-outage error-distinct posture (B2: an SPI-contract change, needs its
+own design pass); no authn/trust documentation toward OPA; OPA-restart hygiene in sibling runners
+(documented-manual, deliberately not widened); CI does not run the e2e suite.
+
 ## Refuted (examples)
 
 4 findings were killed by the refutation pass — e.g. "the gate ignores the supplied

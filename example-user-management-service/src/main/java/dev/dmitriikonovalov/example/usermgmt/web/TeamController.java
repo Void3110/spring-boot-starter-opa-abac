@@ -39,6 +39,9 @@ public class TeamController implements TeamApi {
         // bootstrap: pre-membership, authenticated-only by design — creating your first team precedes any
         // membership to authorize against (owner-on-create), so this endpoint is deliberately ungated
         // (no @OpaPreAuthorize). The creator becomes the owner atomically inside TeamService.
+        // KNOWN DEMO LIMITATION (target squatting): first-come-first-served binding — nothing verifies
+        // the caller's right over the target. Production needs an ownership check or invite/claim flow;
+        // see TEAM-BASED-AUTHORIZATION.md (retro-audit 2026-06-12).
         UUID creator = callerIdentity.requireActingUserId(request.getCreatorUserId());
         var team = teamService.createWithOwner(
                 creator, request.getName(), request.getTargetType(), request.getTargetId());
