@@ -409,6 +409,56 @@ class OpaAbacAutoConfigurationTest {
                         .isSameAs(UserAdviceConfig.ADVICE));
     }
 
+    // --- library not-found advice (retro-audit follow-up) ---------------------
+
+    @Test // U19 — present by default in a servlet web app; maps EntityNotFoundException → 404
+    void entityNotFoundAdvicePresent_andMaps404() {
+        webRunner.run(context -> {
+            assertThat(context).hasSingleBean(EntityNotFoundProblemAdvice.class);
+            EntityNotFoundProblemAdvice advice = context.getBean(EntityNotFoundProblemAdvice.class);
+
+            var response = advice.handleEntityNotFound(
+                    new dev.dmitriikonovalov.opaabac.data.service.EntityNotFoundException(
+                            "Category not found: 42"),
+                    new org.springframework.mock.web.MockHttpServletRequest("PUT", "/categories/42"));
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+            assertThat(response.getBody().errorCode()).isEqualTo("RESOURCE_NOT_FOUND");
+            // no internals leak: the static detail carries no exception text
+            assertThat(response.getBody().detail()).doesNotContain("Category not found");
+        });
+    }
+
+    @Test // U19 — absent when the spring-data module is off the classpath
+    void entityNotFoundAdviceAbsent_withoutDataModule() {
+        webRunner.withClassLoader(new FilteredClassLoader(
+                        dev.dmitriikonovalov.opaabac.data.service.EntityNotFoundException.class))
+                .run(context ->
+                        assertThat(context).doesNotHaveBean(EntityNotFoundProblemAdvice.class));
+    }
+
+    @Test // U19 — absent in a non-web context
+    void entityNotFoundAdviceAbsent_withoutWeb() {
+        runner.run(context ->
+                assertThat(context).doesNotHaveBean(EntityNotFoundProblemAdvice.class));
+    }
+
+    @Test // U19 — a user-supplied advice bean overrides the starter's
+    void userEntityNotFoundAdviceWins() {
+        webRunner.withUserConfiguration(UserNotFoundAdviceConfig.class).run(context ->
+                assertThat(context.getBean(EntityNotFoundProblemAdvice.class))
+                        .isSameAs(UserNotFoundAdviceConfig.ADVICE));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserNotFoundAdviceConfig {
+        static final EntityNotFoundProblemAdvice ADVICE = new EntityNotFoundProblemAdvice();
+
+        @Bean
+        EntityNotFoundProblemAdvice entityNotFoundProblemAdvice() {
+            return ADVICE;
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class ResolverConfig {
         static final dev.dmitriikonovalov.opaabac.core.AbacResourceResolver RESOLVER =

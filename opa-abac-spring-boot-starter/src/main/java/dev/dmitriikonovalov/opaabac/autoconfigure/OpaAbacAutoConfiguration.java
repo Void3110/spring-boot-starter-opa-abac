@@ -249,4 +249,23 @@ public class OpaAbacAutoConfiguration {
             return new PersistenceConflictProblemAdvice();
         }
     }
+
+    /**
+     * The library not-found mapping (retro-audit follow-up): {@code AbstractCrudService}'s
+     * {@link dev.dmitriikonovalov.opaabac.data.service.EntityNotFoundException} answers
+     * {@code 404 RESOURCE_NOT_FOUND} problem+json instead of {@code 500} (the update-vs-delete race).
+     * Guarded by {@code @ConditionalOnClass} so adopters without the spring-data module never load the
+     * exception type; a user-supplied bean overrides it.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @ConditionalOnClass(name = "dev.dmitriikonovalov.opaabac.data.service.EntityNotFoundException")
+    static class EntityNotFoundAdviceAutoConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        public EntityNotFoundProblemAdvice entityNotFoundProblemAdvice() {
+            return new EntityNotFoundProblemAdvice();
+        }
+    }
 }
