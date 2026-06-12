@@ -42,7 +42,7 @@ starter is unpublished).
 | T4 — user-mgmt: the authoring contract (ceiling, category tokens, strict denials) | ✅ |
 | T5 — user-mgmt: hybrid assignment gates + `data.role.assignable` + latch-race re-proof | ✅ |
 | T6 — catalog: action sweep + the delta-aware `assign-tags` second decision | ✅ |
-| T7 — e2e: `run-permission-categories-matrix.sh` (fixture `9999…`) + nine-runner migration | ☐ |
+| T7 — e2e: `run-permission-categories-matrix.sh` (fixture `9999…`) + nine-runner migration | ✅ |
 | T8 — docs: `PERMISSION-MODEL.md` guide + reconciliations + stories/roadmap + folder move | ☐ |
 
 **Critical path:** T1 → T3 → T4 → T5 (the user-mgmt chain); T2 independent (before T5/T6);

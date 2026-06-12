@@ -144,7 +144,7 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hiera
 # readable Category proves the decision came from inherited_grant (the catalog→category inheritance),
 # not a direct category:read — this is what isolates the Phase-5.5-A CUT in test 1.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-reader\",\"permissions\":{\"catalog\":[\"read\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"]}}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"catalog-reader\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $GRANTED_CATALOG_ID."
@@ -155,7 +155,7 @@ echo "  team $TEAM_ID governs catalog $GRANTED_CATALOG_ID."
 echo "==> Bootstrapping the no-grant team on the foreign Catalog ..."
 FOREIGN_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hierarchy foreign\",\"targetType\":\"catalog\",\"targetId\":\"$FOREIGN_CATALOG_ID\"}" | json_field teamId)"
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"code\":\"no-access\",\"permissions\":{}}" >/dev/null
+  "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"code\":\"no-access\",\"roleLevel\":10,\"permissions\":{}}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$FOREIGN_TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"no-access\"}" >/dev/null
 echo "  team $FOREIGN_TEAM_ID governs catalog $FOREIGN_CATALOG_ID (reader: no-access)."

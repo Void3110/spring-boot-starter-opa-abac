@@ -164,11 +164,11 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Resou
 
 # The tag-gated WRITE role: full write on the subtree, but only where region ANY_OF [emea].
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"rr-regional-writer\",\"permissions\":{\"catalog\":[\"read\",\"write\"],\"category\":[\"read\",\"write\"],\"product\":[\"read\",\"write\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"rr-regional-writer\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"],\"product\":[\"READ\",\"WRITE\",\"TAG\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 # The root READ-ONLY role: read on the CATALOG type only — a nested category is readable solely via
 # the inherited grant (E5), and any write is denied with the fallback disabled (E3).
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"rr-catalog-reader\",\"permissions\":{\"catalog\":[\"read\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"rr-catalog-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"]}}" >/dev/null
 
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$WRITER_VIEWER_UID\",\"roleCode\":\"rr-regional-writer\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$WRITER_EDITOR_UID\",\"roleCode\":\"rr-regional-writer\"}" >/dev/null

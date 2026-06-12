@@ -129,10 +129,10 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Tag d
 
 # A tag-gated 'regional-reader': read on the catalog team-target, requiring region ANY_OF [emea].
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"regional-reader\",\"permissions\":{\"catalog\":[\"read\"],\"category\":[\"read\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"regional-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 # A 'strict-reader': read, requiring region:[emea] AND sensitivity:[public,internal] (ALL_OF).
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"strict-reader\",\"permissions\":{\"catalog\":[\"read\"],\"category\":[\"read\"]},\"requiredTags\":{\"region\":[\"emea\"],\"sensitivity\":[\"public\",\"internal\"]},\"matchMode\":\"ALL_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"strict-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"],\"sensitivity\":[\"public\",\"internal\"]},\"matchMode\":\"ALL_OF\"}" >/dev/null
 
 # Bind: owner -> owner (full write, to create Categories); reader -> regional-reader; strict -> strict-reader.
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null

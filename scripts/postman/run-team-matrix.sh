@@ -117,11 +117,11 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Team 
 
 # A team-scoped custom 'catalog-editor' role granting write on the catalog team-target.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-editor\",\"permissions\":{\"catalog\":[\"read\",\"write\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"catalog-editor\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
 
 # Bind the roles: owner -> owner, viewer -> viewer, custom-editor -> the custom role.
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
-post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$VIEWER_UID\",\"roleCode\":\"viewer\"}" >/dev/null
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$VIEWER_UID\",\"roleCode\":\"reader\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$EDITOR_UID\",\"roleCode\":\"catalog-editor\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $DEMO_CATALOG_ID (owner/viewer/custom-editor bound)."
 
