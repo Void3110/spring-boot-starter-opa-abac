@@ -113,7 +113,7 @@ All the formerly-open questions are pinned; see [[00-DESIGN]] for the mechanism 
 
 | Ticket | Status |
 |--------|--------|
-| T1 — Core: split SPI (`AbacResourceResolver`/`AncestorChainSupplier`) + `Versioned`/`VersionGuard` (Spring-free, additive) | ☐ |
+| T1 — Core: split SPI (`AbacResourceResolver`/`AncestorChainSupplier`) + `Versioned`/`VersionGuard` (Spring-free, additive) | ✅ |
 | T2 — spring-security: manager resolution flow + `AbacResourceCache` + `VersionConflictException` → 409 | ☐ |
 | T3 — starter: composition + kill-switch (`opa.abac.resource-resolution.enabled`) + persistence 409 advice | ☐ |
 | T4 — catalog adoption: resolver bean, `getCategory` to the gate, `CategoryAuthorizer` deleted, version guards + ITs | ☐ |
