@@ -4,6 +4,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Locale;
 import java.util.Map;
@@ -70,6 +71,14 @@ public final class OpaAuthorizationManager implements AuthorizationManager<Reque
             AbacContext abacContext = new AbacContext(
                     subject, action, new AbacContext.Resource(type, null, Map.of()), roleDefinition, Map.of());
             return new AuthorizationDecision(opaClient.allow(abacContext));
+        } catch (RoleResolutionException e) {
+            // B2: role-source outage → deny, never the realm fallback (ADR 0014). An outage makes the
+            // role UNKNOWN; deny here so an empty-role context never reaches OPA's realm fallback and
+            // widens access. (The broad catch below would also catch this; the explicit catch makes the
+            // fail-closed decision legible and tested.)
+            log.debug("OPA request authorization denied: role-source outage ({})",
+                    e.getClass().getSimpleName());
+            return DENY;
         } catch (Exception e) {
             log.warn("OPA request authorization denied (fail-closed): {}", e.getClass().getSimpleName());
             return DENY;

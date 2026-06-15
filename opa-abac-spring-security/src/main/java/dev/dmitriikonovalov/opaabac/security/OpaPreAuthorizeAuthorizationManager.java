@@ -7,6 +7,7 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -130,6 +131,13 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                         resolved.instance());
             }
             return new AuthorizationDecision(allowed);
+        } catch (RoleResolutionException e) {
+            // B2: role-source outage → deny, never the realm fallback (ADR 0014). An outage makes the
+            // role UNKNOWN; building an empty-role context would let the policy's realm fallback decide,
+            // widening access. Deny here so OPA is never asked. (The broad catch below would also catch
+            // this, but the explicit catch makes the fail-closed decision legible and tested.)
+            log.debug("OPA pre-authorize denied: role-source outage ({})", e.getClass().getSimpleName());
+            return DENY;
         } catch (Exception e) {
             // Fail-closed: any failure building the context or calling OPA denies.
             log.warn("OPA pre-authorize denied (fail-closed): {}", e.getClass().getSimpleName());

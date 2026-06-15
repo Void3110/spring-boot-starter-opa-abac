@@ -74,4 +74,29 @@ class OpaAuthorizationManagerTest {
                 manager().check(authenticated(), requestContext("POST", "/api/v1/products"));
         assertThat(decision.isGranted()).isFalse();
     }
+
+    @Test // B2 U4 — supplier throws RoleResolutionException (outage) → deny, OpaClient NEVER invoked
+    // (no empty-role context reaches OPA's realm fallback). Mirror of the @OpaPreAuthorize manager.
+    void roleSourceOutage_failClosedDeny_neverCallsOpa() {
+        when(supplier.lookup(any(), any(), any()))
+                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+
+        AuthorizationDecision decision =
+                manager().check(authenticated(), requestContext("POST", "/api/v1/products"));
+
+        assertThat(decision.isGranted()).isFalse();
+        Mockito.verify(opaClient, Mockito.never()).allow(any());
+    }
+
+    @Test // B2 U4 sibling — authoritative no-role (Optional.empty()) → OPA still called (fallback decides).
+    void authoritativeNoRole_callsOpa() {
+        when(supplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
+        when(opaClient.allow(any())).thenReturn(true);
+
+        AuthorizationDecision decision =
+                manager().check(authenticated(), requestContext("GET", "/api/v1/products"));
+
+        assertThat(decision.isGranted()).isTrue();
+        Mockito.verify(opaClient).allow(any());
+    }
 }
