@@ -63,7 +63,7 @@ source up + authoritative-`204` → fallback still grants its designed reach. Se
 
 | # | Ticket | Module(s) | Status |
 |---|--------|-----------|--------|
-| **T1** | `RoleResolutionException` + the tri-state SPI contract | core | ☐ |
+| **T1** | `RoleResolutionException` + the tri-state SPI contract | core | ✅ |
 | **T2** | the two gate managers fail closed on outage *(the behavioral fix)* | spring-security | ☐ |
 | **T3** | `HierarchicalAuthorizer` catches; `SubtreeSpecResolver` proven *(hardening)* | spring-data | ☐ |
 | **T4** | strict HTTP classification + consumer wrap + conformant showcase | example-catalog, example-user-management | ☐ |
