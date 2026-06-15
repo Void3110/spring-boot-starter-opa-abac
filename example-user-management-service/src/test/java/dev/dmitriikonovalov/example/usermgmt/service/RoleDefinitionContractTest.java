@@ -129,4 +129,48 @@ class RoleDefinitionContractTest {
                         Map.of("catalog", List.of("delete"))))
                 .doesNotThrowAnyException();
     }
+
+    // --- U4 (Phase 6.7): custom roles stay management-incapable -----------------------
+
+    @Test // the headline: a custom role carrying CONTROL under "team" → 422
+    void customTeamControlTokenRejected() {
+        assertThatThrownBy(() -> RoleDefinitionService.validateContract(
+                        30, Map.of("team", List.of("CONTROL")), NO_DENIALS))
+                .isInstanceOf(RoleDefinitionInvalidException.class)
+                .hasMessageContaining("team-management")
+                .hasMessageContaining("CONTROL");
+    }
+
+    @Test // TAG under "team" would grant define-tags (a management verb) → 422
+    void customTeamTagTokenRejected() {
+        assertThatThrownBy(() -> RoleDefinitionService.validateContract(
+                        30, Map.of("team", List.of("TAG")), NO_DENIALS))
+                .isInstanceOf(RoleDefinitionInvalidException.class)
+                .hasMessageContaining("team-management");
+    }
+
+    @Test // CONTROL is control-plane-only — rejected under ANY key, not just "team"
+    void controlTokenRejectedUnderAnyKey() {
+        for (String key : new String[] {"catalog", "*", "product"}) {
+            assertThatThrownBy(() -> RoleDefinitionService.validateContract(
+                            30, Map.of(key, List.of("CONTROL")), NO_DENIALS))
+                    .as("CONTROL under '%s'", key)
+                    .isInstanceOf(RoleDefinitionInvalidException.class)
+                    .hasMessageContaining("team-management");
+        }
+    }
+
+    @Test // a custom role with only catalog-plane category tokens still validates
+    void customRoleWithCatalogTokensStillValidates() {
+        assertThatCode(() -> RoleDefinitionService.validateContract(
+                        30, Map.of("catalog", List.of("READ", "WRITE", "TAG", "GRANT")), NO_DENIALS))
+                .doesNotThrowAnyException();
+    }
+
+    @Test // READ under "team" is the harmless loosening (list-members), not management — allowed
+    void customTeamReadTokenAllowed() {
+        assertThatCode(() -> RoleDefinitionService.validateContract(
+                        20, Map.of("team", List.of("READ")), NO_DENIALS))
+                .doesNotThrowAnyException();
+    }
 }

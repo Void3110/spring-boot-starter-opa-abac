@@ -52,6 +52,24 @@ class PermissionCategoriesParityTest {
         assertThat(PermissionCategories.ceiling(40)).isEmpty(); // owner is never authorable
     }
 
+    @Test // Phase 6.7 — the authorable + control-plane sets partition the full category vocabulary
+    void authorableAndControlPlaneSetsPartitionAllCategories() {
+        // every category is in exactly one of the two sets (no overlap, full cover)
+        assertThat(PermissionCategories.AUTHORABLE_CATEGORIES)
+                .doesNotContainAnyElementsOf(PermissionCategories.CONTROL_PLANE_CATEGORIES);
+        var union = new java.util.HashSet<String>(PermissionCategories.AUTHORABLE_CATEGORIES);
+        union.addAll(PermissionCategories.CONTROL_PLANE_CATEGORIES);
+        assertThat(union).isEqualTo(PermissionCategories.categories());
+        // CONTROL is control-plane, never authorable
+        assertThat(PermissionCategories.CONTROL_PLANE_CATEGORIES).containsExactly("CONTROL");
+        // no authoring ceiling references a control-plane category
+        for (int level : PermissionCategories.AUTHORABLE_LEVELS) {
+            assertThat(PermissionCategories.ceiling(level))
+                    .as("ceiling(%d) holds no control-plane category", level)
+                    .doesNotContainAnyElementsOf(PermissionCategories.CONTROL_PLANE_CATEGORIES);
+        }
+    }
+
     /** The repo-relative data file, found by walking up from the module's working directory. */
     private static Path opaTable() {
         Path relative = Path.of("infra", "opa", "policies", "permission_categories.json");

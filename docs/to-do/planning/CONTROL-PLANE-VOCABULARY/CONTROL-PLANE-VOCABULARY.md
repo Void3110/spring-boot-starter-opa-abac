@@ -71,7 +71,7 @@ verbs).
 | Ticket | Scope | Status |
 |--------|-------|--------|
 | **T1** | Vocabulary + policy: the `CONTROL` category (both `permission_categories.json` copies), the category-driven `team.rego` + owner-only-by-code fence (both copies), the service-bundle `permissions.rego` mirror, the `permissions_test.rego` + `team_test.rego` rewrites | ✅ (opa test 177 infra / 30 service) |
-| **T2** | Resolve-side: `TeamRoleCapabilities` recast to category tokens; `RoleDefinitionService.validateContract` rejects custom `"team"` control tokens (the new 422) | ☐ |
+| **T2** | Resolve-side: `TeamRoleCapabilities` recast to category tokens; `RoleDefinitionService.validateContract` rejects custom `"team"` control tokens (the new 422) | ✅ (U1–U4 + U9 parity green) |
 | **T3** | Controller verbs: split `team:manage` → `team:list-members`/`add-member`/`change-role`/`remove-member` in `MembershipController` | ☐ |
 | **T4** | IT (the behavior matrix + the two-axis re-proof) + e2e (verb-split + member-can-list cells) + docs reconcile + record + folder move | ☐ |
 
