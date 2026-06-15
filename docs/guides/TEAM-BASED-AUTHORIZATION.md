@@ -109,12 +109,42 @@ alternatives; ReBAC is the more elegant end state and is **Phase 7**, so the two
 
 The `user-management-service` is itself a secured Spring app: it adopts the starter, declares its own
 `SecurityFilterChain` + `AbacFilter`, and annotates its **management** controllers with
-`@OpaPreAuthorize` (`team:manage`, `team:define-roles`, `team:transfer-ownership`). Its *own*
-`RoleDefinitionSupplier` (`TeamRoleDefinitionSupplier`) resolves the caller's **management** role on the
-team being managed (a capability ladder: owner > administrator > senior > member/reader), and `team.rego` decides.
-So the service that *produces* role definitions for the catalog is *also* a consumer of the same library
-— a clean, recursive demonstration that the starter works for a real second app, and that the
-subset/escalation rules are enforced by the same `@OpaPreAuthorize` mechanism.
+`@OpaPreAuthorize`. Its *own* `RoleDefinitionSupplier` (`TeamRoleDefinitionSupplier`) resolves the
+caller's **management** role on the team being managed, and `team.rego` decides. So the service that
+*produces* role definitions for the catalog is *also* a consumer of the same library — a clean, recursive
+demonstration that the starter works for a real second app, and that the subset/escalation rules are
+enforced by the same `@OpaPreAuthorize` mechanism.
+
+### The control-plane vocabulary (Phase 6.7, ADR [[0015-control-plane-vocabulary-categorization|0015]])
+
+Since Phase 6.7 the control plane uses the **same** category vocabulary as the catalog (see
+[[PERMISSION-MODEL]]) — `team.rego` is now category-driven, expanding the resolved role's tokens through
+the **same** shared `effective_actions` (symmetric with `catalog.rego`), no longer a raw verb match. The
+management endpoints gate on **fine verbs**, not a coarse `team:manage`:
+
+| Endpoint | Action | Granted by |
+|---|---|---|
+| `GET /teams/{id}/members` | `team:list-members` | `READ` — **any team member** can list the roster |
+| `POST /teams/{id}/members` | `team:add-member` | `CONTROL` |
+| `PUT /teams/{id}/members/{u}` | `team:change-role` | `CONTROL` |
+| `DELETE /teams/{id}/members/{u}` | `team:remove-member` | `CONTROL` |
+| `…/tag-definitions` (curate) | `team:define-tags` | `TAG` |
+| `…/role-definitions` (author) | `team:define-roles` | **owner-only fence** (by code) |
+| `…/transfer-ownership` | `team:transfer-ownership` | **owner-only fence** (by code) |
+
+The capability **ladder** is `TeamRoleCapabilities`, projecting each system role **code** into category
+tokens: `owner`/`administrator` → `[READ, CONTROL, TAG]`; `senior` → `[READ, CONTROL]` (manages members
+but **cannot** `define-tags` — it holds `CONTROL`, not `TAG`); `member`/`reader`/custom → `[READ]`
+(list-members only). `define-roles` and `transfer-ownership` are **not** category tokens — they are an
+**owner-only-by-code fence** in `team.rego`, keyed on the reserved `owner` code (unspoofable by
+`role_level`, so no custom or non-owner role can ever reach them). A **custom** role can never carry
+team-management power: the projection forces a custom code to `[READ]`, and authoring one with `CONTROL`
+(or a team-meaningful `TAG`) under a `"team"` key is rejected `422 ROLE_DEFINITION_INVALID`.
+
+> **Two orthogonal axes.** The verb category decides *which kinds* of acts a role may perform; the
+> escalation gates in `MembershipService` (rule 2 above) decide *on whom* and *to what tier*. Phase 6.7
+> categorized only the first axis — the escalation gates are unchanged, so categorizing the verbs did not
+> re-open any escalation path.
 
 > This resolves the "does it expose a gateway route?" question: **internal-only** for the resolve API;
 > **secured (dogfooded)** for the management API.
@@ -138,8 +168,9 @@ The matrix proves, through the gateway, with roles resolved from real team membe
 | viewer-member | `viewer` | write | **403** |
 | custom-editor member | team-scoped `catalog-editor` | write | **200** |
 | non-member | (none → empty role) | write | **403** |
-| owner | `owner` | manage the user-service's own API | **200** (dogfood) |
-| viewer-member | `viewer` | manage | **403** (dogfood) |
+| owner | `owner` | manage the user-service's own API (`team:add-member`, …) | **200** (dogfood) |
+| viewer-member | `reader` | `team:list-members` (the roster) | **200** (dogfood — Phase 6.7 loosening) |
+| viewer-member | `reader` | mutate membership (`team:add-member`) | **403** (dogfood) |
 
 The demo team data (the team-target catalog id and the IdP subjects) is only known at run time, so
 `run-team-matrix.sh` mints the tokens, decodes their subjects, seeds a fixed demo catalog, and

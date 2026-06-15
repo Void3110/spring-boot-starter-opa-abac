@@ -145,8 +145,17 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **G4** *As any user editing a category/product*, my role's `TAG` bucket lets me **assign** dictionary tags
   as part of the management flow, and (if granted `define-tags`) curate the tag vocabulary — the same
   category that fences tag-curation from plain content `WRITE`. — **Phase 6.5** ✅ (the delta-dispatched
-  `assign-tags` second decision, both directions; **`define-tags` ships in the expansion math only** —
-  the dictionary endpoints keep `team:define-tags` until the control-plane slice, Phase 6.7)
+  `assign-tags` second decision, both directions) **+ Phase 6.7** ✅ (`define-tags` **enforcement closed**:
+  the `team:define-tags` annotation is unchanged but now *granted* via the `TAG` token and *expanded* by
+  the category-driven `team.rego` — owner/admin curate, `senior` correctly cannot (holds `CONTROL`, not
+  `TAG`); ADR [[0015-control-plane-vocabulary-categorization|0015]])
+- **G5** *As the platform*, the control plane (`team:*` management) uses the **same** category vocabulary
+  as the catalog: the coarse `manage` verb is split into the deny-refinable `CONTROL` category
+  (`add-member`/`change-role`/`remove-member`), `list-members` rides `READ` (any member sees the roster),
+  and `define-roles`/`transfer-ownership` are owner-only-by-code fences. — **Phase 6.7** ✅ (one shared
+  expansion home; `team.rego` symmetric with `catalog.rego`; the two-axis split keeps the
+  `MembershipService` escalation gates an untouched invariant; ADR
+  [[0015-control-plane-vocabulary-categorization|0015]])
 
 ### Epic F — "It works from a clean clone" (adoption / publish)
 

@@ -125,6 +125,14 @@ so itself).
 > both `../example-user-management-service/src/main/resources/opa/policies/` (the source of truth) and
 > `opa/policies/` (mounted into the rig's OPA). Restart OPA after editing it (`docker restart
 > opa-abac-opa`) — `--watch` doesn't always reload.
+>
+> **Since Phase 6.7 (ADR 0015) `team.rego` is category-driven** — it expands the resolved role's category
+> tokens through the **same** `data.permissions.effective_actions` + `data.permission_categories` the
+> catalog uses (symmetric with `catalog.rego`), plus an owner-only-by-code fence for
+> `team:define-roles`/`team:transfer-ownership`. So it now **depends on the shared expansion table**: the
+> service bundle carries a verbatim copy of `permissions.rego` + `permission_categories.json` (byte-identical
+> to the infra copies) so its isolated `opa test` resolves. Edit the `CONTROL`/`list-members` table in
+> **both** copies, and **restart OPA** after any `team.rego`/table edit before running the e2e matrices.
 
 ## Quick start
 

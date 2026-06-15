@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/user-service
   - area/abac
@@ -9,13 +9,21 @@ tags:
 
 # Phase 6.7 — Control-plane vocabulary categorization
 
-> **Status: 🔜 PLANNED** (route step 2 — the last **correctness** slice before publish; route
-> **B2 ✅ → 6.7 → Phase 6 → B3 → Phase 7**). Extend the Phase-6.5 coarse-category model to the
-> **control plane** (the user-management-service's `team:*` management verbs) and close the
-> `define-tags` **enforcement** deferral 6.5 left here ([[USER-STORIES]] Epic G, Story G4). Pinned by
+> **Status: ✅ SHIPPED 2026-06-15** (branch `feature/void3110/control-plane-vocabulary`, T1–T4; route
+> step 2 — the last **correctness** slice before publish; route **B2 ✅ → 6.7 ✅ → Phase 6 → B3 →
+> Phase 7**). Extended the Phase-6.5 coarse-category model to the **control plane** (the
+> user-management-service's `team:*` management verbs) and closed the `define-tags` **enforcement**
+> deferral 6.5 left here ([[USER-STORIES]] Epic G, Story G4). Pinned by
 > **ADR [[0015-control-plane-vocabulary-categorization|0015]]**; the full design is [[00-DESIGN]].
-> **One new category (`CONTROL`); `team.rego` becomes category-driven (symmetric with `catalog.rego`);
-> no DB migration; B2's tri-state supplier contract untouched.**
+> **One new category (`CONTROL`); `team.rego` is category-driven (symmetric with `catalog.rego`); no DB
+> migration; B2's tri-state supplier contract untouched.**
+>
+> **Shipped:** `opa test` infra **157 → 177** / service-team **14 → 30**; the headline
+> `ControlPlaneVocabularyIT` (I1–I6, real Postgres) + U1–U5 unit + the e2e control-plane/member-can-list
+> cells, whole suite green. **Two intended externally-visible changes**, both proven: any team member can
+> now `list-members`; a custom role carrying control tokens under `"team"` answers 422. The
+> `MembershipService` escalation gates were **untouched** and re-proven through a renamed verb (the
+> two-axis invariant). See `STATUS-01…04.md`.
 
 ## What it is
 
@@ -73,7 +81,7 @@ verbs).
 | **T1** | Vocabulary + policy: the `CONTROL` category (both `permission_categories.json` copies), the category-driven `team.rego` + owner-only-by-code fence (both copies), the service-bundle `permissions.rego` mirror, the `permissions_test.rego` + `team_test.rego` rewrites | ✅ (opa test 177 infra / 30 service) |
 | **T2** | Resolve-side: `TeamRoleCapabilities` recast to category tokens; `RoleDefinitionService.validateContract` rejects custom `"team"` control tokens (the new 422) | ✅ (U1–U4 + U9 parity green) |
 | **T3** | Controller verbs: split `team:manage` → `team:list-members`/`add-member`/`change-role`/`remove-member` in `MembershipController` | ✅ (U5 + 142 module tests green) |
-| **T4** | IT (the behavior matrix + the two-axis re-proof) + e2e (verb-split + member-can-list cells) + docs reconcile + record + folder move | ☐ |
+| **T4** | IT (the behavior matrix + the two-axis re-proof) + e2e (verb-split + member-can-list cells) + docs reconcile + record + folder move | ✅ (build green; e2e suite green; docs reconciled) |
 
 **Critical path:** `T1 → {T2, T3} → T4`. T1 is the independently-landable policy core; T1+T2 the smallest
 app-correct subset.

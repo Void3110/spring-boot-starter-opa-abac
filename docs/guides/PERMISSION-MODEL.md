@@ -19,12 +19,23 @@ tags:
 
 A `RoleDefinition.permissions` value is a list of **category tokens** per resource type:
 
-| Category | Expands to (fine actions) |
-|---|---|
-| `READ` | `view`, `list` |
-| `WRITE` | `create`, `update`, `delete` |
-| `TAG` | `define-tags`, `assign-tags` |
-| `GRANT` | `assign-roles` |
+| Category | Expands to (fine actions) | Plane(s) the action is live on |
+|---|---|---|
+| `READ` | `view`, `list`, `list-members` | catalog (view/list) · **team (list-members)** |
+| `WRITE` | `create`, `update`, `delete` | catalog |
+| `TAG` | `define-tags`, `assign-tags` | **team (define-tags)** · catalog (assign-tags) |
+| `GRANT` | `assign-roles` | catalog |
+| `CONTROL` | `add-member`, `change-role`, `remove-member` | **team** |
+
+> **One vocabulary, both planes (Phase 6.7, ADR [[0015-control-plane-vocabulary-categorization|0015]]).**
+> The control plane (the user-management-service's `team:*` management verbs) folds into this **same**
+> table: `team.rego` now expands category tokens through the **same** `effective_actions` the catalog
+> uses (symmetric with `catalog.rego`). `CONTROL` is the one control-plane category; `list-members` rides
+> `READ` (the roster is *visibility* — any team member can list it); `define-tags` rides `TAG`. Some
+> tokens are *per-plane inert* (no catalog endpoint asks `list-members`/`add-member`; no team endpoint
+> asks `create`/`assign-tags`) — intentional, and harmless. The two escalation-sensitive verbs
+> `define-roles` and `transfer-ownership` are **not** categories: they are an **owner-only-by-code fence**
+> in `team.rego` (see [[TEAM-BASED-AUTHORIZATION]]). See **The two-axis split** below.
 
 The table lives in **OPA `data`** — `infra/opa/policies/permission_categories.json` →
 `data.permission_categories` — and is consumed by one shared module,
@@ -130,8 +141,29 @@ already rejects.
 
 **Tier is power; ceiling is not.** Admin delegation is seniority, not subset — an administrator
 whose own role denies `delete` still assigns full `WRITE` (the designed cell). And a **custom**
-level-25 role has senior's authoring ceiling but **no live assign power**: management capability
-(`team:manage`) keys on the system role **codes** (`TeamRoleCapabilities`), not on levels.
+level-25 role has senior's authoring ceiling but **no live assign power**: the management capability
+(now the `CONTROL` category — see below) keys on the system role **codes** (`TeamRoleCapabilities`
+projects a custom code to `[READ]`), not on levels. Since Phase 6.7, authoring a custom role that tries
+to carry `CONTROL` (or a team-meaningful `TAG`) under a `"team"` key is rejected
+(`422 ROLE_DEFINITION_INVALID`) rather than stored as silent dead data.
+
+## The two-axis split: verb category vs escalation gate (the control plane)
+
+The control plane (`team:*` management) is authorized on **two orthogonal axes** (Phase 6.7, ADR
+[[0015-control-plane-vocabulary-categorization|0015]]):
+
+1. **The verb category** — `CONTROL` + deny-overrides — decides *which kinds* of membership acts a role
+   may perform. This is the axis Phase 6.7 added; it expands through the shared table exactly like the
+   catalog. Holding `add-member` does **not** imply `change-role` (independent fine actions, deny-refinable).
+2. **The escalation gates** (the two assignment gates above, in `MembershipService`) decide *on whom* and
+   *to what tier*. These are **unchanged** by 6.7 — categorizing the verbs did not re-open any escalation
+   path. Whatever verbs a role holds, it still cannot act on anyone above its tier or promote past its own
+   ceiling.
+
+So the management ladder is: `owner`/`administrator` → `[READ, CONTROL, TAG]`; `senior` →
+`[READ, CONTROL]` (manages members but **cannot** `define-tags` — it holds `CONTROL`, not `TAG`);
+`member`/`reader`/custom → `[READ]` (list-members only). `define-roles` and `transfer-ownership` are the
+two **owner-only-by-code** fences, keyed on the reserved `owner` code (unspoofable by `role_level`).
 
 ## The TAG/WRITE boundary: the delta-dispatched second decision
 
@@ -155,20 +187,25 @@ trade-off of that 404: the category PUT is an **id-existence oracle** for caller
 (missing id → 404, existing-but-denied → 403) — deliberate and bounded to this one endpoint;
 every statically annotated handler keeps the uniform 403.
 
-## `define-tags`: shipped in the math, enforcement deferred
+## `define-tags`: enforcement closed (Phase 6.7)
 
-The `TAG` category expands to `define-tags` and `assign-tags`, and `assign-tags` is enforced (the
-second decision above). The **dictionary endpoints** still gate on the management verb
-`team:define-tags` — moving them onto the resource-side `define-tags` action is the control-plane
-slice (Phase 6.7), together with the rest of the `team:*` vocabulary.
+The `TAG` category expands to `define-tags` and `assign-tags`. `assign-tags` is enforced as the
+catalog-side second decision (above); `define-tags` is the team-governance verb the dictionary endpoints
+gate on. Phase 6.7 closed the enforcement deferral 6.5 left here: the `team:define-tags` annotation is
+**unchanged**, but it is now *granted* via the `TAG` token in the owner/administrator ladder and
+*expanded* by the category-driven `team.rego` (no special case) — uniform with the rest of the `team:*`
+vocabulary. Outcomes are identical (owner/administrator curate, everyone else 403); `senior` correctly
+stays without it (it holds `CONTROL`, not `TAG`).
 
 ## Where things live
 
 | Concern | Home |
 |---|---|
-| The expansion table | `infra/opa/policies/permission_categories.json` (OPA `data`) |
-| The effective-set math | `infra/opa/policies/permissions.rego` (one runtime home) |
+| The expansion table | `infra/opa/policies/permission_categories.json` (OPA `data`; mirrored into the user-mgmt service bundle for its isolated `opa test`) |
+| The effective-set math | `infra/opa/policies/permissions.rego` (one runtime home, both planes) |
 | Per-type decisions | `catalog.rego` / `category.rego` / `product.rego` (direct, inherited, list gate, fallback) |
+| The control-plane decision | `team.rego` (category-driven via `effective_actions`, + the owner-only-by-code fence) |
+| The management ladder | `TeamRoleCapabilities` (system code → category tokens; custom → `[READ]`) |
 | The list filter | `category.rego` `filter` — `"list" ∈` the expansion, consumed **inline** (the PE-friendly idiom; a function call would not fold under partial evaluation) |
 | The subset verdict | `infra/opa/policies/role.rego` (`data.role.assignable`, default `false`) |
 | The authoring contract | `RoleDefinitionService` + `PermissionCategories` (user-service) |
