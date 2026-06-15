@@ -6,12 +6,15 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +52,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class CategoryListAuthorizer {
 
+    private static final Logger log = LoggerFactory.getLogger(CategoryListAuthorizer.class);
+
     private final CategoryRepository categories;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
     private final AbacQueryService queryService;
@@ -81,9 +86,17 @@ public class CategoryListAuthorizer {
         }
 
         // Resolve the role on the GOVERNING CATALOG (the team target), exactly as CategoryAuthorizer does.
-        RoleDefinition roleDefinition = roleDefinitionSupplier
-                .lookup(subject.id(), "catalog", catalogId.toString())
-                .orElse(null);
+        RoleDefinition roleDefinition;
+        try {
+            roleDefinition = roleDefinitionSupplier
+                    .lookup(subject.id(), "catalog", catalogId.toString())
+                    .orElse(null);
+        } catch (RoleResolutionException e) {
+            // B2: role-source outage → empty page (fail-closed; matches the no-role empty-list posture and
+            // prevents the otherwise-uncaught throw becoming a 500). The outage never reaches the filter.
+            log.debug("category list denied: role-source outage ({})", e.getClass().getSimpleName());
+            return Page.empty(pageable);
+        }
 
         // The query context: the resource is UNKNOWN (it's the row being filtered); only the type is set
         // so the policy path resolves to `category`.

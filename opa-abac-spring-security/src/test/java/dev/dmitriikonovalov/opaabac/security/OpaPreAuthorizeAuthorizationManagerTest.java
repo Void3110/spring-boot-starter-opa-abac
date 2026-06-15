@@ -184,6 +184,40 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         org.mockito.Mockito.verify(roleDefinitionSupplier).lookup("user-1", "product", productId.toString());
     }
 
+    // --- B2: role-source outage vs authoritative no-role ---------------------
+
+    @Test // B2 U2 — supplier throws RoleResolutionException (outage) → deny, OpaClient NEVER invoked
+    // (no empty-role context is built, so the policy's realm fallback is never fed an outage input).
+    void roleSourceOutage_failClosedDeny_neverCallsOpa() throws Exception {
+        UUID productId = UUID.randomUUID();
+        when(roleDefinitionSupplier.lookup(eq("user-1"), eq("product"), eq(productId.toString())))
+                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+
+        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
+
+        assertThat(decision.isGranted()).isFalse();
+        org.mockito.Mockito.verify(opaClient, org.mockito.Mockito.never()).allow(any());
+    }
+
+    @Test // B2 U3 — the SIBLING (designed path unbroken): supplier returns Optional.empty() (authoritative
+    // no-role) → the manager STILL builds a no-role_definition context and calls OPA once (the realm
+    // fallback decides downstream). Proves B2 narrowed only the outage path, not the empty path.
+    void authoritativeNoRole_buildsEmptyContext_andCallsOpa() throws Exception {
+        UUID productId = UUID.randomUUID();
+        when(roleDefinitionSupplier.lookup(eq("user-1"), eq("product"), eq(productId.toString())))
+                .thenReturn(Optional.empty());
+        when(opaClient.allow(any())).thenReturn(true);
+
+        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
+
+        assertThat(decision.isGranted()).isTrue();
+        ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
+        org.mockito.Mockito.verify(opaClient).allow(captor.capture());
+        assertThat(captor.getValue().roleDefinition()).isNull(); // no role_definition → fallback eligible
+    }
+
     @Test // U29 — resource() SpEL resolves an AbacDataObject instance
     void resourceInstance_resolvedFromSpel() throws Exception {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());

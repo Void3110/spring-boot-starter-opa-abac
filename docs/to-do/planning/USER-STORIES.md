@@ -46,6 +46,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   re-checks against the loaded resource, not just the route. — **Phase 3 + the per-instance check** (ADR
   0006). *Status: type-level shipped; the per-instance/hierarchical general path is the [[DATA-FILTERING]]
   follow-up.*
+- **A4** *As a security operator*, a role-source **outage** can never **widen** a caller's access: when
+  the role authority is unavailable, the request fails closed (a uniform 403) instead of falling back to
+  a broader realm-role grant. A *genuine* no-role still falls back as designed — only an outage is
+  denied. — **Slice B2** ([[B2-SUPPLIER-OUTAGE]], ADR [[0014-supplier-outage-error-distinct|0014]]) ✅
+  *Proven by `SupplierOutageGateIT` (outage → 403, OPA never called; contrast: empty → fallback grants).*
 
 ### Epic B — "My access comes from my team, not a static config" (app-resolved roles)
 

@@ -39,6 +39,17 @@ The table lives in **OPA `data`** — `infra/opa/policies/permission_categories.
   fallback** maps through it (`catalog-viewer → {READ}`, `catalog-editor → {READ,WRITE,TAG}`), so
   even the no-role-definition path speaks the same table.
 
+> **The realm fallback fires for an authoritative no-role only — never an outage (Slice B2, ADR
+> [[0014-supplier-outage-error-distinct|0014]]).** "No role definition" is now a *tri-state* signal at
+> the `RoleDefinitionSupplier` seam: an authoritative no-role (`Optional.empty()`, e.g. the user-service
+> answers `204`) reaches this fallback as designed, but a role-source **outage** (timeout / 5xx /
+> malformed) **throws** and the gate denies *before any OPA call* — so the fallback clause is never fed
+> an outage input. This closes the one *widening-on-failure* path ([[PERMISSION-CATEGORIES-REVIEW]]
+> C1/C4): before B2, an outage let a realm `catalog-editor` ride the fallback to `{READ,WRITE,TAG}`,
+> erasing the resolved role's `denied_actions`/`required_tags` narrowing. **Zero Rego changed** — the
+> fallback clause is byte-identical; B2 only stops outages from reaching it (see
+> [[ABAC-AUTHORIZATION]] for the SPI contract).
+
 The app-side `PermissionCategories` constant (user-service) exists for **422-time validation
 only** and is parity-pinned to the JSON by a unit test — the runtime decision home is OPA, full
 stop.

@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.catalog.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -24,19 +25,25 @@ import org.springframework.stereotype.Component;
  * not a library change — the library SPI was built for exactly this single-bean swap; the demo supplier
  * stays available behind {@code catalog.role-source=demo} (the default).
  *
- * <h2>Failure posture — NOT fully fail-closed (tracked: B2)</h2>
- * A non-200 (incl. the 204 no-match), a timeout, a connection refused, a malformed body — <em>any</em>
- * failure resolves to {@link Optional#empty()}, which the {@code @OpaPreAuthorize} manager passes to
- * the policies as "no role definition". For most subjects that default-denies — but the catalog
- * policies keep a <b>JWT realm-role fallback</b> for exactly that state ({@code catalog-viewer} →
- * READ, {@code catalog-editor} → READ+WRITE+TAG), so for a subject carrying those realm roles a
- * resolve <em>outage</em> is indistinguishable from an authoritative "no role" and lands on the
- * fallback — wider than their resolved role (whose deny-overrides and tag requirements vanish with
- * it). Distinguishing outage (throw → deny) from no-role (empty → fallback) is an SPI-contract
- * change, tracked as follow-up B2 (retro-audit 2026-06-12); until then this seam is fail-closed only
- * for subjects without fallback realm roles. The method never throws for a transport/parse failure;
- * it logs a warning (status only, never the token). Built on the JDK {@link HttpClient} + Jackson —
- * no Feign/RestTemplate/WebClient.
+ * <h2>Failure posture — fail-closed by strict classification (B2)</h2>
+ * The resolve result is <strong>tri-state</strong> (the {@link RoleDefinitionSupplier} contract):
+ * <ul>
+ *   <li><b>{@code 200} + a valid body</b> → {@code Optional.of(role)} (resolved).</li>
+ *   <li><b>{@code 204}</b> → {@link Optional#empty()} — the <em>authoritative</em> no-role signal; the
+ *       catalog policies' JWT realm-role fallback ({@code catalog-viewer} → READ, {@code catalog-editor}
+ *       → READ+WRITE+TAG) decides for non-members / type-level creates, as designed.</li>
+ *   <li><b>everything else</b> → <strong>throws {@link RoleResolutionException}</strong> (an outage):
+ *       {@code 200} with a blank body, every 4xx, every 5xx, a timeout, a connection failure, a parse
+ *       failure. The role is then <em>unknown</em>, so the caller fails closed (the gate denies) and the
+ *       realm fallback is <strong>never</strong> reached — closing the one widening-on-failure path
+ *       (review C1/C4, ADR 0014): an outage can no longer ride the fallback to a grant wider than the
+ *       subject's resolved role.</li>
+ * </ul>
+ * Only {@code 204} is the no-role signal — a {@code 200}-blank or a 4xx is "the resolve protocol is not
+ * working as designed", never trusted as no-role. On a throw it WARNs with the HTTP status or the
+ * exception class only — <strong>never</strong> the {@code userId}, token, or body — and wraps the cause
+ * (for logs, never surfaced to the client). Resilience (retry / backoff / timeout tuning) is out of scope
+ * here — that is Slice B3. Built on the JDK {@link HttpClient} + Jackson — no Feign/RestTemplate/WebClient.
  */
 @Component
 @ConditionalOnProperty(name = "catalog.role-source", havingValue = "http")
@@ -62,34 +69,55 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
     @Override
     public Optional<RoleDefinition> lookup(String userId, String resourceType, String resourceId) {
         if (userId == null || resourceType == null || resourceId == null) {
-            return Optional.empty();
+            return Optional.empty(); // no coordinates to resolve → authoritative no-role (not an outage)
         }
+        URI uri = URI.create(baseUrl + "/internal/effective-role"
+                + "?userId=" + enc(userId)
+                + "&resourceType=" + enc(resourceType)
+                + "&resourceId=" + enc(resourceId));
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        HttpResponse<String> response;
         try {
-            URI uri = URI.create(baseUrl + "/internal/effective-role"
-                    + "?userId=" + enc(userId)
-                    + "&resourceType=" + enc(resourceType)
-                    + "&resourceId=" + enc(resourceId));
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(timeout)
-                    .header("Accept", "application/json")
-                    .GET()
-                    .build();
-            HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            int status = response.statusCode();
-            if (status == 200 && response.body() != null && !response.body().isBlank()) {
-                return Optional.of(objectMapper.readValue(response.body(), RoleDefinition.class));
-            }
-            if (status != 204 && status != 200) {
-                log.warn("Effective-role resolve returned HTTP {} — failing closed (no role)", status);
-            }
-            return Optional.empty(); // 204 no-match, or 200 with an empty body → no role
-        } catch (Exception e) {
-            // Any transport/parse failure → "no role". Deny for most subjects, but the policies'
-            // realm-role fallback may still engage (see the class doc — tracked as B2).
-            log.warn("Effective-role resolve failed ({}) — treating as no role", e.getClass().getSimpleName());
-            return Optional.empty();
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (java.io.IOException e) {
+            // B2: transport failure (timeout, connection refused, reset) → outage, not no-role.
+            log.warn("Effective-role resolve failed ({}) — role-source outage, failing closed",
+                    e.getClass().getSimpleName());
+            throw new RoleResolutionException("effective-role source unavailable", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // restore the interrupt flag before failing closed
+            log.warn("Effective-role resolve interrupted — role-source outage, failing closed");
+            throw new RoleResolutionException("effective-role resolve interrupted", e);
         }
+
+        // B2 strict classification: ONLY 204 → no-role; ONLY 200+valid body → resolved; everything
+        // else THROWS (outage → deny). 200-blank, all 4xx, all 5xx, any other status are untrustworthy.
+        int status = response.statusCode();
+        if (status == 204) {
+            return Optional.empty(); // authoritative no-role → the realm fallback may decide (designed)
+        }
+        if (status == 200) {
+            String body = response.body();
+            if (body == null || body.isBlank()) {
+                log.warn("Effective-role resolve returned 200 with a blank body — role-source outage");
+                throw new RoleResolutionException("effective-role 200 with empty body");
+            }
+            try {
+                return Optional.of(objectMapper.readValue(body, RoleDefinition.class));
+            } catch (com.fasterxml.jackson.core.JacksonException e) {
+                log.warn("Effective-role resolve 200 body was unparseable ({}) — role-source outage",
+                        e.getClass().getSimpleName());
+                throw new RoleResolutionException("effective-role 200 body unparseable", e);
+            }
+        }
+        // Any non-204/non-200 status (4xx, 5xx, anything else) → outage, never no-role.
+        log.warn("Effective-role resolve returned HTTP {} — role-source outage, failing closed", status);
+        throw new RoleResolutionException("effective-role source returned HTTP " + status);
     }
 
     private static String enc(String value) {

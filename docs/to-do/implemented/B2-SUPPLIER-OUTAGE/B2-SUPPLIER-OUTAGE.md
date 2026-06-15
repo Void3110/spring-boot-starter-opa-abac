@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/security
@@ -9,8 +9,13 @@ tags:
 
 # B2 — Supplier-outage fix-slice
 
-> **Status: 🔜 DESIGN SETTLED (grill-me 2026-06-15) — ready for `/decompose`.** Slice **B2** of
-> [[POC-ROADMAP]] (route step 1: **B2 → 6.7 → Phase 6 → B3 → Phase 7**). Pinned by
+> **Status: ✅ SHIPPED 2026-06-15** (branch `feature/void3110/supplier-outage`, T1–T5). The one tracked
+> *widening-on-failure* path is closed: a role-source **outage throws `RoleResolutionException`** and
+> every one of the five `lookup()` consumers fails closed, so an outage can no longer ride the realm
+> fallback to a grant wider than the resolved role. **Live proof:** `SupplierOutageGateIT` (outage →
+> 403, OPA never called; contrast: authoritative no-role → the fallback still grants) + the whole suite
+> green + every newman matrix green + **`opa test` 157/157 unchanged** (zero Rego). Slice **B2** of
+> [[POC-ROADMAP]] (route step 1: **B2 → 6.7 → Phase 6 → B3 → Phase 7**; next: 6.7). Pinned by
 > **ADR [[0014-supplier-outage-error-distinct|0014]]**; the full design is [[00-DESIGN]]. A standalone
 > **security** fix kept separate from Phase 6.7's taxonomy work, with its own design + review. The
 > resilience follow-up it motivates is the new **Slice B3** (cross-service HTTP resilience, before
@@ -63,11 +68,11 @@ source up + authoritative-`204` → fallback still grants its designed reach. Se
 
 | # | Ticket | Module(s) | Status |
 |---|--------|-----------|--------|
-| **T1** | `RoleResolutionException` + the tri-state SPI contract | core | ☐ |
-| **T2** | the two gate managers fail closed on outage *(the behavioral fix)* | spring-security | ☐ |
-| **T3** | `HierarchicalAuthorizer` catches; `SubtreeSpecResolver` proven *(hardening)* | spring-data | ☐ |
-| **T4** | strict HTTP classification + consumer wrap + conformant showcase | example-catalog, example-user-management | ☐ |
-| **T5** | e2e + the headline IT + docs + slice record | example-catalog, docs | ☐ |
+| **T1** | `RoleResolutionException` + the tri-state SPI contract | core | ✅ |
+| **T2** | the two gate managers fail closed on outage *(the behavioral fix)* | spring-security | ✅ |
+| **T3** | `HierarchicalAuthorizer` catches; `SubtreeSpecResolver` proven *(hardening)* | spring-data | ✅ |
+| **T4** | strict HTTP classification + consumer wrap + conformant showcase | example-catalog, example-user-management | ✅ |
+| **T5** | e2e + the headline IT + docs + slice record | example-catalog, docs | ✅ |
 
 **Critical path:** `T1 → {T2, T3, T4} → T5` (T2/T3/T4 independent once T1 lands; **T1+T2** is the
 independently-landable subset — the library spine carrying the only widening path). See

@@ -27,6 +27,11 @@ import org.springframework.stereotype.Component;
  *   <li>{@code catalog-viewer} → {@code READ} (view/list) on catalog/category/product</li>
  *   <li>{@code catalog-editor} → {@code READ}+{@code WRITE}+{@code TAG} on catalog/category/product</li>
  * </ul>
+ *
+ * <p>This is an in-process, deterministic supplier (its source is the in-memory realm-role map), so it
+ * never throws {@code RoleResolutionException} (B2) — it always returns the authoritative no-role/role
+ * signal via the value path. Only a remote/queried supplier (e.g. {@link HttpRoleDefinitionSupplier})
+ * classifies an outage as a throw.
  */
 @Component
 @ConditionalOnProperty(name = "catalog.role-source", havingValue = "demo", matchIfMissing = true)

@@ -64,6 +64,28 @@ The OPA `input` carries a `role_definition` object, so a policy decides on
 `permissions.effective_actions` ([[PERMISSION-MODEL]]). The library ships a `NoOpRoleDefinitionSupplier` (returns
 empty → a policy can fall back to subject roles). An application overrides it with **one bean**:
 
+> **Tri-state contract — an outage is not a no-role (Slice B2, ADR [[0014-supplier-outage-error-distinct|0014]]).**
+> `lookup(...)` distinguishes three outcomes, so a role-source *outage* can never be mistaken for an
+> authoritative *no-role* and silently widen access:
+> - `Optional.of(def)` — **resolved**: decide on it.
+> - `Optional.empty()` — **authoritative no-role**: a *designed* signal; a policy may fall back to the
+>   subject's realm roles (see the realm fallback in [[PERMISSION-MODEL]]).
+> - **throws `RoleResolutionException`** — **outage**: the source was unavailable, the result is
+>   *unknown*; every consumer **fails closed** (the gate denies before any OPA call; the data
+>   consumers return no widening / an empty page) and **never** falls back.
+>
+> An in-process supplier (`NoOp`, the demo) never throws — only a remote/queried one (the
+> `HttpRoleDefinitionSupplier`) classifies a failure as an outage. The mechanism: the **supplier
+> classifies** (throws on outage), and **each consumer maps** the throw to its own fail-closed outcome —
+> there is no library wrapper (swallowing the throw would re-introduce the hole). This closes the one
+> tracked *widening-on-failure* path ([[PERMISSION-CATEGORIES-REVIEW]] C1/C4): before B2 an outage rode
+> the realm fallback to a grant **wider** than the resolved role. The strict HTTP classification:
+> **only `204` → `Optional.empty()`** (no-role → fallback), **only `200`+valid body → resolved**, and
+> **everything else throws** (200-blank, all 4xx/5xx, timeout, connection-refused, malformed body).
+> Resilience (retry / backoff / circuit-breaking) is a separate axis — Slice **B3**, before publish.
+
+
+
 - **now:** the catalog example's static `DemoRoleDefinitionSupplier` maps realm roles → a `RoleDefinition`
   (`catalog-viewer` → `READ` on each type; `catalog-editor` → + `WRITE`/`TAG` — **coarse category
   tokens** that expand to fine actions in OPA `data`; see [[PERMISSION-MODEL]]);
