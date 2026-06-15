@@ -1220,6 +1220,180 @@
           }
         }
       ]
+    },
+    {
+      "name": "[bind] ladder subject -> member (6.7 control-plane)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/memberships",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "memberships"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"teamId\": \"{{team_id}}\", \"userId\": \"{{ladder_uid}}\", \"roleCode\": \"member\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"rebound to member\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E7a. MEMBER lists the roster -> 200 (6.7: list-members moved to READ \u2014 the loosening)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"a plain member can now list the roster (list-members rides READ)\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E7b. MEMBER mutates membership -> 403 (the loosening is EXACTLY listing, nothing wider)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ladder_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"userId\": \"{{target1_uid}}\", \"roleCode\": \"reader\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"the member can list but cannot mutate (no CONTROL)\", function () {",
+              "    pm.response.to.have.status(403);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "E7c. SENIOR is denied define-tags -> 403 (6.7: senior holds CONTROL, not TAG)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{senior_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/tag-definitions",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "tag-definitions"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"key\": \"cp-tier\", \"valueType\": \"ENUM\", \"cardinality\": \"MULTI\", \"allowedValues\": [\"gold\", \"silver\"]}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"senior manages members (E3a) but cannot curate the dictionary (CONTROL-not-TAG)\", function () {",
+              "    pm.response.to.have.status(403);",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

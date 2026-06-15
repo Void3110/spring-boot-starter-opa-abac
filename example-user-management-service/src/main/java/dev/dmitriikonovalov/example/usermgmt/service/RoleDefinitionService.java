@@ -5,6 +5,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -31,6 +32,13 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class RoleDefinitionService {
+
+    /**
+     * Categories that confer team-management power if carried on a custom role under a {@code "team"}
+     * key (Phase 6.7): {@code CONTROL} (the membership verbs) and {@code TAG} (which would grant team
+     * {@code define-tags}). {@code CONTROL} is additionally rejected under <em>any</em> key.
+     */
+    private static final Set<String> TEAM_MANAGEMENT_CATEGORIES = Set.of("CONTROL", "TAG");
 
     private final RoleDefinitionRepository roles;
     private final TeamRepository teams;
@@ -102,11 +110,18 @@ public class RoleDefinitionService {
     }
 
     /**
-     * The Phase-6.5 authoring contract (each violation → 422 {@code ROLE_DEFINITION_INVALID}):
+     * The custom-role authoring contract (Phase 6.5, extended in Phase 6.7; each violation → 422
+     * {@code ROLE_DEFINITION_INVALID}):
      * <ol>
      *   <li>{@code roleLevel} required, one of the authorable ladder ({@code 10/20/25/30});</li>
-     *   <li>every permission token is one of the four <b>categories</b> (flat verbs and fine actions
-     *       are retired at the API boundary);</li>
+     *   <li><b>no team-management power (Phase 6.7)</b> — a custom role may not carry a control-plane
+     *       category ({@code CONTROL}) anywhere, nor a team-management token under a {@code "team"} key.
+     *       Management capability is fixed to the system-role ladder ({@link TeamRoleCapabilities}),
+     *       which {@code managementRole} projects from the role <em>code</em>; a custom role's stored
+     *       {@code "team"} tokens are ignored by the projection ("ceiling ≠ capability"), so carrying
+     *       them was silent dead data — now an honest error;</li>
+     *   <li>every (catalog-plane) permission token is one of the four authorable <b>categories</b>
+     *       (flat verbs and fine actions are retired at the API boundary);</li>
      *   <li>granted categories stay within the level's ceiling ({@code GRANT} only at 30);</li>
      *   <li><b>strict denial validation</b> — per type, denied fine actions must subtract from the
      *       expansion of what that type actually grants (wildcard-aware, mirroring the policy's
@@ -122,12 +137,13 @@ public class RoleDefinitionService {
             throw new RoleDefinitionInvalidException(
                     "roleLevel must be one of 10 (reader), 20 (member), 25 (senior), 30 (administrator)");
         }
+        rejectTeamManagementTokens(permissions);
         var ceiling = PermissionCategories.ceiling(roleLevel);
         for (var entry : permissions.entrySet()) {
             for (String token : nullSafe(entry.getValue())) {
-                if (!PermissionCategories.categories().contains(token)) {
+                if (!PermissionCategories.AUTHORABLE_CATEGORIES.contains(token)) {
                     throw new RoleDefinitionInvalidException(
-                            "'" + token + "' is not a permission category (READ/WRITE/TAG/GRANT)");
+                            "'" + token + "' is not an authorable permission category (READ/WRITE/TAG/GRANT)");
                 }
                 if (!ceiling.contains(token)) {
                     throw new RoleDefinitionInvalidException(
@@ -142,6 +158,37 @@ public class RoleDefinitionService {
                     throw new RoleDefinitionInvalidException(
                             "denied action '" + action + "' is not granted for type '"
                                     + entry.getKey() + "' (denials must subtract from grants)");
+                }
+            }
+        }
+    }
+
+    /**
+     * Phase 6.7 — a custom role may not smuggle control-plane power. Reject (422):
+     * <ul>
+     *   <li>{@code CONTROL} under <em>any</em> key — it is the control-plane category, never authorable
+     *       on a custom role; and</li>
+     *   <li>a team-management category ({@code CONTROL} or {@code TAG}) under a {@code "team"} key —
+     *       {@code TAG} there would grant {@code define-tags}, a management verb.</li>
+     * </ul>
+     * Management capability is fixed to the system-role ladder ({@link TeamRoleCapabilities}), which
+     * {@code managementRole} projects from the role <em>code</em> and which ignores a custom role's
+     * stored {@code "team"} tokens entirely ("ceiling ≠ capability"). Carrying them was silent dead
+     * data; this turns the footgun into an honest error and breaks no working flow. {@code "team"}
+     * resource permissions belong on the team-<em>target</em> type, not under a {@code "team"} key.
+     */
+    private static void rejectTeamManagementTokens(Map<String, List<String>> permissions) {
+        for (var entry : permissions.entrySet()) {
+            boolean teamKey = "team".equals(entry.getKey());
+            for (String token : nullSafe(entry.getValue())) {
+                boolean controlAnywhere = PermissionCategories.CONTROL_PLANE_CATEGORIES.contains(token);
+                boolean managementUnderTeam = teamKey && TEAM_MANAGEMENT_CATEGORIES.contains(token);
+                if (controlAnywhere || managementUnderTeam) {
+                    throw new RoleDefinitionInvalidException(
+                            "custom roles cannot carry team-management categories (token '" + token
+                                    + "' under key '" + entry.getKey()
+                                    + "') — management capability is fixed to the system-role ladder; "
+                                    + "put the team's resource permissions on the team-target type");
                 }
             }
         }

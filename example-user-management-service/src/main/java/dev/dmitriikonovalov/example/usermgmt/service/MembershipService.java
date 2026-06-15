@@ -18,9 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
  * <b>hybrid assignment gates</b> (Phase 6.5, ADR 0007). {@code @Transactional}; controllers stay thin
  * and delegate.
  *
- * <p>Authorization of <em>who</em> may manage is the {@code @OpaPreAuthorize(action="team:manage")}
- * decision on the controller (against the calling subject's resolved team role). This service enforces
- * the orthogonal escalation invariant via two gates over <b>lock-read snapshots</b>:
+ * <p>Authorization of <em>who</em> may manage is the {@code @OpaPreAuthorize} decision on the
+ * controller — since Phase 6.7 (ADR 0015) the fine membership verbs {@code team:add-member} /
+ * {@code team:change-role} / {@code team:remove-member} (the {@code CONTROL} category), against the
+ * calling subject's resolved team role. That is the <em>verb-category</em> axis; this service enforces
+ * the orthogonal <em>escalation</em> axis (the two-axis split) via two gates over <b>lock-read
+ * snapshots</b>:
  * <ol>
  *   <li><b>cross-tier (everyone)</b>: the actor's {@code role_level} must be strictly above the
  *       candidate role's — a missing/non-numeric level on either side <b>rejects</b> (never

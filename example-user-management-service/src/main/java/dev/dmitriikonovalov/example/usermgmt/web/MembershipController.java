@@ -14,16 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * Team-membership management — the service <strong>dogfooding</strong> the starter. Each mutating
- * endpoint is {@code @OpaPreAuthorize(action="team:manage", resourceType="'team'", resourceId="#teamId")}:
- * the library resolves the <em>calling subject's</em> role on this team (via the user-service's own
- * {@code RoleDefinitionSupplier}) and OPA's {@code team.rego} grants manage for the
- * owner/administrator/senior codes (Phase 6.5). The decision authorizes the <b>actor</b>, never the
- * service identity.
+ * Team-membership management — the service <strong>dogfooding</strong> the starter. Since Phase 6.7
+ * (ADR 0015) each endpoint gates on its own <em>fine</em> action rather than the retired coarse
+ * {@code team:manage}: {@code team:list-members} (now {@code READ} — any member can see the roster),
+ * {@code team:add-member} / {@code team:change-role} / {@code team:remove-member} (the {@code CONTROL}
+ * category). The library resolves the <em>calling subject's</em> role on this team (via the
+ * user-service's own {@code RoleDefinitionSupplier}); OPA's {@code team.rego} expands the resolved
+ * category tokens through the shared table and decides. The decision authorizes the <b>actor</b>, never
+ * the service identity.
  *
  * <p>The orthogonal escalation bounds live in {@link MembershipService}: the hybrid assignment gates
  * (cross-tier + the senior subset verdict) on what may be <em>granted</em>, and the target-tier gate
- * on whom an existing member may be <em>demoted or removed by</em>. Controllers stay thin and delegate.
+ * on whom an existing member may be <em>demoted or removed by</em>. These are an untouched invariant
+ * (the two-axis principle): categorizing the verbs changes which kinds of acts a role may perform, never
+ * on whom or to what tier. Controllers stay thin and delegate.
  */
 @RestController
 public class MembershipController implements MembershipApi {
@@ -37,7 +41,7 @@ public class MembershipController implements MembershipApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
+    @OpaPreAuthorize(action = "team:list-members", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<MembershipPage> listMembers(
             UUID teamId, Integer page, Integer perPage) {
         var result = membershipService.list(teamId, PageDefaults.pageRequest(page, perPage));
@@ -45,7 +49,7 @@ public class MembershipController implements MembershipApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
+    @OpaPreAuthorize(action = "team:add-member", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<Membership> addMember(UUID teamId, AddMemberRequest request) {
         UUID actor = callerIdentity.requireActingUserId(request.getActorUserId());
         var view = membershipService.addMember(
@@ -60,7 +64,7 @@ public class MembershipController implements MembershipApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
+    @OpaPreAuthorize(action = "team:change-role", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<Membership> changeMemberRole(
             UUID teamId, UUID userId, ChangeRoleRequest request) {
         UUID actor = callerIdentity.requireActingUserId(request.getActorUserId());
@@ -69,7 +73,7 @@ public class MembershipController implements MembershipApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
+    @OpaPreAuthorize(action = "team:remove-member", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<Void> removeMember(UUID teamId, UUID userId) {
         // DELETE carries no body, so the actor is the authenticated subject only — needed for the
         // target-tier gate (a senior must not remove an administrator).

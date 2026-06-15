@@ -286,7 +286,7 @@
       ]
     },
     {
-      "name": "7. Dogfood: owner manages the user-service's own API -> 200",
+      "name": "7. Dogfood: owner lists members (team:list-members) -> 200",
       "request": {
         "method": "GET",
         "header": [
@@ -314,7 +314,9 @@
           "listen": "test",
           "script": {
             "exec": [
-              "pm.test('owner may manage the team (dogfooded @OpaPreAuthorize)', function () { pm.response.to.have.status(200); });"
+              "pm.test('owner may list the roster (dogfooded @OpaPreAuthorize, team:list-members)', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
             ],
             "type": "text/javascript"
           }
@@ -322,7 +324,7 @@
       ]
     },
     {
-      "name": "8. Dogfood: viewer-member cannot manage -> 403",
+      "name": "8a. Dogfood: viewer-member lists the roster (team:list-members, Phase 6.7 loosening) -> 200",
       "request": {
         "method": "GET",
         "header": [
@@ -349,8 +351,59 @@
         {
           "listen": "test",
           "script": {
+            "type": "text/javascript",
             "exec": [
-              "pm.test('viewer-member may NOT manage (dogfooded deny)', function () { pm.response.to.have.status(403); });",
+              "// Phase 6.7: list-members moved to READ, so any team member (incl. a reader) can see the roster.",
+              "pm.test('viewer-member may now list the roster (list-members rides READ)', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Dogfood: viewer-member lists (200) but cannot mutate membership (team:add-member) -> 403",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{viewer_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/members",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"userId\": \"00000000-0000-0000-0000-0000000000aa\", \"roleCode\": \"reader\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Phase 6.7: list-members rides READ, so a viewer-member CAN list the roster now;",
+              "// the dogfooded deny is on MUTATION (no CONTROL). The loosening is exactly listing.",
+              "pm.test('viewer-member may NOT mutate membership (dogfooded deny)', function () {",
+              "    pm.response.to.have.status(403);",
+              "});",
               "// [phase-5.9 contract]",
               "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
               "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",

@@ -8,8 +8,9 @@ import data.permissions
 
 # --- P1: per-category expansion ----------------------------------------------
 
+# Phase 6.7: READ gained "list-members" (the roster is visibility) — the known intended break.
 test_read_expands_to_view_list if {
-	permissions.effective_actions({"permissions": {"category": ["READ"]}}, "category") == {"view", "list"}
+	permissions.effective_actions({"permissions": {"category": ["READ"]}}, "category") == {"view", "list", "list-members"}
 }
 
 test_write_expands_to_create_update_delete if {
@@ -24,11 +25,42 @@ test_grant_expands_to_assign_roles if {
 	permissions.effective_actions({"permissions": {"category": ["GRANT"]}}, "category") == {"assign-roles"}
 }
 
+# --- Phase 6.7: CONTROL expansion on the team plane (same coverage READ/WRITE have) -----
+
+# R2: CONTROL expands to the three membership management verbs.
+test_control_expands_to_membership_verbs if {
+	permissions.effective_actions({"permissions": {"team": ["CONTROL"]}}, "team") == {"add-member", "change-role", "remove-member"}
+}
+
+# R3: deny-override subtracts on the team plane exactly as on catalog types.
+test_control_denial_subtracts_after_expansion if {
+	permissions.effective_actions(
+		{
+			"permissions": {"team": ["CONTROL"]},
+			"denied_actions": {"team": ["remove-member"]},
+		},
+		"team",
+	) == {"add-member", "change-role"}
+}
+
+# R4: the senior shape ([READ, CONTROL]) unions roster visibility + membership management (no TAG).
+test_read_control_union_senior_shape if {
+	permissions.effective_actions({"permissions": {"team": ["READ", "CONTROL"]}}, "team") == {
+		"view", "list", "list-members",
+		"add-member", "change-role", "remove-member",
+	}
+}
+
+# An unknown/stale token on the team plane expands to NOTHING (the fail-closed ∅-expansion floor).
+test_unknown_team_token_expands_to_nothing if {
+	permissions.effective_actions({"permissions": {"team": ["manage"]}}, "team") == set()
+}
+
 test_categories_union if {
 	permissions.effective_actions(
 		{"permissions": {"category": ["READ", "WRITE"]}},
 		"category",
-	) == {"view", "list", "create", "update", "delete"}
+	) == {"view", "list", "list-members", "create", "update", "delete"}
 }
 
 # --- P2: denial subtraction (after expansion) ----------------------------------
@@ -69,20 +101,20 @@ test_stale_token_contributes_nothing_alongside_real_one if {
 	permissions.effective_actions(
 		{"permissions": {"category": ["READ", "write"]}},
 		"category",
-	) == {"view", "list"}
+	) == {"view", "list", "list-members"}
 }
 
 # --- P4: wildcard fallback ------------------------------------------------------
 
 test_wildcard_fallback_when_type_key_absent if {
-	permissions.effective_actions({"permissions": {"*": ["READ"]}}, "category") == {"view", "list"}
+	permissions.effective_actions({"permissions": {"*": ["READ"]}}, "category") == {"view", "list", "list-members"}
 }
 
 test_concrete_key_wins_over_wildcard if {
 	permissions.effective_actions(
 		{"permissions": {"*": ["READ", "WRITE"], "category": ["READ"]}},
 		"category",
-	) == {"view", "list"}
+	) == {"view", "list", "list-members"}
 }
 
 test_empty_concrete_key_does_not_fall_back if {
@@ -101,7 +133,7 @@ test_wildcard_denial_applies_to_fallback if {
 			"denied_actions": {"*": ["delete"]},
 		},
 		"category",
-	) == {"view", "list", "create", "update"}
+	) == {"view", "list", "list-members", "create", "update"}
 }
 
 test_concrete_denial_wins_over_wildcard_denial if {
@@ -132,7 +164,7 @@ test_denial_of_ungranted_action_is_inert if {
 			"denied_actions": {"category": ["delete"]},
 		},
 		"category",
-	) == {"view", "list"}
+	) == {"view", "list", "list-members"}
 }
 
 test_denials_never_add if {
@@ -149,7 +181,7 @@ test_denying_everything_granted_yields_empty_set if {
 	permissions.effective_actions(
 		{
 			"permissions": {"category": ["READ"]},
-			"denied_actions": {"category": ["view", "list"]},
+			"denied_actions": {"category": ["view", "list", "list-members"]},
 		},
 		"category",
 	) == set()
@@ -158,19 +190,19 @@ test_denying_everything_granted_yields_empty_set if {
 # --- effective_from_categories (the realm fallback's helper) ----------------------
 
 test_from_categories_read if {
-	permissions.effective_from_categories({"READ"}) == {"view", "list"}
+	permissions.effective_from_categories({"READ"}) == {"view", "list", "list-members"}
 }
 
 test_from_categories_editor_set if {
 	permissions.effective_from_categories({"READ", "WRITE", "TAG"}) == {
-		"view", "list",
+		"view", "list", "list-members",
 		"create", "update", "delete",
 		"define-tags", "assign-tags",
 	}
 }
 
 test_from_categories_unknown_token_contributes_nothing if {
-	permissions.effective_from_categories({"READ", "bogus"}) == {"view", "list"}
+	permissions.effective_from_categories({"READ", "bogus"}) == {"view", "list", "list-members"}
 }
 
 test_from_categories_empty if {
