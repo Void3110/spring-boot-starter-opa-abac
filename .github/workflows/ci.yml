@@ -9,19 +9,21 @@ on:
 jobs:
   # The Rego corpus is the project's authorization proof — a policy regression must not merge green.
   # Runs the same `opa test` the slices run locally, pinned to the rig's OPA version, plus a drift
-  # check between the two team.rego copies (infra is what the rig's OPA loads; the user-service
-  # resources copy is what its tests/docs reference — they must stay byte-identical).
+  # check between the two policy-bundle copies (infra is what the rig's OPA loads; the user-service
+  # resources copy is what its tests/docs reference — they must stay byte-identical). Since Phase 6.7
+  # (ADR 0015) team.rego is category-driven, so the service bundle also carries verbatim copies of
+  # permissions.rego + permission_categories.json (the shared expansion home) — those mirror too.
   opa-policy-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: team.rego copies must not drift (infra vs user-service resources)
+      - name: policy-bundle copies must not drift (infra vs user-service resources)
         run: |
-          diff -u infra/opa/policies/team.rego \
-            example-user-management-service/src/main/resources/opa/policies/team.rego
-          diff -u infra/opa/policies/team_test.rego \
-            example-user-management-service/src/main/resources/opa/policies/team_test.rego
+          for f in team.rego team_test.rego permissions.rego permission_categories.json; do
+            diff -u "infra/opa/policies/$f" \
+              "example-user-management-service/src/main/resources/opa/policies/$f"
+          done
 
       - name: opa test — rig policy corpus (infra/opa/policies)
         run: |

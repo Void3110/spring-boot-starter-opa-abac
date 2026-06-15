@@ -70,9 +70,28 @@ class PermissionCategoriesParityTest {
         }
     }
 
+    @Test // Phase 6.7 (ADR 0015) — team.rego is category-driven, so the user-service bundle carries
+    // verbatim copies of permissions.rego + permission_categories.json (the shared expansion home).
+    // These MUST stay byte-identical to the infra copies (the mirror obligation) — a local drift guard
+    // mirroring the CI `diff` step, so drift breaks `./gradlew build` without needing Docker.
+    void serviceBundlePolicyCopiesAreByteIdenticalToInfra() throws IOException {
+        for (String f : new String[] {"permission_categories.json", "permissions.rego"}) {
+            Path infra = repoFile(Path.of("infra", "opa", "policies", f));
+            Path service = repoFile(Path.of("example-user-management-service",
+                    "src", "main", "resources", "opa", "policies", f));
+            assertThat(Files.readString(service))
+                    .as("service-bundle %s must be byte-identical to the infra copy (mirror obligation)", f)
+                    .isEqualTo(Files.readString(infra));
+        }
+    }
+
     /** The repo-relative data file, found by walking up from the module's working directory. */
     private static Path opaTable() {
-        Path relative = Path.of("infra", "opa", "policies", "permission_categories.json");
+        return repoFile(Path.of("infra", "opa", "policies", "permission_categories.json"));
+    }
+
+    /** Resolve a repo-relative path by walking up from the module's working directory. */
+    private static Path repoFile(Path relative) {
         Path dir = Path.of("").toAbsolutePath();
         for (int i = 0; i < 4 && dir != null; i++, dir = dir.getParent()) {
             Path candidate = dir.resolve(relative);
