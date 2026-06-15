@@ -5,6 +5,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -42,6 +43,12 @@ import org.springframework.data.jpa.domain.Specification;
  * inheritable, or <strong>any resolution exception</strong> → {@link Optional#empty()}. The result then falls
  * back to the <strong>narrower</strong> tag-only filter, never wider. ({@link AncestorResolver#subtreeOf}
  * itself is fail-closed to an empty predicate, so even a non-empty {@code Optional} never over-widens.)
+ *
+ * <p>A role-source <strong>outage</strong> ({@link RoleResolutionException}, B2) is one such resolution
+ * exception: the role lookup sits inside the {@code catch (RuntimeException)} below, so an outage collapses
+ * to <strong>no widening</strong> (the narrower tag-only filter) — the same fail-closed posture, by the
+ * same catch. No code change was needed for B2; this is pinned by a test so a refactor cannot silently
+ * widen it.
  */
 public class SubtreeSpecResolver {
 
@@ -116,7 +123,8 @@ public class SubtreeSpecResolver {
             return Optional.of(ancestorResolver.subtreeOf(governingRoot.type(), governingRoot.id()));
         } catch (RuntimeException e) {
             // Any resolution failure → no widening (never wider). subtreeOf already swallows; this guards the
-            // role lookup / inheritance read.
+            // role lookup / inheritance read. B2: a role-source outage (RoleResolutionException) is one such
+            // failure and collapses here to no widening — fail-closed, by this same catch (pinned by a test).
             return Optional.empty();
         }
     }

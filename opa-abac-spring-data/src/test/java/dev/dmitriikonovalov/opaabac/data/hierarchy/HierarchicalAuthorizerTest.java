@@ -154,6 +154,17 @@ class HierarchicalAuthorizerTest {
         assertThat(ctx.getValue().resource().ancestors()).isEmpty();
     }
 
+    @Test // B2 U5 — the role-source throws RoleResolutionException (outage) → deny, OPA never called.
+    // No fallback in this seam (outage and no-role both deny here); a separate axis from a chain collapse.
+    void roleSourceOutageDenies_neverCallsOpa() {
+        AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF, CATEGORY_REF));
+        when(supplier.lookup(eq("user-1"), eq("catalog"), eq(CATALOG)))
+                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+
+        assertThat(authorizer(resolver).isAllowed(subject(), "read", product())).isFalse();
+        verify(opaClient, never()).allow(any());
+    }
+
     @Test // an OPA-side error denies (fail-closed)
     void opaErrorDenies() {
         AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF));

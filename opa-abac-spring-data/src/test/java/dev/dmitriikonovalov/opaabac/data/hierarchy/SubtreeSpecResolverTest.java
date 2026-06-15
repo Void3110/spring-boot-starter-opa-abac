@@ -156,6 +156,20 @@ class SubtreeSpecResolverTest {
         verify(ancestorResolver, never()).subtreeOf(anyString(), anyString());
     }
 
+    @Test // B2 U6 — a role-source outage (RoleResolutionException) collapses to no widening, via the SAME
+    // existing catch (RuntimeException). Proves B2 needs NO code change here; pins it so a refactor cannot
+    // silently widen it. subtreeOf is never reached.
+    void roleSourceOutage_isEmpty_noWidening() {
+        when(supplier.lookup(anyString(), anyString(), anyString()))
+                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+
+        Optional<Specification<AbacDataObject>> result =
+                resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
+
+        assertThat(result).isEmpty();
+        verify(ancestorResolver, never()).subtreeOf(anyString(), anyString());
+    }
+
     @Test // a null subject → empty, no lookups
     void nullSubject_isEmpty() {
         assertThat(resolver().subtreeSpec(null, "category", CATALOG_ROOT, "read")).isEmpty();

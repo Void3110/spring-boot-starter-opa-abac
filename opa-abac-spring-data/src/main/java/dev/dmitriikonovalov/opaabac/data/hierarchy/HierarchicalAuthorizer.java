@@ -6,9 +6,12 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The single-resource hierarchical authorization seam: it ties the {@link AncestorResolver} → the
@@ -34,6 +37,8 @@ import java.util.Objects;
  * is resolved <strong>once on the root</strong>, never per-ancestor (per-node grants are Phase 8 / ReBAC).
  */
 public class HierarchicalAuthorizer {
+
+    private static final Logger log = LoggerFactory.getLogger(HierarchicalAuthorizer.class);
 
     private final AncestorResolver ancestorResolver;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
@@ -81,9 +86,17 @@ public class HierarchicalAuthorizer {
         ParentRef governingRoot = ancestors.isEmpty()
                 ? new ParentRef(leafType, leafId)
                 : ancestors.get(0);
-        RoleDefinition roleDefinition = roleDefinitionSupplier
-                .lookup(subject.id(), governingRoot.type(), governingRoot.id())
-                .orElse(null);
+        RoleDefinition roleDefinition;
+        try {
+            roleDefinition = roleDefinitionSupplier
+                    .lookup(subject.id(), governingRoot.type(), governingRoot.id())
+                    .orElse(null);
+        } catch (RoleResolutionException e) {
+            // B2: role-source outage → deny (no fallback in this seam; outage and no-role both deny here).
+            // A separate failure axis from AncestorResolutionException above (chain-collapse).
+            log.debug("hierarchical authorize denied: role-source outage ({})", e.getClass().getSimpleName());
+            return false;
+        }
         if (roleDefinition == null) {
             return false; // fail-closed: unresolved role
         }
