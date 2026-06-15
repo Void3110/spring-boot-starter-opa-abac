@@ -66,7 +66,7 @@ source up + authoritative-`204` → fallback still grants its designed reach. Se
 | **T1** | `RoleResolutionException` + the tri-state SPI contract | core | ✅ |
 | **T2** | the two gate managers fail closed on outage *(the behavioral fix)* | spring-security | ✅ |
 | **T3** | `HierarchicalAuthorizer` catches; `SubtreeSpecResolver` proven *(hardening)* | spring-data | ✅ |
-| **T4** | strict HTTP classification + consumer wrap + conformant showcase | example-catalog, example-user-management | ☐ |
+| **T4** | strict HTTP classification + consumer wrap + conformant showcase | example-catalog, example-user-management | ✅ |
 | **T5** | e2e + the headline IT + docs + slice record | example-catalog, docs | ☐ |
 
 **Critical path:** `T1 → {T2, T3, T4} → T5` (T2/T3/T4 independent once T1 lands; **T1+T2** is the
