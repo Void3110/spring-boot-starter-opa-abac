@@ -137,10 +137,12 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
         assertThat(add.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
-    @Test
-    void viewerCannotManage() {
+    @Test // Phase 6.7: list-members moved to READ — a reader can now SEE the roster (the loosening) but
+    // still cannot MUTATE membership (the loosening is exactly listing, nothing wider).
+    void readerListsButCannotManage() {
         Team team = team();
         User viewer = user("viewer");
+        User newbie = user("newbie");
         grant(team, viewer, SystemRoles.READER_ID);
 
         var list = rest.exchange(
@@ -149,7 +151,17 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
                 AbacTestConfig.as(viewer.getSubject()),
                 String.class,
                 team.getId());
-        assertThat(list.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        var add = rest.exchange(
+                "/api/v1/teams/{t}/members",
+                HttpMethod.POST,
+                AbacTestConfig.as(
+                        viewer.getSubject(),
+                        new AddMemberRequest().userId(newbie.getId()).roleCode(SystemRoles.READER)),
+                String.class,
+                team.getId());
+        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test // pinned semantic #5: a candidate snapshot with NO numeric role_level rejects — fail-closed
