@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security.web;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,7 +50,18 @@ public interface Enrichable {
     /** The resource id — generated resource DTOs already expose this. */
     UUID getId();
 
-    /** The affordance map the advice writes; {@code null}/absent until enriched (or on degrade). */
+    /**
+     * The affordance map the advice writes; {@code null}/empty until enriched (or on degrade).
+     *
+     * <p><strong>{@code @JsonInclude(NON_EMPTY)} is load-bearing for the omit-on-failure contract:</strong>
+     * the OpenAPI-generated DTO initializes its backing field to an empty map, so without this an
+     * <em>unset</em> {@code _actions} would serialize as {@code {}} — which a client reads as a fabricated
+     * all-deny ("no actions available"), exactly the footgun ADR 0016 §7 forbids. With it, an
+     * unenriched/degraded resource omits {@code _actions} from the wire entirely (absent =
+     * could-not-compute). Jackson honors this interface-declared annotation on the implementing DTO's
+     * generated getter.
+     */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     Map<String, Boolean> getActions();
 
     /** Set by {@code ActionEnrichmentAdvice} after the handler returns; never read from input. */

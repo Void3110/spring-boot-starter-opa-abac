@@ -689,6 +689,13 @@ components:
     Team:
       type: object
       required: [id, name, targetType, targetId]
+      # x-implements stamps the per-type Enrichable marker onto the generated DTO (action enrichment,
+      # Phase 6 — the second registry shape, the control plane). The team verb set is the OPA-decided
+      # subset only; the Java-co-gated escalation verbs are excluded (see TeamEnrichable / ADR 0016 §8).
+      # NOTE: getTeam is ungated (owner-on-create bootstrap), so a Team response cache-misses and OMITS
+      # _actions — the documented, correct degrade (omit, never fabricate).
+      x-implements:
+        - dev.dmitriikonovalov.example.usermgmt.security.TeamEnrichable
       properties:
         id:
           type: string
@@ -703,6 +710,14 @@ components:
           type: string
           format: uuid
           description: The team-target's resource id.
+        _actions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+          description: >
+            Affordance map — which actions the caller may perform on this team
+            (server-emitted; absent when enrichment could not be computed, e.g. an ungated read).
 
     CreateTeamRequest:
       type: object

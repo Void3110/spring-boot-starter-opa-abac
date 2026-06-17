@@ -284,3 +284,32 @@ test_tag_fallback_path_unaffected if {
 		"environment": {},
 	}
 }
+
+# --- Phase 5 batch primitive (extended to catalog for Phase 6 action enrichment) ---
+
+# bulk returns a positional list of allow-decisions over input.items (the affordance refold source).
+test_bulk_returns_positional_decisions if {
+	result := catalog.bulk with input as {"items": [
+		{
+			"subject": {"id": "u", "roles": []},
+			"action": "catalog:view",
+			"resource": {"type": "catalog", "id": "a", "attributes": {}},
+			"role_definition": viewer_role_def,
+			"environment": {},
+		},
+		{
+			"subject": {"id": "u", "roles": []},
+			"action": "catalog:update",
+			"resource": {"type": "catalog", "id": "a", "attributes": {}},
+			"role_definition": viewer_role_def,
+			"environment": {},
+		},
+	]}
+	result == [true, false]
+}
+
+# bulk over an empty item list -> empty decision list.
+test_bulk_empty if {
+	result := catalog.bulk with input as {"items": []}
+	result == []
+}

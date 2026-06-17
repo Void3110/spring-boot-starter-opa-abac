@@ -219,3 +219,21 @@ test_default_deny_empty_team_tokens if {
 		"permissions": {"team": []},
 	})
 }
+
+# --- Phase 5 batch primitive (extended to team for Phase 6 action enrichment) ---
+
+# bulk returns a positional list of allow-decisions over input.items (the affordance refold source).
+# A member (READ only) can list-members (READ) but not add-member (CONTROL) — the honest affordance split.
+test_bulk_returns_positional_decisions if {
+	result := team.bulk with input as {"items": [
+		team_input("team:list-members", member_role_def),
+		team_input("team:add-member", member_role_def),
+	]}
+	result == [true, false]
+}
+
+# bulk over an empty item list -> empty decision list.
+test_bulk_empty if {
+	result := team.bulk with input as {"items": []}
+	result == []
+}

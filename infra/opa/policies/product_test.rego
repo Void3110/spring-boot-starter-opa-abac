@@ -375,3 +375,32 @@ test_inherited_grant_with_mismatched_leaf_tags_denies if {
 	not product.allow with input as inherited_tag_input({"region": "apac"})
 		with data.product.inheritable as product_inherits_catalog
 }
+
+# --- Phase 5 batch primitive (extended to product for Phase 6 action enrichment) ---
+
+# bulk returns a positional list of allow-decisions over input.items (the affordance refold source).
+test_bulk_returns_positional_decisions if {
+	result := product.bulk with input as {"items": [
+		{
+			"subject": {"id": "u", "roles": []},
+			"action": "product:view",
+			"resource": {"type": "product", "id": "a", "attributes": {}},
+			"role_definition": viewer_role_def,
+			"environment": {},
+		},
+		{
+			"subject": {"id": "u", "roles": []},
+			"action": "product:update",
+			"resource": {"type": "product", "id": "a", "attributes": {}},
+			"role_definition": viewer_role_def,
+			"environment": {},
+		},
+	]}
+	result == [true, false]
+}
+
+# bulk over an empty item list -> empty decision list.
+test_bulk_empty if {
+	result := product.bulk with input as {"items": []}
+	result == []
+}

@@ -136,7 +136,7 @@ per-action verdict — gate or enrichment — is computed fresh from `bulk`. Thi
 **never reads** the cache to decide (5.97 invariant); a present entry is only ever *consumed* downstream
 of a fresh gate decision for the matching action.
 
-### 6. OPA wiring: reuse `allowAll` verbatim — zero `OpaClient` change, zero Rego change
+### 6. OPA wiring: reuse `allowAll` verbatim — zero `OpaClient` change; the `bulk` primitive extended to every enriched type
 
 The `bulk` rule already evaluates `allow` per item via `with input as item`, with each item a full
 self-contained context (its own resource + action). Enrichment is just a different *population* of the
@@ -147,6 +147,18 @@ positional `List<Boolean>` into per-row `Map<verb,Boolean>` (row *i*, verb *j* �
 fail-closes all-false on mixed types). The page-size is bounded by the existing pagination cap
 (`perPage ≤ 100`, ADR 0012); no independent enrichment limit — a separate cap would create a confusing
 partially-enriched *successful* page.
+
+> **Correction (2026-06-17, during the T6 live e2e).** This ADR originally claimed **"zero Rego change."**
+> That was a mistaken premise: Phase 5 added the `bulk` rule **only to `category.rego`** (the one type whose
+> list used the allowlist-batch path that consumes `bulk`); `catalog`, `product`, and `team` had **no
+> `bulk` rule**. Enriching those types makes the advice's `allowAll` read an empty OPA `result` →
+> all-false → the advice omits `_actions` (a silent degrade), so only `Category` enriched live. The fix is
+> **additive and decision-preserving**: the identical `bulk := [allow with input as item | some item in
+> input.items]` entrypoint was added to `catalog.rego`, `product.rego`, and `team.rego` (+ the user-mgmt
+> team bundle copy), mirroring `category.rego` byte-for-byte, with mirrored `opa test` cases. It adds **no
+> new decision** — it maps the existing `allow` over a list. So the accurate invariant is **"zero change
+> to existing decision logic; the Phase-5 `bulk` batch primitive is *extended* to every enriched type."**
+> `OpaClient` is still unchanged.
 
 ### 7. The degrade contract (the fail-closed core): omit, never fabricate
 

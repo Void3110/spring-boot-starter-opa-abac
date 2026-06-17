@@ -165,3 +165,17 @@ tags_satisfied if {
 has_required_tags if {
 	count(input.role_definition.required_tags) > 0
 }
+
+# ---------------------------------------------------------------------------
+# Phase 5 batch primitive — the bulk decision entrypoint, extended to product for action enrichment
+# (Phase 6). `bulk` evaluates `allow` for each item in a list input ({"input": {"items": [<ctx>, …]}})
+# and returns a positional list of booleans — the same shared primitive the data-filtering allowlist
+# uses, mirrored byte-for-byte from category.rego. Each item carries its own resource, so `allow` runs
+# per item with the full single-decision logic — fail-closed per element. ADDITIVE: it adds no new
+# decision, it maps the existing `allow` over a list.
+# ---------------------------------------------------------------------------
+
+bulk := [decision |
+	some item in input.items
+	decision := allow with input as item
+]

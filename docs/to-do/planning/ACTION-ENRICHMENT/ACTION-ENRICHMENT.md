@@ -63,7 +63,7 @@ tags:
 | **T3** | List-path write-through into the cache (all `findAuthorized` paths) | spring-data | ✅ |
 | **T4** | Starter auto-config wiring + `opa.abac.action-enrichment.enabled` kill-switch | starter | ✅ |
 | **T5** | Catalog adoption: 3 `<Type>Enrichable` + 3 schema blocks + codegen + ITs | example-catalog | ✅ |
-| **T6** | user-mgmt adoption: `TeamEnrichable` (OPA-decided subset) + cross-service e2e | example-usermgmt | ☐ |
+| **T6** | user-mgmt adoption: `TeamEnrichable` (OPA-decided subset) + cross-service e2e | example-usermgmt | ✅ |
 | **T7** | Docs (guide + reconciliations) + roadmap/stories/index + Mulch + folder move | docs | ☐ |
 
 > **Critical path:** `T1 → (T2 ∥ T3) → T4 → T5 → T6 → T7`. **T1–T4** are the independently-landable
