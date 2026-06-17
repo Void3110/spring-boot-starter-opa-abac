@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.data.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -452,6 +453,91 @@ class AbacQueryServiceTest {
         verify(client, never()).allowAll(any());
     }
 
+    // --- U10: list-path write-through into the cache (T3) ---------------------
+
+    @Test // U10 — pure-SQL path: every survivor written to the cache keyed (type,id), same instances
+    void writeThrough_pureSqlPath_cachesSurvivors() {
+        RecordingCache cache = new RecordingCache();
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a"), new Row("b")));
+
+        List<Row> result = serviceWithCache(stub(conditionalEmea(), null, false), cache)
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).extracting(Row::id).containsExactly("a", "b");
+        assertThat(cache.puts).containsExactly(entry("category", "a"), entry("category", "b"));
+    }
+
+    @Test // U10 — allowlist-batch path: only the survivors (true rows) are cached; denied rows never written
+    void writeThrough_allowlistPath_cachesOnlySurvivors() {
+        RecordingCache cache = new RecordingCache();
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class)))
+                .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c")));
+        // not-fully-SQL residual + allowlist ON → batchFilter; decisions keep a and c, drop b.
+        OpaClient client = stub(PartialResult.unsupported(), List.of(true, false, true), false);
+
+        List<Row> result = serviceWithCache(client, cache)
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).extracting(Row::id).containsExactly("a", "c");
+        assertThat(cache.puts)
+                .as("the dropped row b is never cached — only authorized survivors")
+                .containsExactly(entry("category", "a"), entry("category", "c"));
+    }
+
+    @Test // U10 — kill-switch path: the coarse-allow survivors are cached
+    void writeThrough_killSwitchPath_cachesSurvivors() {
+        RecordingCache cache = new RecordingCache();
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a")));
+        OpaClient client = stub(PartialResult.allowAll(), null, true); // allow() = true
+
+        List<Row> result = serviceWithCache(client, new AbacQueryService.PartialEvalSettings(false, false), cache)
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).extracting(Row::id).containsExactly("a");
+        assertThat(cache.puts).containsExactly(entry("category", "a"));
+    }
+
+    @Test // U10 — paged pure-SQL path: the page's content rows are written to the cache
+    void writeThrough_pagedPureSqlPath_cachesPageContent() {
+        RecordingCache cache = new RecordingCache();
+        Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(new Row("a"), new Row("b")), pageable, 2));
+
+        Page<Row> result = serviceWithCache(stub(conditionalEmea(), null, false), cache)
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
+
+        assertThat(result.getContent()).extracting(Row::id).containsExactly("a", "b");
+        assertThat(cache.puts).containsExactly(entry("category", "a"), entry("category", "b"));
+    }
+
+    @Test // U10 — cache ABSENT → no write, no NPE, return value byte-identical
+    void writeThrough_cacheAbsent_noWriteNoNpe() {
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a"), new Row("b")));
+
+        List<Row> result = service(stub(conditionalEmea(), null, false), AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).extracting(Row::id).containsExactly("a", "b"); // unchanged, no cache, no NPE
+    }
+
+    @Test // U10 — fromError path: nothing returned, nothing cached
+    void writeThrough_fromError_cachesNothing() {
+        RecordingCache cache = new RecordingCache();
+        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+
+        List<Row> result = serviceWithCache(stub(PartialResult.error(), null, false), cache)
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).isEmpty();
+        assertThat(cache.puts).isEmpty();
+    }
+
     // --- helpers -------------------------------------------------------------
 
     /** The fixed total order every paged call carries (ADR 0012 §4): {@code createdAt ASC, id ASC}. */
@@ -525,6 +611,30 @@ class AbacQueryServiceTest {
                 return batch == null ? List.of() : batch;
             }
         };
+    }
+
+    private AbacQueryService serviceWithCache(OpaClient client, RecordingCache cache) {
+        return serviceWithCache(client, AbacQueryService.PartialEvalSettings.defaults(), cache);
+    }
+
+    private AbacQueryService serviceWithCache(
+            OpaClient client, AbacQueryService.PartialEvalSettings settings, RecordingCache cache) {
+        return new AbacQueryService(client, factory, settings, null, cache);
+    }
+
+    /** Records every (type,id) the write-through caches, in order. */
+    static final class RecordingCache implements dev.dmitriikonovalov.opaabac.core.AbacResourceCache {
+        final List<Map.Entry<String, String>> puts = new java.util.ArrayList<>();
+
+        @Override
+        public <T> java.util.Optional<T> get(String type, String id, Class<T> as) {
+            return java.util.Optional.empty(); // write-only in these tests
+        }
+
+        @Override
+        public void put(String type, String id, Object resource) {
+            puts.add(Map.entry(type, id));
+        }
     }
 
     /** A minimal authorizable row. */
