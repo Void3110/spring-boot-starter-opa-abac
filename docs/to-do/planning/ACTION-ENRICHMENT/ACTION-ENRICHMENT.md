@@ -59,7 +59,7 @@ tags:
 | Ticket | Summary | Module | Status |
 |--------|---------|--------|--------|
 | **T1** | Relocate `AbacResourceCache` → core + the `Enrichable` marker (build-breaker sweep) | core / spring-security | ✅ |
-| **T2** | `ActionEnrichmentAdvice` (`ResponseBodyAdvice`) + P×V refold + omit-on-failure | spring-security | ☐ |
+| **T2** | `ActionEnrichmentAdvice` (`ResponseBodyAdvice`) + P×V refold + omit-on-failure | spring-security | ✅ |
 | **T3** | List-path write-through into the cache (all `findAuthorized` paths) | spring-data | ☐ |
 | **T4** | Starter auto-config wiring + `opa.abac.action-enrichment.enabled` kill-switch | starter | ☐ |
 | **T5** | Catalog adoption: 3 `<Type>Enrichable` + 3 schema blocks + codegen + ITs | example-catalog | ☐ |
