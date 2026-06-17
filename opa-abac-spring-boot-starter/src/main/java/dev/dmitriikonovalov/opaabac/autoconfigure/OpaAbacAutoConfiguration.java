@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import dev.dmitriikonovalov.opaabac.core.HttpOpaClient;
 import dev.dmitriikonovalov.opaabac.core.NoOpRoleDefinitionSupplier;
@@ -18,7 +19,6 @@ import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreePathSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.ParentLinkSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.RecursiveCteAncestorResolver;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
-import dev.dmitriikonovalov.opaabac.security.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache;
 import dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport;
 import org.springframework.beans.factory.ObjectProvider;

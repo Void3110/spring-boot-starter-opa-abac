@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;

@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security;
 
+import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import java.util.Objects;

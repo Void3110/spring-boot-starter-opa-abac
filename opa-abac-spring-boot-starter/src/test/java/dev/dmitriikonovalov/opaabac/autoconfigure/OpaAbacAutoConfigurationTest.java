@@ -289,7 +289,7 @@ class OpaAbacAutoConfigurationTest {
             assertThat(context).doesNotHaveBean(
                     dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport.class);
             assertThat(context).doesNotHaveBean(
-                    dev.dmitriikonovalov.opaabac.security.AbacResourceCache.class);
+                    dev.dmitriikonovalov.opaabac.core.AbacResourceCache.class);
             assertThat(context).hasSingleBean(OpaPreAuthorizeAuthorizationManager.class);
         });
     }
@@ -337,7 +337,7 @@ class OpaAbacAutoConfigurationTest {
     @Test // a user-supplied AbacResourceCache overrides the request-attributes default
     void userResourceCacheWins() {
         runner.withUserConfiguration(ResolverConfig.class, UserCacheConfig.class).run(context ->
-                assertThat(context.getBean(dev.dmitriikonovalov.opaabac.security.AbacResourceCache.class))
+                assertThat(context.getBean(dev.dmitriikonovalov.opaabac.core.AbacResourceCache.class))
                         .isSameAs(UserCacheConfig.CACHE));
     }
 
@@ -472,11 +472,11 @@ class OpaAbacAutoConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class UserCacheConfig {
-        static final dev.dmitriikonovalov.opaabac.security.AbacResourceCache CACHE =
+        static final dev.dmitriikonovalov.opaabac.core.AbacResourceCache CACHE =
                 new dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache();
 
         @Bean
-        dev.dmitriikonovalov.opaabac.security.AbacResourceCache abacResourceCache() {
+        dev.dmitriikonovalov.opaabac.core.AbacResourceCache abacResourceCache() {
             return CACHE;
         }
     }
