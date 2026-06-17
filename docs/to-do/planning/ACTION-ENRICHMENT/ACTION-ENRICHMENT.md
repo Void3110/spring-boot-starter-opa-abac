@@ -9,17 +9,86 @@ tags:
 
 # Action enrichment — affordance metadata on returned resources
 
-> **Status: Planning (design-direction set; not yet decomposed).** Phase 6 of [[POC-ROADMAP]]. This note
-> captures the agreed direction + the open design questions; a full work package (00-DESIGN /
-> 01-DECOMPOSITION / prompt / QA / STATUS stubs) is written once the open questions settle. The Phase-5
-> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]) has shipped; the remaining prerequisites are
-> **[[RESOURCE-RESOLUTION]] (Phase 5.97)** — the resolver SPI + request-scoped cache that supply the
-> resolved attributes enrichment evaluates against (direction point 4 below) — and **Phase 6.5**
-> (ADR [[0007-coarse-grained-permission-categories|0007]]) — the category model that fixes the
-> fine-action vocabulary the action registry enumerates. Slice order: **5.97 → 6.5 → 6**
-> (settled 2026-06-12).
+> **Status: Design settled (grill-me 2026-06-17) — ready for /decompose.** Phase 6 of [[POC-ROADMAP]].
+> Every fork below is pinned in **ADR [[0016-action-enrichment-affordance-metadata|0016]]** and the
+> **[[00-DESIGN]]** (behavior matrix + proof obligations). All prerequisites have shipped: the Phase-5
+> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]), the **[[RESOURCE-RESOLUTION]] (Phase 5.97)**
+> resolver SPI + request-scoped cache (the resolved attributes enrichment evaluates against), and the
+> **6.5/6.7** fine-action vocabulary (ADR [[0007-coarse-grained-permission-categories|0007]] +
+> [[0015-control-plane-vocabulary-categorization|0015]]). The open questions at the foot of this note are
+> resolved — see the *Settled (grill-me 2026-06-17)* block below. **Next: `/decompose`.**
+>
+> ### Settled (grill-me 2026-06-17) — supersedes the "Open questions" section below
+> - **Scope:** single-resource **and** list/page in this slice. Adopters: **catalog (all three types:
+>   Catalog/Category/Product) + user-management-service** (two registry shapes, proving generality).
+> - **Envelope:** inline `_actions` on the DTO (Option B — `x-implements` marker **+** an explicit
+>   `readOnly` `_actions` schema property). `Authorized<T>` wrapper rejected.
+> - **Registry:** the **per-type sub-interface** (`CategoryEnrichable extends Enrichable`) carries
+>   `default abacResourceType()` + `default abacActions()` — it *is* the registry + validation allowlist.
+>   No separate SPI bean.
+> - **Keys / set:** bare-verb keys; **instance-scoped verbs only.** `category` →
+>   `[view, update, delete, assign-tags]` (catalog/product verified vs real endpoints in 00→T).
+>   `assign-roles`/`list`/`create`/`define-tags` excluded. **`team` → `[list-members, add-member,
+>   remove-member]`** (the OPA-fully-decided subset; the Java-co-gated escalation verbs excluded —
+>   *affordance honesty*).
+> - **Feed:** generalize the 5.97 `AbacResourceCache` — the **list path write-through**s its post-filter
+>   survivors; the advice has one `cache.get(type,id)` read path. The **`AbacResourceCache` interface
+>   relocates to `opa-abac-core`**. Cache = attribute snapshot, **never a verdict**.
+> - **Failure (fail-closed core):** **omit `_actions` on any failure** (bulk error / cache miss /
+>   ancestor failure) — never a fabricated all-false map. Present ⇒ complete real verdict; absent ⇒
+>   couldn't-compute.
+> - **Perf / opt-out:** automatic on any `Enrichable` return (opt-in = the marker); rely on the
+>   `perPage ≤ 100` cap, no separate enrichment limit; `opa.abac.action-enrichment.enabled` kill-switch.
+> - **OPA wiring:** reuse `allowAll` verbatim (advice owns the P×V flatten/refold), one `bulk` per type
+>   per response. **Zero `OpaClient` change, zero Rego change.**
+
+## Package (this folder)
+
+| File | Role |
+|------|------|
+| `ACTION-ENRICHMENT.md` | this index — direction, settled decisions, the ticket status table |
+| `00-DESIGN.md` | the mechanism, verified verb sets, behavior matrix, proof obligations, closed forks |
+| `01-DECOMPOSITION.md` | the **work list** — T1…T7, each Goal / Deliverables / Acceptance / What-NOT-to-touch + the critical path |
+| `10-QA-TEST-CASES.md` | the U/I/E/D cases each ticket's *Acceptance* references + the fail-closed checklist |
+| `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | the self-contained run prompt (verbatim §4 skeleton, slots filled) |
+| `STATUS-01..07.md` | one stub per ticket, filled at each checkpoint during the run |
+| ADR [[0016-action-enrichment-affordance-metadata\|0016]] | the immutable fork record (in `docs/architecture/adr/`) |
+
+## Ticket status
+
+| Ticket | Summary | Module | Status |
+|--------|---------|--------|--------|
+| **T1** | Relocate `AbacResourceCache` → core + the `Enrichable` marker (build-breaker sweep) | core / spring-security | ☐ |
+| **T2** | `ActionEnrichmentAdvice` (`ResponseBodyAdvice`) + P×V refold + omit-on-failure | spring-security | ☐ |
+| **T3** | List-path write-through into the cache (all `findAuthorized` paths) | spring-data | ☐ |
+| **T4** | Starter auto-config wiring + `opa.abac.action-enrichment.enabled` kill-switch | starter | ☐ |
+| **T5** | Catalog adoption: 3 `<Type>Enrichable` + 3 schema blocks + codegen + ITs | example-catalog | ☐ |
+| **T6** | user-mgmt adoption: `TeamEnrichable` (OPA-decided subset) + cross-service e2e | example-usermgmt | ☐ |
+| **T7** | Docs (guide + reconciliations) + roadmap/stories/index + Mulch + folder move | docs | ☐ |
+
+> **Critical path:** `T1 → (T2 ∥ T3) → T4 → T5 → T6 → T7`. **T1–T4** are the independently-landable
+> library subset (opt-in, dormant until an app ships an `Enrichable` DTO). Conventions: clean-room
+> (original names only); commit identity `Void3110 <void31102025@gmail.com>`; one focused commit per
+> ticket; **no push** (the maintainer ships).
 
 ## What it is
+
+After a handler returns a resource (or a page of resources), attach a map of **which actions the caller
+may perform on it** — e.g.
+
+```jsonc
+{
+  "id": "…", "name": "Widgets", "tags": { "region": "emea" },
+  "_actions": { "view": true, "update": true, "delete": false, "assign-tags": true }
+}
+```
+
+(bare-verb keys — the resource type is implicit; see ADR 0016 §4.) This is **affordance metadata**, *not*
+enforcement: it never blocks a request, it answers *"what could I do here?"* Enforcement still happens at
+the three layers of ADR 0006; enrichment is a **read-side convenience** layered on top.
+
+It is the **first real consumer of Phase-5 batch evaluation** (`OpaClient.allowAll`): one OPA round-trip
+returns the verdict for the resource's whole action set, instead of one call per action.
 
 After a handler returns a resource (or a page of resources), attach a map of **which actions the caller
 may perform on it** — e.g.
@@ -101,12 +170,22 @@ starter aims for. (`x-closeable`-style companion extensions, as the credentials 
 > envelope `Authorized<T>`; a generic `_actions` sibling field added to every schema; a separate
 > non-generated response type) are weighed in the design pass.
 
-## Open questions (settle before decomposing)
+## Open questions — ✅ RESOLVED (grill-me 2026-06-17)
+
+> All five are settled in the *Settled* block near the top of this note and pinned in
+> **ADR [[0016-action-enrichment-affordance-metadata|0016]]** (with rejections). Kept below for the
+> reasoning trail; **do not reopen during the run**. Briefly: **envelope** = inline `_actions` (Option B —
+> marker + explicit `readOnly` property); **DTO→cache lookup** = `cache.get(type,id)` with **omit on
+> miss/failure** (never re-resolve, never fabricate); **perf/opt-out** = automatic on `Enrichable`, the
+> `perPage ≤ 100` cap bounds the batch, `opa.abac.action-enrichment.enabled` kill-switch; **registry** =
+> the per-type sub-interface carries `abacActions()` (no SPI bean); **the ADR** = 0016, authored with this
+> decomposition.
 
 - **The envelope shape.** Inline `_actions` on the resource (mutates the DTO, needs the marker to expose a
   setter) vs. a wrapping `Authorized<T>{ data, actions }` (cleaner separation, but changes every enriched
   endpoint's response schema). The `x-implements` marker leans toward inline; confirm against pagination
-  (`Page<Enrichable>` → `_actions` per element).
+  (`Page<Enrichable>` → `_actions` per element). → **inline (Option B); `<Resource>Page` items each carry
+  `_actions`.**
 - **Batch context lookup mechanics.** ~~Whether contexts are attribute-rich~~ — settled (direction
   point 4: yes, via the [[RESOURCE-RESOLUTION]] cache). What remains: the advice sees generated
   **DTOs**, not entities — pin the DTO → `(type, id)` → cache-lookup path, and the posture when a row
