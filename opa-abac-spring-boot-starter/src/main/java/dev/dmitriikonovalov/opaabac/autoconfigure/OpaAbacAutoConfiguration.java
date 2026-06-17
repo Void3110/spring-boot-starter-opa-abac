@@ -28,11 +28,14 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.AllNestedConditions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ConfigurationCondition;
 
 /**
  * Auto-configuration for the OPA ABAC starter: "add the dependency + a few properties" turns the spine
@@ -282,14 +285,13 @@ public class OpaAbacAutoConfiguration {
     /**
      * Action enrichment (Phase 6): the {@link ActionEnrichmentAdvice} that attaches an {@code _actions}
      * affordance map to returned {@code Enrichable} resources. Registered only for a servlet web app, only
-     * while the {@code opa.abac.action-enrichment.enabled} kill-switch is on (default on), and only when an
-     * {@code AbacResourceResolver} is present — the same condition that produces the
-     * {@link AbacResourceCache} this advice reads from (5.97); without a resolver there are no resolved
-     * attributes to enrich against, so the advice would omit everything anyway. Gating on the
-     * <em>resolver</em> (not the cache) avoids the {@code @ConditionalOnBean} ordering hazard of depending
-     * on another auto-config bean. Off ⇒ no advice bean here <em>and</em> the {@code AbacQueryService} above
-     * receives no cache collaborator (so the list-path write-through is dormant too) — an {@code Enrichable}
-     * DTO then serializes without {@code _actions}, byte-identical to pre-Phase-6 behavior.
+     * while the {@code opa.abac.action-enrichment.enabled} kill-switch is on (default on), and only when the
+     * request-scoped {@link AbacResourceCache} bean exists — i.e. when resource-resolution (5.97) is active
+     * (a resolver bean + {@code resource-resolution.enabled}). The advice reads that cache for resolved
+     * attributes; with no cache there is nothing to enrich against. Off (or no cache) ⇒ no advice bean here
+     * <em>and</em> the {@code AbacQueryService} above receives no cache collaborator (so the list-path
+     * write-through is dormant too) — an {@code Enrichable} DTO then serializes without {@code _actions},
+     * byte-identical to pre-Phase-6 behavior.
      *
      * <p>The advice wires the same collaborators the gate uses: the {@code OpaClient} (its {@code allowAll}
      * batch primitive, reused verbatim), the request-scoped {@link AbacResourceCache} (the attribute
@@ -301,8 +303,16 @@ public class OpaAbacAutoConfiguration {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     @ConditionalOnBean(AbacResourceResolver.class)
-    @ConditionalOnProperty(prefix = "opa.abac.action-enrichment", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
+    @Conditional(ActionEnrichmentAutoConfiguration.EnrichmentActive.class)
+    // The advice reads the request-scoped AbacResourceCache, which ResourceResolutionAutoConfiguration
+    // produces under exactly {a resolver bean + resource-resolution.enabled}. Mirror BOTH so the advice
+    // activates only when that cache exists: gate on the resolver BEAN (@ConditionalOnBean is reliable
+    // against a user/@Component-supplied bean, unlike against a sibling auto-config bean), AND on BOTH
+    // properties via EnrichmentActive (resource-resolution.enabled && action-enrichment.enabled). A
+    // CatalogResourceResolver @Component can be present while resolution is OFF (the kill-switch baseline
+    // the CRUD/gate suites run on) — then no cache bean exists and the advice must NOT activate; the
+    // property AND closes exactly that combination. @ConditionalOnProperty is not repeatable, hence the
+    // AllNestedConditions wrapper.
     static class ActionEnrichmentAutoConfiguration {
 
         @Bean
@@ -316,6 +326,26 @@ public class OpaAbacAutoConfiguration {
             AncestorChainSupplier chainSupplier =
                     hierarchyResolver != null ? hierarchyResolver::ancestorsOf : null;
             return new ActionEnrichmentAdvice(opaClient, resourceCache, roleDefinitionSupplier, chainSupplier);
+        }
+
+        /**
+         * Active iff <em>both</em> {@code resource-resolution.enabled} (the cache feed) and
+         * {@code action-enrichment.enabled} (the kill-switch) are on — both default on. An
+         * {@link AllNestedConditions} because {@code @ConditionalOnProperty} is not repeatable on one type.
+         */
+        static final class EnrichmentActive extends AllNestedConditions {
+
+            EnrichmentActive() {
+                super(ConfigurationCondition.ConfigurationPhase.REGISTER_BEAN);
+            }
+
+            @ConditionalOnProperty(prefix = "opa.abac.resource-resolution", name = "enabled",
+                    havingValue = "true", matchIfMissing = true)
+            static class ResolutionEnabled {}
+
+            @ConditionalOnProperty(prefix = "opa.abac.action-enrichment", name = "enabled",
+                    havingValue = "true", matchIfMissing = true)
+            static class EnrichmentEnabled {}
         }
     }
 }

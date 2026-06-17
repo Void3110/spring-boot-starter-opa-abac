@@ -461,6 +461,11 @@ components:
     Catalog:
       type: object
       required: [id, name, createdAt]
+      # x-implements stamps the per-type Enrichable marker onto the generated DTO (action enrichment,
+      # Phase 6); the readOnly _actions affordance map is attached by ActionEnrichmentAdvice after the
+      # handler returns (server-emitted, never accepted on input).
+      x-implements:
+        - dev.dmitriikonovalov.example.catalog.security.CatalogEnrichable
       properties:
         id:
           type: string
@@ -474,6 +479,14 @@ components:
           type: string
           format: date-time
           readOnly: true
+        _actions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+          description: >
+            Affordance map — which actions the caller may perform on this resource
+            (server-emitted; absent when enrichment could not be computed).
 
     CatalogRequest:
       type: object
@@ -490,6 +503,8 @@ components:
     Category:
       type: object
       required: [id, catalogId, name]
+      x-implements:
+        - dev.dmitriikonovalov.example.catalog.security.CategoryEnrichable
       properties:
         id:
           type: string
@@ -514,6 +529,14 @@ components:
           description: >
             Dictionary-validated tags on this category. Each value is a string (single-valued key) or
             an array of strings (multi-valued key), per the tag definition.
+        _actions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+          description: >
+            Affordance map — which actions the caller may perform on this resource
+            (server-emitted; absent when enrichment could not be computed).
 
     CategoryRequest:
       type: object
@@ -542,6 +565,8 @@ components:
     Product:
       type: object
       required: [id, categoryId, name, priceCents, currency]
+      x-implements:
+        - dev.dmitriikonovalov.example.catalog.security.ProductEnrichable
       properties:
         id:
           type: string
@@ -565,6 +590,14 @@ components:
           type: string
           description: ISO 4217 currency code.
           example: USD
+        _actions:
+          type: object
+          additionalProperties:
+            type: boolean
+          readOnly: true
+          description: >
+            Affordance map — which actions the caller may perform on this resource
+            (server-emitted; absent when enrichment could not be computed).
 
     ProductRequest:
       type: object

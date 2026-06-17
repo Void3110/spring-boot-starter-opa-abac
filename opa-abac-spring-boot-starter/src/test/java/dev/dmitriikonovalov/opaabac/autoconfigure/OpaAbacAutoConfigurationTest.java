@@ -510,6 +510,19 @@ class OpaAbacAutoConfigurationTest {
                         dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice.class));
     }
 
+    @Test // U12 — a resolver present but resource-resolution OFF → no cache bean → the advice must NOT
+    // activate (the regression that broke the resolution-off IT suites: a @Component resolver exists while
+    // resolution is disabled, so gating on the resolver alone would try to wire a missing AbacResourceCache)
+    void actionEnrichmentAdviceAbsent_whenResolutionDisabled() {
+        webRunner.withPropertyValues("opa.abac.resource-resolution.enabled=false")
+                .withUserConfiguration(ResolverConfig.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed(); // the context must START (no missing-cache wiring error)
+                    assertThat(context).doesNotHaveBean(
+                            dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice.class);
+                });
+    }
+
     @Test // U13 — a user-supplied advice bean overrides the starter's (@ConditionalOnMissingBean)
     void userActionEnrichmentAdviceWins() {
         webRunner.withUserConfiguration(ResolverConfig.class, UserEnrichmentAdviceConfig.class).run(context ->
