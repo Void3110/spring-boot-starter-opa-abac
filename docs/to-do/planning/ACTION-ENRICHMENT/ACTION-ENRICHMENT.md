@@ -9,15 +9,38 @@ tags:
 
 # Action enrichment — affordance metadata on returned resources
 
-> **Status: Planning (design-direction set; not yet decomposed).** Phase 6 of [[POC-ROADMAP]]. This note
-> captures the agreed direction + the open design questions; a full work package (00-DESIGN /
-> 01-DECOMPOSITION / prompt / QA / STATUS stubs) is written once the open questions settle. The Phase-5
-> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]) has shipped; the remaining prerequisites are
-> **[[RESOURCE-RESOLUTION]] (Phase 5.97)** — the resolver SPI + request-scoped cache that supply the
-> resolved attributes enrichment evaluates against (direction point 4 below) — and **Phase 6.5**
-> (ADR [[0007-coarse-grained-permission-categories|0007]]) — the category model that fixes the
-> fine-action vocabulary the action registry enumerates. Slice order: **5.97 → 6.5 → 6**
-> (settled 2026-06-12).
+> **Status: Design settled (grill-me 2026-06-17) — ready for /decompose.** Phase 6 of [[POC-ROADMAP]].
+> Every fork below is pinned in **ADR [[0016-action-enrichment-affordance-metadata|0016]]** and the
+> **[[00-DESIGN]]** (behavior matrix + proof obligations). All prerequisites have shipped: the Phase-5
+> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]), the **[[RESOURCE-RESOLUTION]] (Phase 5.97)**
+> resolver SPI + request-scoped cache (the resolved attributes enrichment evaluates against), and the
+> **6.5/6.7** fine-action vocabulary (ADR [[0007-coarse-grained-permission-categories|0007]] +
+> [[0015-control-plane-vocabulary-categorization|0015]]). The open questions at the foot of this note are
+> resolved — see the *Settled (grill-me 2026-06-17)* block below. **Next: `/decompose`.**
+>
+> ### Settled (grill-me 2026-06-17) — supersedes the "Open questions" section below
+> - **Scope:** single-resource **and** list/page in this slice. Adopters: **catalog (all three types:
+>   Catalog/Category/Product) + user-management-service** (two registry shapes, proving generality).
+> - **Envelope:** inline `_actions` on the DTO (Option B — `x-implements` marker **+** an explicit
+>   `readOnly` `_actions` schema property). `Authorized<T>` wrapper rejected.
+> - **Registry:** the **per-type sub-interface** (`CategoryEnrichable extends Enrichable`) carries
+>   `default abacResourceType()` + `default abacActions()` — it *is* the registry + validation allowlist.
+>   No separate SPI bean.
+> - **Keys / set:** bare-verb keys; **instance-scoped verbs only.** `category` →
+>   `[view, update, delete, assign-tags]` (catalog/product verified vs real endpoints in 00→T).
+>   `assign-roles`/`list`/`create`/`define-tags` excluded. **`team` → `[list-members, add-member,
+>   remove-member]`** (the OPA-fully-decided subset; the Java-co-gated escalation verbs excluded —
+>   *affordance honesty*).
+> - **Feed:** generalize the 5.97 `AbacResourceCache` — the **list path write-through**s its post-filter
+>   survivors; the advice has one `cache.get(type,id)` read path. The **`AbacResourceCache` interface
+>   relocates to `opa-abac-core`**. Cache = attribute snapshot, **never a verdict**.
+> - **Failure (fail-closed core):** **omit `_actions` on any failure** (bulk error / cache miss /
+>   ancestor failure) — never a fabricated all-false map. Present ⇒ complete real verdict; absent ⇒
+>   couldn't-compute.
+> - **Perf / opt-out:** automatic on any `Enrichable` return (opt-in = the marker); rely on the
+>   `perPage ≤ 100` cap, no separate enrichment limit; `opa.abac.action-enrichment.enabled` kill-switch.
+> - **OPA wiring:** reuse `allowAll` verbatim (advice owns the P×V flatten/refold), one `bulk` per type
+>   per response. **Zero `OpaClient` change, zero Rego change.**
 
 ## What it is
 
