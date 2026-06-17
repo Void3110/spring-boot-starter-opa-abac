@@ -14,7 +14,10 @@ tags:
 > Testcontainers + the in-process `com.sun.net.httpserver.HttpServer` OPA stub — no WireMock), **E** =
 > e2e through the gateway (newman). This is an **affordance** slice (read-side): the cases assert *what
 > the `_actions` map contains*, the three fail-closed semantics, and that enforcement + data-filtering are
-> untouched. There is **no policy (P) section** — zero Rego change (enrichment reuses `bulk`/`allow`).
+> untouched. There is **no policy (P) section** — no change to existing *decision logic*. *(Correction,
+> 2026-06-17: the original "zero Rego change" premise was wrong — `bulk` existed only in `category.rego`,
+> so the slice **added** the identical decision-preserving `bulk` entrypoint to `catalog`/`product`/`team`
+> rego with mirrored `opa test` cases. OPA must therefore be reloaded on first pull. See ADR 0016 §6.)*
 
 ## Conventions
 
@@ -30,9 +33,10 @@ tags:
   provably reflects *resolved* state). Query-count assertions use the existing IT hook (the 5.97
   no-second-SELECT pattern).
 - **e2e:** full rig — `./profile.sh up` → `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`;
-  `./deploy.sh build` to force new images; mint tokens **in-network** (issuer `keycloak:8888`). **No OPA
-  restart needed** (zero Rego change). Fixtures: a dedicated set under a registered catalog id (shared
-  fixtures must not grow).
+  `./deploy.sh build` to force new images; mint tokens **in-network** (issuer `keycloak:8888`). **OPA
+  must reload** — the slice added the `bulk` entrypoint to `catalog`/`product`/`team` rego, so the runner
+  restarts the OPA container itself (additive — no decision change, the existing matrices stay
+  byte-identical). Fixtures: a dedicated set under a registered catalog id (shared fixtures must not grow).
 - **The pinned contract (ADR [[0016-action-enrichment-affordance-metadata|0016]] + the three
   decomposition-pinned semantics):**
 
@@ -137,8 +141,10 @@ tags:
 - [ ] **Affordance ≠ enforcement.** The advice never blocks a request; a `_actions:false` matches a real
       gate `403` (E5); enforcement decisions and data-filtering row sets are out of the diff
       (grep `git diff --name-only` — no `@OpaPreAuthorize` value change, no `findAuthorized` decision change).
-- [ ] **Zero `OpaClient` / zero Rego.** `allowAll` reused verbatim; `opa test` green and unmodified;
-      `OpaClient` signatures unchanged.
+- [x] **Zero `OpaClient` change / no decision change.** `allowAll` reused verbatim; `OpaClient` signatures
+      unchanged. *(Correction, 2026-06-17: not "zero Rego" — the `bulk` entrypoint was **added** to
+      `catalog`/`product`/`team` rego, mirroring `category.rego`; it adds no new decision, so `opa test`
+      stays green and the existing decision tests are unmodified — but OPA must reload. ADR 0016 §6.)*
 
 ## Related
 

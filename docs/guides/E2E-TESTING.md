@@ -125,7 +125,8 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 ./run-permission-categories-matrix.sh
 
 # Action-enrichment matrix (Phase 6 — the _actions affordance map; same full rig; rebuild BOTH images.
-# NO OPA restart needed — zero Rego change. The script also runs an omit-on-failure check, OPA paused.)
+# The slice ADDS a `bulk` rule to catalog/product/team rego, so OPA must reload — the runner restarts
+# the OPA container itself. The script also runs an omit-on-failure check, OPA paused.)
 ./run-action-enrichment-matrix.sh
 ```
 
@@ -265,8 +266,11 @@ resolver and keeps today's semantics end to end).
 
 `run-action-enrichment-matrix.sh` proves **action enrichment** (ADR
 [[adr/0016-action-enrichment-affordance-metadata|0016]], [[ACTION-ENRICHMENT]]) live: the read-side
-`_actions` affordance map the response advice attaches. Same full rig; rebuild BOTH app images, but **no
-OPA restart** (zero Rego change). It seeds the dedicated `aaaa…` team-governed catalog (a read-only and a
+`_actions` affordance map the response advice attaches. Same full rig; rebuild BOTH app images, and **OPA
+must reload** — the slice **adds the `bulk` entrypoint** to `catalog`/`product`/`team` rego (the
+enrichment `allowAll` calls `/v1/data/<type>/bulk`), so the runner restarts the OPA container itself
+before minting tokens (additive — the `bulk` rule adds no new decision, so the *existing* matrices are
+byte-identical). It seeds the dedicated `aaaa…` team-governed catalog (a read-only and a
 read+write role; emea/apac categories) and asserts the cells: a read-only subject's `_actions` is honest
 (`view:true`, every mutating verb `false`), a writer's are all `true`, each `items` element of a page
 carries its own complete map (one bulk per page), the verb set excludes `assign-tags` for catalog, and —

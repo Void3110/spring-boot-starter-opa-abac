@@ -33,6 +33,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -76,7 +77,7 @@ class ActionEnrichmentIT {
 
     @Autowired MockMvc mockMvc;
     @Autowired CatalogRepository catalogs;
-    @Autowired CategoryRepository categories;
+    @MockitoSpyBean CategoryRepository categories; // spied so I1 can prove the advice reused the gate's snapshot
     @Autowired ProductRepository products;
     @Autowired CatalogHierarchyService hierarchy;
 
@@ -103,6 +104,23 @@ class ActionEnrichmentIT {
                 .andExpect(jsonPath("$._actions.update").value(false))
                 .andExpect(jsonPath("$._actions.delete").value(false))
                 .andExpect(jsonPath("$._actions.assign-tags").value(false));
+    }
+
+    @Test // I1 (single-GET clause) — the advice enriches from the gate's cached snapshot, NOT a re-load:
+    // a getCategory loads the category exactly once (the resolver's findById), and the advice reads
+    // _actions off the request-scoped cache without a second SELECT for that row.
+    void singleGetEnrichesFromCacheWithoutSecondSelect() throws Exception {
+        var catalog = seedCatalog();
+        var emea = seedCategory(catalog.getId(), null, "emea-cat", Map.of("region", "emea"));
+        ProgrammableOpaClient.perContextRule = ctx -> true;
+        org.mockito.Mockito.clearInvocations(categories);
+
+        mockMvc.perform(get("/api/v1/catalogs/{c}/categories/{id}", catalog.getId(), emea.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$._actions.view").value(true));
+
+        // exactly one load by id — the gate's resolver; the advice took the cache path, never re-loaded
+        org.mockito.Mockito.verify(categories, org.mockito.Mockito.times(1)).findById(emea.getId());
     }
 
     @Test // I3 — a full-access subject → every category verb true

@@ -19,8 +19,12 @@
 # Prereq: the full rig is up WITH OIDC + OPA + the user-service, with the Phase-6 images:
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 #   ./deploy.sh build          # force the Phase-6 app code (the Enrichable DTOs + the advice) into the pods
-# NO OPA restart is needed — this slice changes ZERO Rego (enrichment reuses the bulk/allow rules). The
-# E4 outage cell is exercised by pausing the OPA container for that one request, then unpausing.
+# This slice ADDS a `bulk` entrypoint to catalog.rego / product.rego / team.rego (the enrichment
+# allowAll calls /v1/data/<type>/bulk) — so OPA MUST reload the policies. OPA has no --watch, so this
+# runner restarts the OPA container itself before minting tokens (mirrors run-resource-resolution-matrix.sh);
+# on an already-up rig that has not been restarted since the bulk rules landed, catalog/product enrichment
+# would otherwise serve an undefined `bulk` document → all-false → _actions omitted. The E4 outage cell
+# is exercised by pausing the OPA container for that one request, then unpausing.
 #
 # Fixture set (registered in scripts/postman/README.md — dedicated, no shared fixtures touched):
 #   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa  the team-governed catalog (emea/apac categories + a product)
@@ -67,6 +71,21 @@ command -v newman >/dev/null 2>&1 || {
 RUNTIME=""
 for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; break; }; done
 [ -n "$RUNTIME" ] || { echo "ERROR: need docker or podman to mint in-network tokens." >&2; exit 1; }
+
+# --- reload OPA so the per-type `bulk` rules are live --------------------------
+# This slice added the `bulk` entrypoint to catalog.rego / product.rego / team.rego; the enrichment
+# advice calls /v1/data/<type>/bulk. OPA loads /policies once (no --watch), so an already-up rig that
+# hasn't restarted since the rules landed serves an undefined `bulk` document → all-false → _actions
+# omitted. Restart and wait for health before minting tokens (mirrors run-resource-resolution-matrix.sh).
+echo "==> Restarting OPA ($OPA_CONTAINER) so the per-type bulk rules are loaded ..."
+"$RUNTIME" restart "$OPA_CONTAINER" >/dev/null
+for _ in $(seq 1 30); do
+  curl -sf "http://localhost:28181/health" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -sf "http://localhost:28181/health" >/dev/null 2>&1 || {
+  echo "ERROR: OPA did not become healthy after restart." >&2; exit 1;
+}
 
 # --- helpers -----------------------------------------------------------------
 mint_token() {
@@ -147,8 +166,12 @@ for pair in "emea:$EMEA_CATEGORY_ID" "apac:$APAC_CATEGORY_ID"; do
 done
 echo "  emea=$EMEA_CATEGORY_ID apac=$APAC_CATEGORY_ID"
 
-# A seeded team id for the ungated-getTeam degrade cell (E3) — read straight from the user-service.
-echo "  team (for the E3 ungated-read degrade) = $TEAM_ID"
+# The team `_actions` cells (the ungated-getTeam degrade AND the populated-map positive path) are NOT in
+# this gateway collection: /api/v1/teams is served by the user-mgmt service, which is not routed through
+# the catalog APISIX gateway, so a gateway request for a team would 404. Those cells are covered by the
+# user-mgmt module tests — ActionEnrichmentIT (the live ungated-degrade: 200, _actions absent on the wire)
+# and TeamEnrichmentAdviceTest (the populated map: the OPA-decided subset, escalation verbs excluded).
+echo "  team $TEAM_ID seeded (governs $AE_CATALOG_ID); its _actions cells are covered by the user-mgmt tests."
 
 # --- run newman ----------------------------------------------------------------
 mkdir -p "$REPORT_DIR/$RUN_ID"
@@ -156,24 +179,24 @@ echo "==> newman run $COLLECTION (action-enrichment matrix through the gateway)"
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
-  --env-var "user_service=$USER_SERVICE" \
   --env-var "ae_catalog_id=$AE_CATALOG_ID" \
   --env-var "emea_category_id=$EMEA_CATEGORY_ID" \
   --env-var "apac_category_id=$APAC_CATEGORY_ID" \
-  --env-var "team_id=$TEAM_ID" \
   --env-var "viewer_token=$VIEWER_TOKEN" \
   --env-var "editor_token=$EDITOR_TOKEN" \
-  --env-var "opa_container=$OPA_CONTAINER" \
-  --env-var "runtime=$RUNTIME" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/action-enrichment-matrix-report.json"
 
-# --- E4: omit-on-failure, live (newman cannot pause a container, so do it here) ---------------
-# Pause OPA so the ENRICHMENT bulk call fails, then GET the category as the editor. The handler's own
-# gate already passed (its allow decision was cached by the gate before we paused — but to be safe we
-# read a path whose gate is independent), so the response must still be 200 with the body intact and
-# _actions ABSENT (omit-on-failure) — never an all-false map, never a 5xx from enrichment.
-echo "==> E4: omit-on-failure (OPA paused for the enrichment bulk call) ..."
+# --- E4: enrichment-never-harms SMOKE CHECK with OPA down (NOT the full omit-on-failure proof) -------
+# Pause OPA and GET a category as the editor. HONEST SCOPE: with OPA paused the GATE also fails closed
+# (403) — so this does NOT exercise the "gate-allowed read, enrichment bulk fails -> 200 + _actions
+# absent" path (newman/curl cannot keep the gate up while only the enrichment call fails). What it DOES
+# prove, deterministically, is the weaker but still valuable invariant: an OPA outage NEVER turns a
+# response into a 5xx and NEVER injects a fabricated all-false _actions map. The real gate-allowed
+# omit-on-failure path is proven by the catalog ActionEnrichmentIT / the advice unit case U6 (a stubbed
+# bulk that throws / returns all-false -> _actions unset), where the gate and the bulk call are
+# independently controllable.
+echo "==> E4: enrichment-never-harms smoke check (OPA paused; full omit-on-failure proof is U6/the IT) ..."
 "$RUNTIME" pause "$OPA_CONTAINER" >/dev/null
 set +e
 E4_BODY="$(curl -s -o /dev/null -w '%{http_code}' \

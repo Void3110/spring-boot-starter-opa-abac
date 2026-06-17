@@ -142,8 +142,11 @@ discipline that dropped `assign-roles`); the expected sets:
 
 ## 5. What this slice does NOT change
 
-- **Zero `OpaClient` change** (reuse `allowAll`) and **zero Rego change** (`bulk` already does per-item
-  `allow`). Enrichment is the first *consumer* of the batch primitive, not a reshape.
+- **Zero `OpaClient` change** (reuse `allowAll`) and **no change to existing decision logic**. *(Correction,
+  2026-06-17: this design assumed the `bulk` rule already existed for every enriched type — it did not, only
+  `category.rego` had it. The slice **added** the identical decision-preserving `bulk` entrypoint to
+  `catalog`/`product`/`team` rego, so OPA must reload on first pull. "Zero Rego change" was the wrong framing;
+  see ADR 0016 §6.)* Enrichment is the first *consumer* of the batch primitive, not a reshape.
 - **Enforcement** (the `@OpaPreAuthorize` gate, ADR 0006 layers) and **data filtering**
   (`findAuthorized`'s decisions, ADR 0005) — untouched. The list path gains only a *write-through* to the
   cache; its authorization output is identical.

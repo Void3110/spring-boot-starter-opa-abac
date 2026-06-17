@@ -217,7 +217,8 @@ sub-interface mechanism generalizes.
   included), as the *first real consumer* of the Phase-5 batch primitive and the 5.97 cache; adoption per
   type is one sub-interface + two schema lines; the per-type registry doubles as a validation allowlist;
   two enriched services prove the mechanism generalizes across two registry shapes. Zero `OpaClient`
-  change, zero Rego change.
+  change; zero change to existing decision logic (the `bulk` primitive was *extended* to the newly-enriched
+  types — additive, allow-mapped-over-a-list; see §6 Correction).
 - **Cost:** the `AbacResourceCache` interface relocates to `core` (mechanical; the impl stays); the list
   path gains a write-through into that cache (`spring-data` → core interface); enrichable schemas gain an
   `_actions` property and the example DTOs gain a marker per type; one `bulk` call per enriched response
