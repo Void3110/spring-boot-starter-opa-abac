@@ -459,6 +459,238 @@ class OpaAbacAutoConfigurationTest {
         }
     }
 
+    // --- action-enrichment advice + write-through wiring (Phase 6, T4) --------
+
+    @Test // U11 — defaults, web app, a resolver present (→ a cache bean) → the advice bean is registered
+    void actionEnrichmentAdvicePresent_byDefault() {
+        webRunner.withUserConfiguration(ResolverConfig.class).run(context -> {
+            assertThat(context).hasSingleBean(
+                    dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice.class);
+            // the cache bean the advice (and the write-through) feed from exists
+            assertThat(context).hasSingleBean(dev.dmitriikonovalov.opaabac.core.AbacResourceCache.class);
+        });
+    }
+
+    @Test // U12 — opa.abac.action-enrichment.enabled=false → NO advice bean (the byte-identical rollback)
+    void actionEnrichmentAdviceAbsent_whenDisabled() {
+        webRunner.withPropertyValues("opa.abac.action-enrichment.enabled=false")
+                .withUserConfiguration(ResolverConfig.class)
+                .run(context -> assertThat(context).doesNotHaveBean(
+                        dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice.class));
+    }
+
+    @Test // U11/U12 — the AbacQueryService receives the cache collaborator only when enrichment is enabled
+    // (proven via the write-through behavior: a list query caches its survivors iff the collaborator is wired)
+    void writeThroughCollaborator_wiredOnlyWhenEnabled() {
+        // enabled (default): a findAuthorized over a coarse-allow path write-throughs the survivor.
+        webRunner.withUserConfiguration(ResolverConfig.class, RecordingCacheConfig.class,
+                        AllowAllOpaClientConfig.class)
+                .withPropertyValues("opa.abac.partial-eval.enabled=false") // coarse path, no compile
+                .run(context -> {
+                    RecordingCacheConfig.RecordingCache cache = context.getBean(RecordingCacheConfig.RecordingCache.class);
+                    runListQuery(context);
+                    assertThat(cache.puts).as("enrichment enabled → write-through populates the cache").isNotEmpty();
+                });
+        // disabled: the same query caches nothing (the collaborator was not wired).
+        webRunner.withUserConfiguration(ResolverConfig.class, RecordingCacheConfig.class,
+                        AllowAllOpaClientConfig.class)
+                .withPropertyValues("opa.abac.action-enrichment.enabled=false",
+                        "opa.abac.partial-eval.enabled=false")
+                .run(context -> {
+                    RecordingCacheConfig.RecordingCache cache = context.getBean(RecordingCacheConfig.RecordingCache.class);
+                    runListQuery(context);
+                    assertThat(cache.puts).as("enrichment disabled → write-through dormant").isEmpty();
+                });
+    }
+
+    @Test // U13 — non-web context → no advice bean
+    void actionEnrichmentAdviceAbsent_withoutWeb() {
+        runner.withUserConfiguration(ResolverConfig.class).run(context ->
+                assertThat(context).doesNotHaveBean(
+                        dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice.class));
+    }
+
+    @Test // U13 — a user-supplied advice bean overrides the starter's (@ConditionalOnMissingBean)
+    void userActionEnrichmentAdviceWins() {
+        webRunner.withUserConfiguration(ResolverConfig.class, UserEnrichmentAdviceConfig.class).run(context ->
+                assertThat(context.getBean(
+                        dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice.class))
+                        .isSameAs(UserEnrichmentAdviceConfig.ADVICE));
+    }
+
+    @Test // U13 — the configuration metadata carries the new property (default true)
+    void configurationMetadataCarriesActionEnrichmentProperty() throws Exception {
+        try (java.io.InputStream in = getClass()
+                .getResourceAsStream("/META-INF/spring-configuration-metadata.json")) {
+            assertThat(in).as("spring-configuration-metadata.json on the classpath").isNotNull();
+            String metadata = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(metadata).contains("opa.abac.action-enrichment.enabled");
+        }
+    }
+
+    /** Run a list query against the wired AbacQueryService with a hand-rolled repo returning one row. */
+    private static void runListQuery(
+            org.springframework.context.ApplicationContext context) {
+        var service = context.getBean(dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService.class);
+        service.findAuthorized(new OneRowRepo(), null, new dev.dmitriikonovalov.opaabac.core.AbacContext(
+                new dev.dmitriikonovalov.opaabac.core.AbacContext.Subject("u", java.util.List.of(), java.util.Map.of()),
+                "category:view",
+                new dev.dmitriikonovalov.opaabac.core.AbacContext.Resource("category", null, java.util.Map.of()),
+                java.util.Map.of()));
+    }
+
+    /**
+     * A minimal {@link org.springframework.data.jpa.repository.JpaSpecificationExecutor} returning one
+     * survivor row for any {@code findAll(spec)} — enough to exercise the write-through wiring without
+     * Mockito (the starter tests stay mock-free, using real {@code ApplicationContextRunner} configs).
+     */
+    static final class OneRowRepo
+            implements org.springframework.data.jpa.repository.JpaSpecificationExecutor<EnrichmentRow> {
+        @Override
+        public java.util.List<EnrichmentRow> findAll(
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
+            return java.util.List.of(new EnrichmentRow("r-1"));
+        }
+
+        @Override
+        public Optional<EnrichmentRow> findOne(
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
+            return Optional.empty();
+        }
+
+        @Override
+        public java.util.List<EnrichmentRow> findAll(
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec,
+                org.springframework.data.domain.Sort sort) {
+            return java.util.List.of(new EnrichmentRow("r-1"));
+        }
+
+        @Override
+        public org.springframework.data.domain.Page<EnrichmentRow> findAll(
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec,
+                org.springframework.data.domain.Pageable pageable) {
+            return new org.springframework.data.domain.PageImpl<>(
+                    java.util.List.of(new EnrichmentRow("r-1")), pageable, 1);
+        }
+
+        @Override
+        public long count(org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
+            return 1;
+        }
+
+        @Override
+        public boolean exists(org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
+            return true;
+        }
+
+        @Override
+        public long delete(org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
+            return 0;
+        }
+
+        @Override
+        public <S extends EnrichmentRow, R> R findBy(
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec,
+                java.util.function.Function<org.springframework.data.repository.query.FluentQuery
+                        .FetchableFluentQuery<S>, R> queryFunction) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserEnrichmentAdviceConfig {
+        static final dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice ADVICE =
+                new dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice(
+                        new NoOpOpaClient(),
+                        new dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache(),
+                        (u, t, i) -> Optional.empty(),
+                        null);
+
+        @Bean
+        dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice actionEnrichmentAdvice() {
+            return ADVICE;
+        }
+    }
+
+    /** A do-nothing OpaClient for constructing a user-supplied advice override. */
+    static final class NoOpOpaClient implements dev.dmitriikonovalov.opaabac.core.OpaClient {
+        @Override
+        public boolean allow(dev.dmitriikonovalov.opaabac.core.AbacContext c) {
+            return false;
+        }
+
+        @Override
+        public dev.dmitriikonovalov.opaabac.core.PartialResult compile(
+                dev.dmitriikonovalov.opaabac.core.AbacContext c) {
+            return dev.dmitriikonovalov.opaabac.core.PartialResult.denyAll();
+        }
+
+        @Override
+        public java.util.List<Boolean> allowAll(
+                java.util.List<dev.dmitriikonovalov.opaabac.core.AbacContext> contexts) {
+            return java.util.Collections.nCopies(contexts.size(), false);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class RecordingCacheConfig {
+        @Bean
+        RecordingCache abacResourceCache() {
+            return new RecordingCache();
+        }
+
+        static final class RecordingCache implements dev.dmitriikonovalov.opaabac.core.AbacResourceCache {
+            final java.util.List<String> puts = new java.util.ArrayList<>();
+
+            @Override
+            public <T> Optional<T> get(String type, String id, Class<T> as) {
+                return Optional.empty();
+            }
+
+            @Override
+            public void put(String type, String id, Object resource) {
+                puts.add(type + ":" + id);
+            }
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AllowAllOpaClientConfig {
+        @Bean
+        dev.dmitriikonovalov.opaabac.core.OpaClient opaClient() {
+            return new dev.dmitriikonovalov.opaabac.core.OpaClient() {
+                @Override
+                public boolean allow(dev.dmitriikonovalov.opaabac.core.AbacContext c) {
+                    return true; // coarse-allow path: the list returns its survivors
+                }
+
+                @Override
+                public dev.dmitriikonovalov.opaabac.core.PartialResult compile(
+                        dev.dmitriikonovalov.opaabac.core.AbacContext c) {
+                    return dev.dmitriikonovalov.opaabac.core.PartialResult.allowAll();
+                }
+
+                @Override
+                public java.util.List<Boolean> allowAll(
+                        java.util.List<dev.dmitriikonovalov.opaabac.core.AbacContext> contexts) {
+                    return java.util.Collections.nCopies(contexts.size(), true);
+                }
+            };
+        }
+    }
+
+    record EnrichmentRow(String id) implements dev.dmitriikonovalov.opaabac.core.AbacDataObject {
+        @Override
+        public String abacResourceType() {
+            return "category";
+        }
+
+        @Override
+        public String abacResourceId() {
+            return id;
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class ResolverConfig {
         static final dev.dmitriikonovalov.opaabac.core.AbacResourceResolver RESOLVER =
