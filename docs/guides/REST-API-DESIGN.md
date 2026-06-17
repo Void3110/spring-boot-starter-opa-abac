@@ -235,6 +235,12 @@ client-actionable failure the handlers discriminate, not one code per status.
   **`Location` header** pointing at the new resource's canonical URL (`Location: /api/v1/<collection>/<id>`,
   keyed by the resource's addressable identifier — built via `ServletUriComponentsBuilder`). *(Adopted in
   Phase 5.9.)*
+- **An enriched resource** may carry a `readOnly` **`_actions`** affordance map — *which actions the caller
+  may perform on this resource* (`{"view": true, "update": false, …}`, bare-verb keys). It is attached by a
+  response advice **after** the handler returns (server-emitted, never accepted on input), rides on each
+  `items` element of a page too, and is **omitted entirely when enrichment could not be computed** (absent
+  ⇒ could-not-compute; never an empty `{}` or all-`false` map). It is **affordance, not enforcement** — the
+  real gate decides independently. *(Adopted in Phase 6; see [[ACTION-ENRICHMENT]].)*
 
 ### Readonly and server-owned fields
 
@@ -488,7 +494,6 @@ is a deliberate slice, not a drive-by.
 
 | ◓ Target | What it would add | Why it's deferred / what it buys |
 |---|---|---|
-| **ABAC `actions` / `pageActions` metadata** | each resource response carries `actions: [{action, allowed, reason}]`; each list carries `pageActions` | Lets a UI render "can I click this button" without a second round-trip. This is **Phase 6 — action enrichment** (already on the roadmap, see [[POC-ROADMAP]]); it lands on the 5.95 list envelope. |
 | **Client `?sort=`** | caller-chosen ordering on paged lists | Multiplies the spec surface + a sortable-field-allowlist validation story while proving nothing new about the residual composition; the fixed `createdAt ASC, id ASC` order ([§7](#7-pagination)) keeps paging deterministic without it. Split out of 5.95 (ADR [[0012-pagination-envelope|0012]]). |
 | **`Retry-After` on `503`** | a hint for when to retry a fail-closed dependency outage | Small polish on the `503` path once a real backoff story exists. |
 
@@ -500,6 +505,10 @@ is a deliberate slice, not a drive-by.
 > **Adopted in Phase 5.95:** the **pagination envelope** — `{count, page, perPage, items}` + strict
 > 0-based `page`/`perPage` on every public list, composed with the partial-eval filter (now
 > [§7](#7-pagination), ADR [[0012-pagination-envelope|0012]]).
+>
+> **Adopted in Phase 6:** the **`_actions` affordance map** on enriched resources/pages (now
+> [§4](#4-request-and-response-bodies), ADR [[0016-action-enrichment-affordance-metadata|0016]],
+> [[ACTION-ENRICHMENT]]) — `readOnly`, server-emitted, omitted when not computed; affordance, not enforcement.
 >
 > When a target is adopted, move its row out of this section and into the body as a normal rule, the same
 > way the portal guide retired its own "Missing" notes as features landed.

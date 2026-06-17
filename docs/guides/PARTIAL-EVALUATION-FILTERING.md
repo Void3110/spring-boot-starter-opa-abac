@@ -133,6 +133,14 @@ the batch recheck. See [[PERMISSION-MODEL]] and ADR
    (`catalogId`/`categoryId`).
 3. **AND, never replace** — the residual is AND-ed with the scope, so no cross-scope row leaks.
 
+> **List-path cache write-through (Phase 6 feed).** When an `AbacResourceCache` collaborator is wired
+> (action enrichment on, [[ACTION-ENRICHMENT]]), `findAuthorized` write-throughs its **post-filter survivor
+> rows** into the request-scoped cache keyed `(type, id)`, on **every** query path (pure-SQL, allowlist,
+> kill-switch; unpaged + paged). The enrichment advice then reads the *same instance* the query returned —
+> no double-load, no attribute drift. It is a pure additive write: the authorization decisions and return
+> values are byte-identical, denied/dropped rows are never written, and absent the collaborator there is
+> no write-through at all.
+
 ```java
 @OpaPreAuthorize(action = "category:read", resourceType = "'category'")   // coarse gate (layer 2)
 public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) {
@@ -256,4 +264,6 @@ not already use this partial-eval path (e.g. the product list's plain scoped que
   [[adr/0010-hierarchy-aware-list-filter|0010]] (the hierarchy-aware list widening above) · ADR
   [[adr/0012-pagination-envelope|0012]] (the paged composition above) ·
   [[TWO-LAYER-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[TAG-BASED-AUTHORIZATION]] ·
-  [[HIERARCHICAL-AUTHORIZATION]] · [[REST-API-DESIGN]] · [[E2E-TESTING]] · [[POC-ROADMAP]].
+  [[HIERARCHICAL-AUTHORIZATION]] · [[ACTION-ENRICHMENT]] (the list-path write-through feeds its
+  read-side `_actions` map; the `allowAll`/`bulk` batch primitive is shared) · [[REST-API-DESIGN]] ·
+  [[E2E-TESTING]] · [[POC-ROADMAP]].

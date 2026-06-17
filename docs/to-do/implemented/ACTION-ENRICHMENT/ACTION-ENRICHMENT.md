@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -9,14 +9,28 @@ tags:
 
 # Action enrichment — affordance metadata on returned resources
 
-> **Status: Design settled (grill-me 2026-06-17) — ready for /decompose.** Phase 6 of [[POC-ROADMAP]].
-> Every fork below is pinned in **ADR [[0016-action-enrichment-affordance-metadata|0016]]** and the
-> **[[00-DESIGN]]** (behavior matrix + proof obligations). All prerequisites have shipped: the Phase-5
-> batch primitive (`OpaClient.allowAll`, [[DATA-FILTERING]]), the **[[RESOURCE-RESOLUTION]] (Phase 5.97)**
-> resolver SPI + request-scoped cache (the resolved attributes enrichment evaluates against), and the
-> **6.5/6.7** fine-action vocabulary (ADR [[0007-coarse-grained-permission-categories|0007]] +
-> [[0015-control-plane-vocabulary-categorization|0015]]). The open questions at the foot of this note are
-> resolved — see the *Settled (grill-me 2026-06-17)* block below. **Next: `/decompose`.**
+> ✅ **SHIPPED** (2026-06-17, branch `feature/void3110/action-enrichment`, T1–T7). [[POC-ROADMAP]]
+> **Phase 6**, pinned by ADR [[0016-action-enrichment-affordance-metadata|0016]]; mechanism guide
+> [[ACTION-ENRICHMENT]] (`docs/guides/`). A library `ResponseBodyAdvice` attaches an `_actions` affordance
+> map — *which actions the caller may perform on each returned resource* — computed by one batch OPA call
+> against the resource's resolved attributes (the 5.97 cache). Read-side affordance, **not** enforcement.
+>
+> **What shipped:** the `AbacResourceCache` interface relocated to `opa-abac-core` + the `Enrichable`
+> marker (T1); `ActionEnrichmentAdvice` (the P×V refold, omit-on-failure) in `opa-abac-spring-security`
+> (T2); the list-path cache write-through in `opa-abac-spring-data` (T3); the starter wiring +
+> `opa.abac.action-enrichment.enabled` kill-switch (T4); catalog adoption — three `<Type>Enrichable` +
+> `x-implements`/`_actions` schema + codegen + real-Postgres ITs (T5); user-management adoption —
+> `TeamEnrichable` (the OPA-decided subset; the Java-co-gated escalation verbs excluded), the
+> ungated-`getTeam` degrade, the cross-service e2e (T6); docs + the `bulk`-primitive extension to every
+> enriched type (T7). Three pinned invariants held end-to-end: **omit-never-fabricate**,
+> **affordance-honesty**, **cache-as-snapshot**. Codegen-fit resolved (`_actions` →
+> `getActions`/`setActions`, no generator config). The action-enrichment e2e matrix is green through the
+> gateway and every existing matrix is numerically unchanged (additive). Proof + per-ticket detail:
+> `STATUS-01…07`.
+>
+> _Original planning banner (preserved): design settled via grill-me 2026-06-17; every fork pinned in
+> ADR 0016 + [[00-DESIGN]]; prerequisites — the Phase-5 batch primitive ([[DATA-FILTERING]]), the 5.97
+> resolver/cache ([[RESOURCE-RESOLUTION]]), the 6.5/6.7 vocabulary — all shipped._
 >
 > ### Settled (grill-me 2026-06-17) — supersedes the "Open questions" section below
 > - **Scope:** single-resource **and** list/page in this slice. Adopters: **catalog (all three types:
@@ -64,7 +78,7 @@ tags:
 | **T4** | Starter auto-config wiring + `opa.abac.action-enrichment.enabled` kill-switch | starter | ✅ |
 | **T5** | Catalog adoption: 3 `<Type>Enrichable` + 3 schema blocks + codegen + ITs | example-catalog | ✅ |
 | **T6** | user-mgmt adoption: `TeamEnrichable` (OPA-decided subset) + cross-service e2e | example-usermgmt | ✅ |
-| **T7** | Docs (guide + reconciliations) + roadmap/stories/index + Mulch + folder move | docs | ☐ |
+| **T7** | Docs (guide + reconciliations) + roadmap/stories/index + Mulch + folder move | docs | ✅ |
 
 > **Critical path:** `T1 → (T2 ∥ T3) → T4 → T5 → T6 → T7`. **T1–T4** are the independently-landable
 > library subset (opt-in, dormant until an app ships an `Enrichable` DTO). Conventions: clean-room

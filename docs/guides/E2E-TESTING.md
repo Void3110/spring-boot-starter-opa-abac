@@ -123,6 +123,10 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 
 # Permission-categories matrix (Phase 6.5 — categories/denials/delegation; rebuild BOTH images first)
 ./run-permission-categories-matrix.sh
+
+# Action-enrichment matrix (Phase 6 — the _actions affordance map; same full rig; rebuild BOTH images.
+# NO OPA restart needed — zero Rego change. The script also runs an omit-on-failure check, OPA paused.)
+./run-action-enrichment-matrix.sh
 ```
 
 > Since Phase 5.9 the matrices also assert the **RFC-7807 `problem+json` error contract** on deny
@@ -259,6 +263,18 @@ get-product-after-delete now expects the gate's 403 (commented in place). Every 
 byte-identical and green — the team matrix doubles as the user-mgmt coexistence proof (it registers no
 resolver and keeps today's semantics end to end).
 
+`run-action-enrichment-matrix.sh` proves **action enrichment** (ADR
+[[adr/0016-action-enrichment-affordance-metadata|0016]], [[ACTION-ENRICHMENT]]) live: the read-side
+`_actions` affordance map the response advice attaches. Same full rig; rebuild BOTH app images, but **no
+OPA restart** (zero Rego change). It seeds the dedicated `aaaa…` team-governed catalog (a read-only and a
+read+write role; emea/apac categories) and asserts the cells: a read-only subject's `_actions` is honest
+(`view:true`, every mutating verb `false`), a writer's are all `true`, each `items` element of a page
+carries its own complete map (one bulk per page), the verb set excludes `assign-tags` for catalog, and —
+the load-bearing pair — **affordance ≠ enforcement** (a `_actions:false` matches a real `403` on the
+mutation) and **omit-on-failure** (the script pauses OPA and asserts the response is never a 5xx and never
+carries a fabricated all-`false` map). The team `_actions` degrades to absent on the ungated `getTeam`
+(asserted in the user-mgmt IT). Every existing matrix stays green — `_actions` is a purely additive field.
+
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.
 
@@ -288,4 +304,5 @@ sensible follow-up, tracked separately.
 - The library being exercised: [[DOMAIN-MODEL]], [[CONCURRENCY-AND-LOCKING]]
 - Tag-based authorization (the tag matrix): [[TAG-BASED-AUTHORIZATION]]
 - Data filtering (the filter matrix): [[PARTIAL-EVALUATION-FILTERING]]
+- Action enrichment (the affordance matrix): [[ACTION-ENRICHMENT]]
 - Implementation plan (ticket 5 fleshes out the suite): [[DOMAIN-MODEL-FOUNDATION]]
