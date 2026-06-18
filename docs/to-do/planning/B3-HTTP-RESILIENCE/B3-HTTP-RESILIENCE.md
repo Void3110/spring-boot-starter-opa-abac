@@ -22,7 +22,7 @@ tags:
 
 | # | Ticket | Module(s) | Status |
 |---|--------|-----------|--------|
-| **T1** | `CallGuard` seam + Resilience4j impl + per-edge config | `opa-abac-spring-security` | ☐ |
+| **T1** | `CallGuard` seam + Resilience4j impl + per-edge config | `opa-abac-spring-security` | ✅ |
 | **T2** | Resilient `OpaClient` decorator + starter auto-config (the library feature) | `opa-abac-spring-security` · `…-spring-boot-starter` | ☐ |
 | **T3** | App-side resolve + tag wrappers — B2-preserving | `example-catalog-management-service` | ☐ |
 | **T4** | e2e fault-injecting headline + docs + slice record | `scripts/postman` · `infra` · `docs/guides` | ☐ |
