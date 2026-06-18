@@ -65,6 +65,10 @@ public class OpaAbacProperties {
     @NestedConfigurationProperty
     private ResourceResolution resourceResolution = new ResourceResolution();
 
+    /** Action-enrichment (affordance metadata) settings. */
+    @NestedConfigurationProperty
+    private ActionEnrichment actionEnrichment = new ActionEnrichment();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -135,6 +139,14 @@ public class OpaAbacProperties {
 
     public void setResourceResolution(ResourceResolution resourceResolution) {
         this.resourceResolution = resourceResolution;
+    }
+
+    public ActionEnrichment getActionEnrichment() {
+        return actionEnrichment;
+    }
+
+    public void setActionEnrichment(ActionEnrichment actionEnrichment) {
+        this.actionEnrichment = actionEnrichment;
     }
 
     /**
@@ -246,6 +258,26 @@ public class OpaAbacProperties {
     public static class ResourceResolution {
 
         /** Kill-switch for gate-side resource resolution. Default {@code true}; off → baseline semantics. */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * Action-enrichment (affordance metadata) settings. {@code enabled} is a true kill-switch: when off,
+     * the {@code ActionEnrichmentAdvice} bean is not registered <em>and</em> the list-path cache
+     * write-through is dormant, so an {@code Enrichable} DTO serializes without {@code _actions} —
+     * byte-identical to the pre-Phase-6 behavior.
+     */
+    public static class ActionEnrichment {
+
+        /** Kill-switch for affordance enrichment. Default {@code true}; off → no {@code _actions}, no write-through. */
         private boolean enabled = true;
 
         public boolean isEnabled() {

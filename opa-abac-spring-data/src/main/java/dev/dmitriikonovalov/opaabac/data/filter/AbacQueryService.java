@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.data.filter;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -66,10 +67,19 @@ public class AbacQueryService {
      */
     private final AncestorResolver ancestorResolver;
 
+    /**
+     * The request-scoped attribute-snapshot cache the list path <strong>write-through</strong>s its
+     * post-filter survivor rows into, so a downstream read-side consumer (action enrichment, Phase 6) reads
+     * the same instance the query returned — no double-load, no attribute drift. {@code null} disables the
+     * write-through entirely (byte-identical to the pre-Phase-6 behavior). Only ever <em>written</em> here;
+     * the cache is an attribute snapshot, never a verdict, and an authorization decision never reads it.
+     */
+    private final AbacResourceCache resourceCache;
+
     /** Tag key carrying the operational deny-override flag (mirrors {@code category.rego}'s {@code denied}). */
     private static final String DENY_TAG = "abac_deny";
 
-    /** Backward-compatible constructor (no hierarchy on the batch path). */
+    /** Backward-compatible constructor (no hierarchy on the batch path, no enrichment write-through). */
     public AbacQueryService(
             OpaClient opaClient,
             ResidualSpecificationFactory specificationFactory,
@@ -86,10 +96,26 @@ public class AbacQueryService {
             ResidualSpecificationFactory specificationFactory,
             PartialEvalSettings settings,
             AncestorResolver ancestorResolver) {
+        this(opaClient, specificationFactory, settings, ancestorResolver, null);
+    }
+
+    /**
+     * @param resourceCache the request-scoped cache the list path write-through-populates with its
+     *     post-filter survivor rows (Phase 6 action-enrichment feed); {@code null} disables the
+     *     write-through (byte-identical to before). The write-through only <em>adds</em> a cache write — it
+     *     never changes which rows are returned or any authorization decision.
+     */
+    public AbacQueryService(
+            OpaClient opaClient,
+            ResidualSpecificationFactory specificationFactory,
+            PartialEvalSettings settings,
+            AncestorResolver ancestorResolver,
+            AbacResourceCache resourceCache) {
         this.opaClient = Objects.requireNonNull(opaClient, "opaClient");
         this.specificationFactory = Objects.requireNonNull(specificationFactory, "specificationFactory");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.ancestorResolver = ancestorResolver; // nullable: hierarchy is opt-in
+        this.resourceCache = resourceCache; // nullable: the enrichment write-through is opt-in
     }
 
     /**
@@ -145,7 +171,7 @@ public class AbacQueryService {
             if (!opaClient.allow(queryContext)) {
                 return List.of();
             }
-            return repo.findAll(scopeOnly(scope).and(notDenied()));
+            return cacheSurvivors(repo.findAll(scopeOnly(scope).and(notDenied())));
         }
 
         PartialResult residual = opaClient.compile(queryContext);
@@ -163,11 +189,11 @@ public class AbacQueryService {
         // so subtreeSpec is NOT applied here — it would be redundant with the per-row final_allow.
         if (!residual.fullySupported() && settings.allowlistFallback()) {
             List<T> candidates = repo.findAll(scopeOnly(scope));
-            return batchFilter(candidates, queryContext);
+            return cacheSurvivors(batchFilter(candidates, queryContext));
         }
 
         // Pure-SQL path: scope.and( tagResidual.or(subtreeSpec) ).and( notDenied ).
-        return repo.findAll(authorizedSpec(scope, residual, subtreeSpec));
+        return cacheSurvivors(repo.findAll(authorizedSpec(scope, residual, subtreeSpec)));
     }
 
     /**
@@ -223,7 +249,7 @@ public class AbacQueryService {
             if (!opaClient.allow(queryContext)) {
                 return Page.empty(pageable);
             }
-            return repo.findAll(scopeOnly(scope).and(notDenied()), pageable);
+            return cacheSurvivors(repo.findAll(scopeOnly(scope).and(notDenied()), pageable));
         }
 
         PartialResult residual = opaClient.compile(queryContext);
@@ -241,11 +267,11 @@ public class AbacQueryService {
             // and the count, never widens.
             List<T> candidates = repo.findAll(scopeOnly(scope), pageable.getSort());
             List<T> allowed = batchFilter(candidates, queryContext);
-            return sliceInMemory(allowed, pageable);
+            return cacheSurvivors(sliceInMemory(allowed, pageable));
         }
 
         // Pure-SQL path: the identical composition, paged — Spring Data derives the COUNT from it.
-        return repo.findAll(authorizedSpec(scope, residual, subtreeSpec), pageable);
+        return cacheSurvivors(repo.findAll(authorizedSpec(scope, residual, subtreeSpec), pageable));
     }
 
     /**
@@ -291,6 +317,34 @@ public class AbacQueryService {
                     cb.function("jsonb_extract_path_text", String.class, root.get("tags"), cb.literal(DENY_TAG));
             return cb.or(cb.isNull(denyText), cb.notEqual(denyText, "true"));
         };
+    }
+
+    /**
+     * Write-through the post-filter survivor rows into the request-scoped {@link AbacResourceCache} (the
+     * Phase-6 action-enrichment feed), returning the <em>same</em> list unchanged. A no-op when no cache is
+     * wired. The rows written are exactly the ones being returned (the survivors) — denied/dropped rows are
+     * never written, keeping the cache an authorized-snapshot store consistent with the gate's allow-only
+     * write. Caches the same instance the query returned → no double-load, no attribute drift.
+     */
+    private <T extends AbacDataObject> List<T> cacheSurvivors(List<T> survivors) {
+        cacheEach(survivors);
+        return survivors;
+    }
+
+    /** {@link #cacheSurvivors(List)} for a page — writes the page's content rows, returns the same page. */
+    private <T extends AbacDataObject> Page<T> cacheSurvivors(Page<T> survivors) {
+        cacheEach(survivors.getContent());
+        return survivors;
+    }
+
+    /** Write each survivor's {@code (type,id)} snapshot through to the cache; a no-op when none is wired. */
+    private void cacheEach(Iterable<? extends AbacDataObject> survivors) {
+        if (resourceCache == null) {
+            return;
+        }
+        for (AbacDataObject survivor : survivors) {
+            resourceCache.put(survivor.abacResourceType(), survivor.abacResourceId(), survivor);
+        }
     }
 
     /** Drop the rows a per-row batch decision rejects (the allowlist finisher), hierarchy-aware. */

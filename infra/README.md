@@ -121,6 +121,22 @@ expands to nothing and denies. This slice rewrote every catalog policy and added
 `permissions.rego`/`role.rego` + the data file — **restart OPA** after pulling it (the runner does
 so itself).
 
+The **action-enrichment** matrix (Phase 6) proves the read-side `_actions` affordance map the response
+advice attaches: a read-only subject's map is honest (`view:true`, mutating verbs `false`), a writer's is
+all-`true`, each page element carries its own complete map, the verb set excludes `assign-tags` for
+catalog, **affordance ≠ enforcement** (a `_actions:false` matches a real `403`), and **omit-on-failure**
+(OPA paused → no 5xx, no fabricated all-`false` map):
+
+```bash
+# The action-enrichment matrix (fixture aaaa…; rebuild BOTH app images first; NO OPA restart — zero Rego change):
+cd scripts/postman && ./run-action-enrichment-matrix.sh
+```
+
+See [[ACTION-ENRICHMENT]]. This slice **extended** the Phase-5 `bulk` batch primitive (an `allow`-over-a-
+list comprehension) to `catalog.rego`/`product.rego`/`team.rego` so every enriched type has it — additive,
+decision-preserving, so the existing matrices are byte-identical; **restart OPA** after pulling those
+policies for the first time (the `bulk` rule is new, though it changes no decision).
+
 > The `team.rego` policy the user-service dogfoods is served by the shared OPA container — it lives in
 > both `../example-user-management-service/src/main/resources/opa/policies/` (the source of truth) and
 > `opa/policies/` (mounted into the rig's OPA). Restart OPA after editing it (`docker restart

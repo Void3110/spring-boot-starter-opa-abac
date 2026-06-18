@@ -71,3 +71,19 @@ allow if {
 	verb in {"define-roles", "transfer-ownership"}
 	input.role_definition.code == "owner"
 }
+
+# ---------------------------------------------------------------------------
+# Phase 5 batch primitive — the bulk decision entrypoint, extended to team for action enrichment
+# (Phase 6). `bulk` evaluates `allow` for each item in a list input ({"input": {"items": [<ctx>, …]}})
+# and returns a positional list of booleans — the same shared primitive the catalog policies use,
+# mirrored byte-for-byte. Each item carries its own resource, so `allow` runs per item with the full
+# single-decision logic (incl. the owner-only fence) — fail-closed per element. ADDITIVE: it adds no
+# new decision, it maps the existing `allow` over a list. Affordance enrichment enumerates only the
+# OPA-decided team verbs (list-members/add-member/remove-member); the Java-co-gated escalation verbs
+# are excluded by the app (ADR 0016 §8), so this entrypoint is never asked to decide them for affordance.
+# ---------------------------------------------------------------------------
+
+bulk := [decision |
+	some item in input.items
+	decision := allow with input as item
+]

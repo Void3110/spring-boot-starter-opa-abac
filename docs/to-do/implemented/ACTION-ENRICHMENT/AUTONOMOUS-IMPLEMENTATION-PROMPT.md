@@ -76,8 +76,10 @@ and for **log-noisy validation** (e.g. run the newman matrices and report back o
 7. Root `CLAUDE.md` — the **IP boundary** (clean-room: original names only) and the **commit identity**
    rule (`Void3110 <void31102025@gmail.com>`).
 8. `infra/README.md` — the local rig (needed for the e2e ticket), incl. the **in-network token caveat**
-   and `./deploy.sh build` to force new app code into pods. **No OPA restart needed** — this slice
-   changes **zero Rego**.
+   and `./deploy.sh build` to force new app code into pods. ~~**No OPA restart needed** — this slice
+   changes **zero Rego**.~~ *(Corrected during T6/deep-review: the slice DID add the `bulk` entrypoint to
+   `catalog`/`product`/`team` rego, so **OPA must reload** on first pull — the matrix runner restarts it
+   itself. See ADR 0016 §6.)*
 9. **Prime Mulch:** `ml prime opa-abac` and `ml search "allowAll batch enrichment cache governing root"`
    (records `mx-4e6071` the `AbacQueryService` seam + per-row `allowAll` context build [T3], `mx-a932a0`
    /`mx-c39a0a` the `allowAll`/`bulk` batch primitive abstract-not-default + fail-closed [T2], `mx-e842ba`
@@ -249,8 +251,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Standalone-value subset:** T1 + T2 + T3 + T4 land the complete, dormant library mechanism (the marker
   + advice + cache feed + kill-switch) even before any app adopts (T5/T6) — opt-in, zero behavior change
   for any app without an `Enrichable` DTO.
-- **Rig / e2e specifics:** mint tokens **in-network** (APISIX validates issuer `keycloak:8888`); **no OPA
-  restart needed** (zero Rego change — unlike most prior slices); `./deploy.sh build` to force new app
+- **Rig / e2e specifics:** mint tokens **in-network** (APISIX validates issuer `keycloak:8888`); ~~no OPA
+  restart needed (zero Rego change — unlike most prior slices)~~ *(corrected: the slice adds the `bulk`
+  rule to `catalog`/`product`/`team` rego, so **OPA must reload** — the runner restarts it itself)*;
+  `./deploy.sh build` to force new app
   images; the new matrix seeds through the user-service bootstrap like the existing matrices; the
   user-mgmt `getTeam` is **ungated**, so its `_actions` is expected **absent** (the cache-miss degrade) —
   that is a *correct* asserted outcome, not a bug.

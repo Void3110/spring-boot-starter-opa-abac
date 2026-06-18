@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.opaabac.security;
+package dev.dmitriikonovalov.opaabac.core;
 
 import java.util.Optional;
 
@@ -8,11 +8,19 @@ import java.util.Optional;
  * handler (or a later read-side consumer, e.g. action enrichment) {@code get}s it back instead of
  * issuing a second load — the response is then exactly the state the decision saw.
  *
+ * <p><strong>An attribute snapshot, never a verdict.</strong> A cached entry is the <em>resolved
+ * resource</em> (its attributes — tags, hierarchy) as it was when written; <em>presence is not an
+ * authorization</em>. Every per-action decision — gate or affordance enrichment — is computed fresh
+ * against this snapshot; an entry never short-circuits a verdict to "allowed".
+ *
  * <p><strong>Never consulted by decisions.</strong> The gate populates this cache but never reads it:
  * every evaluation resolves fresh, so a cached instance can never widen (or stale-out) a decision. A
  * deny puts nothing. Entries are request-bounded — nothing survives the request, and outside a web
  * request the default implementation degrades to a no-op (resolution still feeds the decision; only
  * the reuse is lost).
+ *
+ * <p>This interface is framework-agnostic (it lives in {@code opa-abac-core}); the default
+ * request-attributes implementation lives in {@code opa-abac-spring-security}.
  */
 public interface AbacResourceCache {
 

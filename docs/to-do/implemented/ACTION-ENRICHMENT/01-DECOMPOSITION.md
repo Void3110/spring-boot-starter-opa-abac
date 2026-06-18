@@ -349,8 +349,10 @@ genuinely changed.
 ## Cross-cutting acceptance
 
 - `./gradlew build` green throughout; **Testcontainers real Postgres** (never H2) for every IT; the e2e
-  suite green end-to-end (new matrix + all existing); **`opa test infra/opa/policies/` green and
-  unmodified** (zero Rego change — enrichment reuses `bulk`/`allow`).
+  suite green end-to-end (new matrix + all existing); **`opa test` green** with the existing decision
+  tests unmodified. *(Correction, 2026-06-17: not "zero Rego" — the slice **added** the `bulk` entrypoint
+  to `catalog`/`product`/`team` rego, mirroring `category.rego`, with mirrored `opa test` cases; it adds no
+  new decision, so the existing tests stay green, but OPA must reload on first pull. ADR 0016 §6.)*
 - **`opa-abac-core` stays Spring-free** (the relocated `AbacResourceCache` + `Enrichable` carry no Spring
   import); **`opa-abac-spring-security` gains no dependency on `opa-abac-spring-data`** (the advice sees
   only core types + the marker).

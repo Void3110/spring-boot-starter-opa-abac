@@ -117,11 +117,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 
 - **E1** *As an integrator*, each resource in a response carries an `_actions` map telling me which actions
   the current user may perform — so I render exactly the right controls. — **Phase 6**
-  ([[ACTION-ENRICHMENT]]) 🔜 planned
+  ([[ACTION-ENRICHMENT]]) ✅ shipped
 - **E2** *As a viewer*, the edit/delete affordances are reported as `false` (the buttons are hidden), even
-  though the data is visible. — **Phase 6** 🔜
+  though the data is visible. — **Phase 6** ✅ shipped (the honest-`false` map)
 - **E3** *As an editor*, write affordances report `true`; an action my role never mentions still reports
-  `false` (the registry enumerates the full action set, not just granted verbs). — **Phase 6** 🔜
+  `false` (the registry enumerates the full action set, not just granted verbs). — **Phase 6** ✅ shipped
 
 ### Epic G — "I shape and delegate access by coarse buckets, safely" (permission categories + delegation)
 

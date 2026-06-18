@@ -136,6 +136,14 @@ layer 3 keeps list filtering, mid-transaction state guards, and the version guar
 `OpaAuthorizationManager` (request-level: HTTP method → action, path-prefix → type) is also provided for
 apps that want a coarse request rule.
 
+> **Affordance is a read-side layer, not a fourth enforcement layer.** Phase 6
+> ([[ACTION-ENRICHMENT]]) attaches an `_actions` map to *returned* resources — *which actions the caller
+> may perform on each* — **after** enforcement has decided, purely so a UI renders the right buttons. It
+> never blocks a request and is never consulted by a decision: the three enforcement layers of ADR 0006
+> stand untouched, and a present `_actions` map is advisory (the real gate denies independently). It
+> *mirrors* enforcement (same resolved attributes, same governing-root role) so the buttons match what the
+> gate would allow.
+
 ## Per-type policies
 
 One rego document per resource type (`infra/opa/policies/{catalog,category,product}.rego`),
@@ -184,4 +192,5 @@ definition is present. See [[TWO-LAYER-AUTHORIZATION]].
 ## Related
 - [[TWO-LAYER-AUTHORIZATION]] — gateway (coarse) vs app (fine-grained), and why the demo enricher was retired.
 - [[DOMAIN-MODEL]] — the `AbacDataObject` resource side this consumes.
+- [[ACTION-ENRICHMENT]] — the read-side `_actions` affordance layer that mirrors this enforcement (not a gate).
 - [[E2E-TESTING]] — the allow/deny matrix.

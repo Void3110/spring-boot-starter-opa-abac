@@ -59,7 +59,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * (I4), and a bump after the guard, inside the save, → the dao advice's 409 (I5) — the audited
  * 500-class, closed.
  */
-@SpringBootTest(properties = "catalog.role-source=none")
+// Action enrichment is turned OFF here: this suite pins the GATE's resolution semantics in isolation
+// (e.g. the governing-root role is looked up exactly once, by the gate). With enrichment on, a GET also
+// runs the read-side advice, which independently resolves the governing-root role per enriched row —
+// correct, but it would add a second lookup and couple this gate suite to enrichment. Enrichment has its
+// own end-to-end coverage in ActionEnrichmentIT / ActionEnrichmentListIT.
+@SpringBootTest(properties = {
+    "catalog.role-source=none",
+    "opa.abac.action-enrichment.enabled=false"
+})
 @Testcontainers
 @AutoConfigureMockMvc
 @Import(ResourceResolutionGateIT.GateTestConfig.class)

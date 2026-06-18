@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security;
 
+import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import java.util.Optional;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
