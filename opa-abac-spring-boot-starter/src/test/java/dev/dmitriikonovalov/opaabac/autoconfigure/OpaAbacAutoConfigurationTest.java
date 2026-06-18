@@ -53,13 +53,15 @@ class OpaAbacAutoConfigurationTest {
         });
     }
 
-    @Test // U32 — user @Bean OpaClient / RoleDefinitionSupplier → starter backs off
+    @Test // U32 — user @Bean OpaClient / RoleDefinitionSupplier → starter backs off. Resilience off here so
+    // the assertion sees the raw override (the B3 decorator otherwise wraps it — see userOpaClient_isWrapped).
     void userBeansWin() {
-        runner.withUserConfiguration(UserOverrides.class).run(context -> {
-            assertThat(context).hasSingleBean(OpaClient.class);
-            assertThat(context.getBean(OpaClient.class)).isInstanceOf(StubOpaClient.class);
-            assertThat(context.getBean(RoleDefinitionSupplier.class)).isInstanceOf(StubSupplier.class);
-        });
+        runner.withPropertyValues("opa.abac.resilience.enabled=false")
+                .withUserConfiguration(UserOverrides.class).run(context -> {
+                    assertThat(context).hasSingleBean(OpaClient.class);
+                    assertThat(context.getBean(OpaClient.class)).isInstanceOf(StubOpaClient.class);
+                    assertThat(context.getBean(RoleDefinitionSupplier.class)).isInstanceOf(StubSupplier.class);
+                });
     }
 
     @Test // U33 — security/web removed → only the core beans, no security beans, no chain
@@ -357,6 +359,94 @@ class OpaAbacAutoConfigurationTest {
             assertThat(in).as("spring-configuration-metadata.json on the classpath").isNotNull();
             String metadata = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             assertThat(metadata).contains("opa.abac.resource-resolution.enabled");
+        }
+    }
+
+    // --- OPA resilience decorator (Slice B3, T2) ------------------------------
+
+    @Test // U8 — R4j on classpath + resilience enabled (defaults) → the OpaClient bean is a ResilientOpaClient
+    void opaClient_isResilient_whenR4jPresentAndEnabled() {
+        runner.run(context -> assertThat(context.getBean(OpaClient.class))
+                .isInstanceOf(dev.dmitriikonovalov.opaabac.security.resilience.ResilientOpaClient.class));
+    }
+
+    @Test // U8 — R4j absent → the plain HttpOpaClient, byte-identical to pre-B3 (no decorator)
+    void opaClient_isPlain_whenR4jAbsent() {
+        runner.withClassLoader(new FilteredClassLoader(
+                        io.github.resilience4j.circuitbreaker.CircuitBreaker.class))
+                .run(context -> {
+                    assertThat(context.getBean(OpaClient.class))
+                            .isInstanceOf(dev.dmitriikonovalov.opaabac.core.HttpOpaClient.class);
+                    assertThat(context.getBean(OpaClient.class)).isNotInstanceOf(
+                            dev.dmitriikonovalov.opaabac.security.resilience.ResilientOpaClient.class);
+                });
+    }
+
+    @Test // U8 — master kill-switch off → the plain HttpOpaClient (R4j present but resilience disabled)
+    void opaClient_isPlain_whenResilienceDisabled() {
+        runner.withPropertyValues("opa.abac.resilience.enabled=false")
+                .run(context -> assertThat(context.getBean(OpaClient.class))
+                        .isInstanceOf(dev.dmitriikonovalov.opaabac.core.HttpOpaClient.class)
+                        .isNotInstanceOf(
+                                dev.dmitriikonovalov.opaabac.security.resilience.ResilientOpaClient.class));
+    }
+
+    @Test // U8 — the OPA edge kill-switch off → the plain client (master on, opa edge off)
+    void opaClient_isPlain_whenOpaEdgeDisabled() {
+        runner.withPropertyValues("opa.abac.resilience.opa.enabled=false")
+                .run(context -> assertThat(context.getBean(OpaClient.class))
+                        .isNotInstanceOf(
+                                dev.dmitriikonovalov.opaabac.security.resilience.ResilientOpaClient.class));
+    }
+
+    @Test // a user-supplied OpaClient is still wrapped (the decorator is transparent — adopter bean wins
+    // as the delegate, resilience layered on top) — proves the BPP decorates whatever client the context has
+    void userOpaClient_isWrapped_whenResilient() {
+        runner.withUserConfiguration(UserOverrides.class).run(context -> {
+            OpaClient client = context.getBean(OpaClient.class);
+            assertThat(client).isInstanceOf(
+                    dev.dmitriikonovalov.opaabac.security.resilience.ResilientOpaClient.class);
+        });
+    }
+
+    @Test // resilience properties bind: per-edge budgets + the master switch
+    void resiliencePropertiesBind() {
+        runner.withPropertyValues(
+                        "opa.abac.resilience.enabled=true",
+                        "opa.abac.resilience.opa.max-retries=3",
+                        "opa.abac.resilience.opa.ceiling=4s",
+                        "opa.abac.resilience.resolve.max-retries=5",
+                        "opa.abac.resilience.tag.breaker.failure-threshold=9")
+                .run(context -> {
+                    OpaAbacProperties.Resilience r = context.getBean(OpaAbacProperties.class).getResilience();
+                    assertThat(r.isEnabled()).isTrue();
+                    assertThat(r.getOpa().getMaxRetries()).isEqualTo(3);
+                    assertThat(r.getOpa().getCeiling()).isEqualTo(java.time.Duration.ofSeconds(4));
+                    assertThat(r.getResolve().getMaxRetries()).isEqualTo(5);
+                    assertThat(r.getTag().getBreaker().getFailureThreshold()).isEqualTo(9);
+                });
+    }
+
+    @Test // resilience defaults: master on, asymmetric per-edge budgets (OPA 1 / resolve+tag 2)
+    void resilienceDefaults() {
+        runner.run(context -> {
+            OpaAbacProperties.Resilience r = context.getBean(OpaAbacProperties.class).getResilience();
+            assertThat(r.isEnabled()).isTrue();
+            assertThat(r.getOpa().getMaxRetries()).isEqualTo(1);
+            assertThat(r.getOpa().getCeiling()).isEqualTo(java.time.Duration.ofMillis(2500));
+            assertThat(r.getResolve().getMaxRetries()).isEqualTo(2);
+            assertThat(r.getResolve().getCeiling()).isEqualTo(java.time.Duration.ofSeconds(6));
+            assertThat(r.getTag().getMaxRetries()).isEqualTo(2);
+        });
+    }
+
+    @Test // the generated configuration metadata carries the new resilience property
+    void configurationMetadataCarriesResilienceProperty() throws Exception {
+        try (java.io.InputStream in = getClass()
+                .getResourceAsStream("/META-INF/spring-configuration-metadata.json")) {
+            assertThat(in).as("spring-configuration-metadata.json on the classpath").isNotNull();
+            String metadata = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(metadata).contains("opa.abac.resilience.enabled");
         }
     }
 

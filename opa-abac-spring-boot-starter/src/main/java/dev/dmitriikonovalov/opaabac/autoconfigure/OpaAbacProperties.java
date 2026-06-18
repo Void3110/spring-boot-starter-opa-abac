@@ -69,6 +69,10 @@ public class OpaAbacProperties {
     @NestedConfigurationProperty
     private ActionEnrichment actionEnrichment = new ActionEnrichment();
 
+    /** Cross-service HTTP resilience (retry / backoff / circuit-break) settings (Slice B3). */
+    @NestedConfigurationProperty
+    private Resilience resilience = new Resilience();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -147,6 +151,14 @@ public class OpaAbacProperties {
 
     public void setActionEnrichment(ActionEnrichment actionEnrichment) {
         this.actionEnrichment = actionEnrichment;
+    }
+
+    public Resilience getResilience() {
+        return resilience;
+    }
+
+    public void setResilience(Resilience resilience) {
+        this.resilience = resilience;
     }
 
     /**
@@ -286,6 +298,206 @@ public class OpaAbacProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+    }
+
+    /**
+     * Cross-service HTTP resilience (Slice B3, ADR 0017) — a uniform retry/backoff/circuit-break posture
+     * over the three cross-service HTTP edges (OPA, resolve, tag). "Uniform" is the <em>config shape</em> and
+     * the <em>fail-closed contract</em>, NOT the numbers: each edge keeps its own asymmetric budget.
+     *
+     * <pre>
+     * opa:
+     *   abac:
+     *     resilience:
+     *       enabled: true            # master kill-switch; off ⇒ byte-identical to pre-B3
+     *       opa:                     # the gate, every request, local sidecar
+     *         enabled: true
+     *         max-retries: 1
+     *         backoff: 50ms
+     *         ceiling: 2500ms
+     *         breaker: {failure-threshold: 5, open-duration: 10s, half-open-probes: 1}
+     *       resolve: {max-retries: 2, ceiling: 6s, ...}   # cross-service hop
+     *       tag:     {max-retries: 2, ceiling: 6s, ...}   # cross-service hop
+     * </pre>
+     *
+     * <p>Both the master {@link #enabled} and an {@link Edge}'s own {@code enabled} are kill-switches: with
+     * either off for an edge, that edge makes a single unguarded call, fail-closed exactly as pre-B3 (ADR
+     * 0017 §9). The switch governs retry/breaker only — never the fail-closed contract.
+     */
+    public static class Resilience {
+
+        /** Master kill-switch for B3 resilience. Default {@code true}; off ⇒ all three edges run one-shot. */
+        private boolean enabled = true;
+
+        /** OPA gate budget — every request, local sidecar: a small budget (failure ≈ a restart blip). */
+        @NestedConfigurationProperty
+        private Edge opa = new Edge(1, Duration.ofMillis(50), Duration.ofMillis(2500));
+
+        /** Role-resolve budget — a cross-service hop with real transient weather: a larger budget. */
+        @NestedConfigurationProperty
+        private Edge resolve = new Edge(2, Duration.ofMillis(50), Duration.ofSeconds(6));
+
+        /** Tag-definitions budget — same cross-service profile as resolve. */
+        @NestedConfigurationProperty
+        private Edge tag = new Edge(2, Duration.ofMillis(50), Duration.ofSeconds(6));
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public Edge getOpa() {
+            return opa;
+        }
+
+        public void setOpa(Edge opa) {
+            this.opa = opa;
+        }
+
+        public Edge getResolve() {
+            return resolve;
+        }
+
+        public void setResolve(Edge resolve) {
+            this.resolve = resolve;
+        }
+
+        public Edge getTag() {
+            return tag;
+        }
+
+        public void setTag(Edge tag) {
+            this.tag = tag;
+        }
+    }
+
+    /**
+     * One cross-service HTTP edge's resilience budget — the per-edge retry/backoff/ceiling + a
+     * {@link Breaker}. {@code enabled} is the per-edge kill-switch. {@link #toConfig(boolean)} folds the
+     * master switch in and produces the immutable
+     * {@link dev.dmitriikonovalov.opaabac.security.resilience.ResilienceConfig} the {@code CallGuard} reads.
+     */
+    public static class Edge {
+
+        /** Per-edge kill-switch. Default {@code true}; off (or master off) ⇒ a single unguarded call. */
+        private boolean enabled = true;
+
+        /** Retries after the first attempt (total attempts = {@code maxRetries + 1}). */
+        private int maxRetries;
+
+        /** Base exponential-backoff interval; full jitter is applied on top. */
+        private Duration backoff;
+
+        /** Named, configurable upper bound on total time spent across all attempts. */
+        private Duration ceiling;
+
+        /** Circuit-breaker parameters for this edge. */
+        @NestedConfigurationProperty
+        private Breaker breaker = new Breaker();
+
+        public Edge() {
+        }
+
+        Edge(int maxRetries, Duration backoff, Duration ceiling) {
+            this.maxRetries = maxRetries;
+            this.backoff = backoff;
+            this.ceiling = ceiling;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getMaxRetries() {
+            return maxRetries;
+        }
+
+        public void setMaxRetries(int maxRetries) {
+            this.maxRetries = maxRetries;
+        }
+
+        public Duration getBackoff() {
+            return backoff;
+        }
+
+        public void setBackoff(Duration backoff) {
+            this.backoff = backoff;
+        }
+
+        public Duration getCeiling() {
+            return ceiling;
+        }
+
+        public void setCeiling(Duration ceiling) {
+            this.ceiling = ceiling;
+        }
+
+        public Breaker getBreaker() {
+            return breaker;
+        }
+
+        public void setBreaker(Breaker breaker) {
+            this.breaker = breaker;
+        }
+
+        /**
+         * Build the immutable {@code ResilienceConfig} a {@code CallGuard} consumes. The edge is enabled only
+         * when <em>both</em> the master switch and this edge's own switch are on (ADR 0017 §9).
+         */
+        public dev.dmitriikonovalov.opaabac.security.resilience.ResilienceConfig toConfig(boolean masterEnabled) {
+            return new dev.dmitriikonovalov.opaabac.security.resilience.ResilienceConfig(
+                    masterEnabled && enabled,
+                    maxRetries,
+                    backoff,
+                    ceiling,
+                    breaker.getFailureThreshold(),
+                    breaker.getOpenDuration(),
+                    breaker.getHalfOpenProbes());
+        }
+    }
+
+    /** Circuit-breaker parameters for one edge — latency/load only, never a decision input (ADR 0017 §5). */
+    public static class Breaker {
+
+        /** Consecutive failures that open the breaker. */
+        private int failureThreshold = 5;
+
+        /** How long the breaker stays open before a half-open probe. */
+        private Duration openDuration = Duration.ofSeconds(10);
+
+        /** Permitted probe calls in the half-open state. */
+        private int halfOpenProbes = 1;
+
+        public int getFailureThreshold() {
+            return failureThreshold;
+        }
+
+        public void setFailureThreshold(int failureThreshold) {
+            this.failureThreshold = failureThreshold;
+        }
+
+        public Duration getOpenDuration() {
+            return openDuration;
+        }
+
+        public void setOpenDuration(Duration openDuration) {
+            this.openDuration = openDuration;
+        }
+
+        public int getHalfOpenProbes() {
+            return halfOpenProbes;
+        }
+
+        public void setHalfOpenProbes(int halfOpenProbes) {
+            this.halfOpenProbes = halfOpenProbes;
         }
     }
 

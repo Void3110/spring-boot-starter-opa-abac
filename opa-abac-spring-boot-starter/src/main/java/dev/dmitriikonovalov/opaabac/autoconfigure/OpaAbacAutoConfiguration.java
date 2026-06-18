@@ -52,6 +52,7 @@ import org.springframework.context.annotation.ConfigurationCondition;
 @AutoConfiguration
 @EnableConfigurationProperties(OpaAbacProperties.class)
 @ConditionalOnProperty(prefix = "opa.abac", name = "enabled", havingValue = "true", matchIfMissing = true)
+@org.springframework.context.annotation.Import(OpaResilienceAutoConfiguration.class)
 public class OpaAbacAutoConfiguration {
 
     @Bean
