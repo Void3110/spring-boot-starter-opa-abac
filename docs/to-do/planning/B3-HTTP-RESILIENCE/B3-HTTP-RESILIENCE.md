@@ -9,12 +9,26 @@ tags:
 
 # B3 — Cross-service HTTP resilience
 
-> **Status: 🔜 PLANNED — design settled (grill-me 2026-06-18), ready for `/decompose`.** The availability
-> pass that **softens the outage → hard-deny wall** Slice B2 introduced — a uniform retry/backoff/
-> circuit-break posture across all three cross-service HTTP edges — **without** re-opening the realm-role
-> fallback B2 closed. Slice **B3** of [[POC-ROADMAP]] (route step 4: **B2 → 6.7 → Phase 6 → B3 →
-> Phase 7**; B3 is now the front of the queue, last slice before publish). Pinned by **ADR
-> [[0017-cross-service-http-resilience|0017]]**; the full design is [[00-DESIGN]].
+> **Status: 🔜 PLANNED — decomposed (2026-06-18), ready to implement.** The availability pass that
+> **softens the outage → hard-deny wall** Slice B2 introduced — a uniform retry/backoff/circuit-break
+> posture across all three cross-service HTTP edges — **without** re-opening the realm-role fallback B2
+> closed. Slice **B3** of [[POC-ROADMAP]] (route step 4: **B2 → 6.7 → Phase 6 → B3 → Phase 7**; B3 is now
+> the front of the queue, last slice before publish). Pinned by **ADR
+> [[0017-cross-service-http-resilience|0017]]**; the full design is [[00-DESIGN]]; the work list is
+> [[01-DECOMPOSITION]] (T1–T4), QA in [[10-QA-TEST-CASES]], the run prompt in
+> [[AUTONOMOUS-IMPLEMENTATION-PROMPT]].
+
+## Tickets
+
+| # | Ticket | Module(s) | Status |
+|---|--------|-----------|--------|
+| **T1** | `CallGuard` seam + Resilience4j impl + per-edge config | `opa-abac-spring-security` | ☐ |
+| **T2** | Resilient `OpaClient` decorator + starter auto-config (the library feature) | `opa-abac-spring-security` · `…-spring-boot-starter` | ☐ |
+| **T3** | App-side resolve + tag wrappers — B2-preserving | `example-catalog-management-service` | ☐ |
+| **T4** | e2e fault-injecting headline + docs + slice record | `scripts/postman` · `infra` · `docs/guides` | ☐ |
+
+Critical path: **T1 → {T2 ∥ T3} → T4**. **T1+T2** are the independently-landable library feature. See
+[[01-DECOMPOSITION]] for the full path + per-ticket Goal/Deliverables/Acceptance/What-NOT-to-touch.
 
 ## What it is
 
