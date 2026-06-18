@@ -1,0 +1,50 @@
+{
+  "info": {
+    "name": "B3 cross-service HTTP resilience matrix",
+    "description": "The Slice B3 headline through the gateway: a TRANSIENT resolve outage recovering within budget yields a SUCCESSFUL protected request (E1); a SUSTAINED outage still DENIES (E2 — B2's wall, no realm-fallback widening). The resolve edge is fault-injected by infra/compose.resilience-stub.yaml; the runner flips STUB_MODE between passes and sets EXPECTED_STATUS / EXPECTED_LABEL accordingly. Asserts the actual cut (success vs 403), not just response shape.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "B3 headline: id'd protected GET through the resolve edge",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// The cut: with STUB_MODE=transient the resolve guard rides out the blip → the gate resolves",
+              "// the role and the id'd GET SUCCEEDS (200). With STUB_MODE=down the guard exhausts →",
+              "// RoleResolutionException → the gate DENIES (403). EXPECTED_STATUS is set per pass by the runner.",
+              "const expected = Number(pm.environment.get('EXPECTED_STATUS'));",
+              "const label = pm.environment.get('EXPECTED_LABEL') || '';",
+              "pm.test(`${label}: status is ${expected}`, function () {",
+              "    pm.response.to.have.status(expected);",
+              "});",
+              "// E2 specifically asserts the deny is a clean 403 fail-closed (not a 5xx leak), and never a 2xx",
+              "// (no realm-fallback widening rode the outage to a wider grant than the resolved role).",
+              "if (expected === 403) {",
+              "    pm.test('sustained outage fails CLOSED (403), never widens to 2xx', function () {",
+              "        pm.expect(pm.response.code).to.be.oneOf([403]);",
+              "        pm.expect(pm.response.code, 'must not be a 2xx success on a sustained outage').to.not.be.within(200, 299);",
+              "    });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" },
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{category_id}}",
+          "host": ["{{gateway}}"],
+          "path": ["api", "v1", "catalogs", "{{catalog_id}}", "categories", "{{category_id}}"]
+        }
+      }
+    }
+  ]
+}

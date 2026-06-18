@@ -48,6 +48,12 @@ ENABLE_OIDC="${ENABLE_OIDC:-0}"
 # (the app-resolved path). Off by default — opt in with ENABLE_USER_SERVICE=1 ./deploy.sh up.
 # When on, the catalog pods get CATALOG_ROLE_SOURCE=http pointed at http://usermgmt:8080.
 ENABLE_USER_SERVICE="${ENABLE_USER_SERVICE:-0}"
+# Slice B3: a fault-injecting stand-in for the resolve endpoint, for the resilience e2e. Off by default —
+# opt in with ENABLE_RESILIENCE_STUB=1 [STUB_MODE=transient|down] [STUB_FAILS=1] ./deploy.sh up. When on,
+# the catalog pods get CATALOG_ROLE_SOURCE=http pointed at http://resolve-stub:8080 (NOT the real
+# user-mgmt) so the resolve CallGuard sees a controlled outage. See infra/compose.resilience-stub.yaml.
+ENABLE_RESILIENCE_STUB="${ENABLE_RESILIENCE_STUB:-0}"
+RESILIENCE_STUB_COMPOSE="$SCRIPT_DIR/infra/compose.resilience-stub.yaml"
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -118,7 +124,11 @@ HEADER
       # Phase 4: resolve role definitions from the user-management service (the app-resolved path)
       # instead of the static demo supplier. The user-service is reachable in-network as 'usermgmt'.
       local role_source_env=""
-      if [ "$ENABLE_USER_SERVICE" = "1" ]; then
+      if [ "$ENABLE_RESILIENCE_STUB" = "1" ]; then
+        # B3 resilience e2e: resolve through the fault-injecting stub instead of the real user-mgmt.
+        role_source_env="      CATALOG_ROLE_SOURCE: \"http\"
+      CATALOG_USER_SERVICE_BASE_URL: \"http://resolve-stub:8080\""
+      elif [ "$ENABLE_USER_SERVICE" = "1" ]; then
         role_source_env="      CATALOG_ROLE_SOURCE: \"http\"
       CATALOG_USER_SERVICE_BASE_URL: \"http://usermgmt:8080\""
       fi
@@ -169,6 +179,7 @@ jaeger_compose() { docker compose -p "$PROJECT" -f "$JAEGER_COMPOSE" "$@"; }
 opa_compose() { docker compose -p "$PROJECT" -f "$OPA_COMPOSE" "$@"; }
 keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
 usermgmt_compose() { docker compose -p "$PROJECT" -f "$USERMGMT_COMPOSE" "$@"; }
+resolve_stub_compose() { docker compose -p "$PROJECT" -f "$RESILIENCE_STUB_COMPOSE" "$@"; }
 base_compose() { docker compose -p "$PROJECT" -f "$BASE_COMPOSE" "$@"; }
 
 build_usermgmt_image() {
@@ -282,6 +293,10 @@ case "$CMD" in
       echo "==> Starting the user-management service + its Postgres..."
       usermgmt_compose up -d
     fi
+    if [ "$ENABLE_RESILIENCE_STUB" = "1" ]; then
+      echo "==> Starting the resilience fault-injecting resolve stub (STUB_MODE=${STUB_MODE:-transient}, STUB_FAILS=${STUB_FAILS:-1})..."
+      STUB_MODE="${STUB_MODE:-transient}" STUB_FAILS="${STUB_FAILS:-1}" resolve_stub_compose up -d
+    fi
     echo "==> Starting APISIX + etcd..."
     apisix_compose up -d
     generate_compose "$n"
@@ -302,6 +317,7 @@ case "$CMD" in
     [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
     [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: http://localhost:28090  (resolve API at /internal/effective-role; catalog uses role-source=http)"
+    [ "$ENABLE_RESILIENCE_STUB" = "1" ] && echo "    resolve-stub: http://localhost:28091  (B3 fault injector; catalog role-source=http -> resolve-stub:8080; mode=${STUB_MODE:-transient})"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
     ;;
 
@@ -321,6 +337,7 @@ case "$CMD" in
     opa_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     keycloak_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     usermgmt_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    resolve_stub_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     # Base Postgres last: it's the final container on the project network, so tearing it
     # down here lets the auto-created "${PROJECT}_default" network be removed cleanly

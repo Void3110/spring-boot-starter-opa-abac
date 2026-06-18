@@ -265,5 +265,8 @@ not already use this partial-eval path (e.g. the product list's plain scoped que
   [[adr/0012-pagination-envelope|0012]] (the paged composition above) ·
   [[TWO-LAYER-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[TAG-BASED-AUTHORIZATION]] ·
   [[HIERARCHICAL-AUTHORIZATION]] · [[ACTION-ENRICHMENT]] (the list-path write-through feeds its
-  read-side `_actions` map; the `allowAll`/`bulk` batch primitive is shared) · [[REST-API-DESIGN]] ·
+  read-side `_actions` map; the `allowAll`/`bulk` batch primitive is shared) · [[HTTP-RESILIENCE]] (Slice
+  B3 — the resilient `OpaClient` decorator must return `compile`→`error()` (`fromError=true`), **never**
+  `denyAll()`, on a breaker-open/exhausted OPA outage, so the `fromError` suppression above survives the
+  outage and no hierarchy widening outlives it) · [[REST-API-DESIGN]] ·
   [[E2E-TESTING]] · [[POC-ROADMAP]].

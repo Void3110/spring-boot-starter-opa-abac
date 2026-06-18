@@ -1,0 +1,34 @@
+# A tiny fault-injecting stand-in for the user-management resolve endpoint, for the B3 cross-service
+# HTTP resilience e2e (Slice B3). Off by default — opt in with ENABLE_RESILIENCE_STUB=1 ./deploy.sh up.
+# When on, deploy.sh points the catalog pods at http://resolve-stub:8080 instead of the real user-mgmt,
+# so the catalog's resolve CallGuard sees a controlled outage:
+#
+#   STUB_MODE=transient (default) — N (STUB_FAILS, default 1) consecutive 503s per caller, then the role
+#       → the resolve guard (2 retries) rides it out → the protected request SUCCEEDS (E1).
+#   STUB_MODE=down — every call 503 → the guard exhausts → RoleResolutionException → the gate DENIES (E2).
+#
+# No image build: the standard python:3.12-alpine image runs the mounted script. Shares the project
+# network (opa-abac-example_default), reachable in-network as http://resolve-stub:8080.
+
+name: opa-abac-example
+
+services:
+  resolve-stub:
+    image: python:3.12-alpine
+    container_name: resolve-stub
+    hostname: resolve-stub
+    command: ["python3", "/stub/resolve_stub.py"]
+    environment:
+      STUB_MODE: "${STUB_MODE:-transient}"
+      STUB_FAILS: "${STUB_FAILS:-1}"
+      STUB_PORT: "8080"
+    volumes:
+      - ./resilience-stub/resolve_stub.py:/stub/resolve_stub.py:ro
+    ports:
+      - "28091:8080"   # host access for debugging; in-network the catalog uses resolve-stub:8080
+    healthcheck:
+      # the stub answers /internal/effective-role; any TCP-reachable response means it's up
+      test: ["CMD-SHELL", "python3 -c \"import socket;socket.create_connection(('127.0.0.1',8080),2)\""]
+      interval: 3s
+      timeout: 2s
+      retries: 10
