@@ -58,8 +58,8 @@ RESILIENCE_STUB_COMPOSE="$SCRIPT_DIR/infra/compose.resilience-stub.yaml"
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 
-# pod K publishes on BASE_PORT+K (28081, 28082, …). Base 28080 (not the portal's 18080
-# range) so this rig never collides with a running portal podman-machine on 18081/18082.
+# pod K publishes on BASE_PORT+K (28081, 28082, …). Base 28080 (in the 2xxxx range, not the common
+# 18080 range) so this rig never collides with another local service or a podman-machine on 18081/18082.
 BASE_PORT=28080
 
 # --- arg parsing ------------------------------------------------------------
@@ -216,7 +216,7 @@ wait_keycloak() {
 }
 
 # --- APISIX upstream sync ---------------------------------------------------
-# Republish catalog-pool to round-robin over the N running pods (host ports 18081..).
+# Republish catalog-pool to round-robin over the N running pods (host ports 28081..).
 apisix_sync_upstream() {
   local n="$1"
   if ! curl -sf -o /dev/null -m 2 -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams" 2>/dev/null; then

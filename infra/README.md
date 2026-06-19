@@ -216,8 +216,8 @@ done | sort | uniq -c
 | `5433` | Postgres | base `compose.yaml`; avoids a 5432 clash |
 | `9085` | APISIX proxy | **not 9080** — a podman-machine `gvproxy` holds `:9080` on this host |
 | `9180` | APISIX admin API | `deploy.sh`/`init-routes.sh` write upstream + route here |
-| `28081..` | app pods (host) | **not the 18081 range** — a running portal podman-machine forwards `18081/18082` |
-| `26686` | Jaeger UI | **not 16686** (held by portal podman-machine) |
+| `28081..` | app pods (host) | **not the 18081 range** (a local podman-machine may forward `18081/18082`) — the `2xxxx` range avoids that common collision |
+| `26686` | Jaeger UI | **not 16686** (often held by another local service) |
 | `24317/24318` | Jaeger OTLP gRPC/HTTP (host) | **not 4317/4318** (held). In-network everything uses `opa-abac-jaeger:4318` |
 | `28181` | OPA data API (host) | **not 8181** (held). In-network APISIX calls `http://opa:8181` |
 | `28888` | Keycloak (host, opt-in) | **not 8888** (held). In-network APISIX discovers `http://keycloak:8888` |
