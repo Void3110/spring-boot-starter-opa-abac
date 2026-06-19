@@ -100,6 +100,18 @@ host but stay independent, so a fault in `/internal/tag-definitions` cannot trip
 > tag → throw `TagDefinitionFetchException`. It changes *when* and *how fast* we fail closed, never
 > *whether* the answer is fail-closed.
 
+> **What opens a breaker: a thrown fault, never a returned sentinel.** A breaker counts a failure **only on
+> a thrown `retryableError`** — an unambiguous transport/timeout fault — never on a returned fail-closed
+> *value*. This is load-bearing for "never a decision input": on the OPA edge the only failure signal is the
+> returned sentinel (`false` / `error()` / all-false), which is *indistinguishable from a genuine policy
+> deny*; counting it would let a stream of legitimate denials self-open the OPA breaker and then force-deny
+> otherwise-allowable requests. So the **resolve/tag breakers open** (those edges surface a real outage as a
+> thrown `Transient*Exception`), while the **OPA breaker is effectively a no-op** (the plain `HttpOpaClient`
+> swallows every fault into the sentinel and never throws). That is the honest price of a swallow-everything
+> delegate — the OPA edge gets retry-driven transient recovery without a decision-driven breaker. A breaker
+> the OPA edge *could* legitimately open would require the delegate to surface faults distinctly from
+> denies, which it deliberately does not (fail-closed-by-construction).
+
 ## The fail-closed contract — identical in every state
 
 On **retries-exhausted** *and* **breaker-open** (the delegate is not called at all), each edge yields the

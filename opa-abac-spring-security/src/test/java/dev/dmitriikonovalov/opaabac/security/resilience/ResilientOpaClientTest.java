@@ -145,7 +145,8 @@ class ResilientOpaClientTest {
 
     // --- U4 + U5: breaker OPEN synthesizes the fail-closed value WITHOUT the delegate ----
 
-    @Test // force the breaker open, then assert all three methods fail closed without calling the delegate
+    @Test // force the breaker open (via a thrown FAULT, the only thing that may), then assert all three
+    // methods fail closed without calling the delegate
     void breakerOpen_synthesizesFailClosed_withoutDelegate() {
         // a counting delegate so we can prove it is NOT invoked while the breaker is open
         CountingOpaClient counting = new CountingOpaClient();
@@ -153,12 +154,21 @@ class ResilientOpaClientTest {
                 Duration.ofSeconds(3), 3, Duration.ofSeconds(30), 1));
         ResilientOpaClient decorated = new ResilientOpaClient(counting, sharedGuard);
 
-        // 3 failing calls (the delegate returns the fail-closed sentinel) open the breaker
-        counting.failClosed = true;
+        // 3 thrown faults open the breaker. A returned deny sentinel would NOT (a decision must never feed
+        // the breaker — ADR 0017 §5); only an unambiguous thrown fault does. In production the OPA delegate
+        // swallows faults to the sentinel and never throws, so the OPA breaker is effectively a no-op — this
+        // test drives it through the guard directly to prove the breaker-OPEN fail-closed synthesis still holds.
+        counting.throwFault = true;
         for (int i = 0; i < 3; i++) {
-            decorated.allow(ctx());
+            try {
+                decorated.allow(ctx());
+            } catch (RuntimeException expected) {
+                // the guard re-throws the exhausted fault (maxRetries=0) — ResilientOpaClient.allow does not
+                // catch a generic RuntimeException, only CallNotPermittedException, so it propagates here
+            }
         }
-        int callsBeforeOpen = counting.allowCalls;
+        counting.throwFault = false; // the breaker is now open; from here the delegate must not be touched
+        int allowCallsBeforeOpen = counting.allowCalls;
 
         // now the breaker is open: every method fails closed WITHOUT touching the delegate
         boolean allow = decorated.allow(ctx());
@@ -175,14 +185,40 @@ class ResilientOpaClientTest {
         assertThat(allowAll).containsExactly(false, false);
 
         // the delegate was NOT invoked for any of the three breaker-open calls
-        assertThat(counting.allowCalls).isEqualTo(callsBeforeOpen);
+        assertThat(counting.allowCalls).isEqualTo(allowCallsBeforeOpen);
         assertThat(counting.compileCalls).isZero();
         assertThat(counting.allowAllCalls).isZero();
     }
 
-    /** A delegate that counts invocations and can be told to return the fail-closed sentinel. */
+    @Test // P5 — the DECISION path: a stream of GENUINE policy denies (delegate returns a real false, not a
+    // fault) must NOT open the OPA breaker. The breaker is never a decision input (ADR 0017 §5).
+    void genuineDenials_doNotOpenTheBreaker() {
+        CountingOpaClient counting = new CountingOpaClient();
+        counting.failClosed = true; // every allow returns a genuine policy DENY (false)
+        Resilience4jCallGuard guard = new Resilience4jCallGuard("opa",
+                new ResilienceConfig(true, 1, Duration.ofMillis(50), Duration.ofSeconds(3),
+                        3, Duration.ofSeconds(30), 1),
+                clock, advancingSleeper);
+        ResilientOpaClient decorated = new ResilientOpaClient(counting, guard);
+
+        // far more consecutive denials than failureThreshold(=3), each at 2 attempts (maxRetries=1)
+        for (int i = 0; i < 20; i++) {
+            assertThat(decorated.allow(ctx())).isFalse();
+        }
+
+        // the breaker stayed CLOSED — denials are decisions, not breaker faults; the delegate was reached
+        // on every call (no short-circuit)
+        assertThat(guard.breaker().getState())
+                .as("genuine denials must not open the breaker (never a decision input)")
+                .isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED);
+        assertThat(counting.allowCalls).as("every call reached the delegate (breaker never short-circuited)")
+                .isGreaterThanOrEqualTo(20);
+    }
+
+    /** A delegate that counts invocations and can return the fail-closed sentinel OR throw a fault. */
     private static final class CountingOpaClient implements OpaClient {
         volatile boolean failClosed = false;
+        volatile boolean throwFault = false;
         int allowCalls = 0;
         int compileCalls = 0;
         int allowAllCalls = 0;
@@ -190,18 +226,27 @@ class ResilientOpaClientTest {
         @Override
         public boolean allow(AbacContext context) {
             allowCalls++;
+            if (throwFault) {
+                throw new java.io.UncheckedIOException(new java.io.IOException("opa down"));
+            }
             return !failClosed;
         }
 
         @Override
         public PartialResult compile(AbacContext context) {
             compileCalls++;
+            if (throwFault) {
+                throw new java.io.UncheckedIOException(new java.io.IOException("opa down"));
+            }
             return failClosed ? PartialResult.error() : PartialResult.allowAll();
         }
 
         @Override
         public List<Boolean> allowAll(List<AbacContext> contexts) {
             allowAllCalls++;
+            if (throwFault) {
+                throw new java.io.UncheckedIOException(new java.io.IOException("opa down"));
+            }
             return java.util.Collections.nCopies(contexts.size(), !failClosed);
         }
     }

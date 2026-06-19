@@ -116,8 +116,13 @@ public final class Resilience4jCallGuard implements CallGuard {
             try {
                 T result = body.get();
                 if (retryableResult.test(result)) {
-                    // A returned transient failure (e.g. a 5xx response): record it, then decide on retry.
-                    recordFailure(new TransientResult());
+                    // A returned retryable sentinel: RETRY it (a transient blip may recover), but do NOT
+                    // record it on the breaker. The body produced a *value*, not a thrown fault — and on the
+                    // OPA edge that sentinel (allow=false / compile fromError / all-false) is indistinguishable
+                    // from a genuine policy DENY. Feeding a decision into the breaker would let sustained
+                    // legitimate denials self-open it and then force-deny otherwise-allowable requests — a
+                    // self-inflicted availability regression that ADR 0017 §5 forbids ("never a decision
+                    // input"). Only a *thrown* retryableError (an unambiguous fault) drives the breaker below.
                     if (canRetry(attempt, deadlineMillis)) {
                         backoffBeforeRetry(attempt);
                         continue;
@@ -127,6 +132,8 @@ public final class Resilience4jCallGuard implements CallGuard {
                 breaker.onSuccess(0L, TimeUnit.NANOSECONDS);
                 return result;
             } catch (RuntimeException e) {
+                // A thrown failure IS an unambiguous fault (transport error / a 5xx surfaced as an
+                // exception by an edge wrapper), so it records on the breaker — both retryable and not.
                 recordFailure(e);
                 if (!retryableError.test(e)) {
                     // Permanent failure (e.g. a 4xx surfaced as an exception): re-throw at once, no retry.
@@ -143,9 +150,10 @@ public final class Resilience4jCallGuard implements CallGuard {
     }
 
     // This guard's breaker is FAILURE-COUNT based, not latency based: it opens after `failureThreshold`
-    // consecutive failures (failureRateThreshold=100% over a count window), never on slow-but-successful
-    // calls (ADR 0017 §5 — the breaker is a load/availability optimization, never a decision input). So the
-    // recorded call duration is irrelevant to the open/close decision and is reported as 0.
+    // consecutive *thrown faults* (failureRateThreshold=100% over a count window), never on a returned
+    // sentinel and never on a slow-but-successful call (ADR 0017 §5 — the breaker is a load/availability
+    // optimization, never a decision input). The recorded call duration is irrelevant to the open/close
+    // decision and is reported as 0.
     private void recordFailure(RuntimeException failure) {
         breaker.onError(0L, TimeUnit.NANOSECONDS, failure);
     }
@@ -186,12 +194,5 @@ public final class Resilience4jCallGuard implements CallGuard {
     /** Visible to tests asserting breaker lifecycle without reaching into R4j directly. */
     public CircuitBreaker breaker() {
         return breaker;
-    }
-
-    /** A marker failure recorded on the breaker when a <em>returned</em> result is the transient signal. */
-    private static final class TransientResult extends RuntimeException {
-        TransientResult() {
-            super("retryable result", null, false, false);
-        }
     }
 }

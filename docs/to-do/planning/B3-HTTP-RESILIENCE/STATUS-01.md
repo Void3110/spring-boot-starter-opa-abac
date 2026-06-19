@@ -53,6 +53,13 @@ R4j added as a real `api` dependency of `opa-abac-spring-security` (catalog: `re
 
 ## Architecture review + refactor
 
+> **Post-run deep-review fix (M1).** The original `call` recorded a breaker failure on the **retryable-result**
+> path too. On the OPA edge that path is fed a returned deny-sentinel (`false`), so genuine policy denials
+> drove the breaker — a decision-as-input self-open that ADR 0017 §5 forbids (caught by the adversarial
+> review, not the run's own gate). **Fixed:** the breaker now records a failure **only on the thrown
+> `retryableError` path**; a returned sentinel is retried but never recorded. The dead `TransientResult`
+> marker was removed. See `docs/code-review/B3-HTTP-RESILIENCE-REVIEW.md` (M1/L1).
+
 _Filled at the ★ gate._ Findings:
 - **One refactor applied:** the call loop computed an `elapsed` nanos value (`clock.millis()*1e6 - start`)
   to feed `breaker.onError/onSuccess` — but against a synchronous body the clock doesn't advance, so it was
