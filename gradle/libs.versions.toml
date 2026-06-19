@@ -7,6 +7,9 @@ openapiGenerator = "7.11.0"
 # Library deps
 jackson = "2.18.2"
 slf4j = "2.0.16"
+# Resilience4j — version managed by the Spring Boot BOM; pinned here only for the version catalog ref.
+# The cross-service HTTP resilience seam (Slice B3) is backed by R4j on the Java 21 / Boot 3.4 line.
+resilience4j = "2.2.0"
 
 # Example-app deps (managed by the Spring BOM where possible; pinned here when not)
 springdocOpenApi = "2.8.4"
@@ -24,6 +27,10 @@ testcontainers = "1.20.4"
 # --- Library modules ---
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+# Resilience4j (Slice B3): the circuit-breaker + core (IntervalFunction) modules back the CallGuard impl.
+# Versions are overridden by the Spring Boot BOM where the consuming module imports it.
+resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
+resilience4j-core = { module = "io.github.resilience4j:resilience4j-core", version.ref = "resilience4j" }
 
 # --- Example app (codegen support deps the spring generator references) ---
 springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdocOpenApi" }

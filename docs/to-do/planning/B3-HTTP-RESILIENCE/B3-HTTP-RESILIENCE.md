@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/architecture
@@ -9,7 +9,8 @@ tags:
 
 # B3 — Cross-service HTTP resilience
 
-> **Status: 🔜 PLANNED — decomposed (2026-06-18), ready to implement.** The availability pass that
+> **Status: ✅ IMPLEMENTED (2026-06-18) — T1–T4 shipped on `feature/void3110/http-resilience`; the live
+> e2e headline passed (E1 → 200, E2 → 403).** The availability pass that
 > **softens the outage → hard-deny wall** Slice B2 introduced — a uniform retry/backoff/circuit-break
 > posture across all three cross-service HTTP edges — **without** re-opening the realm-role fallback B2
 > closed. Slice **B3** of [[POC-ROADMAP]] (route step 4: **B2 → 6.7 → Phase 6 → B3 → Phase 7**; B3 is now
@@ -22,10 +23,10 @@ tags:
 
 | # | Ticket | Module(s) | Status |
 |---|--------|-----------|--------|
-| **T1** | `CallGuard` seam + Resilience4j impl + per-edge config | `opa-abac-spring-security` | ☐ |
-| **T2** | Resilient `OpaClient` decorator + starter auto-config (the library feature) | `opa-abac-spring-security` · `…-spring-boot-starter` | ☐ |
-| **T3** | App-side resolve + tag wrappers — B2-preserving | `example-catalog-management-service` | ☐ |
-| **T4** | e2e fault-injecting headline + docs + slice record | `scripts/postman` · `infra` · `docs/guides` | ☐ |
+| **T1** | `CallGuard` seam + Resilience4j impl + per-edge config | `opa-abac-spring-security` | ✅ |
+| **T2** | Resilient `OpaClient` decorator + starter auto-config (the library feature) | `opa-abac-spring-security` · `…-spring-boot-starter` | ✅ |
+| **T3** | App-side resolve + tag wrappers — B2-preserving | `example-catalog-management-service` | ✅ |
+| **T4** | e2e fault-injecting headline + docs + slice record | `scripts/postman` · `infra` · `docs/guides` | ✅ |
 
 Critical path: **T1 → {T2 ∥ T3} → T4**. **T1+T2** are the independently-landable library feature. See
 [[01-DECOMPOSITION]] for the full path + per-ticket Goal/Deliverables/Acceptance/What-NOT-to-touch.

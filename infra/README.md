@@ -150,6 +150,25 @@ policies for the first time (the `bulk` rule is new, though it changes no decisi
 > to the infra copies) so its isolated `opa test` resolves. Edit the `CONTROL`/`list-members` table in
 > **both** copies, and **restart OPA** after any `team.rego`/table edit before running the e2e matrices.
 
+## Cross-service HTTP resilience (Slice B3) — opt-in
+
+Off by default. `ENABLE_RESILIENCE_STUB=1 ./deploy.sh up` adds a **fault-injecting** stand-in for the
+resolve endpoint and points the catalog's `role-source=http` at it (`http://resolve-stub:8080`, **not** the
+real user-mgmt), so the catalog's resolve `CallGuard` sees a controlled outage. It proves the B3 headline
+through the gateway: a **transient** blip recovering within budget → the protected request **succeeds**; a
+**sustained** outage → it **still denies** (403, B2's wall un-breached).
+
+```bash
+ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up --pods 2
+./deploy.sh build          # force the B3 app code into the pods
+cd scripts/postman && ./run-resilience-matrix.sh   # flips the stub transient→down across two passes
+```
+
+The runner brings the stub up in each mode itself, so a single rig serves both passes. **No Rego change in
+this slice → no OPA restart.** The stub is the smallest thing that injects "N-transient-then-recover" +
+"stay-down" — no image build (runs the mounted script on `python:3.12-alpine`). See [[HTTP-RESILIENCE]] for
+the mechanism.
+
 ## Quick start
 
 ```bash
@@ -185,6 +204,7 @@ done | sort | uniq -c
 | `compose.opa.yaml` + `opa/policies/gateway.rego` | OPA with an allow-all gateway policy; exports its own spans to Jaeger. |
 | `compose.keycloak.yaml` + `keycloak/realm-export.json` | Keycloak (opt-in); imports the `catalog-demo` realm/client/user on startup. |
 | `compose.usermgmt.yaml` + `../example-user-management-service/Dockerfile` | The user-management service + its own Postgres (opt-in via `ENABLE_USER_SERVICE=1`); the app-resolved role source for the catalog. |
+| `compose.resilience-stub.yaml` + `resilience-stub/resolve_stub.py` | A tiny **fault-injecting** stand-in for the resolve endpoint (opt-in via `ENABLE_RESILIENCE_STUB=1`), for the Slice B3 resilience e2e. Returns N transient `503`s then the role (`STUB_MODE=transient`) or always `503` (`STUB_MODE=down`); the catalog's `role-source=http` points at it instead of the real user-mgmt. See the B3 section below. |
 | `opa/policies/team.rego` | The team-management policy the user-service dogfoods (a copy of the service's source policy, mounted into the rig's OPA). |
 | `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa, openid-connect). |
 | `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds openid-connect + opentelemetry + opa plugins (toggleable). |

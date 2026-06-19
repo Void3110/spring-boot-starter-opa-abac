@@ -101,4 +101,8 @@ independently-landable subset — the library spine carrying the only widening p
 - [[PERMISSION-CATEGORIES-REVIEW]] (C1/C4 — the source finding) · ADR
   [[0013-attribute-rich-pre-authorization|0013]] (the fallback semantics B2 protects) · ADR
   [[0007-coarse-grained-permission-categories|0007]] (the 6.5 narrowing an outage erased).
+- [[HTTP-RESILIENCE]] (Slice B3) — the availability follow-up that **softens** B2's hard deny wall: a
+  transient outage recovering within budget no longer denies, while a sustained outage still fails closed
+  exactly as B2 mandates (B3's per-edge kill-switch is the principled **inverse** of B2's no-switch — B2's
+  off is the vuln, B3's off is a safe baseline).
 - [[POC-ROADMAP]] — the route box and the B2/B3 rows.

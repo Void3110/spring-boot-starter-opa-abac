@@ -32,6 +32,14 @@ dependencies {
     compileOnly("org.springframework.boot:spring-boot-starter-security")
     compileOnly("org.springframework.boot:spring-boot-starter-web")
 
+    // Resilience4j (Slice B3): the OPA resilience decorator is auto-configured @ConditionalOnClass R4j, the
+    // standard "optional integration" pattern (ADR 0017 §6). R4j is NOT declared here — it arrives
+    // transitively as `api` from opa-abac-spring-security (which needs it for the CallGuard impl), the same
+    // honest caveat as web/security above: the @ConditionalOnClass back-off only fires if a consumer
+    // explicitly excludes R4j. An adopter who wants the plain client excludes io.github.resilience4j or sets
+    // opa.abac.resilience.enabled=false (the kill-switch → byte-identical to pre-B3). The U8 slice test
+    // proves both classpath states via FilteredClassLoader.
+
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
