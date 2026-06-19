@@ -488,9 +488,9 @@ ABAC-gated; an internal one is network-isolated. Never blur the two onto one pat
 
 ## 9. Targets
 
-Conventions the portal-grade bar includes that **these services have not adopted yet**. Each is listed so
-the guide is honest about the gap and the review has something concrete to point at. Adopting any of these
-is a deliberate slice, not a drive-by.
+Conventions a production-grade API bar includes that **these services have not adopted yet**. Each is
+listed so the guide is honest about the gap and the review has something concrete to point at. Adopting any
+of these is a deliberate slice, not a drive-by.
 
 | ◓ Target | What it would add | Why it's deferred / what it buys |
 |---|---|---|
@@ -510,8 +510,8 @@ is a deliberate slice, not a drive-by.
 > [§4](#4-request-and-response-bodies), ADR [[0016-action-enrichment-affordance-metadata|0016]],
 > [[ACTION-ENRICHMENT]]) — `readOnly`, server-emitted, omitted when not computed; affordance, not enforcement.
 >
-> When a target is adopted, move its row out of this section and into the body as a normal rule, the same
-> way the portal guide retired its own "Missing" notes as features landed.
+> When a target is adopted, move its row out of this section and into the body as a normal rule — retiring
+> the "Targets" note the same way the body's adopted-in-Phase notes above were retired as features landed.
 
 ---
 

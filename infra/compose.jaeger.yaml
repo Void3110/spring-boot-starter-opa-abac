@@ -15,9 +15,10 @@ services:
     volumes:
       - ./jaeger/jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml:ro
       - jaeger-badger:/badger
-    # Host ports remapped to the 2xxxx range — a running portal podman-machine (gvproxy) holds
-    # 16686/4317/4318. These host ports are only for external access/UI; inside the shared
-    # network everything reaches Jaeger by DNS (opa-abac-jaeger:4318), unaffected by this.
+    # Host ports remapped to the 2xxxx range to avoid the common defaults (16686/4317/4318), which
+    # another local service or a podman-machine gvproxy may already hold. These host ports are only for
+    # external access/UI; inside the shared network everything reaches Jaeger by DNS
+    # (opa-abac-jaeger:4318), unaffected by this.
     ports:
       - "24317:4317"   # OTLP gRPC  (OPA exports here, in-network)
       - "24318:4318"   # OTLP HTTP  (APISIX + app OTEL agent export here, in-network)

@@ -24,8 +24,8 @@ services:
       - /policies
     volumes:
       - ./opa/policies:/policies:ro
-    # Host port 28181 (not 8181) — a running portal podman-machine holds :8181. In-network the
-    # APISIX opa plugin reaches OPA as http://opa:8181, unaffected by this host remap.
+    # Host port 28181 (not 8181) to avoid colliding with another local service that may hold :8181.
+    # In-network the APISIX opa plugin reaches OPA as http://opa:8181, unaffected by this host remap.
     ports:
       - "28181:8181"  # OPA REST/data API on the host (for poking with curl)
     # No healthcheck: the openpolicyagent/opa image is distroless (no shell, no wget/curl),
