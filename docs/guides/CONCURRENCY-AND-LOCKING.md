@@ -42,6 +42,12 @@ unprotected state.
    accumulating.
 6. **Prove serialization with a latch-based IT on real Postgres** — overlap forced by a latch, never
    `Thread.sleep`.
+7. **Don't catch a `@Transactional` call's exception *inside* a `TransactionTemplate` lambda.** Once an
+   inner `@Transactional` method (`getByIdForUpdate`) throws, Spring marks the shared (`REQUIRED`-joined)
+   transaction **rollback-only**; swallowing the exception in the lambda and returning doesn't clear the
+   mark, so `TransactionTemplate.execute` then throws `UnexpectedRollbackException` *at commit*. To skip
+   on an expected condition (the row is gone), **pre-check with the unlocked `findById` before the tx** —
+   keep the locked read inside as the racing-delete net. See *The rollback-only trap* below.
 
 ## The failure this prevents
 
@@ -135,6 +141,69 @@ A plain `save()` after an unlocked read is the path that caused the incident abo
 use `mutateWithRetry` when you've decided optimistic is the right trade; use a bare `save` only for
 brand-new entities or single-writer paths.
 
+## The rollback-only trap — don't catch a `@Transactional` exception inside the tx
+
+Sometimes a write should be **skipped** when an expected condition holds — e.g. a deferred/async task
+fires for a `Product` that has since been deleted, and the right outcome is "the row is gone, skip
+quietly", not an error. In a hand-rolled `TransactionTemplate` path (the alternative to `mutate` when
+you need to span several entities in one transaction), the tempting shape is **wrong**:
+
+```java
+// ❌ BROKEN: catch the @Transactional call's exception inside the TransactionTemplate lambda
+transactionTemplate.executeWithoutResult(status -> {
+    Product product;
+    try {
+        product = productService.getByIdForUpdate(id);   // @Transactional → throws EntityNotFoundException
+    } catch (EntityNotFoundException e) {
+        log.info("product {} is gone — skipping", id);
+        return;                                           // looks like a clean skip…
+    }
+    // …mutate product…
+});
+```
+
+`getByIdForUpdate` is itself `@Transactional` (`REQUIRED`), so it **joins** the `TransactionTemplate`'s
+physical transaction. When it throws, Spring's transaction interceptor marks that shared transaction
+**rollback-only** *before* your `catch` runs. Swallowing the exception and returning normally does **not**
+clear the mark — so when `TransactionTemplate.execute` reaches commit, it throws:
+
+```
+UnexpectedRollbackException: Transaction silently rolled back because it has been marked as rollback-only
+```
+
+The "skip" therefore fails *after* logging that it skipped — and on a retried/at-least-once trigger (a
+scheduled re-run, a message redelivery) the work re-fires and fails the same way each time. The symptom
+reads as a contradiction: the *"…skipping"* log line prints **and** the operation still errors/retries.
+
+**Fix — pre-check before the transaction with the unlocked read:**
+
+```java
+// ✅ skip BEFORE opening the transaction — the exception never crosses a tx boundary
+if (productService.findById(id).isEmpty()) {       // the unlocked Optional probe (no lock, no throw)
+    log.info("product {} is gone — skipping", id);
+    return;
+}
+transactionTemplate.executeWithoutResult(status -> {
+    Product product = productService.getByIdForUpdate(id);   // racing delete → throws → propagates (correct)
+    // …mutate product…
+});
+```
+
+The unlocked probe is the fast-path skip; the locked `getByIdForUpdate` stays inside the transaction as
+the **racing-delete safety net** — a row deleted in the tiny window between probe and lock still throws,
+which is the right outcome for a genuine race (let it surface, don't pretend it was a clean skip). The
+alternative shape — catch *outside* the `TransactionTemplate` — also works, but the pre-check reads
+cleaner and avoids opening a transaction at all for the common skip. (With `mutate(id, fn)` this trap
+can't arise — there is no lambda to catch inside; the not-found throw propagates out of `mutate`
+directly.)
+
+> **Why a unit test won't catch this.** A **mocked `TransactionTemplate`** runs the lambda synchronously
+> and never models rollback-only commit semantics, so the broken version above **passes its unit test** —
+> the bug is invisible to mocks and surfaces only against a real transaction. When a fix's correctness
+> depends on commit/rollback behavior, prove it with an IT on real Postgres, **or** assert the structural
+> invariant directly — e.g. `verify(transactionTemplate, never()).executeWithoutResult(any())` on the
+> skip path pins "we skipped *before* the tx", which a mock *can* verify.
+
 ## Verifying it actually serializes
 
 The proof is an integration test (`ProductConcurrencyIT`) against **real Postgres** (locking
@@ -154,6 +223,8 @@ The quick at-the-keyboard form of the **Rules (read first)** block above:
 - Repository for a lockable entity extends `LockableJpaRepository`.
 - No slow/external call inside a `mutate` body.
 - Replays/retries converge (Rule 5).
+- Skipping on a not-found inside a `TransactionTemplate`? Pre-check with the unlocked `findById` *before*
+  the tx — never catch the `@Transactional` throw inside the lambda (Rule 7, the rollback-only trap).
 - Concurrency proven by a latch-based IT on real Postgres, not asserted by inspection.
 
 ## Related
