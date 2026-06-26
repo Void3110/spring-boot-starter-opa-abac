@@ -7,7 +7,21 @@ import {
   login,
   logout,
 } from './auth'
-import { type Catalog, listCatalogs, ApiError } from './api'
+import {
+  type Catalog,
+  type Category,
+  type Product,
+  ApiError,
+  deleteCategory,
+  deleteProduct,
+  getCatalog,
+  listCatalogs,
+  listCategories,
+  listProducts,
+  updateCategory,
+  updateProduct,
+} from './api'
+import { ActionBadges, ActionButtons, Breadcrumbs, Logo, RoleChips } from './components'
 
 type AuthState =
   | { phase: 'loading' }
@@ -23,19 +37,16 @@ let bootstrap: Promise<AuthUser | null> | null = null
 export function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
 
-  // On load: complete the PKCE redirect if we came back with ?code=, else restore any session.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const resolve = async (): Promise<AuthUser | null> => {
       if (params.has('code') && params.has('state')) {
         const user = await completeLogin()
-        window.history.replaceState({}, '', '/') // strip ?code=&state= from the URL
+        window.history.replaceState({}, '', '/')
         return user
       }
       return currentUser()
     }
-    // Memoize at module scope so StrictMode's second invocation reuses the same promise
-    // instead of re-consuming the single-use authorization code.
     bootstrap ??= resolve()
     bootstrap
       .then((user) => setAuth(user ? { phase: 'authenticated', user } : { phase: 'anonymous' }))
@@ -86,26 +97,34 @@ function LoginScreen() {
           Sign in with Keycloak
         </button>
         <p className="mt-6 text-center text-xs text-[var(--color-muted)]">
-          Demo identities: viewer · editor · outsider · demo (password = username)
+          Demo identities: editor (admin) · demo (editor) · viewer (read) · outsider (none) — password = username
         </p>
       </div>
     </div>
   )
 }
 
+// A tiny navigation stack: the catalog grid, a catalog's categories, a category's products.
+type View =
+  | { kind: 'catalogs' }
+  | { kind: 'catalog'; catalog: Catalog }
+  | { kind: 'category'; catalog: Catalog; category: Category }
+
 function Console({ user }: { user: AuthUser }) {
   const { username, roles } = describeUser(user)
+  const [view, setView] = useState<View>({ kind: 'catalogs' })
+
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col">
       <header className="flex items-center justify-between border-b border-[var(--color-line)] px-6 py-4">
-        <div className="flex items-center gap-3">
+        <button className="flex items-center gap-3" onClick={() => setView({ kind: 'catalogs' })}>
           <Logo />
           <span className="font-semibold">Catalog Console</span>
-        </div>
+        </button>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="text-sm font-medium">{username}</div>
-            <div className="text-xs text-[var(--color-muted)]">{roles.join(' · ') || 'no roles'}</div>
+            <RoleChips roles={roles} />
           </div>
           <button
             onClick={() => logout()}
@@ -116,98 +135,275 @@ function Console({ user }: { user: AuthUser }) {
         </div>
       </header>
       <main className="flex-1 overflow-auto px-6 py-6">
-        <CatalogList />
+        {view.kind === 'catalogs' && (
+          <CatalogGrid onOpen={(catalog) => setView({ kind: 'catalog', catalog })} />
+        )}
+        {view.kind === 'catalog' && (
+          <CatalogDetail
+            catalog={view.catalog}
+            onHome={() => setView({ kind: 'catalogs' })}
+            onOpenCategory={(category) =>
+              setView({ kind: 'category', catalog: view.catalog, category })
+            }
+          />
+        )}
+        {view.kind === 'category' && (
+          <CategoryDetail
+            catalog={view.catalog}
+            category={view.category}
+            onHome={() => setView({ kind: 'catalogs' })}
+            onUp={() => setView({ kind: 'catalog', catalog: view.catalog })}
+          />
+        )}
       </main>
     </div>
   )
 }
 
-function CatalogList() {
-  const [catalogs, setCatalogs] = useState<Catalog[] | null>(null)
+// Small async-data helper: load on mount + expose a reload.
+function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
+  const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     setError(null)
-    try {
-      const page = await listCatalogs()
-      setCatalogs(page.items)
-    } catch (e) {
-      if (e instanceof ApiError) setError(`${e.status} — ${e.message}`)
-      else setError(e instanceof Error ? e.message : String(e))
-    }
-  }, [])
+    fn()
+      .then(setData)
+      .catch((e) =>
+        setError(e instanceof ApiError ? `${e.status} — ${e.message}` : String(e)),
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+  useEffect(load, [load])
+  return { data, error, reload: load }
+}
 
-  useEffect(() => {
-    void load()
-  }, [load])
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-sm">
+      {children}
+    </div>
+  )
+}
 
-  if (error)
-    return (
-      <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-6 text-sm">
-        <span className="text-[var(--color-deny)]">Failed to load catalogs: {error}</span>
-      </div>
-    )
-  if (!catalogs) return <p className="text-sm text-[var(--color-muted)]">Loading catalogs…</p>
-  if (catalogs.length === 0)
-    return <p className="text-sm text-[var(--color-muted)]">No catalogs visible to you.</p>
-
+function CatalogGrid({ onOpen }: { onOpen: (c: Catalog) => void }) {
+  const { data, error } = useAsync(() => listCatalogs(), [])
+  if (error) return <ErrorBox label="catalogs" message={error} />
+  if (!data) return <Loading what="catalogs" />
+  // Lead with the seeded Demo catalog.
+  const items = [...data.items].sort((a, b) =>
+    a.name === 'Demo catalog' ? -1 : b.name === 'Demo catalog' ? 1 : 0,
+  )
   return (
     <div>
-      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-        Catalogs
-      </h2>
-      <p className="mb-4 text-xs text-[var(--color-muted)]">
-        Each card shows the <code>_actions</code> the policy grants you on that catalog.
-      </p>
+      <SectionHead title="Catalogs" hint="Open a catalog to see its categories — that's where the affordances get rich. Catalog lists themselves aren't enriched." />
       <div className="grid gap-3 sm:grid-cols-2">
-        {catalogs.map((c) => (
-          <div
-            key={c.id}
-            className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-sm"
-          >
-            <div className="font-medium">{c.name}</div>
-            {c.description && (
-              <div className="mt-0.5 text-sm text-[var(--color-muted)]">{c.description}</div>
-            )}
-            <ActionBadges actions={c._actions} />
-          </div>
+        {items.map((c) => (
+          <button key={c.id} onClick={() => onOpen(c)} className="text-left">
+            <Card>
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{c.name}</span>
+                <span className="text-xs text-[var(--color-brand-ink)]">open →</span>
+              </div>
+              {c.description && (
+                <div className="mt-0.5 text-sm text-[var(--color-muted)]">{c.description}</div>
+              )}
+            </Card>
+          </button>
         ))}
       </div>
     </div>
   )
 }
 
-/** The visible payoff of Phase 6: render each allowed/denied action as a badge. */
-function ActionBadges({ actions }: { actions?: Record<string, boolean> }) {
-  if (!actions || Object.keys(actions).length === 0)
-    return (
-      <div className="mt-3 text-xs italic text-[var(--color-muted)]">no affordances enriched</div>
-    )
+function CatalogDetail({
+  catalog,
+  onHome,
+  onOpenCategory,
+}: {
+  catalog: Catalog
+  onHome: () => void
+  onOpenCategory: (c: Category) => void
+}) {
+  // The single GET is enriched (unlike the list) — fetch it for the catalog's own _actions.
+  const full = useAsync(() => getCatalog(catalog.id), [catalog.id])
+  const cats = useAsync(() => listCategories(catalog.id), [catalog.id])
+
   return (
-    <div className="mt-3 flex flex-wrap gap-1.5">
-      {Object.entries(actions).map(([verb, allowed]) => (
-        <span
-          key={verb}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
-          style={{
-            color: allowed ? 'var(--color-allow)' : 'var(--color-deny)',
-            background: allowed ? '#f0fdf4' : '#fef2f2',
-          }}
-        >
-          {allowed ? '✓' : '✕'} {verb}
-        </span>
-      ))}
+    <div>
+      <Breadcrumbs trail={[{ label: 'Catalogs', onClick: onHome }, { label: catalog.name }]} />
+      <Card>
+        <div className="text-lg font-semibold">{catalog.name}</div>
+        {catalog.description && (
+          <div className="mt-0.5 text-sm text-[var(--color-muted)]">{catalog.description}</div>
+        )}
+        <div className="mt-3 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+          Your actions on this catalog
+        </div>
+        <div className="mt-1.5">
+          {full.error ? (
+            <span className="text-xs text-[var(--color-deny)]">{full.error}</span>
+          ) : (
+            <ActionBadges actions={full.data?._actions} />
+          )}
+        </div>
+      </Card>
+
+      <div className="mt-6">
+        <SectionHead title="Categories" hint="Each category's action buttons reflect your role. Try update/delete — a denied one is locked." />
+        {cats.error && <ErrorBox label="categories" message={cats.error} />}
+        {!cats.data && !cats.error && <Loading what="categories" />}
+        {cats.data && cats.data.items.length === 0 && (
+          <Empty>No categories visible to you in this catalog.</Empty>
+        )}
+        <div className="grid gap-3">
+          {cats.data?.items.map((cat) => (
+            <Card key={cat.id}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <button
+                    onClick={() => onOpenCategory(cat)}
+                    className="font-medium hover:text-[var(--color-brand-ink)] hover:underline"
+                  >
+                    {cat.name}
+                  </button>
+                  <TagLine tags={cat.tags} />
+                </div>
+                <button
+                  onClick={() => onOpenCategory(cat)}
+                  className="text-xs text-[var(--color-brand-ink)]"
+                >
+                  products →
+                </button>
+              </div>
+              <div className="mt-3">
+                <ActionButtons
+                  actions={cat._actions}
+                  onAct={async (verb) => {
+                    // PUT is a full replace — send the existing name so it isn't nulled.
+                    if (verb === 'update')
+                      await updateCategory(catalog.id, cat.id, {
+                        name: cat.name,
+                        description: `edited @ ${new Date().toISOString()}`,
+                      })
+                    else if (verb === 'delete') await deleteCategory(catalog.id, cat.id)
+                    else if (verb === 'assign-tags')
+                      await updateCategory(catalog.id, cat.id, {
+                        name: cat.name,
+                        description: cat.description ?? '',
+                      })
+                    cats.reload()
+                  }}
+                />
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
 
-function Logo() {
+function CategoryDetail({
+  catalog,
+  category,
+  onHome,
+  onUp,
+}: {
+  catalog: Catalog
+  category: Category
+  onHome: () => void
+  onUp: () => void
+}) {
+  const prods = useAsync(() => listProducts(catalog.id, category.id), [catalog.id, category.id])
   return (
-    <div
-      className="flex h-9 w-9 items-center justify-center rounded-lg font-bold text-white"
-      style={{ background: 'var(--color-brand)' }}
-    >
-      A
+    <div>
+      <Breadcrumbs
+        trail={[
+          { label: 'Catalogs', onClick: onHome },
+          { label: catalog.name, onClick: onUp },
+          { label: category.name },
+        ]}
+      />
+      <SectionHead title={`Products in ${category.name}`} hint="Product affordances mirror your role just like categories." />
+      {prods.error && <ErrorBox label="products" message={prods.error} />}
+      {!prods.data && !prods.error && <Loading what="products" />}
+      {prods.data && prods.data.items.length === 0 && (
+        <Empty>No products in this category yet.</Empty>
+      )}
+      <div className="grid gap-3">
+        {prods.data?.items.map((p: Product) => (
+          <Card key={p.id}>
+            <div className="flex items-center justify-between">
+              <span className="font-medium">{p.name}</span>
+              {p.priceCents != null && (
+                <span className="text-sm text-[var(--color-muted)]">
+                  {(p.priceCents / 100).toFixed(2)} {p.currency ?? ''}
+                </span>
+              )}
+            </div>
+            <div className="mt-3">
+              <ActionButtons
+                actions={p._actions}
+                onAct={async (verb) => {
+                  if (verb === 'update')
+                    await updateProduct(catalog.id, category.id, p.id, {
+                      name: p.name,
+                      description: `edited @ ${new Date().toISOString()}`,
+                    })
+                  else if (verb === 'delete') await deleteProduct(catalog.id, category.id, p.id)
+                  prods.reload()
+                }}
+              />
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
+  )
+}
+
+// --- small presentational helpers --------------------------------------------
+function SectionHead({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="mb-3">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        {title}
+      </h2>
+      {hint && <p className="mt-0.5 text-xs text-[var(--color-muted)]">{hint}</p>}
+    </div>
+  )
+}
+
+function TagLine({ tags }: { tags?: Record<string, string | string[]> }) {
+  if (!tags || Object.keys(tags).length === 0) return null
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {Object.entries(tags).flatMap(([k, v]) =>
+        (Array.isArray(v) ? v : [v]).map((val) => (
+          <span
+            key={`${k}:${val}`}
+            className="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]"
+          >
+            {k}:{val}
+          </span>
+        )),
+      )}
+    </div>
+  )
+}
+
+function Loading({ what }: { what: string }) {
+  return <p className="text-sm text-[var(--color-muted)]">Loading {what}…</p>
+}
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-[var(--color-muted)]">{children}</p>
+}
+function ErrorBox({ label, message }: { label: string; message: string }) {
+  return (
+    <Card>
+      <span className="text-sm text-[var(--color-deny)]">
+        Failed to load {label}: {message}
+      </span>
+    </Card>
   )
 }
