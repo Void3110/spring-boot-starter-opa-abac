@@ -58,6 +58,47 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "catalog-spa",
+      "name": "Catalog Demo SPA (browser)",
+      "description": "Public client for the browser demo SPA. Authorization Code + PKCE (S256); no secret. The SPA logs in directly against Keycloak, holds the access token, and sends it as a Bearer to the gateway (which validates it, bearer_only). See infra/README.md.",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:9085/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:9085"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*##http://localhost:9085/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [

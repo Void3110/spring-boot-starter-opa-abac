@@ -56,6 +56,48 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 > (issuer `keycloak:8888`) or via the real browser redirect flow — a token minted against
 > `localhost:28888` has a mismatched issuer and APISIX rejects it.
 
+## Demo SPA auth (bearer-only gateway) — opt-in
+
+For the browser demo SPA (Phase 7), the gateway runs in a **bearer-only** posture instead of doing
+the redirect login itself. `ENABLE_SPA=1` flips the `openid-connect` plugin to
+`bearer_only=true` + `unauth_action="deny"` (the gateway only *validates* an incoming
+`Authorization: Bearer <jwt>` against the realm JWKS — a missing/invalid token gets a `401`, never a
+`302` redirect) and enables the `cors` plugin for the SPA origin. `ENABLE_SPA=1` **force-enables
+`ENABLE_OIDC`** (the validation is done by the openid-connect plugin).
+
+The SPA itself does **Authorization Code + PKCE** directly against Keycloak using the new public
+client **`catalog-spa`** (`publicClient: true`, `pkce S256`, redirect URIs `http://localhost:3000/*`
++ `http://localhost:9085/*`), holds the access token, and sends it as a Bearer to the gateway.
+
+`ENABLE_SPA=1` is the **complete demo recipe in one flag** — it force-enables both `ENABLE_OIDC`
+(the bearer validation) **and `ENABLE_USER_SERVICE`** (the http role source + Phase-6 `_actions`
+enrichment the SPA renders). It also proxies Keycloak through the gateway at `/realms/*` +
+`/resources/*` so the browser does its whole PKCE flow single-origin against `:9085` (no
+`/etc/hosts`, no host-port issuer mismatch). The browser SPA lives in `example-demo-ui/`.
+
+```bash
+./deploy.sh build                              # ensure the Phase-6 enrichment code is in the images
+ENABLE_SPA=1 ./deploy.sh up --pods 2          # brings up Keycloak + user-service + bearer gateway
+
+# no token -> 401 (unauth_action: deny — NOT a redirect, unlike the default OIDC posture)
+curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 401
+
+# mint a token IN-NETWORK (see the issuer gotcha above) and call through the gateway.
+# NOTE: catalog-spa is a *public* client with direct-access-grants OFF (correct for a real PKCE
+# browser client), so for a CLI smoke test mint via the confidential catalog-gateway client — the
+# token is realm-scoped, so APISIX validates it regardless of which client minted it:
+TOKEN=$(docker run --rm --network opa-abac-example_default curlimages/curl -s \
+  -X POST http://keycloak:8888/realms/catalog-demo/protocol/openid-connect/token \
+  -d client_id=catalog-gateway -d client_secret=catalog-gateway-secret \
+  -d grant_type=password -d username=viewer -d password=viewer | sed 's/.*"access_token":"//;s/".*//')
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" localhost:9085/actuator/health  # 200
+```
+
+> The real PKCE flow (against `catalog-spa`) is exercised by the SPA in the browser; the CLI snippet
+> above only proves the gateway's bearer-validation posture. When the SPA is served *through* APISIX
+> for the packaged demo it is same-origin (CORS moot); the `cors` plugin covers the Vite dev server
+> on `:3000` during development.
+
 ## User-management service (app-resolved roles) — opt-in
 
 Off by default. `ENABLE_USER_SERVICE=1 ./deploy.sh up` adds the `user-management-service` (the ABAC
