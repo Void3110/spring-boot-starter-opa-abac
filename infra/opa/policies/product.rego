@@ -13,7 +13,7 @@
 #   input.resource.ancestors is a root-first, leaf-excluded list of {type,id}. The role is
 #   resolved ONCE on the governing root, so role_definition.permissions is keyed by ANCESTOR
 #   type. A grant on an inheritable ancestor satisfies the leaf action:
-#       final_allow = (direct_grant OR inherited_grant OR fallback) AND NOT denied
+#       final_allow = (direct_grant OR inherited_grant) AND NOT denied
 #   Inheritance is OPT-IN, default-off: an ancestor only counts when the relation is declared
 #   in data.product.inheritable[<leaf type>][<ancestor type>] (absent ⇒ no inheritance, so a
 #   policy with no inheritable data behaves EXACTLY as the pre-hierarchy direct-only decision).
@@ -28,8 +28,9 @@
 #   ANY_OF  -> at least one required key matches  (existential: `some ... in`)
 #   ALL_OF  -> every required key matches          (universal:   `every`)
 # A role with no required_tags is vacuously satisfied (untagged roles behave exactly as before);
-# a malformed required_tags / unknown match_mode fails the check -> deny (fail-closed). The
-# subject-roles FALLBACK is untouched — the conjunct only NARROWS the role-definition grant path.
+# a malformed required_tags / unknown match_mode fails the check -> deny (fail-closed). The tag
+# conjunct only NARROWS the role-definition grant path (Slice B4 removed the subject-roles fallback;
+# see the ADR-0018 note above).
 #
 # OPA 1.x: `if`/`in`/`contains`/`some`/`every` are built-in keywords — no imports needed. Default deny.
 
@@ -69,21 +70,12 @@ granted if {
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles — through the
-# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
-# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
-granted if {
-	not has_role_definition
-	some role in input.subject.roles
-	role in {"catalog-viewer", "catalog-editor"}
-	verb in permissions.effective_from_categories({"READ"})
-}
-
-granted if {
-	not has_role_definition
-	"catalog-editor" in input.subject.roles
-	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
-}
+# Slice B4 (ADR 0018) — the blanket realm-role fallback was REMOVED. A product lives UNDER a governed
+# catalog, so the resolved role (team membership) already applies at every level; the fallback only
+# leaked. There is no product:create-style narrow fallback here (products are created under an
+# already-governed catalog, where the resolved role grants `create`). A request with no role_definition
+# now fails closed at every verb — single-GET of a product in a catalog the caller is not a member of
+# is denied, closing the deep-link leak. See ADR 0018 §2b.
 
 direct_grant if {
 	verb in permissions.effective_actions(input.role_definition, input.resource.type)

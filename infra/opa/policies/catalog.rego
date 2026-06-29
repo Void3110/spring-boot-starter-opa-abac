@@ -6,8 +6,14 @@
 # actions (view/list/create/update/delete/define-tags/assign-tags/assign-roles) through
 # data.permission_categories and narrowed by denied_actions — the shared
 # permissions.effective_actions (Phase 6.5, ADR 0007). A stale/unknown token expands to
-# NOTHING (fail-closed ∅-expansion). JWT roles are a fallback used only when no role
-# definition is present on the input, expanded through the SAME table.
+# NOTHING (fail-closed ∅-expansion).
+#
+# Slice B4 (ADR 0018) — membership is the sole access path. The blanket realm-role fallback
+# (decide view/list/update/delete from JWT roles when no role_definition is present) was REMOVED:
+# it granted every authenticated user access to every catalog and contradicted team-governance.
+# The ONLY surviving JWT-role fallback is verb-gated to `catalog:create` (type-level onboarding,
+# which precedes any team). The list path is the role-def-only `filter` entrypoint below + an
+# app-supplied governed-id base scope. See ADR 0018.
 #
 # Phase 5.97 — tag-based grants (the category.rego block, ported as-is; retro-audit fold-in #3).
 # A role may additionally REQUIRE tags: when input.role_definition.required_tags is present, the
@@ -16,8 +22,9 @@
 #   ANY_OF  -> at least one required key matches  (existential: `some ... in`)
 #   ALL_OF  -> every required key matches          (universal:   `every`)
 # A role with no required_tags is vacuously satisfied (untagged roles behave exactly as before);
-# a malformed required_tags / unknown match_mode fails the check -> deny (fail-closed). The
-# subject-roles FALLBACK is untouched — the conjunct only NARROWS the role-definition grant path.
+# a malformed required_tags / unknown match_mode fails the check -> deny (fail-closed). The tag
+# conjunct only NARROWS the role-definition grant path (it never widens; the create fallback below
+# carries no tag requirement, as creation precedes any resource).
 #
 # OPA 1.x: `if`/`in`/`contains`/`some`/`every` are built-in keywords — no imports needed. Default deny.
 
@@ -42,20 +49,21 @@ allow if {
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles — through the
-# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
-# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
+# NARROW CREATE FALLBACK (Slice B4): the ONLY surviving realm-role fallback. catalog:create is
+# TYPE-level (no resourceId, no team/instance yet), so it cannot be team-scoped — a new user must be
+# able to onboard a catalog BEFORE any team governs it. So the realm role catalog-editor grants
+# `create` only; every other verb (view/list/update/delete/…) now requires a resolved role_definition
+# (team membership). This is verb-gated by design: realm role = "may onboard new catalogs"; team
+# membership = "what you may access". See ADR 0018 (membership-as-sole-access-path) §2d.
+#
+# The blanket realm fallbacks (catalog-viewer→READ, catalog-editor→READ+WRITE+TAG on ANY catalog)
+# were REMOVED here in B4 — they leaked every catalog to every authenticated user and contradicted
+# the team-governance model. Removal is unconditional (a fix, not a feature; no re-enable flag — the
+# off-ramp would be the vuln).
 allow if {
-	not has_role_definition
-	some role in input.subject.roles
-	role in {"catalog-viewer", "catalog-editor"}
-	verb in permissions.effective_from_categories({"READ"})
-}
-
-allow if {
+	verb == "create"
 	not has_role_definition
 	"catalog-editor" in input.subject.roles
-	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
 }
 
 has_role_definition if {
@@ -115,6 +123,45 @@ tags_satisfied if {
 
 has_required_tags if {
 	count(input.role_definition.required_tags) > 0
+}
+
+# ---------------------------------------------------------------------------
+# Slice B4 — list-filtering entrypoint (partial-evaluation friendly).
+#
+# `filter` is the rule the app's Compile API call partially-evaluates with the RESOURCE declared
+# unknown (unknowns=["input.resource"]) so OPA returns the residual a row must satisfy — which the
+# app composes as the catalog list's base scope (see CatalogListAuthorizer). Catalogs are NOT a
+# tag-filtered resource here: visibility is a team-membership question resolved app-side
+# (GovernedScopeResolver supplies the `id IN (governed ids)` base scope; this `filter` rule only
+# decides "may this role LIST catalogs at all"). So the residual is unconditional ALLOW_ALL when the
+# role grants `list`, and UNSATISFIABLE DENY_ALL otherwise — `governedScope ∧ ALLOW_ALL` = the
+# governed set, `governedScope ∧ DENY_ALL` = empty.
+#
+# TWO deliberate properties (mirrors category.rego's filter — mx-cbd39e, mx-f63604):
+#   1. ROLE-DEFINITION-ONLY — `filter` requires has_role_definition and has NO subject-roles fallback.
+#      A list request with no role definition compiles to an UNSATISFIABLE residual -> DENY_ALL -> an
+#      EMPTY list, never the whole table. This is the fail-closed boundary (the narrow catalog:create
+#      fallback above lives ONLY on `allow`, never on `filter`).
+#   2. PARTIAL-EVAL-FRIENDLY category expansion, INLINE — the role's category tokens for the (unknown)
+#      type expand through data.permission_categories to fine actions and must contain "list", minus an
+#      explicit denial. Written as a positive membership CHAIN, NOT a call to permissions.effective_actions,
+#      because OPA's partial evaluator does not inline user functions over an unknown argument (the call
+#      form leaves un-foldable comprehensions in the residual). Role + table are fully known at compile
+#      time, so the chain folds to the type-eq tautology (ALLOW_ALL). A role carrying a DENIAL survives
+#      PE as a negated type-eq (unsupported) and FAILS CLOSED to the batch recheck (which uses `allow`).
+
+default filter := false
+
+filter if {
+	has_role_definition
+	some token in input.role_definition.permissions[input.resource.type]
+	"list" in data.permission_categories[token]
+	not filter_list_denied
+}
+
+# The role explicitly withholds "list" for this type (deny-overrides at the list boundary).
+filter_list_denied if {
+	"list" in input.role_definition.denied_actions[input.resource.type]
 }
 
 # ---------------------------------------------------------------------------

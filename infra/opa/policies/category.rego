@@ -26,9 +26,11 @@ import data.permissions
 
 default allow := false
 
-# final decision: a grant (direct, inherited, or the subject-roles fallback) that is NOT denied.
-# Phase 5.5-A added inheritance + deny-overrides; the tag match + filter/bulk entrypoints are unchanged.
-#   final_allow = (direct_grant OR inherited_grant OR fallback) AND NOT denied
+# final decision: a grant (direct or inherited via the resolved role) that is NOT denied. Slice B4
+# (ADR 0018) removed the subject-roles fallback — membership is the sole access path; a request with
+# no role_definition fails closed at every verb. Phase 5.5-A's inheritance + deny-overrides and the
+# tag match + filter/bulk entrypoints are unchanged.
+#   final_allow = (direct_grant OR inherited_grant) AND NOT denied
 # Inheritance is OPT-IN, default-off via data.category.inheritable[<leaf>][<ancestor>] (absent ⇒ none),
 # so with no inheritable data this behaves EXACTLY as the pre-hierarchy direct-only decision.
 allow if {
@@ -76,22 +78,12 @@ granted if {
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles — through the
-# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
-# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
-# (No tag requirement applies to the fallback.)
-granted if {
-	not has_role_definition
-	some role in input.subject.roles
-	role in {"catalog-viewer", "catalog-editor"}
-	verb in permissions.effective_from_categories({"READ"})
-}
-
-granted if {
-	not has_role_definition
-	"catalog-editor" in input.subject.roles
-	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
-}
+# Slice B4 (ADR 0018) — the blanket realm-role fallback was REMOVED. A category lives UNDER a
+# governed catalog, so the resolved role (team membership) already applies at every level; the
+# fallback only leaked. There is NO category:create-style narrow fallback here (categories/products
+# are created under an already-governed catalog, where the resolved role grants `create`). A request
+# with no role_definition now fails closed at every verb — single-GET of a category in a catalog the
+# caller is not a member of is denied, closing the deep-link leak. See ADR 0018 §2b.
 
 direct_grant if {
 	verb in permissions.effective_actions(input.role_definition, input.resource.type)

@@ -111,10 +111,15 @@ test_denied_action_delete_denies if {
 	}
 }
 
-# --- fallback to subject roles (no role_definition) -------------------------
+# --- Slice B4: realm-role fallback REMOVED (ADR 0018) -----------------------
+#
+# A product lives under a governed catalog, so the resolved role (team membership) applies at every
+# level; the blanket realm fallback only leaked. With no role_definition, a bare realm role is now
+# denied at EVERY verb — closing the deep-link leak (R7).
 
-test_fallback_viewer_views if {
-	product.allow with input as {
+# R7 — bare catalog-viewer (no role-def) can no longer view a product.
+test_fallback_viewer_view_now_denied if {
+	not product.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
 		"action": "product:view",
 		"resource": {"type": "product", "id": "p1"},
@@ -122,20 +127,23 @@ test_fallback_viewer_views if {
 	}
 }
 
-test_fallback_viewer_cannot_update if {
+# R7 — bare catalog-editor (no role-def) can no longer update a product (the leak we closed).
+test_fallback_editor_update_now_denied if {
 	not product.allow with input as {
-		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"subject": {"id": "u2", "roles": ["catalog-editor"]},
 		"action": "product:update",
 		"resource": {"type": "product", "id": "p1"},
 		"environment": {},
 	}
 }
 
-test_fallback_editor_updates if {
+# The resolved-role path is UNCHANGED: a role-def granting WRITE still updates.
+test_resolved_role_updates_unchanged if {
 	product.allow with input as {
-		"subject": {"id": "u2", "roles": ["catalog-editor"]},
+		"subject": {"id": "u2", "roles": []},
 		"action": "product:update",
 		"resource": {"type": "product", "id": "p1"},
+		"role_definition": editor_role_def,
 		"environment": {},
 	}
 }
@@ -332,10 +340,10 @@ test_tag_free_role_unaffected if {
 	product.allow with input as product_tag_input(editor_role_def, {"region": "apac"})
 }
 
-# P5 — no role definition at all: the realm fallback decides exactly as before (the conjunct
-# sits only on the role-definition grant path).
-test_tag_fallback_path_unaffected if {
-	product.allow with input as {
+# P5 — the tag conjunct sits only on the role-definition grant path. Slice B4: bare catalog-editor
+# (no role-def) can no longer `update` (fallback removed for all verbs) regardless of tags.
+test_tag_fallback_path_update_now_denied if {
+	not product.allow with input as {
 		"subject": {"id": "u2", "roles": ["catalog-editor"]},
 		"action": "product:update",
 		"resource": {"type": "product", "id": "p1", "attributes": {"region": "apac"}},
