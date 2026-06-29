@@ -114,6 +114,33 @@ ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 cd scripts/postman && ./run-team-matrix.sh
 ```
 
+### Gateway routing for the public self-service API (Slice B4)
+
+When `ENABLE_USER_SERVICE=1`, `init-routes.sh` also routes the **public** user-management prefixes
+through APISIX (priority 60, above the catalog catch-all) to a new `usermgmt-pool` upstream, carrying
+the **same `openid-connect` bearer validation** as the catalog routes (the user-service does its own
+fine-grained `@OpaPreAuthorize`, so these routes do *not* carry the catalog `opa` gateway plugin):
+
+| Route | URI | → upstream |
+|-------|-----|-----------|
+| `usermgmt-teams` | `/api/v1/teams*` | `usermgmt-pool` (`catalog-... `→ `usermgmt:8080`) |
+| `usermgmt-users` | `/api/v1/users*` | `usermgmt-pool` |
+
+This is what lets the SPA's **self-service create** work: a `POST /api/v1/teams` through the gateway
+arrives with the validated `sub`, so `CallerIdentity` sees the real subject — required by both
+owner-on-create and the Slice-B4 **ownership squat-check** (`createTeam` verifies the caller owns the
+target catalog, 403 otherwise; ADR 0019). The user-service must run with `ABAC_OWNERSHIP_ENABLED=true`
++ `ABAC_OWNERSHIP_SERVICES_CATALOG=http://catalog-1:8080` (set in `compose.usermgmt.yaml`) or every
+public `createTeam` fails closed to 403.
+
+> **`/internal/**` is NEVER gateway-exposed — the load-bearing invariant.** The gateway proxies ONLY
+> `/api/v1/teams*`, `/api/v1/users*`, `/api/v1/catalogs*` (catch-all), and the Keycloak `/realms/*` +
+> `/resources/*` paths. The user-service's `/internal/**` (resolve, governed-targets, bootstrap) and the
+> catalog's `/internal/catalog/{id}/created-by` are `permitAll` + in-network only — exposing them through
+> the gateway would let anyone forge a `sub` or read a creator id. Verify:
+> `curl :9085/internal/governed-targets` → **404 (not routed)**; `curl -H 'Authorization: Bearer <jwt>'
+> :9085/api/v1/users` → **200**.
+
 The matrix proves, through the gateway: the catalog owner writes; a viewer-member cannot; a member with
 a team-scoped custom editor role can; a non-member is denied — all with the role coming from the
 user-service. It also dogfoods the user-service's own management API (owner manages, member 403). See

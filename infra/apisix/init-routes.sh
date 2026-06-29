@@ -152,6 +152,79 @@ if [ "${ENABLE_SPA:-0}" = "1" ]; then
   echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [SPA single-origin auth, public passthrough]"
 fi
 
+# Slice B4 (ADR 0019): route the PUBLIC user-management self-service prefixes through the gateway so
+# the user-service's CallerIdentity gets the gateway-validated subject (createTeam owner-on-create + the
+# ownership squat-check both need the real `sub`). Two routes, /api/v1/teams* and /api/v1/users*, at a
+# priority ABOVE the catalog catch-all (/*, priority 0) so they win, pointed at a new usermgmt-pool. They
+# carry the SAME openid-connect bearer validation (+ tracing/cors) as the catalog route — the user-service
+# does its own fine-grained @OpaPreAuthorize, so they do NOT carry the catalog `opa` gateway-route plugin.
+#
+# CRITICAL: there is NO /internal/** route here. /internal/** (the resolve API, the governed-targets
+# endpoint, the ownership created-by read, the bootstrap seed) is permitAll + in-network only — exposing
+# it through the gateway would let anyone forge a `sub` or read a creator id. The gateway proxies ONLY
+# /api/v1/teams*, /api/v1/users*, /api/v1/catalogs* (catch-all), and the Keycloak realms/resources paths.
+#
+# Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — only wired when the usermgmt pod is up.
+if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
+  # The usermgmt pod publishes on host port 28090 (deploy.sh wait_usermgmt_healthy).
+  USERMGMT_NODE="${USERMGMT_NODE:-host.docker.internal:28090}"
+  curl -sf -o /dev/null -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/upstreams/usermgmt-pool" \
+    -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{\"$USERMGMT_NODE\":1}}"
+  echo "  upstream 'usermgmt-pool' -> $USERMGMT_NODE"
+
+  # The user-mgmt routes' plugin set: openid-connect (the same bearer validation as the catalog route)
+  # + tracing + cors-when-SPA. NOT the catalog `opa` gateway plugin (the user-service authorizes itself).
+  UM_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
+  if [ "${ENABLE_OIDC:-0}" = "1" ]; then
+    UM_PLUGINS="$UM_PLUGINS,\"openid-connect\":{\
+\"_meta\":{\"priority\":2599},\
+\"client_id\":\"catalog-gateway\",\
+\"client_secret\":\"catalog-gateway-secret\",\
+\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
+\"realm\":\"catalog-demo\",\
+\"scope\":\"openid profile email\",\
+\"bearer_only\":$OIDC_BEARER_ONLY,\
+\"use_jwks\":true,\
+\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
+\"set_access_token_header\":true,\
+\"access_token_in_authorization_header\":true,\
+\"ssl_verify\":false}"
+  fi
+  if [ "${ENABLE_SPA:-0}" = "1" ]; then
+    UM_PLUGINS="$UM_PLUGINS,\"cors\":{\
+\"_meta\":{\"priority\":4000},\
+\"allow_origins\":\"http://localhost:3000,http://localhost:9085\",\
+\"allow_methods\":\"GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD\",\
+\"allow_headers\":\"Authorization,Content-Type,Accept,Origin,X-Requested-With\",\
+\"expose_headers\":\"X-Upstream-Addr,Location\",\
+\"allow_credential\":false,\
+\"max_age\":3600}"
+  fi
+  if [ "${ENABLE_TRACING:-1}" = "1" ]; then
+    UM_PLUGINS="$UM_PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
+  fi
+
+  # Priority 60 (> the catch-all's 0, and distinct from the Keycloak proxy's 50). A prefix match on
+  # /api/v1/teams* / /api/v1/users* — NOT /internal/** — so only the public self-service surface routes.
+  for um in "usermgmt-teams:/api/v1/teams*" "usermgmt-users:/api/v1/users*"; do
+    name="${um%%:*}"; uri="${um#*:}"
+    um_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+      -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+      "$APISIX_ADMIN/apisix/admin/routes/$name" \
+      -d "{\"name\":\"$name\",\"uri\":\"$uri\",\
+\"methods\":[\"GET\",\"POST\",\"PUT\",\"DELETE\",\"OPTIONS\",\"PATCH\",\"HEAD\"],\
+\"upstream_id\":\"usermgmt-pool\",\"priority\":60,\"status\":1,\"plugins\":{$UM_PLUGINS}}")
+    um_code=$(printf '%s' "$um_resp" | tail -n1)
+    if [ "$um_code" != "200" ] && [ "$um_code" != "201" ]; then
+      echo "  ERROR: route '$name' PUT failed ($um_code): $(printf '%s' "$um_resp" | head -n1)" >&2
+      exit 1
+    fi
+  done
+  echo "  routes 'usermgmt-teams' (/api/v1/teams*) + 'usermgmt-users' (/api/v1/users*) -> usermgmt-pool  [priority 60; NO /internal route]"
+fi
+
 # Note: use -s (not -sf) and inspect the body — a -f swallows APISIX's 400 error messages
 # (e.g. "unknown plugin [...]" when a plugin isn't enabled in config.yaml).
 route_resp=$(curl -s -w "\n%{http_code}" -X PUT \

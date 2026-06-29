@@ -49,7 +49,7 @@ a team governs a catalog, membership grants access — but the fallback contradi
 | T5 | `ResourceOwnershipResolver` SPI + `DiscoveryOwnershipResolver` (registry + TTL cache) — fail-closed, unit | ✅ |
 | T6 | catalog `GET /internal/{type}/{id}/created-by` endpoint + confirm `created_by`=sub | ✅ |
 | T7 | wire ownership into `createTeam` (public path enforces, `/internal/bootstrap` bypasses) + IT | ✅ |
-| T8 | gateway routing: `usermgmt-pool` + `/api/v1/teams*` `/api/v1/users*` (init-routes.sh) | ☐ |
+| T8 | gateway routing: `usermgmt-pool` + `/api/v1/teams*` `/api/v1/users*` (init-routes.sh) | ✅ |
 | T9 | demo users alice/bob/carol + seed + the e2e **isolation matrix** + docs/roadmap/Mulch | ☐ |
 
 ## Related
