@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
 import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
+import dev.dmitriikonovalov.example.catalog.config.CatalogListAuthorizer;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.openapi.api.CatalogApi;
@@ -22,19 +23,26 @@ public class CatalogController implements CatalogApi {
 
     private final CatalogRepository catalogs;
     private final CatalogHierarchyService hierarchy;
+    private final CatalogListAuthorizer catalogListAuthorizer;
     private final ObjectProvider<AbacResourceCache> resourceCache;
 
     public CatalogController(CatalogRepository catalogs, CatalogHierarchyService hierarchy,
+                             CatalogListAuthorizer catalogListAuthorizer,
                              ObjectProvider<AbacResourceCache> resourceCache) {
         this.catalogs = catalogs;
         this.hierarchy = hierarchy;
+        this.catalogListAuthorizer = catalogListAuthorizer;
         this.resourceCache = resourceCache;
     }
 
     @Override
-    @OpaPreAuthorize(action = "catalog:list", resourceType = "'catalog'")
     public ResponseEntity<CatalogPage> listCatalogs(Integer page, Integer perPage) {
-        var result = catalogs.findAll(PageDefaults.pageRequest(page, perPage));
+        // Slice B4 (ADR 0018): NO coarse @OpaPreAuthorize(catalog:list) gate. A catalog list is type-level
+        // (no resourceId) so no per-resource role resolves, and after B4 there is no realm fallback — such a
+        // gate would deny every membership-driven caller. CatalogListAuthorizer is the SOLE authority: the
+        // governed base scope (id IN the catalogs I govern via team membership) AND-ed with the role-def-only
+        // `filter` residual, fail-closed to an empty page. A subject governing nothing sees [].
+        var result = catalogListAuthorizer.readable(PageDefaults.pageRequest(page, perPage));
         return ResponseEntity.ok(CatalogMapper.toCatalogPage(result));
     }
 

@@ -1,7 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
 import dev.dmitriikonovalov.opaabac.data.filter.GovernedScopeResolver;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -17,14 +16,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
 /**
  * The catalog example's {@link GovernedScopeResolver} impl: resolves the catalog ids a subject governs
  * (via team membership) by calling the user-management service's internal endpoint
- * {@code GET <base>/internal/governed-targets?subject&resourceType=catalog → ["<uuid>", …]}, and turns the
- * result into the list's base scope {@code id IN (those uuids)} (Slice B4, ADR 0018).
+ * {@code GET <base>/internal/governed-targets?subject&resourceType=catalog → ["<uuid>", …]}. It implements
+ * the {@link GovernedScopeResolver#governedIds} primitive; the {@code id IN (those uuids)} base scope comes
+ * from the SPI's default {@code governedScope} (Slice B4, ADR 0018).
  *
  * <p>This is <b>app code</b>, not a library change — the library SPI was built for exactly this single-bean
  * swap, mirroring {@link HttpRoleDefinitionSupplier} (the JDK {@link HttpClient} + Jackson client style; no
@@ -70,17 +69,11 @@ public class HttpGovernedScopeResolver implements GovernedScopeResolver {
     }
 
     @Override
-    public <T extends AbacDataObject> Specification<T> governedScope(String subject, String resourceType) {
+    public List<UUID> governedIds(String subject, String resourceType) {
         if (subject == null || subject.isBlank() || resourceType == null || resourceType.isBlank()) {
-            return GovernedScopeResolver.denyAll(); // no coordinates → fail-closed (governs nothing)
+            return List.of(); // no coordinates → fail-closed (governs nothing); the SPI default → denyAll
         }
-        List<UUID> ids = fetchGovernedIds(subject, resourceType);
-        if (ids.isEmpty()) {
-            // Authoritative "governs nothing" OR any breach (both already collapsed to empty) → deny-all.
-            return GovernedScopeResolver.denyAll();
-        }
-        // Base scope: id IN (governed ids). AND-composed by AbacQueryService as the gate nothing escapes.
-        return (root, query, cb) -> root.get("id").in(ids);
+        return fetchGovernedIds(subject, resourceType);
     }
 
     /**
