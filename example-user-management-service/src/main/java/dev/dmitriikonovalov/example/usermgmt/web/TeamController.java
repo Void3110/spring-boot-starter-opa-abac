@@ -7,9 +7,12 @@ import dev.dmitriikonovalov.example.usermgmt.openapi.model.Team;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TeamPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TransferOwnershipRequest;
 import dev.dmitriikonovalov.example.usermgmt.service.CallerIdentity;
+import dev.dmitriikonovalov.example.usermgmt.service.NotResourceOwnerException;
 import dev.dmitriikonovalov.example.usermgmt.service.TeamService;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
+import dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -26,22 +29,34 @@ public class TeamController implements TeamApi {
     private final TeamRepository teams;
     private final TeamService teamService;
     private final CallerIdentity callerIdentity;
+    /** Present only when ownership verification is wired (abac.ownership.enabled); absent → fail-closed. */
+    private final ObjectProvider<ResourceOwnershipResolver> ownershipResolver;
 
     public TeamController(
-            TeamRepository teams, TeamService teamService, CallerIdentity callerIdentity) {
+            TeamRepository teams,
+            TeamService teamService,
+            CallerIdentity callerIdentity,
+            ObjectProvider<ResourceOwnershipResolver> ownershipResolver) {
         this.teams = teams;
         this.teamService = teamService;
         this.callerIdentity = callerIdentity;
+        this.ownershipResolver = ownershipResolver;
     }
 
     @Override
     public ResponseEntity<Team> createTeam(CreateTeamRequest request) {
-        // bootstrap: pre-membership, authenticated-only by design — creating your first team precedes any
-        // membership to authorize against (owner-on-create), so this endpoint is deliberately ungated
-        // (no @OpaPreAuthorize). The creator becomes the owner atomically inside TeamService.
-        // KNOWN DEMO LIMITATION (target squatting): first-come-first-served binding — nothing verifies
-        // the caller's right over the target. Production needs an ownership check or invite/claim flow;
-        // see TEAM-BASED-AUTHORIZATION.md (retro-audit 2026-06-12).
+        // Pre-membership, authenticated-only by design — creating your first team precedes any membership
+        // to authorize against (owner-on-create), so this endpoint carries no @OpaPreAuthorize. The creator
+        // becomes the owner atomically inside TeamService.
+        //
+        // Slice B4 (ADR 0019) — the target-squatting guard. Before binding the target, verify the caller
+        // OWNS it (created it) via the cross-service ResourceOwnershipResolver. A non-owner — or an
+        // unverifiable check (resolver absent / owning service down / unknown type) — fails closed to 403.
+        // This is the PUBLIC path; the /internal/bootstrap/teams seed path is a SEPARATE controller
+        // (InternalBootstrapController) that never reaches here, so it bypasses by construction (trusted
+        // in-network admin seam, permitAll, never gateway-exposed).
+        requireOwnership(request.getTargetType(), request.getTargetId());
+
         UUID creator = callerIdentity.requireActingUserId(request.getCreatorUserId());
         var team = teamService.createWithOwner(
                 creator, request.getName(), request.getTargetType(), request.getTargetId());
@@ -51,6 +66,21 @@ public class TeamController implements TeamApi {
                 .buildAndExpand(dto.getId())
                 .toUri();
         return ResponseEntity.created(location).body(dto);
+    }
+
+    /**
+     * Fail-closed ownership gate for the public team-create: the caller must own {@code (targetType,
+     * targetId)}. Throws {@link NotResourceOwnerException} (→ 403) when not the owner, when the resolver is
+     * absent (ownership verification not wired), or when the caller has no resolvable subject — never a
+     * default-allow. The resolver itself returns {@code false} (never throws) on every breach (unknown type
+     * / owning service down / 404), so all of those collapse to this 403.
+     */
+    private void requireOwnership(String targetType, UUID targetId) {
+        ResourceOwnershipResolver resolver = ownershipResolver.getIfAvailable();
+        String subject = callerIdentity.currentSubject().orElse(null);
+        if (resolver == null || subject == null || !resolver.isOwner(subject, targetType, targetId)) {
+            throw new NotResourceOwnerException(targetType, targetId);
+        }
     }
 
     @Override

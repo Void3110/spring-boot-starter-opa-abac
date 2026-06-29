@@ -6,6 +6,7 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
+import dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -139,5 +140,33 @@ public class AbacTestConfig {
         }
         String[] parts = action.split(":");
         return parts.length == 2 ? parts[1] : null;
+    }
+
+    /**
+     * The ownership decision the test {@link ResourceOwnershipResolver} delegates to. <b>Default: owner of
+     * everything</b> — so the ITs that create a team only as <em>setup</em> (membership / role / tag /
+     * pagination suites, not about Slice-B4 ownership) keep returning {@code 201}. The dedicated
+     * {@code OwnershipGateIT} overrides this per test (owner / non-owner / unverifiable) and resets it in
+     * {@code @AfterEach}. Without the bean at all, the resolver would be ABSENT and {@code createTeam} would
+     * fail closed to 403 (the production default) — breaking every team-creating setup.
+     */
+    public static volatile OwnershipDecision ownershipDecision = (subject, type, id) -> true;
+
+    /** A test-controllable ownership predicate: {@code (subject, type, id) -> isOwner}. */
+    @FunctionalInterface
+    public interface OwnershipDecision {
+        boolean isOwner(String subject, String resourceType, java.util.UUID resourceId);
+    }
+
+    /** Resets the ownership decision to the permissive default (call from {@code @AfterEach}). */
+    public static void resetOwnership() {
+        ownershipDecision = (subject, type, id) -> true;
+    }
+
+    @Bean
+    @Primary
+    ResourceOwnershipResolver testOwnershipResolver() {
+        return (subject, resourceType, resourceId) ->
+                ownershipDecision.isOwner(subject, resourceType, resourceId);
     }
 }
