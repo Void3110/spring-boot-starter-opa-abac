@@ -53,6 +53,36 @@ class OpaAbacAutoConfigurationTest {
         });
     }
 
+    // --- Slice B4: the ownership resolver is opt-in by abac.ownership.enabled, fail-closed by absence ---
+
+    @Test // ownership disabled (default) → no ResourceOwnershipResolver bean (createTeam fails closed)
+    void noOwnershipResolver_byDefault() {
+        runner.withPropertyValues("opa.abac.enabled=true").run(context -> assertThat(context)
+                .doesNotHaveBean(
+                        dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver.class));
+    }
+
+    @Test // ownership enabled → the DiscoveryOwnershipResolver is wired, properties bound
+    void ownershipResolver_whenEnabled() {
+        runner.withPropertyValues(
+                        "opa.abac.enabled=true",
+                        "abac.ownership.enabled=true",
+                        "abac.ownership.services.catalog=http://catalog:8080",
+                        "abac.ownership.ttl=45s")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(
+                            dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver.class);
+                    assertThat(context.getBean(
+                            dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver.class))
+                            .isInstanceOf(dev.dmitriikonovalov.opaabac.security.ownership
+                                    .DiscoveryOwnershipResolver.class);
+                    var props = context.getBean(
+                            dev.dmitriikonovalov.opaabac.security.ownership.OwnershipProperties.class);
+                    assertThat(props.getServices()).containsEntry("catalog", "http://catalog:8080");
+                    assertThat(props.getTtl()).isEqualTo(java.time.Duration.ofSeconds(45));
+                });
+    }
+
     @Test // U32 — user @Bean OpaClient / RoleDefinitionSupplier → starter backs off. Resilience off here so
     // the assertion sees the raw override (the B3 decorator otherwise wraps it — see userOpaClient_isWrapped).
     void userBeansWin() {

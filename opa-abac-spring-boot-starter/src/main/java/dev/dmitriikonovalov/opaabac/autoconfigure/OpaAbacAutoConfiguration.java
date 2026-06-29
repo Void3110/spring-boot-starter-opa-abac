@@ -52,7 +52,10 @@ import org.springframework.context.annotation.ConfigurationCondition;
 @AutoConfiguration
 @EnableConfigurationProperties(OpaAbacProperties.class)
 @ConditionalOnProperty(prefix = "opa.abac", name = "enabled", havingValue = "true", matchIfMissing = true)
-@org.springframework.context.annotation.Import(OpaResilienceAutoConfiguration.class)
+@org.springframework.context.annotation.Import({
+    OpaResilienceAutoConfiguration.class,
+    OwnershipAutoConfiguration.class // Slice B4: the cross-service ownership resolver (opt-in, ADR 0019)
+})
 public class OpaAbacAutoConfiguration {
 
     @Bean

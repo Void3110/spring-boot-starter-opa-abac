@@ -46,7 +46,7 @@ a team governs a catalog, membership grants access — but the fallback contradi
 | T2 | `GovernedScopeResolver` SPI + `HttpGovernedScopeResolver` (catalog) — fail-closed, unit | ✅ |
 | T3 | user-service `GET /internal/governed-targets` endpoint | ✅ |
 | T4 | `CatalogListAuthorizer` + `JpaSpecificationExecutor<CatalogEntity>` + `listCatalogs` adoption + spring-data/service ITs | ✅ |
-| T5 | `ResourceOwnershipResolver` SPI + `DiscoveryOwnershipResolver` (registry + TTL cache) — fail-closed, unit | ☐ |
+| T5 | `ResourceOwnershipResolver` SPI + `DiscoveryOwnershipResolver` (registry + TTL cache) — fail-closed, unit | ✅ |
 | T6 | catalog `GET /internal/{type}/{id}/created-by` endpoint + confirm `created_by`=sub | ☐ |
 | T7 | wire ownership into `createTeam` (public path enforces, `/internal/bootstrap` bypasses) + IT | ☐ |
 | T8 | gateway routing: `usermgmt-pool` + `/api/v1/teams*` `/api/v1/users*` (init-routes.sh) | ☐ |
