@@ -54,6 +54,18 @@ ENABLE_USER_SERVICE="${ENABLE_USER_SERVICE:-0}"
 # user-mgmt) so the resolve CallGuard sees a controlled outage. See infra/compose.resilience-stub.yaml.
 ENABLE_RESILIENCE_STUB="${ENABLE_RESILIENCE_STUB:-0}"
 RESILIENCE_STUB_COMPOSE="$SCRIPT_DIR/infra/compose.resilience-stub.yaml"
+# Phase 7 (demo SPA): the complete browser-demo recipe in one flag. ENABLE_SPA=1 puts the gateway
+# in bearer-only auth mode (APISIX validates `Authorization: Bearer <jwt>` against the realm JWKS —
+# no redirect login), proxies Keycloak through the gateway for single-origin PKCE, and enables CORS.
+# It composes the FULL stack the SPA exercises, so it force-enables its prerequisites:
+#   - ENABLE_OIDC        — the openid-connect plugin does the bearer validation.
+#   - ENABLE_USER_SERVICE — the http role source + Phase-6 _actions enrichment (the affordance map
+#                           the SPA renders); without it the catalog uses the demo role source and
+#                           returns resources with no _actions.
+# Off by default — opt in with ENABLE_SPA=1 ./deploy.sh up. (Run ./deploy.sh build first if the
+# Phase-6 enrichment code isn't yet in the app images.)
+ENABLE_SPA="${ENABLE_SPA:-0}"
+if [ "$ENABLE_SPA" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -307,7 +319,7 @@ case "$CMD" in
     # OIDC route needs Keycloak's discovery doc reachable before APISIX validates tokens.
     [ "$ENABLE_OIDC" = "1" ] && wait_keycloak || true
     # Seed route (idempotent) then sync upstream to the real pod set.
-    ENABLE_OIDC="$ENABLE_OIDC" ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
+    ENABLE_OIDC="$ENABLE_OIDC" ENABLE_SPA="$ENABLE_SPA" ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
       APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$API_KEY" \
       bash "$SCRIPT_DIR/infra/apisix/init-routes.sh"
     apisix_sync_upstream "$n"
@@ -316,6 +328,7 @@ case "$CMD" in
     [ "$ENABLE_TRACING" = "1" ] && echo "    Jaeger UI: http://localhost:26686"
     [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
+    [ "$ENABLE_SPA" = "1" ] && echo "    SPA auth:  gateway in bearer-only mode (validates Authorization: Bearer; no redirect login) + CORS for http://localhost:3000  [public client: catalog-spa]"
     [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: http://localhost:28090  (resolve API at /internal/effective-role; catalog uses role-source=http)"
     [ "$ENABLE_RESILIENCE_STUB" = "1" ] && echo "    resolve-stub: http://localhost:28091  (B3 fault injector; catalog role-source=http -> resolve-stub:8080; mode=${STUB_MODE:-transient})"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done

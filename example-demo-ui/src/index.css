@@ -1,0 +1,30 @@
+@import 'tailwindcss';
+
+/* A small, professional design language for the demo. Slate/indigo, generous spacing, subtle
+   borders — meant to read as a real product console, not a toy. */
+@theme {
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+  --color-ink: #0f172a;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+  --color-brand: #4f46e5;
+  --color-brand-ink: #4338ca;
+  --color-allow: #16a34a;
+  --color-deny: #dc2626;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

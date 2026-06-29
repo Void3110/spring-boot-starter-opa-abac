@@ -47,6 +47,7 @@ plugins:
   - opa                # Phase B: call OPA for an (allow-all, for now) decision per request
   - openid-connect     # Phase 2 (identity): terminate Keycloak OIDC at the gateway
   - serverless-pre-function   # demo: enrich requests with identity headers from the validated JWT
+  - cors               # Phase 7 (demo SPA): allow the browser SPA's cross-origin calls (ENABLE_SPA)
 
 # opentelemetry plugin: where APISIX ships its spans. The plugin must also be enabled
 # per-route (see infra/apisix/init-routes.sh).

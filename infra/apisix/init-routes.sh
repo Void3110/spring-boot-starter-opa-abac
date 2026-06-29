@@ -59,10 +59,28 @@ echo "  upstream 'catalog-pool' -> $DEFAULT_NODE (deploy.sh republishes with all
 PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
 
 # openid-connect FIRST (authenticate before authorize). Terminates Keycloak OIDC at the
-# gateway: bearer tokens are validated against the realm JWKS; browser flows redirect to
-# login. The validated access token is forwarded upstream (Authorization: Bearer ...), so
-# OPA and the app *could* read identity — but the service does no JWT check yet (Phase 2).
+# gateway: bearer tokens are validated against the realm JWKS. The validated access token is
+# forwarded upstream (Authorization: Bearer ...), so OPA and the app *could* read identity —
+# but the service does no JWT check yet (Phase 2).
+#
+# Two postures, selected by ENABLE_SPA:
+#   - Default (browser-flow): bearer_only=false + unauth_action="auth" — an unauthenticated
+#     browser is redirected to the Keycloak login page (the gateway runs the confidential
+#     auth-code flow itself). This is what the existing e2e matrices + the catalog-gateway
+#     confidential client rely on; keep it the default so nothing else changes.
+#   - SPA (ENABLE_SPA=1, bearer-only): bearer_only=true + unauth_action="deny" — the gateway
+#     ONLY validates an incoming `Authorization: Bearer <jwt>` against the realm JWKS and 401s
+#     when it is missing/invalid; it never initiates a redirect login. The browser SPA does its
+#     own Authorization Code + PKCE against Keycloak (public client `catalog-spa`) and presents
+#     the token. Same JWKS validation, no gateway-driven login.
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
+  if [ "${ENABLE_SPA:-0}" = "1" ]; then
+    OIDC_BEARER_ONLY="true"
+    OIDC_UNAUTH_ACTION="deny"
+  else
+    OIDC_BEARER_ONLY="false"
+    OIDC_UNAUTH_ACTION="auth"
+  fi
   PLUGINS="$PLUGINS,\"openid-connect\":{\
 \"_meta\":{\"priority\":2599},\
 \"client_id\":\"catalog-gateway\",\
@@ -70,12 +88,26 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
 \"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
 \"realm\":\"catalog-demo\",\
 \"scope\":\"openid profile email\",\
-\"bearer_only\":false,\
+\"bearer_only\":$OIDC_BEARER_ONLY,\
 \"use_jwks\":true,\
-\"unauth_action\":\"auth\",\
+\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
 \"ssl_verify\":false}"
+fi
+
+# CORS — only needed when a browser SPA on a different origin (the Vite dev server on :3000)
+# calls the gateway cross-origin. In the packaged demo the SPA is served *through* APISIX
+# (same-origin) so this is belt-and-suspenders. Enabled with the SPA posture; harmless when on.
+if [ "${ENABLE_SPA:-0}" = "1" ]; then
+  PLUGINS="$PLUGINS,\"cors\":{\
+\"_meta\":{\"priority\":4000},\
+\"allow_origins\":\"http://localhost:3000,http://localhost:9085\",\
+\"allow_methods\":\"GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD\",\
+\"allow_headers\":\"Authorization,Content-Type,Accept,Origin,X-Requested-With\",\
+\"expose_headers\":\"X-Upstream-Addr,Location\",\
+\"allow_credential\":false,\
+\"max_age\":3600}"
 fi
 # NOTE: the demo identity enricher was RETIRED in the library-spine slice (Phase 3). The gateway no
 # longer injects X-User-Id / X-Username via a serverless-pre-function — `openid-connect` validates the
@@ -87,6 +119,37 @@ if [ "${ENABLE_TRACING:-1}" = "1" ]; then
 fi
 if [ "${ENABLE_OPA:-1}" = "1" ]; then
   PLUGINS="$PLUGINS,\"opa\":{\"_meta\":{\"priority\":2000},\"host\":\"http://opa:8181\",\"policy\":\"gateway\",\"response_allow_field\":\"result.allow\"}"
+fi
+
+# SPA single-origin auth: proxy Keycloak THROUGH the gateway so the browser does its entire
+# Authorization Code + PKCE flow against http://localhost:9085 — never needing to resolve the
+# in-network hostname `keycloak:8888` and never needing an /etc/hosts entry.
+#
+# Keycloak honors the forwarded Host/X-Forwarded-* headers APISIX sends and rewrites ALL of its
+# advertised URLs (issuer, authorization/token/jwks endpoints) to the gateway origin, so a token
+# minted through the gateway carries issuer `http://localhost:9085/realms/catalog-demo` and the
+# discovery doc is self-consistent at that origin. We proxy Keycloak at its NATIVE paths
+# (/realms/*, /resources/*) — NOT under an /auth prefix — because Keycloak builds its URLs from the
+# proxied path; a prefix would make the advertised endpoints (…:9085/realms/…) not match where the
+# browser actually called (…:9085/auth/realms/…). These paths don't collide with the app's /api/**.
+#
+# CRITICAL: these routes carry NO openid-connect plugin — the login/token/JWKS calls must be public
+# passthrough (you can't present a bearer token while you're still trying to obtain one). Priority 50
+# beats the catalog-all catch-all (/*, priority 0). Only wired in SPA mode.
+if [ "${ENABLE_SPA:-0}" = "1" ]; then
+  curl -sf -o /dev/null -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/upstreams/keycloak-pool" \
+    -d '{"type":"roundrobin","scheme":"http","nodes":{"keycloak:8888":1}}'
+  for kc in "keycloak-realms:/realms/*:GET,POST,OPTIONS,HEAD" "keycloak-resources:/resources/*:GET,OPTIONS,HEAD"; do
+    name="${kc%%:*}"; rest="${kc#*:}"; uri="${rest%%:*}"; methods="${rest#*:}"
+    methods_json="$(printf '%s' "$methods" | sed 's/[^,]*/"&"/g')"
+    curl -sf -o /dev/null -X PUT \
+      -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+      "$APISIX_ADMIN/apisix/admin/routes/$name" \
+      -d "{\"name\":\"$name\",\"uri\":\"$uri\",\"methods\":[$methods_json],\"upstream_id\":\"keycloak-pool\",\"priority\":50,\"status\":1}"
+  done
+  echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [SPA single-origin auth, public passthrough]"
 fi
 
 # Note: use -s (not -sf) and inspect the body — a -f swallows APISIX's 400 error messages
@@ -107,5 +170,5 @@ if [ "$route_code" != "200" ] && [ "$route_code" != "201" ]; then
   echo "  ERROR: route PUT failed ($route_code): $(printf '%s' "$route_resp" | head -n1)" >&2
   exit 1
 fi
-echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} (app does extraction) tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
+echo "  route 'catalog-all' (/*) -> catalog-pool  [oidc=${ENABLE_OIDC:-0} (app does extraction) spa=${ENABLE_SPA:-0} (bearer-only+cors) tracing=${ENABLE_TRACING:-1} opa=${ENABLE_OPA:-1}]"
 echo "==> APISIX ready: proxy at http://localhost:9085"

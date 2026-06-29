@@ -1,0 +1,13 @@
+# example-demo-ui (Node/Vite) — not part of the Gradle build
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+*.tsbuildinfo
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
