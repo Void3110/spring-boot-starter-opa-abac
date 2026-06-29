@@ -47,6 +47,13 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**")
                         .permitAll()
+                        // Slice B4 (ADR 0019): the catalog now exposes an in-network ownership read
+                        // (GET /internal/catalog/{id}/created-by) the user-service's
+                        // DiscoveryOwnershipResolver calls. Like the user-service's resolve API, /internal/**
+                        // is permitted here and isolated by the network boundary — it is NEVER gateway-
+                        // fronted (the gateway proxies only /api/v1/** + Keycloak; see infra/apisix). Direct
+                        // exposure would let anyone read a creator id; the gateway routing (T8) keeps it off.
+                        .requestMatchers("/internal/**").permitAll()
                         .requestMatchers("/api/v1/**").authenticated()
                         // No permitAll catch-all: actuator beyond health (env/beans/…) needs a subject.
                         .anyRequest().authenticated());
