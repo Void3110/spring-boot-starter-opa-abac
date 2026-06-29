@@ -10,6 +10,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.TagMatchMode;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -116,6 +117,39 @@ public class EffectiveRoleService {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * The <b>governed target ids</b> of {@code resourceType} a subject governs through team membership —
+     * the data source for the catalog list's base scope (Slice B4, ADR 0018). Walks the same join as
+     * {@link #resolveForResource} but collects ALL matches instead of stopping at the first: {@code subject
+     * → user → memberships → teams WHERE target_type = resourceType → distinct target_id}.
+     *
+     * <p>Returns an <b>empty list</b> — never an error — when the subject maps to no user or governs no
+     * team of that type; the caller ({@code HttpGovernedScopeResolver}) treats an empty list as
+     * "governs nothing" and fails closed to an empty page. Always re-derived from live membership, so a
+     * removed member's catalog disappears from their list immediately (revocation propagates).
+     *
+     * <p><b>Distinct</b> by id: two memberships of the same subject on the same governing team (or two
+     * teams governing the same target) contribute the id once.
+     *
+     * @param subject      the IdP subject ({@code sub}) the catalog forwards (not the internal user id)
+     * @param resourceType the team-target type to collect (e.g. {@code "catalog"})
+     * @return the distinct governed target ids; empty when none
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> governedTargets(String subject, String resourceType) {
+        Optional<User> user = users.findBySubject(subject);
+        if (user.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<UUID> targetIds = new LinkedHashSet<>(); // insertion-ordered + de-duplicated
+        for (TeamMembership m : memberships.findByUserId(user.get().getId())) {
+            teams.findById(m.getTeamId())
+                    .filter(t -> t.getTargetType().equals(resourceType))
+                    .ifPresent(t -> targetIds.add(t.getTargetId()));
+        }
+        return List.copyOf(targetIds);
     }
 
     /**

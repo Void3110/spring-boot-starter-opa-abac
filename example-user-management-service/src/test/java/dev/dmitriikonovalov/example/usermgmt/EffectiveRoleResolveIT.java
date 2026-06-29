@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.usermgmt;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
@@ -254,5 +255,86 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
         assertThat(body.has("attributes")).isTrue();
         assertThat(body.has("permissions")).isTrue();
         assertThat(body.get("permissions").has("catalog")).isTrue();
+    }
+
+    // --- Slice B4: GET /internal/governed-targets (I12 / U11) ------------------------------------
+
+    private Team productTeamFor(UUID targetId) {
+        return teams.save(new Team(UUID.randomUUID(), "ProdTeam", "product", targetId));
+    }
+
+    private String governedUrl(User u, String type) {
+        return "/internal/governed-targets?subject=" + u.getSubject() + "&resourceType=" + type;
+    }
+
+    @Test // I12 — a single-team member governs exactly that team's catalog
+    void governedTargetsReturnsTheMembersCatalog() {
+        UUID target = UUID.randomUUID();
+        Team team = teamFor(target);
+        User member = user("gt-single");
+        grant(team, member, SystemRoles.MEMBER_ID);
+
+        var res = rest.getForEntity(governedUrl(member, "catalog"), UUID[].class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).containsExactly(target);
+    }
+
+    @Test // I12 / U11 — a multi-team member governs the UNION of distinct catalog ids
+    void governedTargetsReturnsUnionForMultiTeamMember() {
+        UUID targetX = UUID.randomUUID();
+        UUID targetZ = UUID.randomUUID();
+        Team teamX = teamFor(targetX);
+        Team teamZ = teamFor(targetZ);
+        User carol = user("gt-multi");
+        grant(teamX, carol, SystemRoles.OWNER_ID);
+        grant(teamZ, carol, SystemRoles.MEMBER_ID);
+
+        var res = rest.getForEntity(governedUrl(carol, "catalog"), UUID[].class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).containsExactlyInAnyOrder(targetX, targetZ);
+    }
+
+    @Test // U11 — the resourceType filter: a membership on a product-team is NOT a governed catalog
+    void governedTargetsFiltersByResourceType() {
+        UUID catalogTarget = UUID.randomUUID();
+        UUID productTarget = UUID.randomUUID();
+        Team catalogTeam = teamFor(catalogTarget);
+        Team productTeam = productTeamFor(productTarget);
+        User member = user("gt-typed");
+        grant(catalogTeam, member, SystemRoles.MEMBER_ID);
+        grant(productTeam, member, SystemRoles.MEMBER_ID);
+
+        var catalogs = rest.getForEntity(governedUrl(member, "catalog"), UUID[].class);
+        assertThat(catalogs.getBody()).containsExactly(catalogTarget); // only the catalog team's target
+
+        var products = rest.getForEntity(governedUrl(member, "product"), UUID[].class);
+        assertThat(products.getBody()).containsExactly(productTarget); // type-scoped, exactly
+    }
+
+    @Test // I12 — unknown subject → [] (200, never 204/error) — the authoritative "governs nothing"
+    void governedTargetsUnknownSubjectIsEmptyArray() {
+        var res = rest.getForEntity(
+                "/internal/governed-targets?subject=sub-nobody&resourceType=catalog", UUID[].class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isEmpty();
+    }
+
+    @Test // U11 — a known subject on no team of that type → [] (200)
+    void governedTargetsKnownSubjectNoTeamIsEmptyArray() {
+        User stranger = user("gt-stranger"); // a user with no memberships
+        var res = rest.getForEntity(governedUrl(stranger, "catalog"), UUID[].class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isEmpty();
+    }
+
+    @Test // U11 — the DB enforces one-team-per-target (uq_team_target on (target_type,target_id)), so a
+    // catalog can be governed by at most ONE team. governedTargets is therefore naturally distinct by id
+    // for the realistic shape; this pins the schema invariant that makes the dedup a no-op in practice
+    // (the LinkedHashSet in governedTargets is a defensive belt-and-braces, not a load-bearing dedup).
+    void cannotCreateTwoTeamsGoverningTheSameCatalog() {
+        UUID target = UUID.randomUUID();
+        teams.save(new Team(UUID.randomUUID(), "TeamA", "catalog", target));
+        assertThatThrownBy(() -> teams.saveAndFlush(new Team(UUID.randomUUID(), "TeamB", "catalog", target)))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 }

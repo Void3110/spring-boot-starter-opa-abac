@@ -44,7 +44,7 @@ a team governs a catalog, membership grants access — but the fallback contradi
 |---|--------|--------|
 | T1 | `catalog.rego` `filter` + fallback removal (3 policies) + narrow `create` fallback (`opa test`) | ✅ |
 | T2 | `GovernedScopeResolver` SPI + `HttpGovernedScopeResolver` (catalog) — fail-closed, unit | ✅ |
-| T3 | user-service `GET /internal/governed-targets` endpoint | ☐ |
+| T3 | user-service `GET /internal/governed-targets` endpoint | ✅ |
 | T4 | `CatalogListAuthorizer` + `JpaSpecificationExecutor<CatalogEntity>` + `listCatalogs` adoption + spring-data/service ITs | ☐ |
 | T5 | `ResourceOwnershipResolver` SPI + `DiscoveryOwnershipResolver` (registry + TTL cache) — fail-closed, unit | ☐ |
 | T6 | catalog `GET /internal/{type}/{id}/created-by` endpoint + confirm `created_by`=sub | ☐ |
