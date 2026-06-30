@@ -114,6 +114,33 @@ ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 cd scripts/postman && ./run-team-matrix.sh
 ```
 
+### Gateway routing for the public self-service API (Slice B4)
+
+When `ENABLE_USER_SERVICE=1`, `init-routes.sh` also routes the **public** user-management prefixes
+through APISIX (priority 60, above the catalog catch-all) to a new `usermgmt-pool` upstream, carrying
+the **same `openid-connect` bearer validation** as the catalog routes (the user-service does its own
+fine-grained `@OpaPreAuthorize`, so these routes do *not* carry the catalog `opa` gateway plugin):
+
+| Route | URI | → upstream |
+|-------|-----|-----------|
+| `usermgmt-teams` | `/api/v1/teams*` | `usermgmt-pool` (`catalog-... `→ `usermgmt:8080`) |
+| `usermgmt-users` | `/api/v1/users*` | `usermgmt-pool` |
+
+This is what lets the SPA's **self-service create** work: a `POST /api/v1/teams` through the gateway
+arrives with the validated `sub`, so `CallerIdentity` sees the real subject — required by both
+owner-on-create and the Slice-B4 **ownership squat-check** (`createTeam` verifies the caller owns the
+target catalog, 403 otherwise; ADR 0019). The user-service must run with `ABAC_OWNERSHIP_ENABLED=true`
++ `ABAC_OWNERSHIP_SERVICES_CATALOG=http://catalog-1:8080` (set in `compose.usermgmt.yaml`) or every
+public `createTeam` fails closed to 403.
+
+> **`/internal/**` is NEVER gateway-exposed — the load-bearing invariant.** The gateway proxies ONLY
+> `/api/v1/teams*`, `/api/v1/users*`, `/api/v1/catalogs*` (catch-all), and the Keycloak `/realms/*` +
+> `/resources/*` paths. The user-service's `/internal/**` (resolve, governed-targets, bootstrap) and the
+> catalog's `/internal/catalog/{id}/created-by` are `permitAll` + in-network only — exposing them through
+> the gateway would let anyone forge a `sub` or read a creator id. Verify:
+> `curl :9085/internal/governed-targets` → **404 (not routed)**; `curl -H 'Authorization: Bearer <jwt>'
+> :9085/api/v1/users` → **200**.
+
 The matrix proves, through the gateway: the catalog owner writes; a viewer-member cannot; a member with
 a team-scoped custom editor role can; a non-member is denied — all with the role coming from the
 user-service. It also dogfoods the user-service's own management API (owner manages, member 403). See
@@ -191,6 +218,33 @@ policies for the first time (the `bulk` rule is new, though it changes no decisi
 > service bundle carries a verbatim copy of `permissions.rego` + `permission_categories.json` (byte-identical
 > to the infra copies) so its isolated `opa test` resolves. Edit the `CONTROL`/`list-members` table in
 > **both** copies, and **restart OPA** after any `team.rego`/table edit before running the e2e matrices.
+
+## Multi-tenant isolation (Slice B4)
+
+The **isolation** matrix proves the headline of B4 through the gateway: **team membership is the sole
+access path** to a catalog, and the self-service flow (create catalog → create team → add members) is
+safe. A fresh `catalog-editor` with no team sees an **empty** list (no realm-fallback leak); she creates
+a catalog + team and then sees only **hers**; a member she adds sees **her** catalog (scoped, not his
+own); a multi-team user sees the **union**; a non-member who deep-links another catalog's id gets **403**;
+and a squat (`POST /teams` targeting someone else's catalog) is **denied 403** by the cross-service
+ownership check. Needs the user-service rig (`ENABLE_USER_SERVICE=1`, which `ENABLE_SPA=1` implies) — the
+three demo users **alice / bob / carol** are in `keycloak/realm-export.json`.
+
+```bash
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+./deploy.sh build           # fresh app images carrying B4 (T1–T9)
+docker restart opa-abac-opa # reload the B4 policy (T1 + the T9 type-level-gate fix)
+cd scripts/postman && ./run-isolation-matrix.sh   # E1–E7, 20 assertions
+```
+
+The runner **self-resets** (it wipes the `Alice Co` / `Carol Co` catalogs + teams by name first), so it
+is idempotent even though the matrix creates Alice's catalog **live** in E2. B4 removed the realm-role
+fallback from the single-decision path, so **every type-level gate** (`list`/`create`/`assign-tags`) now
+resolves the caller's role on the governing parent catalog via `@OpaPreAuthorize(roleResource…)` — a
+non-member resolves no role and is denied. After this change the `permission-categories` and
+`resource-resolution` matrices bind their fixture creators to a real catalog-WRITE role (the fallback that
+used to let a bare realm user create is gone); re-running the **full** existing suite stays green
+(resilience excepted — it needs the mutually-exclusive `ENABLE_RESILIENCE_STUB` profile below).
 
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 

@@ -51,6 +51,20 @@ public class InternalResolveController {
     }
 
     /**
+     * The <b>governed target ids</b> of a type the subject governs through team membership — the data
+     * source for the catalog list's base scope (Slice B4, consumed by {@code HttpGovernedScopeResolver}).
+     * Always a {@code 200} with a JSON array; an <b>empty array</b> (never {@code 204}) is the
+     * authoritative "governs nothing" for an unknown subject or a subject on no team of that type — the
+     * resolver fails closed on an empty array exactly as it would on an error. Distinct ids.
+     */
+    @GetMapping("/internal/governed-targets")
+    public ResponseEntity<List<UUID>> governedTargets(
+            @RequestParam("subject") String subject,
+            @RequestParam("resourceType") String resourceType) {
+        return ResponseEntity.ok(effectiveRoles.governedTargets(subject, resourceType));
+    }
+
+    /**
      * The dictionary applicable to a resource — the globals plus the governing team's keys. Always a
      * {@code 200} with a (possibly globals-only) list; the catalog validates against it and rejects an
      * illegal value (422). A fetch <em>failure</em> on the catalog side fails the write closed.

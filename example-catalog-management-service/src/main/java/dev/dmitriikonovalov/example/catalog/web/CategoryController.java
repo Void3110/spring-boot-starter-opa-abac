@@ -51,7 +51,8 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:list", resourceType = "'category'")
+    @OpaPreAuthorize(action = "category:list", resourceType = "'category'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
     public ResponseEntity<CategoryPage> listCategories(
             UUID catalogId, UUID parentId, Integer page, Integer perPage) {
         requireCatalog(catalogId);
@@ -65,13 +66,14 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "category:create", resourceType = "'category'")
+    @OpaPreAuthorize(action = "category:create", resourceType = "'category'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
     public ResponseEntity<Category> createCategory(UUID catalogId, CategoryRequest request) {
         requireCatalog(catalogId);
         // Tag-on-create (Phase 6.5): a request that CARRIES tags needs the TYPE-LEVEL assign-tags
         // decision on top of the static create gate above (no instance exists yet to resolve).
         if (request.getTags() != null && !request.getTags().isEmpty()) {
-            tagDecisionGate.requireCategoryAssignTagsForCreate();
+            tagDecisionGate.requireCategoryAssignTagsForCreate(catalogId);
         }
         if (request.getParentId() != null) {
             // Parent must exist within the same catalog.

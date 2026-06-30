@@ -70,12 +70,17 @@ person and is transferable.
    so a concurrent demotion of the actor cannot land between the check and the grant (retro-audit
    2026-06-12; `CONCURRENCY-AND-LOCKING` Rules 1–2).
 
-> **Known demo limitation — team-target squatting.** `POST /teams` is deliberately ungated
-> (bootstrap: creating your first team precedes any membership to authorize against), and the
-> `(targetType, targetId)` uniqueness means whoever binds a team to a target first governs it. A
-> production deployment must verify the caller's right over the target before binding — e.g. a
-> cross-service ownership check on the catalog, or an invite/claim flow. The example keeps the
-> bootstrap simple and documents the gap instead (retro-audit 2026-06-12).
+> **Team-target squatting — closed (Slice B4, ADR 0019).** `POST /api/v1/teams` carries no
+> `@OpaPreAuthorize` (creating your first team precedes any membership to authorize against), so it used
+> to bind *any* `(targetType, targetId)` first-come-first-served. Slice B4 closes this: before binding,
+> the public path verifies the caller **owns** the target via a pluggable cross-service
+> `ResourceOwnershipResolver` (config-keyed discovery → the owning service's
+> `GET /internal/{type}/{id}/created-by` → compare to the caller `sub`); a non-owner, or an unverifiable
+> check, fails closed to **403**. The `(targetType, targetId)` uniqueness constraint already blocked a
+> *second* team on an existing target; the ownership check now also blocks the *first* team-create on a
+> resource you did not create. The trusted in-network `/internal/bootstrap/teams` seed path is a separate
+> controller that bypasses the gate by construction. See [[MULTI-TENANT-ISOLATION]] +
+> [[adr/0019-pluggable-cross-service-ownership|ADR 0019]].
 
 ## The integration point — app-resolved
 

@@ -320,6 +320,7 @@ case "$CMD" in
     [ "$ENABLE_OIDC" = "1" ] && wait_keycloak || true
     # Seed route (idempotent) then sync upstream to the real pod set.
     ENABLE_OIDC="$ENABLE_OIDC" ENABLE_SPA="$ENABLE_SPA" ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
+      ENABLE_USER_SERVICE="$ENABLE_USER_SERVICE" \
       APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$API_KEY" \
       bash "$SCRIPT_DIR/infra/apisix/init-routes.sh"
     apisix_sync_upstream "$n"

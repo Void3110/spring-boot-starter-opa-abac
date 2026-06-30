@@ -124,6 +124,16 @@ completely; the residual keeps this guide's exact shape. A denial-carrying role 
 the batch recheck. See [[PERMISSION-MODEL]] and ADR
 [[adr/0007-coarse-grained-permission-categories|0007]].
 
+> **Slice B4 — `catalog.rego` gains a `filter` too, but a different shape.** The category `filter` cuts
+> rows by **tags** (the residual is a tag predicate). A catalog is a **root** whose visibility is a
+> **membership** question — "which team governs it, am I a member?" — which partial-eval cannot see on the
+> row. So the catalog `filter` carries **no tag conjunct**: it is purely role-def-only and compiles to an
+> unconditional `ALLOW_ALL` when the role grants `list` (else `DENY_ALL`). The which-rows cut is instead an
+> app-supplied **base scope** (`id IN (governed ids)`) from a `GovernedScopeResolver`, AND-ed with this
+> residual inside `findAuthorized`. Same fail-closed boundary (no role → `DENY_ALL` → empty), different
+> source of "which rows." See [[MULTI-TENANT-ISOLATION]] + ADR
+> [[adr/0018-team-scoped-resource-isolation|0018]].
+
 ## The adoption recipe (the catalog)
 
 1. The repository extends `JpaSpecificationExecutor<T>` (additive — existing finders unchanged).

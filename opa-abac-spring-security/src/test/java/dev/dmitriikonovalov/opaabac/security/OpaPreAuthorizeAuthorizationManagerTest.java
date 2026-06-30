@@ -65,6 +65,17 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         @OpaPreAuthorize(action = "product:read", resourceType = "#missing")
         public void unresolvableType() {}
 
+        // Slice B4: a type-level child create whose ROLE is resolved on the parent catalog (the
+        // governing root), while the decided resource/policy stays `category`.
+        @OpaPreAuthorize(action = "category:create", resourceType = "'category'",
+                roleResourceType = "'catalog'", roleResourceId = "#catalogId")
+        public void createChild(UUID catalogId) {}
+
+        // The override declared but its id resolves to null (a typo'd #param) → deny (fail-closed).
+        @OpaPreAuthorize(action = "category:create", resourceType = "'category'",
+                roleResourceType = "'catalog'", roleResourceId = "#missing")
+        public void createChildBadOverride(UUID catalogId) {}
+
         public void unannotated() {}
     }
 
@@ -136,6 +147,37 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("unresolvableType", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision.isGranted()).isFalse();
+    }
+
+    @Test // Slice B4 — roleResource override: the role is looked up on the PARENT catalog, while the
+    // OPA context's resource (the queried policy) stays `category`.
+    void roleResourceOverride_resolvesRoleOnParent() throws Exception {
+        UUID catalogId = UUID.randomUUID();
+        when(opaClient.allow(any())).thenReturn(true);
+        when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
+
+        ArgumentCaptor<AbacContext> ctx = ArgumentCaptor.forClass(AbacContext.class);
+        manager.check(noopAuthSupplier,
+                invocationOf("createChild", new Class<?>[] {UUID.class}, new Object[] {catalogId}));
+
+        // The role is resolved on the parent catalog (the override), NOT on (category, null).
+        org.mockito.Mockito.verify(roleDefinitionSupplier).lookup("user-1", "catalog", catalogId.toString());
+        // But the decided resource (the queried policy) is still `category`.
+        org.mockito.Mockito.verify(opaClient).allow(ctx.capture());
+        assertThat(ctx.getValue().resource().type()).isEqualTo("category");
+        assertThat(ctx.getValue().action()).isEqualTo("category:create");
+    }
+
+    @Test // Slice B4 — a declared roleResource override that resolves to null/blank → deny (fail-closed),
+    // never silently falling back to the (category, null) lookup.
+    void roleResourceOverride_unresolvable_deny() throws Exception {
+        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+                invocationOf("createChildBadOverride", new Class<?>[] {UUID.class},
+                        new Object[] {UUID.randomUUID()}));
+
+        assertThat(decision.isGranted()).isFalse();
+        // OPA is never asked when the override can't resolve.
+        org.mockito.Mockito.verify(opaClient, org.mockito.Mockito.never()).allow(any());
     }
 
     @Test // unannotated method → DENY, not abstain. The manager is bound to an @OpaPreAuthorize pointcut,

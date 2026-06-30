@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/abac
   - area/opa
@@ -11,12 +11,13 @@ tags:
 
 # Slice B4 — Multi-tenant isolation + self-service
 
-> **Status:** Planned. Design settled (grill-me 2026-06-29); decomposition in progress. The slice that
-> makes **team membership the sole access path** to catalogs, and adds the **self-service** flow
-> (create catalog + team + members) the isolation makes meaningful — with a **real cross-service
-> ownership check** so team-create cannot squat another user's catalog. Sits in the security-hardening
-> **B-series** (like [[B2-SUPPLIER-OUTAGE]], [[B3-HTTP-RESILIENCE]]), **before Phase 7 publish** — a
-> correctness gap the Phase-7 demo work uncovered.
+> **Status:** ✅ Shipped (all 9 tickets; branch `feature/void3110/multi-tenant-isolation`, 2026-06-30).
+> The slice that makes **team membership the sole access path** to catalogs, and adds the
+> **self-service** flow (create catalog + team + members) the isolation makes meaningful — with a
+> **real cross-service ownership check** so team-create cannot squat another user's catalog. Sits in
+> the security-hardening **B-series** (like [[B2-SUPPLIER-OUTAGE]], [[B3-HTTP-RESILIENCE]]), **before
+> Phase 7 publish** — a correctness gap the Phase-7 demo work uncovered. Proven live by the e2e
+> **isolation matrix** (E1–E7, 20/20) + the full existing suite re-run green (see [[STATUS-09]]).
 
 ## The gap
 
@@ -42,15 +43,15 @@ a team governs a catalog, membership grants access — but the fallback contradi
 
 | # | Ticket | Status |
 |---|--------|--------|
-| T1 | `catalog.rego` `filter` + fallback removal (3 policies) + narrow `create` fallback (`opa test`) | ☐ |
-| T2 | `GovernedScopeResolver` SPI + `HttpGovernedScopeResolver` (catalog) — fail-closed, unit | ☐ |
-| T3 | user-service `GET /internal/governed-targets` endpoint | ☐ |
-| T4 | `CatalogListAuthorizer` + `JpaSpecificationExecutor<CatalogEntity>` + `listCatalogs` adoption + spring-data/service ITs | ☐ |
-| T5 | `ResourceOwnershipResolver` SPI + `DiscoveryOwnershipResolver` (registry + TTL cache) — fail-closed, unit | ☐ |
-| T6 | catalog `GET /internal/{type}/{id}/created-by` endpoint + confirm `created_by`=sub | ☐ |
-| T7 | wire ownership into `createTeam` (public path enforces, `/internal/bootstrap` bypasses) + IT | ☐ |
-| T8 | gateway routing: `usermgmt-pool` + `/api/v1/teams*` `/api/v1/users*` (init-routes.sh) | ☐ |
-| T9 | demo users alice/bob/carol + seed + the e2e **isolation matrix** + docs/roadmap/Mulch | ☐ |
+| T1 | `catalog.rego` `filter` + fallback removal (3 policies) + narrow `create` fallback (`opa test`) | ✅ |
+| T2 | `GovernedScopeResolver` SPI + `HttpGovernedScopeResolver` (catalog) — fail-closed, unit | ✅ |
+| T3 | user-service `GET /internal/governed-targets` endpoint | ✅ |
+| T4 | `CatalogListAuthorizer` + `JpaSpecificationExecutor<CatalogEntity>` + `listCatalogs` adoption + spring-data/service ITs | ✅ |
+| T5 | `ResourceOwnershipResolver` SPI + `DiscoveryOwnershipResolver` (registry + TTL cache) — fail-closed, unit | ✅ |
+| T6 | catalog `GET /internal/{type}/{id}/created-by` endpoint + confirm `created_by`=sub | ✅ |
+| T7 | wire ownership into `createTeam` (public path enforces, `/internal/bootstrap` bypasses) + IT | ✅ |
+| T8 | gateway routing: `usermgmt-pool` + `/api/v1/teams*` `/api/v1/users*` (init-routes.sh) | ✅ |
+| T9 | demo users alice/bob/carol + seed + the e2e **isolation matrix** + docs/roadmap/Mulch | ✅ |
 
 ## Related
 

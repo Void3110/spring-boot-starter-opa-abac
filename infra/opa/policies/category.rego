@@ -26,9 +26,11 @@ import data.permissions
 
 default allow := false
 
-# final decision: a grant (direct, inherited, or the subject-roles fallback) that is NOT denied.
-# Phase 5.5-A added inheritance + deny-overrides; the tag match + filter/bulk entrypoints are unchanged.
-#   final_allow = (direct_grant OR inherited_grant OR fallback) AND NOT denied
+# final decision: a grant (direct or inherited via the resolved role) that is NOT denied. Slice B4
+# (ADR 0018) removed the subject-roles fallback — membership is the sole access path; a request with
+# no role_definition fails closed at every verb. Phase 5.5-A's inheritance + deny-overrides and the
+# tag match + filter/bulk entrypoints are unchanged.
+#   final_allow = (direct_grant OR inherited_grant) AND NOT denied
 # Inheritance is OPT-IN, default-off via data.category.inheritable[<leaf>][<ancestor>] (absent ⇒ none),
 # so with no inheritable data this behaves EXACTLY as the pre-hierarchy direct-only decision.
 allow if {
@@ -46,11 +48,24 @@ allow if {
 # single-resource decisions are unchanged, and it is opt-in/default-off via the same
 # data.category.inheritable. A true stranger (no role / no inheritable grant) is still denied.
 allow if {
-	not input.resource.id
+	is_type_level_request
 	not denied
 	list_inheritable_grant
 }
 
+# A type-level request (a list, or a create/assign-tags before the instance exists) carries NO resource
+# id. The app serializes that as an ABSENT key OR an explicit `null` (a Java `null` id) — both mean
+# "type-level", so this helper accepts either. (`not input.resource.id` alone is UNDEFINED — not true —
+# for an explicit `null`, which silently closed the coarse type-level gate; Slice B4 made it null-safe.)
+is_type_level_request if not input.resource.id
+
+is_type_level_request if input.resource.id == null
+
+# The generic clause above is verb-agnostic: it lets ANY type-level verb (list, create, assign-tags)
+# pass when the caller's role — resolved on the inheritable ANCESTOR (the parent catalog, via the
+# @OpaPreAuthorize roleResource override, Slice B4) — carries that verb. So a member with WRITE/TAG on the
+# catalog can create/tag categories; a non-member resolves no role and is denied. No verb-specific clause
+# is needed (the original Phase-5.5-B "list" naming is historical — it gates every type-level verb).
 list_inheritable_grant if {
 	some ancestor_type, _ in data.category.inheritable[input.resource.type]
 	verb in permissions.effective_actions(input.role_definition, ancestor_type)
@@ -76,22 +91,12 @@ granted if {
 	tags_satisfied
 }
 
-# FALLBACK: only when no role definition is present, decide from subject roles — through the
-# same expansion table. catalog-viewer reaches READ (view/list); catalog-editor reaches
-# READ+WRITE+TAG (pre-6.5 "write" implied tag-setting — the reach is preserved, ADR 0007).
-# (No tag requirement applies to the fallback.)
-granted if {
-	not has_role_definition
-	some role in input.subject.roles
-	role in {"catalog-viewer", "catalog-editor"}
-	verb in permissions.effective_from_categories({"READ"})
-}
-
-granted if {
-	not has_role_definition
-	"catalog-editor" in input.subject.roles
-	verb in permissions.effective_from_categories({"READ", "WRITE", "TAG"})
-}
+# Slice B4 (ADR 0018) — the blanket realm-role fallback was REMOVED. A category lives UNDER a
+# governed catalog, so the resolved role (team membership) already applies at every level; the
+# fallback only leaked. There is NO category:create-style narrow fallback here (categories/products
+# are created under an already-governed catalog, where the resolved role grants `create`). A request
+# with no role_definition now fails closed at every verb — single-GET of a category in a catalog the
+# caller is not a member of is denied, closing the deep-link leak. See ADR 0018 §2b.
 
 direct_grant if {
 	verb in permissions.effective_actions(input.role_definition, input.resource.type)

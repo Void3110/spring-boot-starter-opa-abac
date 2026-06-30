@@ -121,40 +121,12 @@ test_denied_action_delete_denies if {
 	}
 }
 
-# --- fallback to subject roles (no role_definition) -------------------------
-
-test_fallback_viewer_views if {
-	catalog.allow with input as {
-		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "catalog:view",
-		"resource": {"type": "catalog", "id": "p1"},
-		"environment": {},
-	}
-}
-
-test_fallback_viewer_cannot_update if {
-	not catalog.allow with input as {
-		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
-		"action": "catalog:update",
-		"resource": {"type": "catalog", "id": "p1"},
-		"environment": {},
-	}
-}
-
-test_fallback_editor_updates if {
-	catalog.allow with input as {
-		"subject": {"id": "u2", "roles": ["catalog-editor"]},
-		"action": "catalog:update",
-		"resource": {"type": "catalog", "id": "p1"},
-		"environment": {},
-	}
-}
-
-# --- P7: the realm fallback's EXACT reach through the table ----------------------
+# --- Slice B4: realm-role fallback is now CREATE-ONLY (ADR 0018) -------------------
 #
-# viewer = effective_from_categories({READ}) = {view, list} — nothing more.
-# editor = effective_from_categories({READ, WRITE, TAG}) = all seven fine actions except
-# assign-roles (GRANT is never realm-granted).
+# The blanket realm fallback (viewer→READ, editor→READ+WRITE+TAG on ANY catalog) was REMOVED — it
+# leaked every catalog to every authenticated user. The ONLY surviving JWT-role fallback is verb-gated
+# to `catalog:create` (type-level onboarding, which precedes any team). Every other verb now requires
+# a resolved role_definition (team membership). These cells replace the old reach tests.
 
 fallback_input(roles, action) := {
 	"subject": {"id": "u", "roles": roles},
@@ -163,26 +135,51 @@ fallback_input(roles, action) := {
 	"environment": {},
 }
 
-test_fallback_viewer_reach_exactly_read if {
-	catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:view")
-	catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:list")
-	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:create")
-	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:update")
-	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:delete")
-	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:define-tags")
-	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:assign-tags")
-	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:assign-roles")
+# R5 — narrow create fallback RETAINED: bare catalog-editor (no role-def) may create.
+test_fallback_editor_creates if {
+	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:create")
 }
 
-test_fallback_editor_reach_read_write_tag if {
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:view")
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:list")
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:create")
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:update")
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:delete")
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:define-tags")
-	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:assign-tags")
+# R6 — create needs editor: bare catalog-viewer may NOT create.
+test_fallback_viewer_cannot_create if {
+	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:create")
+}
+
+# R4 — fallback REMOVED for read/write verbs: bare catalog-editor (no role-def) is denied
+# view/list/update/delete/define-tags/assign-tags. (Membership is the sole access path.)
+test_fallback_editor_denied_non_create if {
+	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:view")
+	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:list")
+	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:update")
+	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:delete")
+	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:define-tags")
+	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:assign-tags")
 	not catalog.allow with input as fallback_input(["catalog-editor"], "catalog:assign-roles")
+}
+
+# R4 — bare catalog-viewer is denied everything (it never had create; view/list now also denied).
+test_fallback_viewer_denied_everything if {
+	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:view")
+	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:list")
+	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:update")
+	not catalog.allow with input as fallback_input(["catalog-viewer"], "catalog:delete")
+}
+
+# A subject with NO realm role and no role-def is denied create too (create needs catalog-editor).
+test_fallback_no_role_cannot_create if {
+	not catalog.allow with input as fallback_input([], "catalog:create")
+	not catalog.allow with input as fallback_input(["random-role"], "catalog:create")
+}
+
+# R8 — the resolved-role path is UNCHANGED: a role-def granting READ still allows view.
+test_resolved_role_views_unchanged if {
+	catalog.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "catalog:view",
+		"resource": {"type": "catalog", "id": "p1"},
+		"role_definition": viewer_role_def,
+		"environment": {},
+	}
 }
 
 # --- default deny -----------------------------------------------------------
@@ -274,15 +271,69 @@ test_tag_free_role_unaffected if {
 	catalog.allow with input as catalog_tag_input(editor_role_def, {"region": "apac"})
 }
 
-# P5 — no role definition at all: the realm fallback decides exactly as before (the conjunct
-# sits only on the role-definition grant path).
-test_tag_fallback_path_unaffected if {
-	catalog.allow with input as {
+# P5 — no role definition at all: the tag conjunct sits only on the role-definition grant path, so
+# the (now create-only) realm fallback is unaffected by tags. Slice B4: bare catalog-editor can no
+# longer `update` (fallback removed for non-create verbs) regardless of the resource's tags.
+test_tag_fallback_path_update_now_denied if {
+	not catalog.allow with input as {
 		"subject": {"id": "u2", "roles": ["catalog-editor"]},
 		"action": "catalog:update",
 		"resource": {"type": "catalog", "id": "c1", "attributes": {"region": "apac"}},
 		"environment": {},
 	}
+}
+
+# --- Slice B4: the role-def-only `filter` entrypoint (R1–R3) ---------------------------
+#
+# `filter` is the list-isolation gate the app partially-evaluates (resource declared unknown) to get
+# the catalog list's base-scope residual. ROLE-DEFINITION-ONLY: no subject-roles fallback, so a
+# missing role-def fails closed. These full-eval cells pin the boolean; the *residual shape*
+# (ALLOW_ALL `{queries:[[]]}` for R1, DENY_ALL `{}` for R2/R3) is verified empirically with
+# `opa eval --partial` in the T1 acceptance run (mx-f63604 — never assume the residual).
+
+filter_input(role_def, subject_roles) := {
+	"subject": {"id": "u", "roles": subject_roles},
+	"action": "catalog:list",
+	"resource": {"type": "catalog"}, # id is the UNKNOWN at partial-eval time
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# R1 — role-def grants `list` (READ expands to view+list) -> filter true (residual ALLOW_ALL).
+test_filter_role_def_with_list_grants if {
+	catalog.filter with input as filter_input(viewer_role_def, [])
+}
+
+# R2 — NO role-def (subject roles only) -> filter false (residual DENY_ALL). The fail-closed boundary:
+# the narrow create fallback lives on `allow`, never on `filter`, so a bare realm role lists NOTHING.
+test_filter_no_role_def_denies if {
+	not catalog.filter with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "catalog:list",
+		"resource": {"type": "catalog"},
+		"environment": {},
+	}
+}
+
+# R3 — a role that DENIES `list` for catalog -> filter false (deny-overrides at the list boundary).
+test_filter_role_denies_list if {
+	list_denied_role := {
+		"code": "no-list-editor",
+		"attributes": {"role_level": 20},
+		"permissions": {"catalog": ["READ", "WRITE"]},
+		"denied_actions": {"catalog": ["list"]},
+	}
+	not catalog.filter with input as filter_input(list_denied_role, [])
+}
+
+# A role whose catalog permissions do NOT expand to `list` (e.g. only GRANT) -> filter false.
+test_filter_role_without_list_denies if {
+	grant_only_role := {
+		"code": "grant-only",
+		"attributes": {"role_level": 40},
+		"permissions": {"catalog": ["GRANT"]},
+	}
+	not catalog.filter with input as filter_input(grant_only_role, [])
 }
 
 # --- Phase 5 batch primitive (extended to catalog for Phase 6 action enrichment) ---

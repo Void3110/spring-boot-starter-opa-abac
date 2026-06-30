@@ -82,13 +82,17 @@ class PaginationEnvelopeIT extends AbstractPostgresIT {
                 .andExpect(jsonPath("$.items[0].id").value(thirdCategoryId));
     }
 
-    // I5 — the catalogs and products lists carry the same envelope (shape + echo; the catalogs count is
-    // not pinned — the shared container holds sibling ITs' rows).
+    // I5 — the catalogs and products lists carry the same envelope (shape + echo). The catalogs count is
+    // not pinned: since Slice B4 (ADR 0018) the catalog list is membership-scoped via CatalogListAuthorizer
+    // (no coarse @OpaPreAuthorize gate), and this permissive IT wires no GovernedScopeResolver, so the
+    // governed scope is empty → count 0. The ENVELOPE CONTRACT (members present, params echoed, items an
+    // array) is what this case pins and it holds at count 0; the membership row-cut itself is proven by
+    // CatalogListIsolationIT (real governed scopes → different row sets) and the T9 e2e.
     @Test
     void envelope_onCatalogsAndProductsLists() throws Exception {
         mockMvc.perform(get("/api/v1/catalogs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(Matchers.greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.count").value(Matchers.greaterThanOrEqualTo(0)))
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.perPage").value(20))
                 .andExpect(jsonPath("$.items").isArray());

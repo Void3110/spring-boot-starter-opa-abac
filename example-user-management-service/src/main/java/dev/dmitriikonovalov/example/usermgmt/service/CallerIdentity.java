@@ -30,10 +30,20 @@ public class CallerIdentity {
 
     /** The current authenticated subject's user id, if a subject is present and maps to a user. */
     public Optional<UUID> currentUserId() {
+        return currentSubject().flatMap(subject -> users.findBySubject(subject).map(User::getId));
+    }
+
+    /**
+     * The current authenticated subject's raw IdP {@code sub} (the same identity stored as a resource's
+     * {@code created_by}) — the key the cross-service {@link
+     * dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver} compares against (Slice
+     * B4). Distinct from {@link #currentUserId()} (the internal {@code User} id): ownership is keyed by the
+     * {@code sub}, not the profile id.
+     */
+    public Optional<String> currentSubject() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof AbacAuthentication abac && abac.isAuthenticated()) {
-            String subject = abac.getSubject().id();
-            return users.findBySubject(subject).map(User::getId);
+            return Optional.of(abac.getSubject().id());
         }
         return Optional.empty();
     }

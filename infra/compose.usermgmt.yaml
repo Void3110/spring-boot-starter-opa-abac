@@ -44,6 +44,14 @@ services:
       OPA_ABAC_ENABLED: "true"
       OPA_ABAC_BASE_URL: "http://opa:8181"
       OPA_ABAC_POLICY_PREFIX: ""
+      # Slice B4 (ADR 0019): enable the cross-service ownership resolver so the PUBLIC createTeam can
+      # verify the caller owns the target catalog (the squat-check). Without this the resolver is absent
+      # and every public createTeam fails closed to 403. The catalog's in-network /internal/catalog/{id}/
+      # created-by read is reached DIRECTLY at a catalog pod (catalog-1:8080) — NOT via the gateway, which
+      # never exposes /internal/**. (Demo: the first pod is always present; a real deployment would use a
+      # load-balanced internal URL.)
+      ABAC_OWNERSHIP_ENABLED: "true"
+      ABAC_OWNERSHIP_SERVICES_CATALOG: "http://catalog-1:8080"
     ports:
       - "28090:8080"
     healthcheck:

@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.usermgmt.web;
 import dev.dmitriikonovalov.example.usermgmt.service.InvalidTagDefinitionException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipNotFoundException;
+import dev.dmitriikonovalov.example.usermgmt.service.NotResourceOwnerException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionInvalidException;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleNotFoundException;
@@ -47,6 +48,16 @@ public class ApiExceptionHandler extends AbstractProblemAdvice {
     })
     public ResponseEntity<ProblemDetail> handleNotFound(RuntimeException ex, HttpServletRequest request) {
         return problem(LibraryErrorCode.RESOURCE_NOT_FOUND, ex.getMessage(), request);
+    }
+
+    // --- 403 forbidden → library ACCESS_DENIED (Slice B4: the target-squatting guard) ---
+    // Mapped to the SAME code as an @OpaPreAuthorize deny, so a squat attempt is indistinguishable from
+    // any other authorization failure (it never reveals the actual owner).
+
+    @ExceptionHandler(NotResourceOwnerException.class)
+    public ResponseEntity<ProblemDetail> handleNotResourceOwner(
+            NotResourceOwnerException ex, HttpServletRequest request) {
+        return problem(LibraryErrorCode.ACCESS_DENIED, ex.getMessage(), request);
     }
 
     // --- 409 conflict group → distinct UserMgmtErrorCodes (semantic granularity) ---

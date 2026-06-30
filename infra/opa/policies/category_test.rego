@@ -129,10 +129,16 @@ test_abac_deny_veto_beats_category_grant if {
 	}
 }
 
-# --- fallback to subject roles (no role_definition) -------------------------
+# --- Slice B4: realm-role fallback REMOVED (ADR 0018) -----------------------
+#
+# A category lives under a governed catalog, so the resolved role (team membership) applies at every
+# level; the blanket realm fallback only leaked. With no role_definition, a bare realm role is now
+# denied at EVERY verb — closing the deep-link leak (R7). There is no create-style narrow fallback
+# here (a category is created under an already-governed catalog).
 
-test_fallback_viewer_views if {
-	category.allow with input as {
+# R7 — bare catalog-viewer (no role-def) can no longer view a category.
+test_fallback_viewer_view_now_denied if {
+	not category.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
 		"action": "category:view",
 		"resource": {"type": "category", "id": "p1"},
@@ -140,22 +146,112 @@ test_fallback_viewer_views if {
 	}
 }
 
-test_fallback_viewer_cannot_update if {
+# R7 — bare catalog-editor (no role-def) can no longer update a category (the leak we closed).
+test_fallback_editor_update_now_denied if {
 	not category.allow with input as {
-		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"subject": {"id": "u2", "roles": ["catalog-editor"]},
 		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
 		"environment": {},
 	}
 }
 
-test_fallback_editor_updates if {
+# The resolved-role path is UNCHANGED: a role-def granting WRITE still updates.
+test_resolved_role_updates_unchanged if {
 	category.allow with input as {
-		"subject": {"id": "u2", "roles": ["catalog-editor"]},
+		"subject": {"id": "u2", "roles": []},
 		"action": "category:update",
 		"resource": {"type": "category", "id": "p1"},
+		"role_definition": editor_role_def,
 		"environment": {},
 	}
+}
+
+# --- Slice B4: the coarse CREATE gate (type-level, role resolved on the parent catalog) ---------
+#
+# category:create is type-level (the child has no id yet). The gate resolves the role on the PARENT
+# catalog (the governing root, via the @OpaPreAuthorize roleResource override) — so a role granting
+# `create` on the inheritable catalog ancestor opens the gate. A non-member (no role-def) is denied.
+
+category_create_input(role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": "category:create",
+	"resource": {"type": "category"}, # type-level — no id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-resolved role granting WRITE on the catalog (create ∈ WRITE) opens category:create.
+test_create_inheritable_grant_opens_gate if {
+	category.allow with input as category_create_input(editor_role_def)
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# A read-only catalog role does NOT grant create (READ has no create).
+test_create_inheritable_grant_read_only_denied if {
+	not category.allow with input as category_create_input(viewer_role_def)
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# A non-member (NO role-def) is denied category:create — the fix opens the gate only for a resolved role.
+test_create_no_role_def_denied if {
+	not category.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "category:create",
+		"resource": {"type": "category"},
+		"environment": {},
+	}
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# Tag-on-create: the TYPE-LEVEL category:assign-tags gate (no instance yet) also opens via the parent
+# catalog's TAG grant — the same verb-agnostic inheritable clause. A non-member is denied.
+test_assign_tags_for_create_inheritable_opens if {
+	category.allow with input as category_create_input(editor_role_def)
+		with input.action as "category:assign-tags"
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+test_assign_tags_for_create_no_role_denied if {
+	not category.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "category:assign-tags",
+		"resource": {"type": "category"},
+		"environment": {},
+	}
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# REAL WIRE SHAPE — explicit `"id": null` (the regression-protection for the null-safe
+# is_type_level_request clause). AbacContext.Resource has no @JsonInclude(NON_NULL) on `id`, so a
+# type-level decision serializes as {"type":"category","id":null,...}, NOT an omitted key. The
+# helpers above use the omitted shape (exercising only `not input.resource.id`); these pin the
+# `input.resource.id == null` clause specifically. If that clause is dropped, the omitted-shape
+# tests still pass but these FAIL — and production (which always emits id:null) would silently
+# deny every member's type-level create/list/assign-tags. See category.rego is_type_level_request.
+category_create_input_null_id(role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": "category:create",
+	"resource": {"type": "category", "id": null, "attributes": {}}, # type-level — explicit null id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-resolved WRITE role opens the gate even with the explicit-null wire shape.
+test_create_null_id_inheritable_grant_opens_gate if {
+	category.allow with input as category_create_input_null_id(editor_role_def)
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# A non-member (NO role-def) is denied on the explicit-null wire shape too (isolation holds).
+test_create_null_id_no_role_def_denied if {
+	not category.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "category:create",
+		"resource": {"type": "category", "id": null, "attributes": {}},
+		"environment": {},
+	}
+		with data.category.inheritable as {"category": {"catalog": true}}
 }
 
 # --- default deny -----------------------------------------------------------
@@ -363,8 +459,7 @@ test_filter_agrees_with_allow_array if {
 }
 
 # U27 — the fail-open-leak guard: NO role_definition -> filter false (would be DENY_ALL on partial eval).
-# `allow` would grant a view via its subject-roles fallback, but `filter` must NOT — a list with no
-# role definition is empty, never the whole table.
+# `filter` was always role-def-only; a list with no role definition is empty, never the whole table.
 test_filter_no_role_definition_denies if {
 	not category.filter with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
@@ -374,14 +469,18 @@ test_filter_no_role_definition_denies if {
 	}
 }
 
-# Contrast: `allow` DOES grant the same no-role-def view (the fallback) — proving filter dropped it.
-test_allow_grants_no_role_def_view_that_filter_denies if {
-	category.allow with input as {
+# Slice B4: `allow` now AGREES with `filter` for a no-role-def request — the realm fallback that used
+# to grant a view (and made the list/single-GET disagree) was removed. Both deny: membership is the
+# sole access path, so a single-GET by a non-member fails closed at the category level too.
+test_allow_and_filter_both_deny_no_role_def if {
+	req := {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
 		"action": "category:view",
 		"resource": {"type": "category", "id": "p1", "attributes": {"region": "emea"}},
 		"environment": {},
 	}
+	not category.allow with input as req
+	not category.filter with input as req
 }
 
 # P8 — filter requires "list" in the EFFECTIVE set: a TAG-only role (no READ) -> filter false.

@@ -111,10 +111,15 @@ test_denied_action_delete_denies if {
 	}
 }
 
-# --- fallback to subject roles (no role_definition) -------------------------
+# --- Slice B4: realm-role fallback REMOVED (ADR 0018) -----------------------
+#
+# A product lives under a governed catalog, so the resolved role (team membership) applies at every
+# level; the blanket realm fallback only leaked. With no role_definition, a bare realm role is now
+# denied at EVERY verb — closing the deep-link leak (R7).
 
-test_fallback_viewer_views if {
-	product.allow with input as {
+# R7 — bare catalog-viewer (no role-def) can no longer view a product.
+test_fallback_viewer_view_now_denied if {
+	not product.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
 		"action": "product:view",
 		"resource": {"type": "product", "id": "p1"},
@@ -122,22 +127,109 @@ test_fallback_viewer_views if {
 	}
 }
 
-test_fallback_viewer_cannot_update if {
+# R7 — bare catalog-editor (no role-def) can no longer update a product (the leak we closed).
+test_fallback_editor_update_now_denied if {
 	not product.allow with input as {
-		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"subject": {"id": "u2", "roles": ["catalog-editor"]},
 		"action": "product:update",
 		"resource": {"type": "product", "id": "p1"},
 		"environment": {},
 	}
 }
 
-test_fallback_editor_updates if {
+# The resolved-role path is UNCHANGED: a role-def granting WRITE still updates.
+test_resolved_role_updates_unchanged if {
 	product.allow with input as {
-		"subject": {"id": "u2", "roles": ["catalog-editor"]},
+		"subject": {"id": "u2", "roles": []},
 		"action": "product:update",
 		"resource": {"type": "product", "id": "p1"},
+		"role_definition": editor_role_def,
 		"environment": {},
 	}
+}
+
+# --- Slice B4: the coarse CREATE + LIST gates (type-level, role resolved on the parent catalog) ----
+#
+# product:create / product:list are type-level. The gate resolves the role on the PARENT catalog (the
+# governing root, via the @OpaPreAuthorize roleResource override); a role granting the verb on the
+# inheritable catalog ancestor opens the gate. A non-member (no role-def) is denied.
+
+product_type_input(action, role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": action,
+	"resource": {"type": "product"}, # type-level — no id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-resolved WRITE role opens product:create; a READ role opens product:list but not create.
+test_product_create_inheritable_opens if {
+	product.allow with input as product_type_input("product:create", editor_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_product_list_inheritable_opens if {
+	product.allow with input as product_type_input("product:list", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_product_create_read_only_denied if {
+	not product.allow with input as product_type_input("product:create", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+# A non-member (NO role-def) is denied product:create AND product:list.
+test_product_type_level_no_role_def_denied if {
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:create",
+		"resource": {"type": "product"},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
+
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:list",
+		"resource": {"type": "product"},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+# REAL WIRE SHAPE — explicit `"id": null` (regression-protection for the null-safe
+# is_type_level_request clause). AbacContext.Resource emits id:null for a type-level decision (no
+# @JsonInclude(NON_NULL) on the field), NOT an omitted key. The helper above uses the omitted shape
+# (exercising only `not input.resource.id`); these pin the `input.resource.id == null` clause. Drop
+# that clause and the omitted-shape tests still pass but these FAIL — and production (always id:null)
+# would silently deny every member's product:create/list. See product.rego is_type_level_request.
+product_type_input_null_id(action, role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": action,
+	"resource": {"type": "product", "id": null, "attributes": {}}, # type-level — explicit null id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+test_product_create_null_id_inheritable_opens if {
+	product.allow with input as product_type_input_null_id("product:create", editor_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_product_list_null_id_inheritable_opens if {
+	product.allow with input as product_type_input_null_id("product:list", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+# A non-member is denied on the explicit-null wire shape too (isolation holds).
+test_product_create_null_id_no_role_def_denied if {
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:create",
+		"resource": {"type": "product", "id": null, "attributes": {}},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
 }
 
 # --- default deny -----------------------------------------------------------
@@ -332,10 +424,10 @@ test_tag_free_role_unaffected if {
 	product.allow with input as product_tag_input(editor_role_def, {"region": "apac"})
 }
 
-# P5 — no role definition at all: the realm fallback decides exactly as before (the conjunct
-# sits only on the role-definition grant path).
-test_tag_fallback_path_unaffected if {
-	product.allow with input as {
+# P5 — the tag conjunct sits only on the role-definition grant path. Slice B4: bare catalog-editor
+# (no role-def) can no longer `update` (fallback removed for all verbs) regardless of tags.
+test_tag_fallback_path_update_now_denied if {
+	not product.allow with input as {
 		"subject": {"id": "u2", "roles": ["catalog-editor"]},
 		"action": "product:update",
 		"resource": {"type": "product", "id": "p1", "attributes": {"region": "apac"}},
