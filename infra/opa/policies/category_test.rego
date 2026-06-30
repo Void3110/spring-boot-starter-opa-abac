@@ -222,6 +222,38 @@ test_assign_tags_for_create_no_role_denied if {
 		with data.category.inheritable as {"category": {"catalog": true}}
 }
 
+# REAL WIRE SHAPE — explicit `"id": null` (the regression-protection for the null-safe
+# is_type_level_request clause). AbacContext.Resource has no @JsonInclude(NON_NULL) on `id`, so a
+# type-level decision serializes as {"type":"category","id":null,...}, NOT an omitted key. The
+# helpers above use the omitted shape (exercising only `not input.resource.id`); these pin the
+# `input.resource.id == null` clause specifically. If that clause is dropped, the omitted-shape
+# tests still pass but these FAIL — and production (which always emits id:null) would silently
+# deny every member's type-level create/list/assign-tags. See category.rego is_type_level_request.
+category_create_input_null_id(role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": "category:create",
+	"resource": {"type": "category", "id": null, "attributes": {}}, # type-level — explicit null id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-resolved WRITE role opens the gate even with the explicit-null wire shape.
+test_create_null_id_inheritable_grant_opens_gate if {
+	category.allow with input as category_create_input_null_id(editor_role_def)
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# A non-member (NO role-def) is denied on the explicit-null wire shape too (isolation holds).
+test_create_null_id_no_role_def_denied if {
+	not category.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "category:create",
+		"resource": {"type": "category", "id": null, "attributes": {}},
+		"environment": {},
+	}
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
 # --- default deny -----------------------------------------------------------
 
 test_default_deny_unknown_role if {

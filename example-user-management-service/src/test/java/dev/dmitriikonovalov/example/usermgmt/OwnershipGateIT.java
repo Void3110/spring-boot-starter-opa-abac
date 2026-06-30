@@ -98,6 +98,25 @@ class OwnershipGateIT extends AbstractSecuredPostgresIT {
         assertThat(teams.findByTargetTypeAndTargetId("catalog", catalog)).isEmpty();
     }
 
+    @Test // I8b — no resolvable subject (the request carries no identity) → 403 (the guard's `subject ==
+    // null` disjunct, the authn-edge-defaults-to-deny case). The ownership decision would ALLOW, proving
+    // the denial comes from the missing subject, not the resolver.
+    void noSubjectIsDenied() {
+        UUID catalog = UUID.randomUUID();
+        AbacTestConfig.ownershipDecision = (subject, type, id) -> true; // resolver would allow
+
+        // as(null, ...) omits the X-Test-Subject header → the extractor returns empty → no subject.
+        var res = rest.exchange(
+                "/api/v1/teams", HttpMethod.POST,
+                AbacTestConfig.as(null, createTeamBody(catalog)), JsonNode.class);
+
+        // The @OpaPreAuthorize-less createTeam still requires an acting identity for ownership; with none,
+        // the ownership guard denies (it never reaches a default-allow). 401 from the gateway is N/A here
+        // (no gateway in the IT) — the in-process chain surfaces the missing subject as the 403 deny.
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(teams.findByTargetTypeAndTargetId("catalog", catalog)).isEmpty();
+    }
+
     @Test // I9 — the /internal/bootstrap/teams seed path BYPASSES the gate (still creates) even when the
     // ownership decision would deny — a separate controller that never reaches createTeam.
     void bootstrapPathBypassesTheGate() {

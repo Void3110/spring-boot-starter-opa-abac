@@ -159,10 +159,14 @@ fi
 # carry the SAME openid-connect bearer validation (+ tracing/cors) as the catalog route — the user-service
 # does its own fine-grained @OpaPreAuthorize, so they do NOT carry the catalog `opa` gateway-route plugin.
 #
-# CRITICAL: there is NO /internal/** route here. /internal/** (the resolve API, the governed-targets
-# endpoint, the ownership created-by read, the bootstrap seed) is permitAll + in-network only — exposing
-# it through the gateway would let anyone forge a `sub` or read a creator id. The gateway proxies ONLY
-# /api/v1/teams*, /api/v1/users*, /api/v1/catalogs* (catch-all), and the Keycloak realms/resources paths.
+# CRITICAL: /internal/** is permitAll + in-network only across BOTH services (the resolve API, the
+# governed-targets endpoint, the ownership created-by read, the bootstrap seed) — exposing it through the
+# gateway would let anyone forge a `sub` or read a creator id. The user-service pool is protected by
+# OMISSION (its only routes are /api/v1/teams* + /api/v1/users*). The CATALOG pool, however, is served by a
+# catch-all (/*, below) that WOULD otherwise match /internal/catalog/{id}/created-by — so an explicit
+# `internal-blocked` route (priority 70, defined just before the catch-all) 404s every /internal/* path at
+# the edge. The gateway thus proxies ONLY /api/v1/teams*, /api/v1/users*, /api/v1/catalogs* (catch-all),
+# and the Keycloak realms/resources paths; /internal/* is positively blocked.
 #
 # Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — only wired when the usermgmt pod is up.
 if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
@@ -224,6 +228,38 @@ if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
   done
   echo "  routes 'usermgmt-teams' (/api/v1/teams*) + 'usermgmt-users' (/api/v1/users*) -> usermgmt-pool  [priority 60; NO /internal route]"
 fi
+
+# Slice B4 hardening (deep-review): EXPLICITLY block /internal/* at the gateway. The catalog route below
+# is a catch-all (/*, priority 0); without this, GET /internal/catalog/{id}/created-by (catalog
+# SecurityConfig permitAll's /internal/**) would match the catch-all and proxy through to the catalog pod,
+# leaking a creator `sub`. The user-service is protected by OMISSION (its pool only has /api/v1/teams* +
+# /api/v1/users* routes), but the catalog catch-all needs a POSITIVE block. Priority 70 (> usermgmt's 60 >
+# the catch-all's 0) so it wins for any /internal/* path; a serverless-pre-function (already enabled in
+# config.yaml) returns 404 BEFORE any upstream is selected — the path is not even acknowledged at the edge.
+# No upstream is attached: the pre-function exits first. This makes the "/internal is never gateway-fronted"
+# invariant STRUCTURAL (an explicit deny route) rather than incidental (a missing route).
+internal_block_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+  -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+  "$APISIX_ADMIN/apisix/admin/routes/internal-blocked" \
+  -d "{
+    \"name\": \"internal-blocked\",
+    \"uri\": \"/internal/*\",
+    \"methods\": [\"GET\",\"POST\",\"PUT\",\"DELETE\",\"OPTIONS\",\"PATCH\",\"HEAD\"],
+    \"priority\": 70,
+    \"status\": 1,
+    \"plugins\": {
+      \"serverless-pre-function\": {
+        \"phase\": \"rewrite\",
+        \"functions\": [\"return function(conf, ctx) require('apisix.core').response.exit(404) end\"]
+      }
+    }
+  }")
+internal_block_code=$(printf '%s' "$internal_block_resp" | tail -n1)
+if [ "$internal_block_code" != "200" ] && [ "$internal_block_code" != "201" ]; then
+  echo "  ERROR: route 'internal-blocked' PUT failed ($internal_block_code): $(printf '%s' "$internal_block_resp" | head -n1)" >&2
+  exit 1
+fi
+echo "  route 'internal-blocked' (/internal/*) -> 404 at the edge  [priority 70; the /internal-never-gateway-fronted invariant, enforced]"
 
 # Note: use -s (not -sf) and inspect the body — a -f swallows APISIX's 400 error messages
 # (e.g. "unknown plugin [...]" when a plugin isn't enabled in config.yaml).

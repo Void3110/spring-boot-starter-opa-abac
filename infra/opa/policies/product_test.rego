@@ -197,6 +197,41 @@ test_product_type_level_no_role_def_denied if {
 		with data.product.inheritable as {"product": {"catalog": true}}
 }
 
+# REAL WIRE SHAPE — explicit `"id": null` (regression-protection for the null-safe
+# is_type_level_request clause). AbacContext.Resource emits id:null for a type-level decision (no
+# @JsonInclude(NON_NULL) on the field), NOT an omitted key. The helper above uses the omitted shape
+# (exercising only `not input.resource.id`); these pin the `input.resource.id == null` clause. Drop
+# that clause and the omitted-shape tests still pass but these FAIL — and production (always id:null)
+# would silently deny every member's product:create/list. See product.rego is_type_level_request.
+product_type_input_null_id(action, role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": action,
+	"resource": {"type": "product", "id": null, "attributes": {}}, # type-level — explicit null id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+test_product_create_null_id_inheritable_opens if {
+	product.allow with input as product_type_input_null_id("product:create", editor_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_product_list_null_id_inheritable_opens if {
+	product.allow with input as product_type_input_null_id("product:list", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+# A non-member is denied on the explicit-null wire shape too (isolation holds).
+test_product_create_null_id_no_role_def_denied if {
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:create",
+		"resource": {"type": "product", "id": null, "attributes": {}},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
 # --- default deny -----------------------------------------------------------
 
 test_default_deny_unknown_role if {
