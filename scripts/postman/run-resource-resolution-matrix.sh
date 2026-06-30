@@ -10,7 +10,8 @@
 #   E2  editor-realm member whose tag-gated team role MISmatches            -> 403  (was 200 — the
 #       tag-blind realm-fallback hole, closed)
 #   E3  read-only team role + editor realm -> 403 (role definition present, fallback disabled)
-#   E4  no membership at the root -> the fallback still decides (200; byte-identical cell)
+#   E4  NON-MEMBER of the (separately-governed) free catalog -> 403 (Slice B4: membership is the sole
+#       access path; the tag-blind realm fallback that used to decide here is gone — see ADR 0018)
 #   E5  catalog-root read grant authorizes a NESTED category at the gate (hierarchy parity)
 #   E6  the same tag gate on PRODUCT writes (T5's ported conjunct, live)
 #   +   a missing id behind an annotated resourceId answers 403, not 404 (pinned semantic #1)
@@ -23,14 +24,19 @@
 #
 # Fixture set (registered in scripts/postman/README.md — dedicated, no shared fixtures touched):
 #   88888888-8888-8888-8888-888888888888  the team-governed catalog (emea/apac categories + products)
-#   88888888-8888-8888-8888-888888888889  the team-LESS catalog (the E4 fallback cell)
+#   88888888-8888-8888-8888-888888888889  a SEPARATELY-governed catalog — the E4 non-member cell
+#                                          (Slice B4: every catalog is governed; "team-less" no longer
+#                                          grants access, so this catalog has its OWN team that the E4
+#                                          subject is NOT a member of)
 #
 # Subjects (realm users): viewer (realm catalog-viewer) and demo (realm catalog-editor) are both bound
 # to the tag-gated WRITE role (required_tags region ANY_OF [emea]); editor (realm catalog-editor) is
 # bound to a catalog-root READ-ONLY role (no tags — proves inheritance + the narrowing). Fixtures are
-# created through the gateway by demo (creates are type-level and ride the editor realm fallback —
-# the Phase-6.5 vocabulary question, unchanged here); product tags are set via psql (products have no
-# tag-assignment API).
+# created through the gateway by demo: on the main catalog via its rr-regional-writer membership, and on
+# the free catalog via a SECOND membership (free-creator) on the free catalog's own team — Slice B4
+# removed the realm fallback, so every create now needs a resolved role. The E4 subject (editor) is a
+# member of the MAIN team but NOT the free catalog's team, so E4 is denied. Product tags are set via
+# psql (products have no tag-assignment API).
 #
 # Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888).
 
@@ -175,6 +181,16 @@ post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_EDITOR_UID\",\"roleCode\":\"rr-catalog-reader\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $RR_CATALOG_ID (two gated writers + one root reader bound)."
 
+# Slice B4: the FREE catalog is its OWN governed island. It needs a team + a creator membership so the
+# fixture category there can be created (the realm fallback that used to let a bare editor create is gone).
+# writer-editor (demo) gets a SECOND membership here — full catalog WRITE+TAG, untagged. The E4 subject
+# (reader-editor / editor realm) is deliberately NOT bound here, so its E4 PUT is denied (non-member).
+FREE_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Resource resolution free\",\"targetType\":\"catalog\",\"targetId\":\"$FREE_CATALOG_ID\"}" | json_field teamId)"
+post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+  "{\"teamId\":\"$FREE_TEAM_ID\",\"code\":\"rr-free-creator\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$FREE_TEAM_ID\",\"userId\":\"$WRITER_EDITOR_UID\",\"roleCode\":\"rr-free-creator\"}" >/dev/null
+echo "  team $FREE_TEAM_ID governs catalog $FREE_CATALOG_ID (writer-editor bound as creator; reader-editor is NOT a member -> E4 denied)."
+
 # --- create the fixture tree through the gateway (writer-editor = realm editor) -
 echo "==> Creating the fixture categories/products through the gateway ..."
 EMEA_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" '{"name":"RR EMEA root","tags":{"region":["emea"]}}')"
@@ -182,7 +198,9 @@ APAC_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" '{"n
 NESTED_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "{\"name\":\"RR nested\",\"parentId\":\"$EMEA_CATEGORY_ID\"}")"
 EMEA_PRODUCT_ID="$(create_product "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "$EMEA_CATEGORY_ID" '{"name":"RR EMEA widget","sku":"RR-EMEA","priceCents":1500,"currency":"USD"}')"
 APAC_PRODUCT_ID="$(create_product "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "$APAC_CATEGORY_ID" '{"name":"RR APAC widget","sku":"RR-APAC","priceCents":1000,"currency":"USD"}')"
-FREE_CATEGORY_ID="$(create_category "$READER_EDITOR_TOKEN" "$FREE_CATALOG_ID" '{"name":"Free catalog category"}')"
+# Slice B4: created by writer-editor via its rr-free-creator membership on the free catalog's own team
+# (the realm fallback that used to let the reader create here is gone).
+FREE_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$FREE_CATALOG_ID" '{"name":"Free catalog category"}')"
 echo "  emea=$EMEA_CATEGORY_ID apac=$APAC_CATEGORY_ID nested=$NESTED_CATEGORY_ID"
 echo "  emea-product=$EMEA_PRODUCT_ID apac-product=$APAC_PRODUCT_ID free=$FREE_CATEGORY_ID"
 for pair in "emea:$EMEA_CATEGORY_ID" "apac:$APAC_CATEGORY_ID" "nested:$NESTED_CATEGORY_ID" \

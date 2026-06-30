@@ -148,6 +148,55 @@ test_resolved_role_updates_unchanged if {
 	}
 }
 
+# --- Slice B4: the coarse CREATE + LIST gates (type-level, role resolved on the parent catalog) ----
+#
+# product:create / product:list are type-level. The gate resolves the role on the PARENT catalog (the
+# governing root, via the @OpaPreAuthorize roleResource override); a role granting the verb on the
+# inheritable catalog ancestor opens the gate. A non-member (no role-def) is denied.
+
+product_type_input(action, role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": action,
+	"resource": {"type": "product"}, # type-level — no id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-resolved WRITE role opens product:create; a READ role opens product:list but not create.
+test_product_create_inheritable_opens if {
+	product.allow with input as product_type_input("product:create", editor_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_product_list_inheritable_opens if {
+	product.allow with input as product_type_input("product:list", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_product_create_read_only_denied if {
+	not product.allow with input as product_type_input("product:create", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+# A non-member (NO role-def) is denied product:create AND product:list.
+test_product_type_level_no_role_def_denied if {
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:create",
+		"resource": {"type": "product"},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
+
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:list",
+		"resource": {"type": "product"},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
 # --- default deny -----------------------------------------------------------
 
 test_default_deny_unknown_role if {

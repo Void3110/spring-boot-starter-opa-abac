@@ -164,6 +164,7 @@ SENIOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\
 ADMIN_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$ADMIN_SUB\",\"displayName\":\"PC administrator\"}" | json_field userId)"
 TARGET1_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"pc-target-1\",\"displayName\":\"PC target 1\"}" | json_field userId)"
 TARGET2_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"pc-target-2\",\"displayName\":\"PC target 2\"}" | json_field userId)"
+CREATOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$CREATOR_SUB\",\"displayName\":\"PC fixture creator\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Permission categories demo\",\"targetType\":\"catalog\",\"targetId\":\"$PC_CATALOG_ID\"}" | json_field teamId)"
 
@@ -181,6 +182,11 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 # E4's designed-cell candidate: a full-WRITE member-tier role.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
   "{\"teamId\":\"$TEAM_ID\",\"code\":\"pc-full-write\",\"roleLevel\":20,\"permissions\":{\"category\":[\"READ\",\"WRITE\"]}}" >/dev/null
+# Slice B4: the fixture CREATOR needs a RESOLVED role granting create on the catalog (the realm fallback
+# that used to let a bare editor-realm user create is gone). catalog:WRITE+TAG -> create/assign-tags
+# inherit to categories; category:WRITE+TAG covers the per-instance writes the cells exercise.
+post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"pc-creator\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
 
 # --- the sanctioned authoring bypasses (direct DB INSERT into the usermgmt DB) -----
 # E5: a stale pre-6.5 flat row (the authoring API rejects flat tokens BY DESIGN — the bypass is the
@@ -212,7 +218,10 @@ SQL
 # --- the fixed bindings (the ladder subject is REBOUND by the collection itself) ----
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$SENIOR_UID\",\"roleCode\":\"senior\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$ADMIN_UID\",\"roleCode\":\"administrator\"}" >/dev/null
-echo "  team $TEAM_ID governs catalog $PC_CATALOG_ID (senior + administrator bound; ladder rebinds in-collection)."
+# Slice B4: bind the fixture creator to its catalog-WRITE+TAG role so the per-cell category creates below
+# resolve a role (the realm fallback that used to let a bare editor-realm user create is gone).
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$CREATOR_UID\",\"roleCode\":\"pc-creator\"}" >/dev/null
+echo "  team $TEAM_ID governs catalog $PC_CATALOG_ID (senior + administrator + creator bound; ladder rebinds in-collection)."
 
 # --- create the per-cell fixture categories through the gateway (creator = editor realm) -
 echo "==> Creating the per-cell fixture categories through the gateway ..."

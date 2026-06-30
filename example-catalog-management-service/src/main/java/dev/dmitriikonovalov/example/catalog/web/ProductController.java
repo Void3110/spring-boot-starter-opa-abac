@@ -39,7 +39,8 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:list", resourceType = "'product'")
+    @OpaPreAuthorize(action = "product:list", resourceType = "'product'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
     public ResponseEntity<ProductPage> listProducts(
             UUID catalogId, UUID categoryId, Integer page, Integer perPage) {
         requireCategory(catalogId, categoryId);
@@ -48,7 +49,8 @@ public class ProductController implements ProductApi {
     }
 
     @Override
-    @OpaPreAuthorize(action = "product:create", resourceType = "'product'")
+    @OpaPreAuthorize(action = "product:create", resourceType = "'product'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
     public ResponseEntity<Product> createProduct(UUID catalogId, UUID categoryId, ProductRequest request) {
         requireCategory(catalogId, categoryId);
         var entity = new ProductEntity(

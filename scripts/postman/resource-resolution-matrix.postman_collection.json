@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Resource-resolution matrix (attribute-rich pre-authorization, Phase 5.97)",
-    "description": "Proves the 00-DESIGN §3 behavior matrix live through APISIX: with the catalog service's AbacResourceResolver registered, an id'd @OpaPreAuthorize decision is made on the RESOLVED instance (tags + ancestors) with the role looked up once on the governing root — the team/tag model finally governs id'd writes. Cells: the headline flip (E1), the closed realm-fallback hole (E2), the intended narrowing (E3), the unchanged non-member fallback (E4), hierarchy parity via the gate (E5), the T5 product-policy sibling (E6), and the pinned missing-id 403 posture. Fixture set: the dedicated 8888… catalog pair seeded by run-resource-resolution-matrix.sh.",
+    "description": "Proves the 00-DESIGN §3 behavior matrix live through APISIX: with the catalog service's AbacResourceResolver registered, an id'd @OpaPreAuthorize decision is made on the RESOLVED instance (tags + ancestors) with the role looked up once on the governing root — the team/tag model finally governs id'd writes. Cells: the headline flip (E1), the closed realm-fallback hole (E2), the intended narrowing (E3), the non-member denial under membership-only isolation (E4, Slice B4), hierarchy parity via the gate (E5), the T5 product-policy sibling (E6), and the pinned missing-id 403 posture. Fixture set: the dedicated 8888… catalog pair seeded by run-resource-resolution-matrix.sh.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "name": "E4. NON-MEMBER UNCHANGED: editor realm, PUT a Category in the team-less catalog -> 200 (the fallback still decides)",
+      "name": "E4. NON-MEMBER DENIED (Slice B4): reader-editor, a non-member of the free catalog's team, PUT a Category there -> 403 (the realm fallback that used to decide here is gone)",
       "request": {
         "method": "PUT",
         "header": [
@@ -109,7 +109,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E4: no role definition at the root -> the realm fallback decides, byte-identical -> 200', function () { pm.response.to.have.status(200); });"
+              "pm.test('E4 (Slice B4): a non-member of the free catalog has no resolved role -> membership-only isolation denies -> 403', function () { pm.response.to.have.status(403); });"
             ]
           }
         }

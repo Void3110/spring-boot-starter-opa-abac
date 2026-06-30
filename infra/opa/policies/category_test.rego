@@ -167,6 +167,61 @@ test_resolved_role_updates_unchanged if {
 	}
 }
 
+# --- Slice B4: the coarse CREATE gate (type-level, role resolved on the parent catalog) ---------
+#
+# category:create is type-level (the child has no id yet). The gate resolves the role on the PARENT
+# catalog (the governing root, via the @OpaPreAuthorize roleResource override) — so a role granting
+# `create` on the inheritable catalog ancestor opens the gate. A non-member (no role-def) is denied.
+
+category_create_input(role_def) := {
+	"subject": {"id": "u", "roles": ["catalog-editor"]},
+	"action": "category:create",
+	"resource": {"type": "category"}, # type-level — no id
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# A catalog-resolved role granting WRITE on the catalog (create ∈ WRITE) opens category:create.
+test_create_inheritable_grant_opens_gate if {
+	category.allow with input as category_create_input(editor_role_def)
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# A read-only catalog role does NOT grant create (READ has no create).
+test_create_inheritable_grant_read_only_denied if {
+	not category.allow with input as category_create_input(viewer_role_def)
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# A non-member (NO role-def) is denied category:create — the fix opens the gate only for a resolved role.
+test_create_no_role_def_denied if {
+	not category.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "category:create",
+		"resource": {"type": "category"},
+		"environment": {},
+	}
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+# Tag-on-create: the TYPE-LEVEL category:assign-tags gate (no instance yet) also opens via the parent
+# catalog's TAG grant — the same verb-agnostic inheritable clause. A non-member is denied.
+test_assign_tags_for_create_inheritable_opens if {
+	category.allow with input as category_create_input(editor_role_def)
+		with input.action as "category:assign-tags"
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
+test_assign_tags_for_create_no_role_denied if {
+	not category.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "category:assign-tags",
+		"resource": {"type": "category"},
+		"environment": {},
+	}
+		with data.category.inheritable as {"category": {"catalog": true}}
+}
+
 # --- default deny -----------------------------------------------------------
 
 test_default_deny_unknown_role if {

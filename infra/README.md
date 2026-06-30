@@ -219,6 +219,33 @@ policies for the first time (the `bulk` rule is new, though it changes no decisi
 > to the infra copies) so its isolated `opa test` resolves. Edit the `CONTROL`/`list-members` table in
 > **both** copies, and **restart OPA** after any `team.rego`/table edit before running the e2e matrices.
 
+## Multi-tenant isolation (Slice B4)
+
+The **isolation** matrix proves the headline of B4 through the gateway: **team membership is the sole
+access path** to a catalog, and the self-service flow (create catalog → create team → add members) is
+safe. A fresh `catalog-editor` with no team sees an **empty** list (no realm-fallback leak); she creates
+a catalog + team and then sees only **hers**; a member she adds sees **her** catalog (scoped, not his
+own); a multi-team user sees the **union**; a non-member who deep-links another catalog's id gets **403**;
+and a squat (`POST /teams` targeting someone else's catalog) is **denied 403** by the cross-service
+ownership check. Needs the user-service rig (`ENABLE_USER_SERVICE=1`, which `ENABLE_SPA=1` implies) — the
+three demo users **alice / bob / carol** are in `keycloak/realm-export.json`.
+
+```bash
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+./deploy.sh build           # fresh app images carrying B4 (T1–T9)
+docker restart opa-abac-opa # reload the B4 policy (T1 + the T9 type-level-gate fix)
+cd scripts/postman && ./run-isolation-matrix.sh   # E1–E7, 20 assertions
+```
+
+The runner **self-resets** (it wipes the `Alice Co` / `Carol Co` catalogs + teams by name first), so it
+is idempotent even though the matrix creates Alice's catalog **live** in E2. B4 removed the realm-role
+fallback from the single-decision path, so **every type-level gate** (`list`/`create`/`assign-tags`) now
+resolves the caller's role on the governing parent catalog via `@OpaPreAuthorize(roleResource…)` — a
+non-member resolves no role and is denied. After this change the `permission-categories` and
+`resource-resolution` matrices bind their fixture creators to a real catalog-WRITE role (the fallback that
+used to let a bare realm user create is gone); re-running the **full** existing suite stays green
+(resilience excepted — it needs the mutually-exclusive `ENABLE_RESILIENCE_STUB` profile below).
+
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 
 Off by default. `ENABLE_RESILIENCE_STUB=1 ./deploy.sh up` adds a **fault-injecting** stand-in for the

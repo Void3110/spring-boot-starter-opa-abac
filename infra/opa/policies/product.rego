@@ -40,10 +40,35 @@ import data.permissions
 
 default allow := false
 
-# final decision: a grant (direct, inherited, or the subject-roles fallback) that is NOT denied.
+# final decision: a grant (direct or inherited via the resolved role) that is NOT denied. Slice B4
+# removed the subject-roles fallback (membership is the sole access path).
 allow if {
 	granted
 	not denied
+}
+
+# COARSE TYPE-LEVEL GATE (Slice B4): a type-level `@OpaPreAuthorize(product:create|list)` asks `allow` with
+# only a resource TYPE (the new product has no id; a list has no instance). The gate resolves the caller's
+# role on the parent catalog (the governing root, via the @OpaPreAuthorize roleResource override), so a
+# subject whose role carries the verb on a declared inheritable ANCESTOR (catalog) passes. Verb-agnostic
+# (create/list/assign-tags alike), scoped to a type-level request so single-resource decisions are
+# unchanged; a non-member resolves no role and is denied. Product had no such gate before B4 (it is a leaf
+# that is always listed under a category) — added here for the create/list type-level paths.
+allow if {
+	is_type_level_request
+	not denied
+	list_inheritable_grant
+}
+
+# Type-level request: id ABSENT or explicit `null` (the app serializes a Java null id as null) — both
+# mean "type-level". `not input.resource.id` alone is UNDEFINED for an explicit null (Slice B4 null-safe).
+is_type_level_request if not input.resource.id
+
+is_type_level_request if input.resource.id == null
+
+list_inheritable_grant if {
+	some ancestor_type, _ in data.product.inheritable[input.resource.type]
+	verb in permissions.effective_actions(input.role_definition, ancestor_type)
 }
 
 # The fine action verb is the part after the ":" in input.action (e.g. "product:view" -> "view").

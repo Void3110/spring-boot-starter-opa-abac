@@ -48,11 +48,24 @@ allow if {
 # single-resource decisions are unchanged, and it is opt-in/default-off via the same
 # data.category.inheritable. A true stranger (no role / no inheritable grant) is still denied.
 allow if {
-	not input.resource.id
+	is_type_level_request
 	not denied
 	list_inheritable_grant
 }
 
+# A type-level request (a list, or a create/assign-tags before the instance exists) carries NO resource
+# id. The app serializes that as an ABSENT key OR an explicit `null` (a Java `null` id) — both mean
+# "type-level", so this helper accepts either. (`not input.resource.id` alone is UNDEFINED — not true —
+# for an explicit `null`, which silently closed the coarse type-level gate; Slice B4 made it null-safe.)
+is_type_level_request if not input.resource.id
+
+is_type_level_request if input.resource.id == null
+
+# The generic clause above is verb-agnostic: it lets ANY type-level verb (list, create, assign-tags)
+# pass when the caller's role — resolved on the inheritable ANCESTOR (the parent catalog, via the
+# @OpaPreAuthorize roleResource override, Slice B4) — carries that verb. So a member with WRITE/TAG on the
+# catalog can create/tag categories; a non-member resolves no role and is denied. No verb-specific clause
+# is needed (the original Phase-5.5-B "list" naming is historical — it gates every type-level verb).
 list_inheritable_grant if {
 	some ancestor_type, _ in data.category.inheritable[input.resource.type]
 	verb in permissions.effective_actions(input.role_definition, ancestor_type)

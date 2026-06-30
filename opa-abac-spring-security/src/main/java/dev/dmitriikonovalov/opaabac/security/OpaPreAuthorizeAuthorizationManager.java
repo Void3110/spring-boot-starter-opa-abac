@@ -186,7 +186,9 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             if (value instanceof AbacDataObject dataObject) {
                 AbacContext.Resource resource = new AbacContext.Resource(
                         dataObject.abacResourceType(), dataObject.abacResourceId(), dataObject.abacAttributes());
-                return new ResolvedCheck(resource, resource.type(), resource.id(), dataObject);
+                return withRoleResourceOverride(
+                        annotation, spelContext,
+                        new ResolvedCheck(resource, resource.type(), resource.id(), dataObject));
             }
             return null; // declared but unresolvable → deny
         }
@@ -196,8 +198,11 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             return null; // no resource type → cannot decide
         }
         if (annotation.resourceId().isBlank()) {
-            // Type-level check, by declaration — never engages the resolver, caches nothing.
-            return new ResolvedCheck(new AbacContext.Resource(type, null, Map.of()), type, null, null);
+            // Type-level check, by declaration — never engages the resolver, caches nothing. The role is
+            // looked up on (type, null) UNLESS a roleResource override moves it to a governing parent
+            // (the child create/list case: no leaf instance to walk up from, so name the parent explicitly).
+            return withRoleResourceOverride(annotation, spelContext,
+                    new ResolvedCheck(new AbacContext.Resource(type, null, Map.of()), type, null, null));
         }
         String id = asText(evaluate(annotation.resourceId(), spelContext));
         if (id == null || id.isBlank()) {
@@ -209,9 +214,42 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         }
         if (resolutionSupport == null) {
             // Pre-resolution, reference-based behavior — byte-identical context, leaf role lookup.
-            return new ResolvedCheck(new AbacContext.Resource(type, id, Map.of()), type, id, null);
+            return withRoleResourceOverride(annotation, spelContext,
+                    new ResolvedCheck(new AbacContext.Resource(type, id, Map.of()), type, id, null));
         }
-        return resolveInstance(type, id);
+        return withRoleResourceOverride(annotation, spelContext, resolveInstance(type, id));
+    }
+
+    /**
+     * Apply the {@link OpaPreAuthorize#roleResourceType()}/{@link OpaPreAuthorize#roleResourceId()}
+     * override: when both are declared and resolve to non-blank, the role is looked up on
+     * {@code (roleResourceType, roleResourceId)} (a governing parent) instead of the decided resource's
+     * own coordinates — the decided resource (its type, the queried policy, its attributes) is unchanged.
+     * Used for type-level child create/list gates that must resolve the role on the parent catalog so the
+     * policy's inheritable-ancestor grant can fire. A declared-but-unresolvable override denies
+     * (fail-closed), never silently falling back to the original coordinates.
+     *
+     * @return the check with overridden role coordinates, the original check when no override is declared,
+     *     or {@code null} (deny) when the override is declared but unresolvable / the base check is null
+     */
+    private ResolvedCheck withRoleResourceOverride(
+            OpaPreAuthorize annotation, StandardEvaluationContext spelContext, ResolvedCheck base) {
+        if (base == null) {
+            return null;
+        }
+        boolean typeDeclared = !annotation.roleResourceType().isBlank();
+        boolean idDeclared = !annotation.roleResourceId().isBlank();
+        if (!typeDeclared && !idDeclared) {
+            return base; // no override → today's behavior
+        }
+        String roleType = asText(evaluate(annotation.roleResourceType(), spelContext));
+        String roleId = asText(evaluate(annotation.roleResourceId(), spelContext));
+        if (roleType == null || roleType.isBlank() || roleId == null || roleId.isBlank()) {
+            // Declared but unresolvable → deny (never widen by falling back to the decided resource).
+            log.debug("OPA pre-authorize denied: role-resource override declared but unresolvable");
+            return null;
+        }
+        return new ResolvedCheck(base.resource(), roleType, roleId, base.instance());
     }
 
     /**

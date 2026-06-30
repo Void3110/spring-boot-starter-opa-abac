@@ -39,9 +39,14 @@ public class TagDecisionGate {
         // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
     }
 
-    /** The TYPE-LEVEL tag decision for create — no instance exists yet. */
-    @OpaPreAuthorize(action = "category:assign-tags", resourceType = "'category'")
-    public void requireCategoryAssignTagsForCreate() {
+    /**
+     * The TYPE-LEVEL tag decision for create — no instance exists yet. Slice B4: the role is resolved on
+     * the parent {@code catalog} (the governing root) so a member with {@code assign-tags} (TAG) on the
+     * catalog passes; a non-member resolves no role and is denied.
+     */
+    @OpaPreAuthorize(action = "category:assign-tags", resourceType = "'category'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
+    public void requireCategoryAssignTagsForCreate(UUID catalogId) {
         // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
     }
 }
