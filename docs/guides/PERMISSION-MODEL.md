@@ -46,19 +46,29 @@ The table lives in **OPA `data`** — `infra/opa/policies/permission_categories.
   wins; `"*"` backs it up when the key is absent — for grants **and** denials symmetrically (the
   Java resolve wire, `EffectiveRoleService.expandWildcard`, shadows identically, so the two homes
   cannot diverge).
-- `effective_from_categories(cats)` — the expansion of a literal category set; the **realm
-  fallback** maps through it (`catalog-viewer → {READ}`, `catalog-editor → {READ,WRITE,TAG}`), so
-  even the no-role-definition path speaks the same table.
+- `effective_from_categories(cats)` — the expansion of a literal category set. Pre-B4 the **blanket
+  realm fallback** mapped through it (`catalog-viewer → {READ}`, `catalog-editor → {READ,WRITE,TAG}`);
+  B4 removed that fallback, and the one surviving realm-role grant — narrow `catalog:create` — is a
+  **direct `verb == "create"` check** in `catalog.rego`, not a category expansion. So this helper now
+  serves the resolved-`role_definition` path only.
 
-> **The realm fallback fires for an authoritative no-role only — never an outage (Slice B2, ADR
-> [[0014-supplier-outage-error-distinct|0014]]).** "No role definition" is now a *tri-state* signal at
-> the `RoleDefinitionSupplier` seam: an authoritative no-role (`Optional.empty()`, e.g. the user-service
-> answers `204`) reaches this fallback as designed, but a role-source **outage** (timeout / 5xx /
-> malformed) **throws** and the gate denies *before any OPA call* — so the fallback clause is never fed
-> an outage input. This closes the one *widening-on-failure* path ([[PERMISSION-CATEGORIES-REVIEW]]
-> C1/C4): before B2, an outage let a realm `catalog-editor` ride the fallback to `{READ,WRITE,TAG}`,
-> erasing the resolved role's `denied_actions`/`required_tags` narrowing. **Zero Rego changed** — the
-> fallback clause is byte-identical; B2 only stops outages from reaching it (see
+> **Post-B4 (ADR [[0018-team-scoped-resource-isolation|0018]]) there is no blanket realm-role fallback.**
+> Team membership is the **sole** access path to the catalog hierarchy: with no `role_definition`
+> resolved, the policies **deny** view/list/update/delete (a bare realm role no longer grants anything on
+> an instance). The **only** surviving fallback is a narrow, verb-gated **`catalog:create`** grant — a
+> realm `catalog-editor` may *onboard* a catalog (creation is definitionally pre-membership), but that is
+> the asterisk, not a general grant. Earlier slices (5.97–B3) carried a blanket fallback
+> (`catalog-viewer → READ`, `catalog-editor → READ+WRITE+TAG` on any resource); B4 removed it — see the
+> ADR 0018 *Context* for why it contradicted the team model.
+>
+> **The supplier seam is still tri-state — an outage is not a no-role (Slice B2, ADR
+> [[0014-supplier-outage-error-distinct|0014]]).** "No role definition" is a *tri-state* signal at the
+> `RoleDefinitionSupplier` seam: an authoritative no-role (`Optional.empty()`, e.g. the user-service
+> answers `204`) → the policy decides as above (deny, or the `create`-only fallback); a role-source
+> **outage** (timeout / 5xx / malformed) **throws** and the gate denies *before any OPA call*. Before B2,
+> an outage on the then-blanket fallback let a realm `catalog-editor` ride it to `{READ,WRITE,TAG}`,
+> erasing the resolved role's `denied_actions`/`required_tags` narrowing; B2 closed that widening-on-failure
+> path ([[PERMISSION-CATEGORIES-REVIEW]] C1/C4) and B4 then removed the blanket fallback entirely (see
 > [[ABAC-AUTHORIZATION]] for the SPI contract).
 
 The app-side `PermissionCategories` constant (user-service) exists for **422-time validation
@@ -68,9 +78,10 @@ stop.
 ### The fail-closed floor: ∅-expansion
 
 An unknown or stale token — a pre-6.5 flat `read`, a typo, a removed category — **expands to
-nothing**. A role holding only stale tokens therefore **decides nothing** (and, because a present
-role definition disables the realm fallback, the request is denied). This is the clean cut's
-replacement for compatibility machinery: stale data degrades to deny, never to a guess.
+nothing**. A role holding only stale tokens therefore **decides nothing**, and the request is denied:
+post-B4 there is no blanket fallback to catch it (and a present role definition shadows the narrow
+`catalog:create` fallback regardless). This is the clean cut's replacement for compatibility
+machinery: stale data degrades to deny, never to a guess.
 
 ## Deny-overrides — and their per-type scope
 

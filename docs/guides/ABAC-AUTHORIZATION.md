@@ -62,14 +62,18 @@ public interface RoleDefinitionSupplier {
 The OPA `input` carries a `role_definition` object, so a policy decides on
 `role_definition.permissions[resource.type]` — since Phase 6.5 through the shared category expansion,
 `permissions.effective_actions` ([[PERMISSION-MODEL]]). The library ships a `NoOpRoleDefinitionSupplier` (returns
-empty → a policy can fall back to subject roles). An application overrides it with **one bean**:
+empty → the policy decides without a role definition; a policy *may* define its own subject-role
+fallback, though the catalog policies carry no blanket one post-B4). An application overrides it with
+**one bean**:
 
 > **Tri-state contract — an outage is not a no-role (Slice B2, ADR [[0014-supplier-outage-error-distinct|0014]]).**
 > `lookup(...)` distinguishes three outcomes, so a role-source *outage* can never be mistaken for an
 > authoritative *no-role* and silently widen access:
 > - `Optional.of(def)` — **resolved**: decide on it.
-> - `Optional.empty()` — **authoritative no-role**: a *designed* signal; a policy may fall back to the
->   subject's realm roles (see the realm fallback in [[PERMISSION-MODEL]]).
+> - `Optional.empty()` — **authoritative no-role**: a *designed* signal; the policy decides without it.
+>   The library permits a policy to define a subject-role fallback, but the catalog policies carry **no
+>   blanket** one post-B4 (ADR [[0018-team-scoped-resource-isolation|0018]]) — only the narrow
+>   `catalog:create` realm-role fallback survives (see [[PERMISSION-MODEL]]).
 > - **throws `RoleResolutionException`** — **outage**: the source was unavailable, the result is
 >   *unknown*; every consumer **fails closed** (the gate denies before any OPA call; the data
 >   consumers return no widening / an empty page) and **never** falls back.
@@ -79,9 +83,11 @@ empty → a policy can fall back to subject roles). An application overrides it 
 > classifies** (throws on outage), and **each consumer maps** the throw to its own fail-closed outcome —
 > there is no library wrapper (swallowing the throw would re-introduce the hole). This closes the one
 > tracked *widening-on-failure* path ([[PERMISSION-CATEGORIES-REVIEW]] C1/C4): before B2 an outage rode
-> the realm fallback to a grant **wider** than the resolved role. The strict HTTP classification:
-> **only `204` → `Optional.empty()`** (no-role → fallback), **only `200`+valid body → resolved**, and
-> **everything else throws** (200-blank, all 4xx/5xx, timeout, connection-refused, malformed body).
+> the then-blanket realm fallback to a grant **wider** than the resolved role (B4 has since removed that
+> blanket fallback; see [[PERMISSION-MODEL]]). The strict HTTP classification:
+> **only `204` → `Optional.empty()`** (authoritative no-role → the policy decides), **only `200`+valid
+> body → resolved**, and **everything else throws** (200-blank, all 4xx/5xx, timeout, connection-refused,
+> malformed body).
 > Resilience (retry / backoff / circuit-breaking) is a separate axis — Slice **B3**, before publish.
 
 
@@ -149,8 +155,10 @@ apps that want a coarse request rule.
 One rego document per resource type (`infra/opa/policies/{catalog,category,product}.rego`),
 `default allow := false`, allowing when the action verb ∈
 the role's **effective actions** for `input.resource.type` (category expansion minus denials,
-[[PERMISSION-MODEL]]), with a subject-role fallback when no role
-definition is present. See [[TWO-LAYER-AUTHORIZATION]].
+[[PERMISSION-MODEL]]). Post-B4 (ADR [[0018-team-scoped-resource-isolation|0018]]) there is **no blanket
+subject-role fallback** when no role definition is present — a resolved team role is required; the only
+exception is the narrow `catalog:create` realm-role fallback in `catalog.rego`. See
+[[TWO-LAYER-AUTHORIZATION]].
 
 ## Adoption recipe
 
