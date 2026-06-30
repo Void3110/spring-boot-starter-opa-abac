@@ -27,6 +27,13 @@ monolith); this template is distilled from both.
 
 1. **Docs-only.** The skill writes the *plan*, never code, never a branch. Implementation is
    phase ③'s job.
+1a. **Size the slice before decomposing (flow guide §2a).** An oversized slice yields a partial
+   blast-radius that decomposition can't recover; the gaps surface as e2e regressions. The skill
+   **checks the split smells first and STOPS** if any fire: (a) removes/changes a shared mechanism
+   *and* adds new surface depending on it; (b) crosses >1 deployable; (c) ticket count > ~5–6; (d)
+   can't name every consumer of a mechanism it changes. On a hit, propose the 2–3 smaller slices and
+   route back to phase ①. (B4 tripped all four — see §2a.) This gate is itself an invariant: every
+   instantiation enforces it, however its phase boundary is drawn.
 2. **Phase boundary is explicit.** Either the skill *refuses* phase-① work and routes to the
    planning step (this repo's choice), or it *folds ① in* with an interview at the top (the
    other instantiation's choice) — but the exit criterion is identical: **every fork that
