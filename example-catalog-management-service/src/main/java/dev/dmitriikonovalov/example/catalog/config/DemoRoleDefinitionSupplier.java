@@ -22,7 +22,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>Phase 6.5: permission tokens are the COARSE categories ({@code data.permission_categories}
  * expands them to fine actions in OPA) — a flat verb here would ∅-expand and deny everything
- * (the clean cut, ADR 0007). The reach mirrors the policies' realm fallback exactly:
+ * (the clean cut, ADR 0007). This bean returns a <em>resolved</em> {@link RoleDefinition} (the
+ * {@code role_definition} decision path), not a fallback — post-B4 (ADR 0018) the policies carry no
+ * blanket realm-role fallback to mirror. The demo role reach is:
  * <ul>
  *   <li>{@code catalog-viewer} → {@code READ} (view/list) on catalog/category/product</li>
  *   <li>{@code catalog-editor} → {@code READ}+{@code WRITE}+{@code TAG} on catalog/category/product</li>

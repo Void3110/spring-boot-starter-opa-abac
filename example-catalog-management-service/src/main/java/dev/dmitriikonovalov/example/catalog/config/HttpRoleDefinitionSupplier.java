@@ -33,15 +33,19 @@ import org.springframework.stereotype.Component;
  * The resolve result is <strong>tri-state</strong> (the {@link RoleDefinitionSupplier} contract):
  * <ul>
  *   <li><b>{@code 200} + a valid body</b> → {@code Optional.of(role)} (resolved).</li>
- *   <li><b>{@code 204}</b> → {@link Optional#empty()} — the <em>authoritative</em> no-role signal; the
- *       catalog policies' JWT realm-role fallback ({@code catalog-viewer} → READ, {@code catalog-editor}
- *       → READ+WRITE+TAG) decides for non-members / type-level creates, as designed.</li>
+ *   <li><b>{@code 204}</b> → {@link Optional#empty()} — the <em>authoritative</em> no-role signal: no
+ *       role is resolved, so the catalog policies decide with <strong>no blanket realm-role fallback</strong>
+ *       (removed in Slice B4, ADR 0018 — a bare realm role no longer grants view/list/update/delete on any
+ *       instance; team membership is the sole access path). The <em>only</em> surviving realm-role fallback
+ *       is the narrow, verb-gated <strong>{@code catalog:create}</strong> grant ({@code catalog-editor} may
+ *       onboard a catalog — creation is definitionally pre-membership). For every other action a {@code 204}
+ *       now means <strong>deny</strong> unless a team role is resolved.</li>
  *   <li><b>everything else</b> → <strong>throws {@link RoleResolutionException}</strong> (an outage):
  *       {@code 200} with a blank body, every 4xx, every 5xx, a timeout, a connection failure, a parse
- *       failure. The role is then <em>unknown</em>, so the caller fails closed (the gate denies) and the
- *       realm fallback is <strong>never</strong> reached — closing the one widening-on-failure path
- *       (review C1/C4, ADR 0014): an outage can no longer ride the fallback to a grant wider than the
- *       subject's resolved role.</li>
+ *       failure. The role is then <em>unknown</em>, so the caller fails closed (the gate denies) before any
+ *       OPA call — closing the one widening-on-failure path (review C1/C4, ADR 0014): an outage can no
+ *       longer ride a fallback to a grant wider than the subject's resolved role. (Post-B4 the only fallback
+ *       that even exists is the narrow {@code catalog:create} grant above; the deny here is unconditional.)</li>
  * </ul>
  * Only {@code 204} is the no-role signal — a {@code 200}-blank or a 4xx is "the resolve protocol is not
  * working as designed", never trusted as no-role. On a throw it WARNs with the HTTP status or the
@@ -154,7 +158,8 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
         // else THROWS (outage → deny). 200-blank, all 4xx, all 5xx, any other status are untrustworthy.
         int status = response.statusCode();
         if (status == 204) {
-            return Optional.empty(); // authoritative no-role → the realm fallback may decide (designed)
+            return Optional.empty(); // authoritative no-role → the policy decides with no blanket fallback
+                                     // (post-B4 only catalog:create has a narrow realm-role fallback)
         }
         if (status == 200) {
             String body = response.body();
