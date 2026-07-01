@@ -114,6 +114,41 @@ rejected" list worth keeping — routine choices (naming, file layout, test libr
 is decided and recorded (in an ADR if structural, in `00-DESIGN`'s considered-&-rejected otherwise), and
 the user stories for the slice exist and are phase-tagged. Only then move to decomposition.
 
+### 2a. The slice-sizing gate (run before decomposition)
+
+**Slice size is the lever.** The recurring reason an autonomous run *pauses and asks* is "design left a
+fail-open/contract semantic unpinned" — and that gap is usually a **symptom of an oversized slice**, not
+just shallow grilling. When a slice both **changes a load-bearing shared mechanism** *and* **adds new
+surface that depends on it**, the phase-① blast-radius analysis can't stay complete in one pass: the
+design enumerates the headline path and misses the secondary consumers — which then surface as
+regressions in the e2e instead of being pinned in the design. **A slice's blast-radius must be small
+enough to fully enumerate during `grill-me`.** If it isn't, split the slice — don't accept a partial
+blast-radius and hope the run catches the rest.
+
+**Split smells — if any hold, split before writing the autonomous prompt:**
+
+- **(a) Remove-and-replace in one slice** — the slice *both* removes/changes a shared mechanism *and*
+  adds new surface that depends on it. **Split the removal + its fix from the new feature.**
+- **(b) Crosses more than one deployable** in a single prompt (library + a service + the gateway).
+- **(c) Ticket count > ~5–6** — a strong smell the slice spans more than one coherent blast-radius.
+- **(d) Phase ① can't name every consumer** of a mechanism the slice changes. If you can't enumerate
+  them, you can't pin their contract — and an unpinned one becomes a mid-run regression.
+
+> **Worked example — B4 (`MULTI-TENANT-ISOLATION`) was too big** (the cautionary case). One 9-ticket slice
+> spanned a new library annotation seam (`@OpaPreAuthorize` role-on-parent), two services, the APISIX
+> gateway, **and** a rewrite of a load-bearing policy clause (removing the realm-role fallback). The
+> design's blast-radius saw the fallback removal as "the *list* rows lose the fallback"; it was actually
+> load-bearing for **every type-level `@OpaPreAuthorize` gate** (list **and** create **and**
+> tag-on-create) and **~3 existing test matrices seeded fixtures via it** — three regressions that only
+> surfaced in the e2e. It hit smells (a), (b), (c), and (d) at once. It **should have been two slices:**
+> **(1) isolation-only** = the filter entrypoint + fallback removal + the type-level-gate role-resolution
+> fix, proven by the isolation matrix + a re-run of the existing suite; **(2) self-service** = the
+> ownership SPI + `createTeam` + gateway routing. Each ~4–5 tickets, each blast-radius enumerable. (Mulch
+> `autonomous-runs` `mx-76cf08`.)
+
+**Exit criterion for sizing:** the slice trips none of (a)–(d), *or* it has been split into slices that
+each pass. Only a slice that passes this gate goes to decomposition.
+
 ---
 
 ## 3. Decomposition phase (design → tickets)
