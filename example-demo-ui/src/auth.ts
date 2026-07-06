@@ -18,8 +18,17 @@ export const userManager = new UserManager({
   post_logout_redirect_uri: `${ORIGIN}/`,
   response_type: 'code', // Authorization Code + PKCE (public client, no secret)
   scope: 'openid profile email',
-  // Keep tokens in localStorage so a refresh doesn't drop the session (demo convenience).
-  userStore: new WebStorageStateStore({ store: window.localStorage }),
+  // Token storage — sessionStorage, not localStorage. sessionStorage is per-tab and cleared when the
+  // tab closes, which narrows (does NOT eliminate) the blast radius of an XSS on this origin: any
+  // same-origin script can still read the bearer + refresh token while the tab is open.
+  //   DEMO-ONLY — DO NOT COPY VERBATIM TO PRODUCTION. A production SPA should keep tokens out of
+  //   JS-readable web storage entirely: hold the access token in memory, and put the refresh token
+  //   behind a Backend-For-Frontend (httpOnly cookie) or a service worker so no script can exfiltrate
+  //   it. See example-demo-ui/README.md. Both userStore and stateStore are set explicitly because
+  //   oidc-client-ts v3 defaults an unset stateStore to localStorage (which would leak the PKCE
+  //   code_verifier / state / nonce there too).
+  userStore: new WebStorageStateStore({ store: window.sessionStorage }),
+  stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
   // We drive token refresh manually / on demand; no silent-renew iframe for the demo.
   automaticSilentRenew: false,
   // The login screen offers a fresh account each time (so you can switch identities easily).
