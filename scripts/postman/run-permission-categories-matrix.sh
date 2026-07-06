@@ -159,12 +159,12 @@ SQL
 
 # --- bootstrap users, the team, and the authorable roles --------------------------
 echo "==> Bootstrapping users, the team, and the category-token roles ..."
-LADDER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$LADDER_SUB\",\"displayName\":\"PC ladder subject\"}" | json_field userId)"
-SENIOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$SENIOR_SUB\",\"displayName\":\"PC senior\"}" | json_field userId)"
-ADMIN_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$ADMIN_SUB\",\"displayName\":\"PC administrator\"}" | json_field userId)"
+LADDER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$LADDER_SUB\",\"displayName\":\"$LADDER_USER\"}" | json_field userId)"
+SENIOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$SENIOR_SUB\",\"displayName\":\"$SENIOR_USER\"}" | json_field userId)"
+ADMIN_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$ADMIN_SUB\",\"displayName\":\"$ADMIN_USER\"}" | json_field userId)"
 TARGET1_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"pc-target-1\",\"displayName\":\"PC target 1\"}" | json_field userId)"
 TARGET2_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"pc-target-2\",\"displayName\":\"PC target 2\"}" | json_field userId)"
-CREATOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$CREATOR_SUB\",\"displayName\":\"PC fixture creator\"}" | json_field userId)"
+CREATOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$CREATOR_SUB\",\"displayName\":\"$CREATOR_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Permission categories demo\",\"targetType\":\"catalog\",\"targetId\":\"$PC_CATALOG_ID\"}" | json_field teamId)"
 
@@ -264,3 +264,19 @@ newman run "$COLLECTION" \
   --env-var "admin_token=$ADMIN_TOKEN" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/permission-categories-matrix-report.json"
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Every run re-seeds its registry ids from scratch, so tearing them
+# down keeps the shared store (and the demo UI's directory/team lists) clean. The DELETEs ride
+# the FK cascades: team -> memberships + custom roles + tag definitions; catalog -> categories
+# -> products.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $PC_CATALOG_ID fixture(s) (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id IN ('$PC_CATALOG_ID');
+DELETE FROM app_user WHERE subject IN ('pc-target-1', 'pc-target-2');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id IN ('$PC_CATALOG_ID');
+SQL
+fi

@@ -133,6 +133,16 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 > Since Phase 5.9 the matrices also assert the **RFC-7807 `problem+json` error contract** on deny
 > paths (`application/problem+json` + a typed `errorCode`) and the `Location` header on creates.
 
+> **Teardown:** every matrix runner **that seeds persistent fixtures** deletes them on a **green**
+> run — the registry catalog id(s) plus the teams targeting them; the FK cascades take memberships,
+> custom roles, and tag definitions along (see the registry section of `scripts/postman/README.md`,
+> including the shared-`3333…` caveat). A failed run keeps its fixtures for debugging;
+> `KEEP_FIXTURES=1 ./run-<matrix>.sh` keeps them on success too. Exceptions: `run-matrix.sh` cleans
+> up via its own in-collection DELETEs (so `KEEP_FIXTURES` does not apply), and the SPA smoke seeds
+> nothing persistent. Shared identity profile rows (editor/demo/viewer/outsider) are never deleted,
+> and runners stay fully self-seeding, so re-runs are unaffected — the payoff is a shared store (and
+> demo-UI user directory / catalog grid) that stays free of fixture noise between e2e sessions.
+
 `run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
 `viewer_token` + `editor_token`. Expected: editor seeds a catalog/category/product (201), viewer reads
 them (200), viewer writes are denied (**403**), editor updates/deletes (200/204). 12 requests, all

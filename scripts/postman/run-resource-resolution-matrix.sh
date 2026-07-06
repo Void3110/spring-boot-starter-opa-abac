@@ -162,9 +162,9 @@ SQL
 
 # --- bootstrap the team + roles + memberships ----------------------------------
 echo "==> Bootstrapping the team, the tag-gated write role, the root-read role, and memberships ..."
-WRITER_VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$WRITER_VIEWER_SUB\",\"displayName\":\"RR gated writer (viewer realm)\"}" | json_field userId)"
-WRITER_EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$WRITER_EDITOR_SUB\",\"displayName\":\"RR gated writer (editor realm)\"}" | json_field userId)"
-READER_EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_EDITOR_SUB\",\"displayName\":\"RR root reader (editor realm)\"}" | json_field userId)"
+WRITER_VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$WRITER_VIEWER_SUB\",\"displayName\":\"$WRITER_VIEWER_USER\"}" | json_field userId)"
+WRITER_EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$WRITER_EDITOR_SUB\",\"displayName\":\"$WRITER_EDITOR_USER\"}" | json_field userId)"
+READER_EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_EDITOR_SUB\",\"displayName\":\"$READER_EDITOR_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Resource resolution demo\",\"targetType\":\"catalog\",\"targetId\":\"$RR_CATALOG_ID\"}" | json_field teamId)"
 
@@ -236,3 +236,18 @@ newman run "$COLLECTION" \
   --env-var "reader_editor_token=$READER_EDITOR_TOKEN" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/resource-resolution-matrix-report.json"
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Every run re-seeds its registry ids from scratch, so tearing them
+# down keeps the shared store (and the demo UI's directory/team lists) clean. The DELETEs ride
+# the FK cascades: team -> memberships + custom roles + tag definitions; catalog -> categories
+# -> products.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $RR_CATALOG_ID + $FREE_CATALOG_ID fixture(s) (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id IN ('$RR_CATALOG_ID', '$FREE_CATALOG_ID');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id IN ('$RR_CATALOG_ID', '$FREE_CATALOG_ID');
+SQL
+fi

@@ -151,3 +151,17 @@ newman run "$COLLECTION" \
   --env-var "carol_team_id=$CAROL_TEAM_ID" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/isolation-matrix-report.json"
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Same name-keyed deletes as the pre-run self-reset: the matrix creates
+# its catalogs/teams live through self-service (generated ids), so names are the stable key. With
+# this, a green run leaves the store as it found it — the pre-run reset stays as belt-and-braces.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the Alice Co / Carol Co fixtures (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE name IN ('Alice Team', 'Carol Team');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE name IN ('Alice Co', 'Carol Co');
+SQL
+fi
