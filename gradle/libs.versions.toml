@@ -1,6 +1,10 @@
 [versions]
 # Build plugins
-springBoot = "3.4.3"
+# 3.4.13 (latest 3.4.x patch) resolves Spring Framework 6.2.15 and Tomcat 10.1.50 via the BOM —
+# clearing the 2025 advisories the 3.4.3 pin trailed (CVE-2025-22233 / -41234 on Framework, fixed
+# 6.2.7/6.2.8; CVE-2025-31650 / -31651 on Tomcat, fixed 10.1.40). Flagged by the 7.0.5 baseline
+# security review (findings 3 & 4); a resolved-dependency CVE scan is the 7.4 follow-up.
+springBoot = "3.4.13"
 springDependencyManagement = "1.1.7"
 openapiGenerator = "7.11.0"
 
