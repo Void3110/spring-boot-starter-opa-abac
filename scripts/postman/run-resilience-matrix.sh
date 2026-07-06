@@ -124,3 +124,15 @@ set_stub_mode down
 run_pass "E2-sustained-denies" 403
 
 note "B3 resilience matrix PASSED: transient recovered (200), sustained denied (403)."
+
+# --- teardown (success only — a failed run keeps its fixture for debugging) ---
+# KEEP_FIXTURES=1 skips it. The cccc… fixture lives only in the catalog DB (its role is resolved
+# from the fault-injecting stub, not the shared store); categories/products ride the FK cascade.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $CATALOG_ID fixture (KEEP_FIXTURES=1 keeps it) ..."
+  # docker, not "$RUNTIME": this runner has no runtime autodetect (it calls docker directly
+  # throughout), and under set -u an unbound RUNTIME would abort AFTER a green newman pass.
+  docker exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id = '$CATALOG_ID';
+SQL
+fi

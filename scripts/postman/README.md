@@ -68,6 +68,29 @@ never be an id another matrix **grants on**. Current registry — keep it unique
 list-matrix run had granted the same reader an inheritable role on it, flipping the re-parent assert
 from 403 to a *policy-correct* 200.)
 
+### Teardown (success only)
+
+Every matrix runner **that seeds persistent fixtures** ends with a **teardown block**: on a green run
+it deletes the fixtures it owns — the registry catalog id(s) in the catalog DB and the team(s)
+targeting them in the user-service DB (memberships, custom roles, and tag definitions ride the FK
+cascades; the PC matrix also drops its synthetic `pc-target-*` users, and the isolation matrix removes
+its name-keyed `Alice Co` / `Carol Co` rows). A **failed run keeps its fixtures** for debugging, and
+`KEEP_FIXTURES=1` skips teardown explicitly. Caveats and rules:
+
+- **`run-matrix.sh` and `run-spa-auth-smoke.sh` have no teardown block** — the abac matrix cleans up
+  through its own in-collection DELETE requests (which run regardless of assertion failures), so
+  `KEEP_FIXTURES` does not apply to them.
+- **The shared `3333…` id (filter + hierarchy) is torn down by whichever of the two runs green** —
+  when debugging one of those matrices, don't run the other (or run it with `KEEP_FIXTURES=1`), or
+  the kept debug state is swept.
+- **Shared identity profiles are never deleted.** The `app_user` rows for editor/demo/viewer/outsider
+  belong to the identities (seed + demo UI + every matrix share them), not to any one matrix — runners
+  bootstrap them with the realm *username* as `displayName`, never a role-like label. Note the
+  bootstrap is find-or-create and never renames: on a store where `seed-demo-data.sh` (or an old
+  matrix) ran first, existing rows keep whatever name was minted first.
+- Runners stay **fully self-seeding**, so teardown never breaks a re-run — and it keeps the shared
+  store (and the demo UI's user directory, team list, and catalog grid) free of fixture noise.
+
 ## Why the token is minted in-network
 
 Keycloak is hostname-aware and APISIX validates the issuer as `keycloak:8888` (in-network). A token

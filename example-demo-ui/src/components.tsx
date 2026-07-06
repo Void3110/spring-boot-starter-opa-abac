@@ -1,5 +1,42 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { type Actions, ApiError } from './api'
+
+/** One error format everywhere: ApiError keeps its HTTP status ("422 — …"), the demo's denial voice. */
+export function errText(e: unknown): string {
+  return e instanceof ApiError ? `${e.status} — ${e.message}` : String(e)
+}
+
+export type Notice = { ok: boolean; text: string }
+
+export function NoticeLine({ notice }: { notice: Notice | null }) {
+  if (!notice) return null
+  return (
+    <div
+      className="mt-2 text-xs"
+      style={{ color: notice.ok ? 'var(--color-allow)' : 'var(--color-deny)' }}
+    >
+      {notice.ok ? '✓ ' : '✕ '}
+      {notice.text}
+    </div>
+  )
+}
+
+// Small async-data helper: load on mount + expose a reload.
+export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
+  const [data, setData] = useState<T | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(() => {
+    setError(null)
+    fn()
+      .then(setData)
+      .catch((e) =>
+        setError(e instanceof ApiError ? `${e.status} — ${e.message}` : String(e)),
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+  useEffect(load, [load])
+  return { data, error, reload: load }
+}
 
 /** A pill that surfaces the current identity's role(s). */
 export function RoleChips({ roles }: { roles: string[] }) {

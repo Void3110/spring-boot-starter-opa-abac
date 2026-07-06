@@ -137,8 +137,8 @@ SQL
 
 # --- bootstrap the team granting the reader `read` on the granted Catalog ----
 echo "==> Bootstrapping the team + membership (reader reads catalog+category) ..."
-OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"Owner\"}" | json_field userId)"
-READER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_SUB\",\"displayName\":\"Reader\"}" | json_field userId)"
+OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"$OWNER_USER\"}" | json_field userId)"
+READER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_SUB\",\"displayName\":\"$READER_USER\"}" | json_field userId)"
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hierarchy demo\",\"targetType\":\"catalog\",\"targetId\":\"$GRANTED_CATALOG_ID\"}" | json_field teamId)"
 # A 'catalog-reader' role: read on the CATALOG ONLY. The reader has NO direct category grant, so a
 # readable Category proves the decision came from inherited_grant (the catalog→category inheritance),
@@ -234,3 +234,18 @@ else
 fi
 
 echo "==> Hierarchy ABAC matrix: all checks passed (inheritance, deny-overrides, re-parent flip)."
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Every run re-seeds its registry ids from scratch, so tearing them
+# down keeps the shared store (and the demo UI's directory/team lists) clean. The DELETEs ride
+# the FK cascades: team -> memberships + custom roles + tag definitions; catalog -> categories
+# -> products.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $GRANTED_CATALOG_ID + $FOREIGN_CATALOG_ID fixture(s) (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id IN ('$GRANTED_CATALOG_ID', '$FOREIGN_CATALOG_ID');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id IN ('$GRANTED_CATALOG_ID', '$FOREIGN_CATALOG_ID');
+SQL
+fi

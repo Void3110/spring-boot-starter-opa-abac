@@ -126,9 +126,9 @@ SQL
 
 # --- bootstrap the team + inherit/region roles + memberships -----------------
 echo "==> Bootstrapping the team, inherit + region roles, and memberships in the user-service ..."
-OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"Owner\"}" | json_field userId)"
-INHERIT_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$INHERIT_SUB\",\"displayName\":\"Inherit reader\"}" | json_field userId)"
-REGION_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$REGION_SUB\",\"displayName\":\"Region reader\"}" | json_field userId)"
+OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"$OWNER_USER\"}" | json_field userId)"
+INHERIT_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$INHERIT_SUB\",\"displayName\":\"$INHERIT_USER\"}" | json_field userId)"
+REGION_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$REGION_SUB\",\"displayName\":\"$REGION_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Hierarchy-list demo\",\"targetType\":\"catalog\",\"targetId\":\"$CATALOG_ID\"}" | json_field teamId)"
 
@@ -228,3 +228,18 @@ newman run "$COLLECTION" \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/hierarchy-list-matrix-post.json"
 
 echo "==> Hierarchy-aware list matrix: all checks passed (widening, different-sets, deny, stranger, re-parent)."
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Every run re-seeds its registry ids from scratch, so tearing them
+# down keeps the shared store (and the demo UI's directory/team lists) clean. The DELETEs ride
+# the FK cascades: team -> memberships + custom roles + tag definitions; catalog -> categories
+# -> products.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $CATALOG_ID + $FOREIGN_CATALOG_ID fixture(s) (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id IN ('$CATALOG_ID', '$FOREIGN_CATALOG_ID');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id IN ('$CATALOG_ID', '$FOREIGN_CATALOG_ID');
+SQL
+fi

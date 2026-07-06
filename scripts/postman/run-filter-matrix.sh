@@ -126,9 +126,9 @@ SQL
 
 # --- bootstrap the team + region-gated roles + memberships -------------------
 echo "==> Bootstrapping the team, region-gated roles, and memberships in the user-service ..."
-OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"Owner\"}" | json_field userId)"
-READER_EMEA_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_EMEA_SUB\",\"displayName\":\"Reader EMEA\"}" | json_field userId)"
-READER_APAC_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_APAC_SUB\",\"displayName\":\"Reader APAC\"}" | json_field userId)"
+OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"$OWNER_USER\"}" | json_field userId)"
+READER_EMEA_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_EMEA_SUB\",\"displayName\":\"$READER_EMEA_USER\"}" | json_field userId)"
+READER_APAC_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_APAC_SUB\",\"displayName\":\"$READER_APAC_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Filter demo\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_CATALOG_ID\"}" | json_field teamId)"
 
@@ -176,3 +176,18 @@ newman run "$COLLECTION" \
   --env-var "stranger_token=$STRANGER_TOKEN" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/data-filter-matrix-report.json"
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Every run re-seeds its registry ids from scratch, so tearing them
+# down keeps the shared store (and the demo UI's directory/team lists) clean. The DELETEs ride
+# the FK cascades: team -> memberships + custom roles + tag definitions; catalog -> categories
+# -> products.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $DEMO_CATALOG_ID fixture(s) (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id IN ('$DEMO_CATALOG_ID');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id IN ('$DEMO_CATALOG_ID');
+SQL
+fi

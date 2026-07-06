@@ -138,8 +138,8 @@ SQL
 
 # --- bootstrap the team + roles + memberships ----------------------------------
 echo "==> Bootstrapping the team, a tag-gated write role, a read-only role, and memberships ..."
-VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$VIEWER_SUB\",\"displayName\":\"AE read-only\"}" | json_field userId)"
-EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$EDITOR_SUB\",\"displayName\":\"AE gated writer\"}" | json_field userId)"
+VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$VIEWER_SUB\",\"displayName\":\"$VIEWER_USER\"}" | json_field userId)"
+EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$EDITOR_SUB\",\"displayName\":\"$EDITOR_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Action enrichment demo\",\"targetType\":\"catalog\",\"targetId\":\"$AE_CATALOG_ID\"}" | json_field teamId)"
 
@@ -221,3 +221,18 @@ case "$E4_BODY" in
   5*) echo "ERROR: E4 — enrichment failure produced a $E4_BODY (must never 5xx)." >&2; exit 1 ;;
   *)  echo "  E4 OK — no 5xx, no fabricated all-false map (omit-on-failure holds)." ;;
 esac
+
+# --- teardown (success only — a failed run keeps its fixtures for debugging) --
+# KEEP_FIXTURES=1 skips it. Every run re-seeds its registry ids from scratch, so tearing them
+# down keeps the shared store (and the demo UI's directory/team lists) clean. The DELETEs ride
+# the FK cascades: team -> memberships + custom roles + tag definitions; catalog -> categories
+# -> products.
+if [ "${KEEP_FIXTURES:-0}" != "1" ]; then
+  echo "==> Teardown: removing the $AE_CATALOG_ID fixture(s) (KEEP_FIXTURES=1 keeps them) ..."
+  "$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id IN ('$AE_CATALOG_ID');
+SQL
+  "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id IN ('$AE_CATALOG_ID');
+SQL
+fi
