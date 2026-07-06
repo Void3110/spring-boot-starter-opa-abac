@@ -130,14 +130,15 @@ has_required_tags if {
 #
 # `filter` is the rule the app's Compile API call partially-evaluates with the RESOURCE declared
 # unknown (unknowns=["input.resource"]) so OPA returns the residual a row must satisfy — which the
-# app composes as the catalog list's base scope (see CatalogListAuthorizer). Catalogs are NOT a
-# tag-filtered resource here: visibility is a team-membership question resolved app-side
-# (GovernedScopeResolver supplies the `id IN (governed ids)` base scope; this `filter` rule only
-# decides "may this role LIST catalogs at all"). So the residual is unconditional ALLOW_ALL when the
-# role grants `list`, and UNSATISFIABLE DENY_ALL otherwise — `governedScope ∧ ALLOW_ALL` = the
-# governed set, `governedScope ∧ DENY_ALL` = empty.
+# app composes as the catalog list's base scope (see CatalogListAuthorizer). Catalog visibility is
+# primarily a team-membership question resolved app-side (GovernedScopeResolver supplies the
+# `id IN (governed ids)` base scope), but a role may ALSO carry a tag requirement, and when it does
+# the list residual must carry the tag predicate so `GET /catalogs` agrees with the single-GET
+# `allow` (which requires `tags_satisfied`). Without the tag conjunct the residual folds to an
+# unconditional ALLOW_ALL and a tag-gated role lists catalogs it may not view — the list-vs-GET
+# divergence fixed here (7.0.5 baseline security review, catalog.rego High).
 #
-# TWO deliberate properties (mirrors category.rego's filter — mx-cbd39e, mx-f63604):
+# THREE deliberate properties (mirrors category.rego's filter — mx-cbd39e, mx-f63604):
 #   1. ROLE-DEFINITION-ONLY — `filter` requires has_role_definition and has NO subject-roles fallback.
 #      A list request with no role definition compiles to an UNSATISFIABLE residual -> DENY_ALL -> an
 #      EMPTY list, never the whole table. This is the fail-closed boundary (the narrow catalog:create
@@ -149,6 +150,12 @@ has_required_tags if {
 #      form leaves un-foldable comprehensions in the residual). Role + table are fully known at compile
 #      time, so the chain folds to the type-eq tautology (ALLOW_ALL). A role carrying a DENIAL survives
 #      PE as a negated type-eq (unsupported) and FAILS CLOSED to the batch recheck (which uses `allow`).
+#   3. PARTIAL-EVAL-FRIENDLY tag match — `filter_tags_satisfied` expresses the grant as a membership
+#      `v in input.resource.attributes[key]` (and a scalar-eq body) so the residual reduces to a CLEAN
+#      predicate (eq / `?` existence) the residual translator supports, rather than the scalar-vs-array
+#      `resource_tag_values` normalize (is_array / set-comprehension) used by the single-decision `allow`,
+#      which does not reduce to SQL. A role with no required_tags is vacuously satisfied -> ALLOW_ALL, so
+#      untagged catalog roles behave exactly as before (back-compat).
 
 default filter := false
 
@@ -157,11 +164,47 @@ filter if {
 	some token in input.role_definition.permissions[input.resource.type]
 	"list" in data.permission_categories[token]
 	not filter_list_denied
+	filter_tags_satisfied
 }
 
 # The role explicitly withholds "list" for this type (deny-overrides at the list boundary).
 filter_list_denied if {
 	"list" in input.role_definition.denied_actions[input.resource.type]
+}
+
+# No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).
+filter_tags_satisfied if {
+	not has_required_tags
+}
+
+# A required key is satisfied when an acceptable value matches the resource's tag — for a SCALAR tag by
+# equality, for an ARRAY tag by membership. Two bodies so BOTH cases hold concretely AND the residual is
+# a clean DNF: `(attr == v)`  ->  jsonb_extract_path_text(...) = v   (scalar);
+#              `v in attr`    ->  jsonb_exists(...) (the `?` op)      (array — also matches a scalar string).
+# Either branch alone matches what the single-decision `allow` matches, so list and single-GET agree.
+filter_key_satisfied(key, acceptable) if {
+	some v in acceptable
+	input.resource.attributes[key] == v
+}
+
+filter_key_satisfied(key, acceptable) if {
+	some v in acceptable
+	v in input.resource.attributes[key]
+}
+
+# ANY_OF: SOME required key is satisfied.
+filter_tags_satisfied if {
+	input.role_definition.match_mode == "ANY_OF"
+	some key, acceptable in input.role_definition.required_tags
+	filter_key_satisfied(key, acceptable)
+}
+
+# ALL_OF: every required key is satisfied.
+filter_tags_satisfied if {
+	input.role_definition.match_mode == "ALL_OF"
+	every key, acceptable in input.role_definition.required_tags {
+		filter_key_satisfied(key, acceptable)
+	}
 }
 
 # ---------------------------------------------------------------------------
