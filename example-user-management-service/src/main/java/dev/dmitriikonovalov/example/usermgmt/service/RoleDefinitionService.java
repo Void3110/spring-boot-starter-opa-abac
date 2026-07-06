@@ -76,7 +76,7 @@ public class RoleDefinitionService {
         }
         permissions = permissions == null ? Map.of() : permissions;
         deniedActions = deniedActions == null ? Map.of() : deniedActions;
-        validateContract(roleLevel, permissions, deniedActions);
+        validateContract(roleLevel, permissions, deniedActions, requiredTags, matchMode);
         RoleDefinitionEntity role = new RoleDefinitionEntity(
                 UUID.randomUUID(), code, false, teamId,
                 withRoleLevel(attributes, roleLevel), permissions,
@@ -100,7 +100,7 @@ public class RoleDefinitionService {
         RoleDefinitionEntity role = requireCustomRole(teamId, code);
         permissions = permissions == null ? Map.of() : permissions;
         deniedActions = deniedActions == null ? Map.of() : deniedActions;
-        validateContract(roleLevel, permissions, deniedActions);
+        validateContract(roleLevel, permissions, deniedActions, requiredTags, matchMode);
         role.setAttributes(withRoleLevel(attributes, roleLevel));
         role.setPermissions(permissions);
         role.setDeniedActions(deniedActions);
@@ -126,6 +126,14 @@ public class RoleDefinitionService {
      *   <li><b>strict denial validation</b> — per type, denied fine actions must subtract from the
      *       expansion of what that type actually grants (wildcard-aware, mirroring the policy's
      *       lookup): denying the never-granted is rejected, not silently inert.</li>
+     *   <li><b>tag-requirement validation (7.0.5)</b> — when {@code requiredTags} is present, its keys
+     *       and acceptable-value lists must be non-blank, and {@code matchMode} (once normalized) must be
+     *       {@code ANY_OF} or {@code ALL_OF}. The OpenAPI enum already rejects a bad {@code matchMode} at
+     *       the wire boundary; this validates the service seam for non-wire callers (bootstrap) and turns
+     *       a would-be silent fail-closed (an unknown mode matches no Rego rule → the role grants nothing)
+     *       into an honest 422. Defense-in-depth: the catalog/category {@code filter} residual now carries
+     *       the tag predicate, so this is not the primary control — it stops a malformed requirement from
+     *       ever being persisted.</li>
      * </ol>
      * Package-private for the unit suite (U4–U8); the API ITs prove the 422 wire contract (I5).
      */
@@ -133,11 +141,22 @@ public class RoleDefinitionService {
             Integer roleLevel,
             Map<String, List<String>> permissions,
             Map<String, List<String>> deniedActions) {
+        validateContract(roleLevel, permissions, deniedActions, null, null);
+    }
+
+    /** The full contract including the tag requirement (7.0.5). See the 3-arg overload's Javadoc. */
+    static void validateContract(
+            Integer roleLevel,
+            Map<String, List<String>> permissions,
+            Map<String, List<String>> deniedActions,
+            Map<String, List<String>> requiredTags,
+            String matchMode) {
         if (roleLevel == null || !PermissionCategories.AUTHORABLE_LEVELS.contains(roleLevel)) {
             throw new RoleDefinitionInvalidException(
                     "roleLevel must be one of 10 (reader), 20 (member), 25 (senior), 30 (administrator)");
         }
         rejectTeamManagementTokens(permissions);
+        validateTagRequirement(requiredTags, matchMode);
         var ceiling = PermissionCategories.ceiling(roleLevel);
         for (var entry : permissions.entrySet()) {
             for (String token : nullSafe(entry.getValue())) {
@@ -191,6 +210,42 @@ public class RoleDefinitionService {
                                     + "put the team's resource permissions on the team-target type");
                 }
             }
+        }
+    }
+
+    /**
+     * Phase 7.0.5 — validate a tag requirement so a malformed one is a 422, not a silently-never-matching
+     * (fail-closed) role. When {@code requiredTags} is present: every key must be non-blank and map to a
+     * non-empty list of non-blank acceptable values, and {@code matchMode} — after {@link
+     * #normalizeMatchMode} defaults a blank to {@code ANY_OF} — must be {@code ANY_OF} or {@code ALL_OF}.
+     * An absent/empty requirement is untagged (vacuously valid); {@code matchMode} is then irrelevant.
+     */
+    private static void validateTagRequirement(
+            Map<String, List<String>> requiredTags, String matchMode) {
+        if (requiredTags == null || requiredTags.isEmpty()) {
+            return; // untagged role — matchMode is normalized to null and never consulted
+        }
+        for (var entry : requiredTags.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()) {
+                throw new RoleDefinitionInvalidException("required_tags contains a blank tag key");
+            }
+            List<String> acceptable = entry.getValue();
+            if (acceptable == null || acceptable.isEmpty()) {
+                throw new RoleDefinitionInvalidException(
+                        "required_tags key '" + entry.getKey() + "' has no acceptable values");
+            }
+            for (String value : acceptable) {
+                if (value == null || value.isBlank()) {
+                    throw new RoleDefinitionInvalidException(
+                            "required_tags key '" + entry.getKey() + "' has a blank acceptable value");
+                }
+            }
+        }
+        String normalized = normalizeMatchMode(requiredTags, matchMode);
+        if (!"ANY_OF".equals(normalized) && !"ALL_OF".equals(normalized)) {
+            throw new RoleDefinitionInvalidException(
+                    "match_mode must be ANY_OF or ALL_OF when required_tags is present (was '"
+                            + matchMode + "')");
         }
     }
 

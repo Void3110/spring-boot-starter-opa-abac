@@ -336,6 +336,64 @@ test_filter_role_without_list_denies if {
 	not catalog.filter with input as filter_input(grant_only_role, [])
 }
 
+# --- 7.0.5 fix: filter must honor a TAG-GATED role, exactly as `allow` does (R4–R7) --------------
+#
+# REGRESSION for the baseline-security-review High: `filter` used to drop the tag conjunct that
+# `allow` enforces, so a tag-gated catalog role listed tag-mismatched catalogs that GET /catalogs/{id}
+# 403s. These cells pin the boolean with a CONCRETE resource tag (the residual shape — a region
+# predicate for a tagged role vs ALLOW_ALL for an untagged one — is verified with `opa eval --partial`
+# in the acceptance run, mx-f63604: never assume the residual). `filter_tagged_input` supplies the
+# resource attributes that are the UNKNOWN at wire-time PE but are concrete here to pin full-eval.
+
+filter_tagged_input(role_def, attrs) := {
+	"subject": {"id": "u", "roles": []},
+	"action": "catalog:list",
+	"resource": {"type": "catalog", "attributes": attrs},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+emea_role_def := {
+	"code": "emea-viewer",
+	"attributes": {"role_level": 10},
+	"permissions": {"catalog": ["READ"]},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+# R4 — tag-gated (region=emea) role, catalog tagged region=emea -> filter true (the tag matches).
+test_filter_tagged_role_matching_tag_lists if {
+	catalog.filter with input as filter_tagged_input(emea_role_def, {"region": "emea"})
+}
+
+# R5 — SAME tag-gated role, catalog tagged region=apac -> filter FALSE. This is the fix: the list
+# path now excludes the mismatched catalog, agreeing with `allow` (which 403s it). Pre-fix this was
+# true (the leak).
+test_filter_tagged_role_mismatched_tag_denies if {
+	not catalog.filter with input as filter_tagged_input(emea_role_def, {"region": "apac"})
+}
+
+# R6 — list<->single-GET AGREEMENT on the mismatched catalog: `filter` false AND `allow` false for the
+# same role+resource. The invariant the High violated ("list and single-GET agree on visible rows").
+test_filter_and_allow_agree_on_mismatched_tag if {
+	mismatched := filter_tagged_input(emea_role_def, {"region": "apac"})
+	not catalog.filter with input as mismatched
+	not catalog.allow with input as object.union(mismatched, {"action": "catalog:view"})
+}
+
+# R7 — ALL_OF tag-gated role: filter true only when EVERY required key matches.
+test_filter_tagged_role_all_of if {
+	all_of_role := {
+		"code": "emea-active-viewer",
+		"attributes": {"role_level": 10},
+		"permissions": {"catalog": ["READ"]},
+		"required_tags": {"region": ["emea"], "status": ["active"]},
+		"match_mode": "ALL_OF",
+	}
+	catalog.filter with input as filter_tagged_input(all_of_role, {"region": "emea", "status": "active"})
+	not catalog.filter with input as filter_tagged_input(all_of_role, {"region": "emea", "status": "retired"})
+}
+
 # --- Phase 5 batch primitive (extended to catalog for Phase 6 action enrichment) ---
 
 # bulk returns a positional list of allow-decisions over input.items (the affordance refold source).
