@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   type AuthUser,
   completeLogin,
@@ -11,9 +11,9 @@ import {
   type Catalog,
   type Category,
   type Product,
-  ApiError,
   deleteCategory,
   deleteProduct,
+  ensureUser,
   getCatalog,
   listCatalogs,
   listCategories,
@@ -21,7 +21,16 @@ import {
   updateCategory,
   updateProduct,
 } from './api'
-import { ActionBadges, ActionButtons, Breadcrumbs, Logo, RoleChips } from './components'
+import {
+  ActionBadges,
+  ActionButtons,
+  Breadcrumbs,
+  Logo,
+  RoleChips,
+  errText,
+  useAsync,
+} from './components'
+import { CreateCatalogPanel, TeamPanel } from './teams'
 
 type AuthState =
   | { phase: 'loading' }
@@ -112,7 +121,19 @@ type View =
 
 function Console({ user }: { user: AuthUser }) {
   const { username, roles } = describeUser(user)
+  const mySubject = user.profile.sub
   const [view, setView] = useState<View>({ kind: 'catalogs' })
+
+  // Provision the identity's user-service profile row on login: memberships (and owning a new
+  // catalog's team) key on that row, and a first-time identity doesn't have one yet. A failure
+  // must stay visible — team creation hard-requires the row, so a swallowed failure would turn
+  // every later "create catalog" step 2 into an unexplained 400.
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const provision = useCallback(() => {
+    setProfileError(null)
+    ensureUser(mySubject, username).catch((e) => setProfileError(errText(e)))
+  }, [mySubject, username])
+  useEffect(provision, [provision])
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col">
@@ -134,6 +155,18 @@ function Console({ user }: { user: AuthUser }) {
           </button>
         </div>
       </header>
+      {profileError && (
+        <div
+          className="flex items-center gap-2 border-b border-[var(--color-line)] px-6 py-2 text-xs"
+          style={{ background: '#fef3c7', color: '#b45309' }}
+        >
+          Profile provisioning failed ({profileError}) — creating catalogs/teams won't work until it
+          succeeds.
+          <button onClick={provision} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      )}
       <main className="flex-1 overflow-auto px-6 py-6">
         {view.kind === 'catalogs' && (
           <CatalogGrid onOpen={(catalog) => setView({ kind: 'catalog', catalog })} />
@@ -141,6 +174,7 @@ function Console({ user }: { user: AuthUser }) {
         {view.kind === 'catalog' && (
           <CatalogDetail
             catalog={view.catalog}
+            mySubject={mySubject}
             onHome={() => setView({ kind: 'catalogs' })}
             onOpenCategory={(category) =>
               setView({ kind: 'category', catalog: view.catalog, category })
@@ -160,23 +194,6 @@ function Console({ user }: { user: AuthUser }) {
   )
 }
 
-// Small async-data helper: load on mount + expose a reload.
-function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
-  const [data, setData] = useState<T | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const load = useCallback(() => {
-    setError(null)
-    fn()
-      .then(setData)
-      .catch((e) =>
-        setError(e instanceof ApiError ? `${e.status} — ${e.message}` : String(e)),
-      )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  useEffect(load, [load])
-  return { data, error, reload: load }
-}
-
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-sm">
@@ -186,7 +203,7 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 function CatalogGrid({ onOpen }: { onOpen: (c: Catalog) => void }) {
-  const { data, error } = useAsync(() => listCatalogs(), [])
+  const { data, error, reload } = useAsync(() => listCatalogs(), [])
   if (error) return <ErrorBox label="catalogs" message={error} />
   if (!data) return <Loading what="catalogs" />
   // Lead with the seeded Demo catalog.
@@ -196,6 +213,7 @@ function CatalogGrid({ onOpen }: { onOpen: (c: Catalog) => void }) {
   return (
     <div>
       <SectionHead title="Catalogs" hint="Open a catalog to see its categories — that's where the affordances get rich. Catalog lists themselves aren't enriched." />
+      <CreateCatalogPanel onCreated={reload} />
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map((c) => (
           <button key={c.id} onClick={() => onOpen(c)} className="text-left">
@@ -217,10 +235,12 @@ function CatalogGrid({ onOpen }: { onOpen: (c: Catalog) => void }) {
 
 function CatalogDetail({
   catalog,
+  mySubject,
   onHome,
   onOpenCategory,
 }: {
   catalog: Catalog
+  mySubject: string
   onHome: () => void
   onOpenCategory: (c: Category) => void
 }) {
@@ -247,6 +267,8 @@ function CatalogDetail({
           )}
         </div>
       </Card>
+
+      <TeamPanel catalogId={catalog.id} mySubject={mySubject} />
 
       <div className="mt-6">
         <SectionHead title="Categories" hint="Each category's action buttons reflect your role. Try update/delete — a denied one is locked." />
