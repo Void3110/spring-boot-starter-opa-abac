@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Team-based ABAC matrix (app-resolved roles via the user-service)",
-    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data. Extended by DIRECTORY-QUERY-FILTERS (Slice 1): the ?subject / ?targetType+?targetId one-shot lookups (matched -> count=1, unmatched -> empty page, half-specified pair -> 400 VALIDATION_FAILED), the bootstrap displayName upsert (re-seed converges on the same row), and the 204-with-JSON-Accept produces fix - each asserting the actual cut (counts, ids, status codes). Extended by USER-DIRECTORY-PORT (Slice 2): the identity-directory search cells - a never-provisioned realm account is found while its provisioned ?subject lookup stays an empty page (the directory/provisioned cut), blank q is the no-oracle empty, and the 20-default/50-max limit clamp holds end-to-end.",
+    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data. Extended by DIRECTORY-QUERY-FILTERS (Slice 1): the ?subject / ?targetType+?targetId one-shot lookups (matched -> count=1, unmatched -> empty page, half-specified pair -> 400 VALIDATION_FAILED), the bootstrap displayName upsert (re-seed converges on the same row), and the 204-with-JSON-Accept produces fix - each asserting the actual cut (counts, ids, status codes). Extended by USER-DIRECTORY-PORT (Slice 2): the identity-directory search cells - 'dora' (the RESERVED never-provisioned probe account: no credentials, no matrix may bootstrap her; the runner's preflight wipes any stray provisioned row) is found while its provisioned ?subject lookup stays an empty page (the directory/provisioned cut), blank q is the no-oracle empty, and the 20-default/50-max limit clamp holds end-to-end.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -789,7 +789,7 @@
       ]
     },
     {
-      "name": "13. Directory search: a NEVER-provisioned realm account (carol) is found (E1)",
+      "name": "13. Directory search: the NEVER-provisioned reserved account (dora) is found (E1)",
       "request": {
         "method": "GET",
         "header": [
@@ -799,7 +799,7 @@
           }
         ],
         "url": {
-          "raw": "{{gateway}}/api/v1/users/search?q=carol",
+          "raw": "{{gateway}}/api/v1/users/search?q=dora",
           "host": [
             "{{gateway}}"
           ],
@@ -812,7 +812,7 @@
           "query": [
             {
               "key": "q",
-              "value": "carol"
+              "value": "dora"
             }
           ]
         }
@@ -822,16 +822,16 @@
           "listen": "test",
           "script": {
             "exec": [
-              "pm.test('the directory serves carol - a realm account outside the provisioned set', function () {",
+              "pm.test('the directory serves dora - the reserved realm account outside the provisioned set', function () {",
               "    pm.response.to.have.status(200);",
               "    const body = pm.response.json();",
               "    pm.expect(body.items, 'directory rows').to.be.an('array').that.is.not.empty;",
-              "    const carol = body.items.find((u) => u.displayName === 'carol');",
-              "    pm.expect(carol, 'carol in the directory result').to.not.be.undefined;",
-              "    pm.expect(carol.subject, 'subject is the realm account id').to.be.a('string').and.not.be.empty;",
+              "    const dora = body.items.find((u) => u.displayName === 'dora');",
+              "    pm.expect(dora, 'dora in the directory result').to.not.be.undefined;",
+              "    pm.expect(dora.subject, 'subject is the realm account id').to.be.a('string').and.not.be.empty;",
               "    // the disclosure ceiling at the wire: exactly subject + displayName, nothing wider",
-              "    pm.expect(Object.keys(carol).sort()).to.eql(['displayName', 'subject']);",
-              "    pm.collectionVariables.set('carol_sub', carol.subject);",
+              "    pm.expect(Object.keys(dora).sort()).to.eql(['displayName', 'subject']);",
+              "    pm.collectionVariables.set('dora_sub', dora.subject);",
               "});"
             ],
             "type": "text/javascript"
@@ -850,7 +850,7 @@
           }
         ],
         "url": {
-          "raw": "{{gateway}}/api/v1/users?subject={{carol_sub}}",
+          "raw": "{{gateway}}/api/v1/users?subject={{dora_sub}}",
           "host": [
             "{{gateway}}"
           ],
@@ -862,7 +862,7 @@
           "query": [
             {
               "key": "subject",
-              "value": "{{carol_sub}}"
+              "value": "{{dora_sub}}"
             }
           ]
         }
@@ -872,7 +872,7 @@
           "listen": "test",
           "script": {
             "exec": [
-              "pm.test('the provisioned ?subject lookup for carol is an EMPTY page - she has no users-table row', function () {",
+              "pm.test('the provisioned ?subject lookup for dora is an EMPTY page - she has no users-table row', function () {",
               "    pm.response.to.have.status(200);",
               "    const page = pm.response.json();",
               "    pm.expect(page.count, 'provisioned rows for the subject the directory just returned').to.eql(0);",
