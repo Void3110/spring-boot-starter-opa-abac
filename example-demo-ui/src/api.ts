@@ -204,9 +204,9 @@ export function listUsers(page = 0, perPage = 100): Promise<Page<User>> {
 
 // perPage is hard-capped at 100 server-side, so scanning a whole collection means walking pages.
 // The single-resource lookups no longer walk: server-side exact-match filters (?subject on /users,
-// ?targetType+?targetId on /teams) answer them in one request (DIRECTORY-QUERY-FILTERS). The one
-// remaining walk is the member-picker directory (listAllUsers) — replaced by the UserDirectory
-// search in Slice 2.
+// ?targetType+?targetId on /teams) answer them in one request (DIRECTORY-QUERY-FILTERS). The
+// member-picker no longer walks either — it searches the identity directory server-side
+// (searchDirectory, Slice 2); listAllUsers remains only to resolve roster rows to display names.
 async function listAll<T>(fetchPage: (page: number) => Promise<Page<T>>): Promise<T[]> {
   const first = await fetchPage(0)
   const items = [...first.items]
@@ -222,6 +222,33 @@ async function listAll<T>(fetchPage: (page: number) => Promise<Page<T>>): Promis
 
 export function listAllUsers(): Promise<User[]> {
   return listAll((p) => listUsers(p))
+}
+
+/**
+ * One identity-directory account (USER-DIRECTORY-PORT): exactly `subject` + `displayName` — the
+ * type-bounded disclosure ceiling. No `id`: a directory account may have no provisioned profile
+ * yet; the SPA provisions on select via {@link ensureUser}.
+ */
+export interface DirectoryUser {
+  subject: string
+  displayName: string
+}
+
+export interface DirectoryUserList {
+  items: DirectoryUser[]
+  limit: number
+}
+
+/**
+ * Searches the identity directory — every realm account, not just provisioned profiles (the
+ * UserDirectory port, Slice 2). A bounded plain list, NOT a Page (no count; limit clamps to 20
+ * default / 50 max server-side). No-oracle contract: blank `q`, zero matches, and a directory
+ * outage are all the same 200-empty — render them identically.
+ */
+export function searchDirectory(q: string, limit = 20): Promise<DirectoryUserList> {
+  return request<DirectoryUserList>(
+    `/api/v1/users/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+  )
 }
 
 /**

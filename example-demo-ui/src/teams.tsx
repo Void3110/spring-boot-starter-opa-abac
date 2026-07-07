@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   type Catalog,
+  type DirectoryUser,
   type Membership,
   type Team,
   type User,
@@ -8,11 +9,13 @@ import {
   changeRole,
   createCatalog,
   createTeam,
+  ensureUser,
   listAllUsers,
   listMembers,
   lookupTeamByTarget,
   listRoleDefinitions,
   removeMember,
+  searchDirectory,
   transferOwnership,
 } from './api'
 import { type Notice, NoticeLine, errText, useAsync } from './components'
@@ -38,8 +41,9 @@ const DEFAULT_ROLE = 'member'
  */
 export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubject: string }) {
   // One-shot lookup (DIRECTORY-QUERY-FILTERS): the governing team answers in a single filtered
-  // request (?targetType&targetId) — no page-walk, no truncated miss. The user list is still a
-  // full walk: it feeds the member picker, whose real directory arrives with Slice 2.
+  // request (?targetType&targetId) — no page-walk, no truncated miss. The user list only resolves
+  // roster rows to display names now — the member picker searches the identity directory
+  // server-side (USER-DIRECTORY-PORT) and can offer accounts that were never provisioned.
   const teams = useAsync(() => lookupTeamByTarget('catalog', catalogId), [catalogId])
   const users = useAsync(() => listAllUsers(), [])
 
@@ -72,6 +76,7 @@ export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubje
           users={users.data ?? []}
           usersReady={users.data !== null}
           mySubject={mySubject}
+          onUsersChanged={users.reload}
         />
       )}
     </div>
@@ -96,11 +101,13 @@ function Roster({
   users,
   usersReady,
   mySubject,
+  onUsersChanged,
 }: {
   team: Team
   users: User[]
   usersReady: boolean
   mySubject: string
+  onUsersChanged: () => void
 }) {
   const members = useAsync(() => listMembers(team.id), [team.id])
   // Owner-only (team:define-roles) — everyone else falls back to the hardcoded system ladder.
@@ -144,7 +151,6 @@ function Roster({
   if (!members.data) return <PanelNote tone="muted">Loading members…</PanelNote>
 
   const roster = members.data.items
-  const memberIds = new Set(roster.map((m) => m.userId))
 
   return (
     <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-sm">
@@ -187,13 +193,25 @@ function Roster({
         ))}
       </div>
       <AddMemberForm
-        users={users.filter((u) => !memberIds.has(u.id))}
+        memberSubjects={
+          new Set(
+            roster
+              .map((m) => usersById.get(m.userId)?.subject)
+              .filter((s): s is string => s !== undefined),
+          )
+        }
         roles={assignableRoles}
         busy={held}
         onAdd={(user, roleCode) =>
-          act(`add ${user.displayName} as ${roleCode}`, () =>
-            addMember(team.id, user.id, roleCode),
-          )
+          act(`add ${user.displayName} as ${roleCode}`, async () => {
+            // Provision-on-select (USER-DIRECTORY-PORT §1): the directory row carries only the IdP
+            // subject — ensureUser resolves-or-creates the profile (one-shot thanks to the Slice-1
+            // ?subject filter), then the membership binds the resulting userId. The directory
+            // itself never mutates anything.
+            const profile = await ensureUser(user.subject, user.displayName)
+            await addMember(team.id, profile.id, roleCode)
+            onUsersChanged() // a just-provisioned profile must resolve in the roster
+          })
         }
       />
       <RolesSection
@@ -293,20 +311,52 @@ function MemberRow({
 }
 
 function AddMemberForm({
-  users,
+  memberSubjects,
   roles,
   busy,
   onAdd,
 }: {
-  users: User[]
+  memberSubjects: Set<string>
   roles: { code: string; level: number }[]
   busy: boolean
-  onAdd: (user: User, roleCode: string) => void
+  onAdd: (user: DirectoryUser, roleCode: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<User | null>(null)
+  const [results, setResults] = useState<DirectoryUser[]>([])
+  const [searching, setSearching] = useState(false)
+  const [selected, setSelected] = useState<DirectoryUser | null>(null)
   const [roleCode, setRoleCode] = useState(DEFAULT_ROLE)
+
+  // Debounced server-side search of the identity directory (USER-DIRECTORY-PORT): one request per
+  // typed prefix, never a client-side walk of the provisioned set. The no-oracle rule shapes the
+  // catch: a transport failure renders EXACTLY like zero matches — no "directory down" state exists.
+  useEffect(() => {
+    const q = query.trim()
+    if (!q) {
+      setResults([])
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    let stale = false
+    const timer = setTimeout(() => {
+      searchDirectory(q)
+        .then((r) => {
+          if (!stale) setResults(r.items)
+        })
+        .catch(() => {
+          if (!stale) setResults([])
+        })
+        .finally(() => {
+          if (!stale) setSearching(false)
+        })
+    }, 250)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [query])
 
   if (!open)
     return (
@@ -318,11 +368,7 @@ function AddMemberForm({
       </button>
     )
 
-  const candidates = users.filter(
-    (u) =>
-      u.displayName.toLowerCase().includes(query.toLowerCase()) ||
-      u.subject.toLowerCase().includes(query.toLowerCase()),
-  )
+  const candidates = results.filter((u) => !memberSubjects.has(u.subject))
 
   return (
     <div className="mt-3 rounded-lg border border-dashed border-[var(--color-line)] p-3">
@@ -352,19 +398,30 @@ function AddMemberForm({
         className="mt-2 w-full rounded-md border border-[var(--color-line)] bg-transparent px-2.5 py-1.5 text-sm"
       />
       <div className="mt-2 grid max-h-40 gap-1 overflow-auto">
-        {candidates.length === 0 && (
+        {/* The three quiet states are deliberately indistinguishable beyond wording: blank query,
+            zero matches, and a directory outage all land on the same empty list (no-oracle). */}
+        {query.trim() === '' && (
           <span className="text-xs text-[var(--color-muted)]">
-            No directory users match — only provisioned profiles are listed.
+            Type to search the identity directory — anyone in the realm can be added.
+          </span>
+        )}
+        {query.trim() !== '' && searching && candidates.length === 0 && (
+          <span className="text-xs text-[var(--color-muted)]">Searching…</span>
+        )}
+        {query.trim() !== '' && !searching && candidates.length === 0 && (
+          <span className="text-xs text-[var(--color-muted)]">
+            No directory accounts match.
           </span>
         )}
         {candidates.map((u) => (
           <button
-            key={u.id}
+            key={u.subject}
             onClick={() => setSelected(u)}
             className="flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-sm transition-colors"
             style={{
-              borderColor: selected?.id === u.id ? 'var(--color-brand)' : 'var(--color-line)',
-              background: selected?.id === u.id ? '#eef2ff' : 'transparent',
+              borderColor:
+                selected?.subject === u.subject ? 'var(--color-brand)' : 'var(--color-line)',
+              background: selected?.subject === u.subject ? '#eef2ff' : 'transparent',
             }}
           >
             <span className="font-medium">{u.displayName}</span>
