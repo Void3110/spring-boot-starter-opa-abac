@@ -52,6 +52,16 @@ services:
       # load-balanced internal URL.)
       ABAC_OWNERSHIP_ENABLED: "true"
       ABAC_OWNERSHIP_SERVICES_CATALOG: "http://catalog-1:8080"
+      # USER-DIRECTORY-PORT (ADR 0020): the Keycloak-admin identity search, interpolated from
+      # deploy.sh's ENABLE_DIRECTORY flag (default false — the NoOp directory stays active and the
+      # search sub-path answers 200-empty). server-url is the IN-NETWORK REST base: Keycloak's
+      # KC_HOSTNAME_ADMIN_URL (localhost:28888) is a console-URL rewrite, NOT the REST path (§6).
+      # catalog-directory is the dedicated view-users-only service account (demo secret, rig-scoped).
+      OPA_ABAC_DIRECTORY_KEYCLOAK_ENABLED: "${DIRECTORY_ENABLED:-false}"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_SERVER_URL: "http://keycloak:8888"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_REALM: "catalog-demo"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_CLIENT_ID: "catalog-directory"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_CLIENT_SECRET: "catalog-directory-secret"
     ports:
       - "28090:8080"
     healthcheck:

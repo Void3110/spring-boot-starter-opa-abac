@@ -66,6 +66,15 @@ RESILIENCE_STUB_COMPOSE="$SCRIPT_DIR/infra/compose.resilience-stub.yaml"
 # Phase-6 enrichment code isn't yet in the app images.)
 ENABLE_SPA="${ENABLE_SPA:-0}"
 if [ "$ENABLE_SPA" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
+# USER-DIRECTORY-PORT (ADR 0020): the user-service's identity-directory search via the Keycloak admin
+# API (client catalog-directory, view-users only). Off by default — the default rig is unchanged (the
+# user-service keeps the NoOp directory: the search sub-path answers 200-empty). Opt in with
+# ENABLE_DIRECTORY=1 ./deploy.sh up. Needs Keycloak + the user-service, so (like ENABLE_SPA) it
+# force-enables its prerequisites. compose.usermgmt.yaml interpolates ${DIRECTORY_ENABLED} (true/false).
+ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}"
+if [ "$ENABLE_DIRECTORY" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
+DIRECTORY_ENABLED="false"; [ "$ENABLE_DIRECTORY" = "1" ] && DIRECTORY_ENABLED="true"
+export DIRECTORY_ENABLED
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -331,6 +340,7 @@ case "$CMD" in
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
     [ "$ENABLE_SPA" = "1" ] && echo "    SPA auth:  gateway in bearer-only mode (validates Authorization: Bearer; no redirect login) + CORS for http://localhost:3000  [public client: catalog-spa]"
     [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: http://localhost:28090  (resolve API at /internal/effective-role; catalog uses role-source=http)"
+    [ "$ENABLE_DIRECTORY" = "1" ] && echo "    directory: identity search active on the user-service (Keycloak admin via catalog-directory, view-users only)"
     [ "$ENABLE_RESILIENCE_STUB" = "1" ] && echo "    resolve-stub: http://localhost:28091  (B3 fault injector; catalog role-source=http -> resolve-stub:8080; mode=${STUB_MODE:-transient})"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
     ;;

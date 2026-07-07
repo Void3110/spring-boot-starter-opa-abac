@@ -32,6 +32,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 class OpaDirectoryAutoConfiguration {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(OpaDirectoryAutoConfiguration.class);
+
     /**
      * The fail-closed default: empty for every query. Backs off to the Keycloak bean (registered first
      * when opted in) or to any adopter-supplied {@link UserDirectory}.
@@ -39,6 +42,7 @@ class OpaDirectoryAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(UserDirectory.class)
     UserDirectory noOpUserDirectory() {
+        log.debug("user-directory: no directory configured — the NoOp (always-empty) default is active");
         return new NoOpUserDirectory();
     }
 
@@ -57,6 +61,10 @@ class OpaDirectoryAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(UserDirectory.class)
         UserDirectory keycloakUserDirectory(KeycloakDirectoryProperties properties) {
+            // INFO on purpose: "which directory is live" is the one operational fact the rig's E-pre
+            // check (and any adopter) needs from the log. The secret is not logged.
+            log.info("user-directory: KeycloakUserDirectory active (realm '{}', client '{}')",
+                    properties.getRealm(), properties.getClientId());
             return new KeycloakUserDirectory(properties);
         }
     }
