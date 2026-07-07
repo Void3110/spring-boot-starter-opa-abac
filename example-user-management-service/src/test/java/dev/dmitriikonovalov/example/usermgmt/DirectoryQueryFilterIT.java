@@ -2,8 +2,11 @@ package dev.dmitriikonovalov.example.usermgmt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.dmitriikonovalov.example.usermgmt.domain.Team;
+import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.TeamPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserPage;
 import dev.dmitriikonovalov.example.usermgmt.support.AbacTestConfig;
 import java.util.List;
@@ -27,6 +30,7 @@ class DirectoryQueryFilterIT extends AbstractSecuredPostgresIT {
 
     @Autowired private TestRestTemplate rest;
     @Autowired private UserRepository users;
+    @Autowired private TeamRepository teams;
 
     private List<User> seedThreeUsers() {
         String run = UUID.randomUUID().toString();
@@ -109,5 +113,85 @@ class DirectoryQueryFilterIT extends AbstractSecuredPostgresIT {
                 UserPage.class);
         assertThat(window.getBody()).isNotNull();
         assertThat(window.getBody().getItems()).hasSize(2);
+    }
+
+    // I2 — the (?targetType, ?targetId) composite lookup: matched pair → exactly the governing team;
+    // unmatched pair → empty page; half-specified → 400 problem+json; no params → full list unchanged.
+    @Test
+    void targetPairFilterAnswersTheGoverningTeam() {
+        Team wanted = teams.save(
+                new Team(UUID.randomUUID(), "Wanted", "catalog", UUID.randomUUID()));
+        teams.save(new Team(UUID.randomUUID(), "Decoy", "catalog", UUID.randomUUID()));
+
+        var response = rest.exchange(
+                "/api/v1/teams?targetType=catalog&targetId={id}",
+                HttpMethod.GET,
+                AbacTestConfig.as(CALLER),
+                TeamPage.class,
+                wanted.getTargetId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TeamPage page = response.getBody();
+        assertThat(page).isNotNull();
+        assertThat(page.getCount()).isEqualTo(1);
+        assertThat(page.getItems()).singleElement().satisfies(t -> {
+            assertThat(t.getId()).isEqualTo(wanted.getId());
+            assertThat(t.getTargetId()).isEqualTo(wanted.getTargetId());
+        });
+    }
+
+    @Test
+    void unmatchedTargetPairIsEmptyPage() {
+        teams.save(new Team(UUID.randomUUID(), "Present", "catalog", UUID.randomUUID()));
+
+        var response = rest.exchange(
+                "/api/v1/teams?targetType=catalog&targetId={id}",
+                HttpMethod.GET,
+                AbacTestConfig.as(CALLER),
+                TeamPage.class,
+                UUID.randomUUID());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TeamPage page = response.getBody();
+        assertThat(page).isNotNull();
+        assertThat(page.getCount()).isZero();
+        assertThat(page.getItems()).isEmpty();
+    }
+
+    // I2 — the both-or-400 guard: a half-specified pair is a typed validation error, never the list.
+    @Test
+    void halfSpecifiedTargetPairIs400ProblemJson() {
+        var response = rest.exchange(
+                "/api/v1/teams?targetType=catalog",
+                HttpMethod.GET,
+                AbacTestConfig.as(CALLER),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getHeaders().getContentType()).isNotNull();
+        assertThat(response.getHeaders().getContentType().toString())
+                .isEqualTo("application/problem+json");
+        assertThat(response.getBody()).contains("\"errorCode\":\"VALIDATION_FAILED\"");
+    }
+
+    @Test
+    void absentTargetPairKeepsThePagedTeamListUnchanged() {
+        Team one = teams.save(new Team(UUID.randomUUID(), "One", "catalog", UUID.randomUUID()));
+        Team two = teams.save(new Team(UUID.randomUUID(), "Two", "catalog", UUID.randomUUID()));
+
+        var response = rest.exchange(
+                "/api/v1/teams?perPage=100",
+                HttpMethod.GET,
+                AbacTestConfig.as(CALLER),
+                TeamPage.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TeamPage page = response.getBody();
+        assertThat(page).isNotNull();
+        assertThat(page.getCount()).isGreaterThanOrEqualTo(2);
+        assertThat(page.getPage()).isZero();
+        assertThat(page.getPerPage()).isEqualTo(100);
+        assertThat(page.getItems()).anyMatch(t -> t.getId().equals(one.getId()));
+        assertThat(page.getItems()).anyMatch(t -> t.getId().equals(two.getId()));
     }
 }

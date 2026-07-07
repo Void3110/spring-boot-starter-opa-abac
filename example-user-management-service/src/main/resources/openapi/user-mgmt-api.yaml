@@ -116,6 +116,25 @@ paths:
       summary: List teams
       operationId: listTeams
       parameters:
+        - name: targetType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Exact-match filter on the team-target's resource type, paired with targetId. The pair is
+            all-or-nothing: both present returns the governing team as a one-item page (count 0 or 1;
+            an unmatched pair is an empty page, never 404); both absent returns the full paged list
+            unchanged; exactly one is a 400 VALIDATION_FAILED — never a fallthrough to the full list.
+        - name: targetId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: >-
+            Exact-match filter on the team-target's resource id, paired with targetType (see its
+            all-or-nothing contract).
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
       responses:
