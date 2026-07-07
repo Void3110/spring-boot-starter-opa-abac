@@ -252,7 +252,7 @@ paths:
               $ref: '#/components/schemas/TransferOwnershipRequest'
       responses:
         '204':
-          description: Transferred
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -345,7 +345,7 @@ paths:
       operationId: deleteRoleDefinition
       responses:
         '204':
-          description: Deleted
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -485,7 +485,7 @@ paths:
       operationId: deleteTeamTagDefinition
       responses:
         '204':
-          description: Deleted
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -526,7 +526,7 @@ paths:
       operationId: removeMember
       responses:
         '204':
-          description: Removed
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -569,6 +569,14 @@ components:
         default: 20
 
   responses:
+    NoContent:
+      description: >-
+        Success — no content. The (empty) application/json declaration exists so content
+        negotiation admits a bare `Accept: application/json` on the success path (the error
+        responses are application/problem+json only); the 204 status and the absent body are
+        unchanged — no representation is ever produced.
+      content:
+        application/json: {}
     BadRequest:
       description: Invalid request
       content:

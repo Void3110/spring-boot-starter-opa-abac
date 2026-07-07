@@ -53,7 +53,7 @@ silent truncation — which is also the clean foundation Slice 2's provisioning 
 |---|---|---|
 | T1 | `?subject` filter on `GET /api/v1/users` | ✅ DONE |
 | T2 | `?targetType`+`?targetId` filter on `GET /api/v1/teams` | ✅ DONE |
-| T3 | `produces` spec fix — 204 endpoints accept a JSON `Accept` | 📋 TODO |
+| T3 | `produces` spec fix — 204 endpoints accept a JSON `Accept` | ✅ DONE |
 | T4 | Bootstrap `displayName` upsert (`/internal/bootstrap/users`) | 📋 TODO |
 | T5 | e2e (newman) + docs + SPA one-shot adoption + folder move | 📋 TODO |
 
