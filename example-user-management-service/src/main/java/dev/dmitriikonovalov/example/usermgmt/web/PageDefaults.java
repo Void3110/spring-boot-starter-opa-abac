@@ -1,5 +1,9 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
@@ -22,5 +26,18 @@ final class PageDefaults {
     /** The {@code PageRequest} for the spec's 0-based {@code page}/{@code perPage}, fixed order applied. */
     static PageRequest pageRequest(int page, int perPage) {
         return PageRequest.of(page, perPage, DEFAULT_ORDER);
+    }
+
+    /**
+     * A unique-key filtered lookup as a page in the same envelope (the DIRECTORY-QUERY-FILTERS
+     * branch): the match, when present, is the single row of page 0; {@code count} is exact (0 or 1).
+     * A window past the single result is {@code 200} + empty {@code items} + the exact {@code count}
+     * — the ADR 0012 past-the-end semantic, same as any other paged list.
+     */
+    static <T> Page<T> onePage(Optional<T> match, PageRequest request) {
+        List<T> content = request.getPageNumber() == 0
+                ? match.map(List::of).orElse(List.of())
+                : List.of();
+        return new PageImpl<>(content, request, match.isPresent() ? 1 : 0);
     }
 }

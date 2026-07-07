@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Team-based ABAC matrix (app-resolved roles via the user-service)",
-    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data.",
+    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data. Extended by DIRECTORY-QUERY-FILTERS (Slice 1): the ?subject / ?targetType+?targetId one-shot lookups (matched -> count=1, unmatched -> empty page, half-specified pair -> 400 VALIDATION_FAILED), the bootstrap displayName upsert (re-seed converges on the same row), and the 204-with-JSON-Accept produces fix - each asserting the actual cut (counts, ids, status codes).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -413,6 +413,374 @@
               "  pm.expect(b).to.have.property('type');",
               "  pm.expect(b).to.have.property('title');",
               "  pm.expect(b).to.not.have.property('message');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Directory filter: ?subject one-shot lookup -> exactly the owner row (count=1)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users?subject={{owner_sub}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users"
+          ],
+          "query": [
+            {
+              "key": "subject",
+              "value": "{{owner_sub}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('one request answers the subject lookup: count=1, the matching row', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const page = pm.response.json();",
+              "    pm.expect(page.count).to.eql(1);",
+              "    pm.expect(page.items).to.have.lengthOf(1);",
+              "    pm.expect(page.items[0].subject).to.eql(pm.variables.get('owner_sub'));",
+              "    pm.collectionVariables.set('e4_owner_uid', page.items[0].id);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "9a. Directory filter: unmatched ?subject -> EMPTY page (count=0), never the full list",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users?subject=sub-nobody-e2e-slice1",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users"
+          ],
+          "query": [
+            {
+              "key": "subject",
+              "value": "sub-nobody-e2e-slice1"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('a miss narrows to an empty page - no full-list fallthrough, no 404', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const page = pm.response.json();",
+              "    pm.expect(page.count).to.eql(0);",
+              "    pm.expect(page.items).to.have.lengthOf(0);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Directory filter: ?targetType+?targetId -> the governing team (count=1)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/teams?targetType=catalog&targetId={{catalog_id}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams"
+          ],
+          "query": [
+            {
+              "key": "targetType",
+              "value": "catalog"
+            },
+            {
+              "key": "targetId",
+              "value": "{{catalog_id}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('the composite team-target lookup answers the governing team in one request', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const page = pm.response.json();",
+              "    pm.expect(page.count).to.eql(1);",
+              "    pm.expect(page.items).to.have.lengthOf(1);",
+              "    pm.expect(page.items[0].id).to.eql(pm.variables.get('team_id'));",
+              "    pm.expect(page.items[0].targetId).to.eql(pm.variables.get('catalog_id'));",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "10a. Directory filter: unmatched pair -> EMPTY page (count=0)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/teams?targetType=catalog&targetId=99999999-9999-9999-9999-999999999999",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams"
+          ],
+          "query": [
+            {
+              "key": "targetType",
+              "value": "catalog"
+            },
+            {
+              "key": "targetId",
+              "value": "99999999-9999-9999-9999-999999999999"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('an unmatched pair is an empty page - never a fallthrough to the full list', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const page = pm.response.json();",
+              "    pm.expect(page.count).to.eql(0);",
+              "    pm.expect(page.items).to.have.lengthOf(0);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "10b. Directory filter: half-specified pair (?targetType alone) -> 400 VALIDATION_FAILED",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/teams?targetType=catalog",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams"
+          ],
+          "query": [
+            {
+              "key": "targetType",
+              "value": "catalog"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('a half-specified composite key is a typed 400, never the whole table', function () {",
+              "    pm.response.to.have.status(400);",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+              "    const problem = pm.response.json();",
+              "    pm.expect(problem.errorCode).to.eql('VALIDATION_FAILED');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Bootstrap upsert: re-seed the owner subject with a changed display name -> same userId",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{user_service}}/internal/bootstrap/users",
+          "host": [
+            "{{user_service}}"
+          ],
+          "path": [
+            "internal",
+            "bootstrap",
+            "users"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"subject\": \"{{owner_sub}}\", \"displayName\": \"Renamed by E4\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('the re-seed converges on the SAME row (no duplicate)', function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(pm.response.json().userId).to.eql(pm.collectionVariables.get('e4_owner_uid'));",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "11a. Bootstrap upsert: the next ?subject read reflects the new display name",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users?subject={{owner_sub}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users"
+          ],
+          "query": [
+            {
+              "key": "subject",
+              "value": "{{owner_sub}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('the upsert took: displayName refreshed on the same row', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const page = pm.response.json();",
+              "    pm.expect(page.count).to.eql(1);",
+              "    pm.expect(page.items[0].id).to.eql(pm.collectionVariables.get('e4_owner_uid'));",
+              "    pm.expect(page.items[0].displayName).to.eql('Renamed by E4');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. produces fix: removeMember with Accept: application/json -> 204 (not 406), empty body",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/teams/{{team_id}}/members/{{viewer_uid}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "teams",
+            "{{team_id}}",
+            "members",
+            "{{viewer_uid}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('a bare JSON Accept is admitted on the 204 op - no 406, body stays empty', function () {",
+              "    pm.response.to.have.status(204);",
+              "    pm.expect(pm.response.text()).to.be.empty;",
               "});"
             ],
             "type": "text/javascript"

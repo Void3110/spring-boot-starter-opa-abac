@@ -84,7 +84,23 @@ public class TeamController implements TeamApi {
     }
 
     @Override
-    public ResponseEntity<TeamPage> listTeams(Integer page, Integer perPage) {
+    public ResponseEntity<TeamPage> listTeams(
+            String targetType, UUID targetId, Integer page, Integer perPage) {
+        // The (?targetType, ?targetId) exact-match lookup (DIRECTORY-QUERY-FILTERS): an additive
+        // branch on the composite team-target key. Both present narrows to a one-item page (empty
+        // on a miss, never 404); both absent falls through to the unchanged paged findAll; exactly
+        // one is a client error — a half-specified key must never degrade to the full list.
+        boolean hasType = targetType != null && !targetType.isBlank();
+        boolean hasId = targetId != null;
+        if (hasType != hasId) {
+            throw new IllegalArgumentException("targetType and targetId must be provided together");
+        }
+        if (hasType) {
+            var match = PageDefaults.onePage(
+                    teams.findByTargetTypeAndTargetId(targetType, targetId),
+                    PageDefaults.pageRequest(page, perPage));
+            return ResponseEntity.ok(UserMgmtMapper.toTeamPage(match));
+        }
         var result = teams.findAll(PageDefaults.pageRequest(page, perPage));
         return ResponseEntity.ok(UserMgmtMapper.toTeamPage(result));
     }

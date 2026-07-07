@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
+import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +24,7 @@ class InternalBootstrapIT extends AbstractSecuredPostgresIT {
     @Autowired private TestRestTemplate rest;
     @Autowired private TeamRepository teams;
     @Autowired private RoleDefinitionRepository roles;
+    @Autowired private UserRepository users;
 
     private Team team() {
         return teams.save(new Team(UUID.randomUUID(), "Boot", "catalog", UUID.randomUUID()));
@@ -49,6 +51,34 @@ class InternalBootstrapIT extends AbstractSecuredPostgresIT {
         assertThat(stored.getPermissions()).containsEntry("catalog", List.of("READ", "WRITE"));
         assertThat(stored.getDeniedActions()).containsEntry("catalog", List.of("delete"));
         assertThat(stored.getAttributes()).containsEntry("role_level", 20);
+    }
+
+    // I4 (DIRECTORY-QUERY-FILTERS) — ensureUser is an upsert of displayName only: a re-seed with a
+    // changed name converges on the SAME row (same userId, new name, no duplicate); an identical
+    // re-post is a no-op on the same row.
+    @Test
+    void ensureUserUpsertsDisplayNameOnRerun() {
+        String subject = "sub-upsert-" + UUID.randomUUID();
+
+        var first = rest.postForEntity(
+                "/internal/bootstrap/users", Map.of("subject", subject, "displayName", "A"), Map.class);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Object userId = first.getBody().get("userId");
+        assertThat(users.findBySubject(subject).orElseThrow().getDisplayName()).isEqualTo("A");
+
+        var second = rest.postForEntity(
+                "/internal/bootstrap/users", Map.of("subject", subject, "displayName", "B"), Map.class);
+        assertThat(second.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(second.getBody().get("userId")).isEqualTo(userId); // same row, never a duplicate
+        var updated = users.findBySubject(subject).orElseThrow();
+        assertThat(updated.getId().toString()).isEqualTo(userId);
+        assertThat(updated.getDisplayName()).isEqualTo("B"); // the upsert took
+
+        var third = rest.postForEntity(
+                "/internal/bootstrap/users", Map.of("subject", subject, "displayName", "B"), Map.class);
+        assertThat(third.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(third.getBody().get("userId")).isEqualTo(userId); // idempotent no-op
+        assertThat(users.findBySubject(subject).orElseThrow().getDisplayName()).isEqualTo("B");
     }
 
     @Test // the no-bypass pin: an invalid payload answers 422 exactly like the management API

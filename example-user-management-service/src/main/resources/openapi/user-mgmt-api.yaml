@@ -52,6 +52,15 @@ paths:
       summary: List users
       operationId: listUsers
       parameters:
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Exact-match filter on the IdP subject. When present, the result is a one-item page
+            (count 0 or 1) in the same envelope — an unmatched subject is an empty page, never 404.
+            Absent or blank, the full paged list is returned unchanged.
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
       responses:
@@ -107,6 +116,25 @@ paths:
       summary: List teams
       operationId: listTeams
       parameters:
+        - name: targetType
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Exact-match filter on the team-target's resource type, paired with targetId. The pair is
+            all-or-nothing: both present returns the governing team as a one-item page (count 0 or 1;
+            an unmatched pair is an empty page, never 404); both absent returns the full paged list
+            unchanged; exactly one is a 400 VALIDATION_FAILED — never a fallthrough to the full list.
+        - name: targetId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: >-
+            Exact-match filter on the team-target's resource id, paired with targetType (see its
+            all-or-nothing contract).
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
       responses:
@@ -224,7 +252,7 @@ paths:
               $ref: '#/components/schemas/TransferOwnershipRequest'
       responses:
         '204':
-          description: Transferred
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -317,7 +345,7 @@ paths:
       operationId: deleteRoleDefinition
       responses:
         '204':
-          description: Deleted
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -457,7 +485,7 @@ paths:
       operationId: deleteTeamTagDefinition
       responses:
         '204':
-          description: Deleted
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -498,7 +526,7 @@ paths:
       operationId: removeMember
       responses:
         '204':
-          description: Removed
+          $ref: '#/components/responses/NoContent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -541,6 +569,14 @@ components:
         default: 20
 
   responses:
+    NoContent:
+      description: >-
+        Success — no content. The (empty) application/json declaration exists so content
+        negotiation admits a bare `Accept: application/json` on the success path (the error
+        responses are application/problem+json only); the 204 status and the absent body are
+        unchanged — no representation is ever produced.
+      content:
+        application/json: {}
     BadRequest:
       description: Invalid request
       content:

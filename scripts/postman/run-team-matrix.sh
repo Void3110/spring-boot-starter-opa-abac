@@ -138,6 +138,8 @@ newman run "$COLLECTION" \
   --env-var "viewer_token=$VIEWER_TOKEN" \
   --env-var "editor_token=$EDITOR_TOKEN" \
   --env-var "nonmember_token=$NONMEMBER_TOKEN" \
+  --env-var "owner_sub=$OWNER_SUB" \
+  --env-var "viewer_uid=$VIEWER_UID" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/team-abac-matrix-report.json"
 
