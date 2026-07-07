@@ -5,6 +5,7 @@ include(
     "opa-abac-core",
     "opa-abac-spring-security",
     "opa-abac-spring-data",
+    "opa-abac-keycloak-directory",
     "opa-abac-spring-boot-starter",
 )
 
