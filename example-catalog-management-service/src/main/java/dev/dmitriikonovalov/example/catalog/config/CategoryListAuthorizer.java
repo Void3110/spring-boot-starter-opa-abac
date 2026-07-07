@@ -56,14 +56,15 @@ public class CategoryListAuthorizer {
 
     private final CategoryRepository categories;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
-    private final AbacQueryService queryService;
+    /** Absent when the starter is off (opa.abac.enabled=false, the unguarded-baseline rig) → empty. */
+    private final ObjectProvider<AbacQueryService> queryService;
     /** Present only when the hierarchy starter is enabled; absent → tag-only list (no widening). */
     private final ObjectProvider<SubtreeSpecResolver> subtreeSpecResolver;
 
     public CategoryListAuthorizer(
             CategoryRepository categories,
             RoleDefinitionSupplier roleDefinitionSupplier,
-            AbacQueryService queryService,
+            ObjectProvider<AbacQueryService> queryService,
             ObjectProvider<SubtreeSpecResolver> subtreeSpecResolver) {
         this.categories = categories;
         this.roleDefinitionSupplier = roleDefinitionSupplier;
@@ -83,6 +84,14 @@ public class CategoryListAuthorizer {
         AbacContext.Subject subject = currentSubject();
         if (subject == null) {
             return Page.empty(pageable); // unauthenticated → empty (the @OpaPreAuthorize gate already ran)
+        }
+
+        AbacQueryService query = queryService.getIfAvailable();
+        if (query == null) {
+            // The starter is OFF (opa.abac.enabled=false — the unguarded-baseline rig, ADR 0021 §2):
+            // no residual compiler exists. Same fail-closed floor as every other branch: the empty page.
+            log.debug("category list empty: no AbacQueryService bean (the starter is off)");
+            return Page.empty(pageable);
         }
 
         // Resolve the role on the GOVERNING CATALOG (the team target), exactly as CategoryAuthorizer does.
@@ -113,7 +122,7 @@ public class CategoryListAuthorizer {
         Specification<CategoryEntity> subtreeSpec = resolveSubtreeSpec(subject, catalogId, roleDefinition);
 
         Specification<CategoryEntity> scope = scopedTo(catalogId, parentId);
-        return queryService.findAuthorized(categories, scope, queryContext, subtreeSpec, pageable);
+        return query.findAuthorized(categories, scope, queryContext, subtreeSpec, pageable);
     }
 
     /**

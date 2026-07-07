@@ -71,14 +71,15 @@ public class CatalogListAuthorizer {
 
     private final CatalogRepository catalogs;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
-    private final AbacQueryService queryService;
+    /** Absent when the starter is off (opa.abac.enabled=false, the unguarded-baseline rig) → empty. */
+    private final ObjectProvider<AbacQueryService> queryService;
     /** Present only when membership-driven isolation is wired (catalog.role-source=http); absent → empty. */
     private final ObjectProvider<GovernedScopeResolver> governedScopeResolver;
 
     public CatalogListAuthorizer(
             CatalogRepository catalogs,
             RoleDefinitionSupplier roleDefinitionSupplier,
-            AbacQueryService queryService,
+            ObjectProvider<AbacQueryService> queryService,
             ObjectProvider<GovernedScopeResolver> governedScopeResolver) {
         this.catalogs = catalogs;
         this.roleDefinitionSupplier = roleDefinitionSupplier;
@@ -97,6 +98,17 @@ public class CatalogListAuthorizer {
         AbacContext.Subject subject = currentSubject();
         if (subject == null) {
             return Page.empty(pageable); // unauthenticated → empty
+        }
+
+        AbacQueryService abacQuery = queryService.getIfAvailable();
+        if (abacQuery == null) {
+            // The starter is OFF (opa.abac.enabled=false — the unguarded-baseline rig, ADR 0021 §2):
+            // no residual compiler exists, so the membership cut cannot be composed. Same fail-closed
+            // floor as every other branch: the empty page, never the table. (Unguarded also means no
+            // AbacFilter, so the subject check above already floors this path; this guard keeps the
+            // floor explicit rather than incidental.)
+            log.debug("catalog list empty: no AbacQueryService bean (the starter is off)");
+            return Page.empty(pageable);
         }
 
         GovernedScopeResolver resolver = governedScopeResolver.getIfAvailable();
@@ -143,7 +155,7 @@ public class CatalogListAuthorizer {
                 roleDefinition,
                 Map.of());
 
-        return queryService.findAuthorized(catalogs, scope, queryContext, null, pageable);
+        return abacQuery.findAuthorized(catalogs, scope, queryContext, null, pageable);
     }
 
     private static AbacContext.Subject currentSubject() {

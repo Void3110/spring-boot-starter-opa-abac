@@ -43,19 +43,23 @@ class CatalogListAuthorizerTest {
     private final CatalogRepository catalogs = mock(CatalogRepository.class);
     private final RoleDefinitionSupplier supplier = mock(RoleDefinitionSupplier.class);
     private final AbacQueryService queryService = mock(AbacQueryService.class);
+
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<AbacQueryService> queryServiceProvider = mock(ObjectProvider.class);
     private final GovernedScopeResolver governedScopeResolver = mock(GovernedScopeResolver.class);
 
     @SuppressWarnings("unchecked")
     private final ObjectProvider<GovernedScopeResolver> resolverProvider = mock(ObjectProvider.class);
 
     private final CatalogListAuthorizer authorizer =
-            new CatalogListAuthorizer(catalogs, supplier, queryService, resolverProvider);
+            new CatalogListAuthorizer(catalogs, supplier, queryServiceProvider, resolverProvider);
 
     private final Pageable pageable =
             PageRequest.of(0, 20, Sort.by("createdAt").ascending().and(Sort.by("id")));
 
     @BeforeEach
     void authenticate() {
+        when(queryServiceProvider.getIfAvailable()).thenReturn(queryService);
         AbacContext.Subject subject =
                 new AbacContext.Subject("sub-1", List.of("catalog-editor"), Map.of());
         SecurityContextHolder.getContext().setAuthentication(new AbacAuthentication(subject));

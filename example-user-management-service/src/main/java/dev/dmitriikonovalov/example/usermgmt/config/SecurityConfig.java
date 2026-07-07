@@ -2,7 +2,7 @@ package dev.dmitriikonovalov.example.usermgmt.config;
 
 import dev.dmitriikonovalov.opaabac.security.AbacFilter;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -69,12 +69,16 @@ public class SecurityConfig {
      * belongs only inside the security chain (installed above); a second copy outside the chain would
      * have its {@code SecurityContextHolder} write cleared before authorization runs.
      *
-     * <p>Only declared when an {@link AbacFilter} bean exists ({@code @ConditionalOnBean}); a permissive
-     * test profile that turns the starter off has no filter, so a {@code FilterRegistrationBean} with a
-     * null filter (which Tomcat rejects) is never created.
+     * <p>Gated on the same {@code opa.abac.enabled} property as the starter's auto-configuration: with
+     * the starter off there is no filter, and an empty {@code FilterRegistrationBean} fails Tomcat
+     * startup ({@code getDescription()} asserts a non-null filter even for a disabled registration).
+     * A property condition, not {@code @ConditionalOnBean}: bean conditions evaluate while this user
+     * config is parsed — <em>before</em> the deferred auto-configuration registers the
+     * {@code AbacFilter} definition — so they cannot see the filter reliably (here the bean condition
+     * silently never matched, leaving the suppression unregistered even on a guarded rig).
      */
     @Bean
-    @ConditionalOnBean(AbacFilter.class)
+    @ConditionalOnProperty(prefix = "opa.abac", name = "enabled", havingValue = "true", matchIfMissing = true)
     FilterRegistrationBean<AbacFilter> abacFilterRegistration(AbacFilter abacFilter) {
         FilterRegistrationBean<AbacFilter> registration = new FilterRegistrationBean<>(abacFilter);
         registration.setEnabled(false);
