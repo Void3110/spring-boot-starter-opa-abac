@@ -48,11 +48,24 @@ public class InternalBootstrapController {
         this.roleDefinitions = roleDefinitions;
     }
 
-    /** Idempotently ensure a user with the given IdP subject exists; returns its id. */
+    /**
+     * Idempotently ensure a user with the given IdP subject exists; returns its id. An existing
+     * subject is an <b>upsert of {@code displayName} only</b> — a re-seed with a changed name
+     * converges to the new value on the same row (same id, no duplicate); an identical re-post is
+     * a no-op. The subject key, the id, and memberships/roles are never touched here.
+     */
     @PostMapping("/internal/bootstrap/users")
     @Transactional
     public ResponseEntity<Map<String, UUID>> ensureUser(@RequestBody EnsureUser body) {
         UUID id = users.findBySubject(body.subject())
+                .map(existing -> {
+                    if (body.displayName() != null
+                            && !body.displayName().equals(existing.getDisplayName())) {
+                        existing.setDisplayName(body.displayName());
+                        return users.save(existing);
+                    }
+                    return existing;
+                })
                 .orElseGet(() -> users.save(
                         new User(UUID.randomUUID(), body.subject(), body.displayName())))
                 .getId();
