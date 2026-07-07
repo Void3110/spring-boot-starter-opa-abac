@@ -167,6 +167,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   `application/problem+json` with a **machine-stable `errorCode`** I can branch on (not a human `message`
   string), so I handle a `422` programmatically instead of string-matching. — **Phase 5.9**
   ([[REST-API-REFINEMENT]], ADR [[0011-error-contract-problem-json|0011]])
+- **F4** *As a developer evaluating the starter*, I can read **measured** performance evidence — what
+  the authorization gate costs per request (p50/95/99 vs an unguarded baseline), where filtered lists
+  saturate, that enrichment and cross-service chatter stay bounded, and how the system degrades under
+  a dependency outage — and reproduce the numbers myself with one command. — **Phase 7.2**
+  ([[LOAD-TESTING]], ADR [[0021-load-testing-methodology|0021]])
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
