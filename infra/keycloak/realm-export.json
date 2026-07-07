@@ -99,9 +99,39 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "catalog-directory",
+      "name": "Catalog User Directory (service account)",
+      "description": "Identity-directory search service account (ADR 0020): client_credentials only, view-users and nothing else. Separate from catalog-gateway so the two trust roles never share a credential. Demo secret, local rig only.",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "catalog-directory-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ]
     }
   ],
   "users": [
+    {
+      "username": "service-account-catalog-directory",
+      "enabled": true,
+      "serviceAccountClientId": "catalog-directory",
+      "clientRoles": {
+        "realm-management": [
+          "view-users"
+        ]
+      }
+    },
     {
       "username": "demo",
       "enabled": true,
@@ -228,6 +258,17 @@
       ],
       "realmRoles": [
         "catalog-editor"
+      ]
+    },
+    {
+      "username": "dora",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "dora@example.com",
+      "firstName": "Dora",
+      "lastName": "Demo",
+      "realmRoles": [
+        "catalog-viewer"
       ]
     }
   ]

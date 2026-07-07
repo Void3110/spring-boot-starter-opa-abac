@@ -40,8 +40,8 @@ tags:
 
 | ID | Flow | Asserts (the actual cut) | → Ticket |
 |---|---|---|---|
-| E-pre | Rig boots `ENABLE_DIRECTORY=1`; a `client_credentials` token for `catalog-directory` | user-service log shows `KeycloakUserDirectory` active (not `NoOp`); the token can call `view-users` in-network but is **denied** any write/admin scope | T5 |
-| E1 | bearer `GET` search `?q=<prefix matching a never-provisioned account>` (e.g. carol/outsider) | returns that realm account **though it has no `users`-table row** — proves it searches the directory, not the provisioned set | T6 (proves T2+T4+T5) |
+| E-pre | Rig boots `ENABLE_DIRECTORY=1`; a `client_credentials` token for `catalog-directory` | user-service log shows `KeycloakUserDirectory` active (not `NoOp`); the token can call `view-users` in-network but is **denied** any write/admin scope. *As built (deep-review fix):* the denied-write half is **pinned in `run-team-matrix.sh`'s directory preflight** — read 200, create/update/delete all 403, red run on any violation — not a one-time manual check | T5 |
+| E1 | bearer `GET` search `?q=<prefix matching a never-provisioned account>` — *as built (deep-review fix):* **`dora`**, the reserved credential-less probe account (carol turned out to be an isolation-matrix fixture; see the README fixture registry) | returns that realm account **though it has no `users`-table row** — proves it searches the directory, not the provisioned set | T6 (proves T2+T4+T5) |
 | E2 | bearer `GET` search `?q=` (blank) | **empty** items | T6 (proves the blank-`q` no-enumerate edge) |
 | E3 | bearer `GET` search `?q=<broad>&limit=1000` | at most **50** items (the hard clamp holds end-to-end) | T6 (proves the clamp) |
 

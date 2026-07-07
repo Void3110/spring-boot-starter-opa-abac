@@ -9,7 +9,7 @@ tags:
 
 # ADR 0020 — Pluggable user-directory port (identity search)
 
-**Status:** Accepted (planned — Slice 2 of the user-directory work, [[USER-DIRECTORY-PORT]])
+**Status:** Accepted (shipped 2026-07-07 — Slice 2 of the user-directory work, [[USER-DIRECTORY-PORT]])
 **Date:** 2026-07-06
 **Context tags:** `UserDirectory` SPI, Keycloak admin API, `client_credentials`, `view-users`, least privilege, fail-closed, no-oracle empty response
 

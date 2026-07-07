@@ -30,6 +30,22 @@ public final class UserMgmtMapper {
                 .displayName(e.getDisplayName());
     }
 
+    /**
+     * The directory rows are the library's type-bounded {@code DirectoryUser} (subject + displayName —
+     * the disclosure ceiling); {@code limit} echoes the effective (clamped) value the search ran with.
+     */
+    public static dev.dmitriikonovalov.example.usermgmt.openapi.model.DirectoryUserList toDirectoryUserList(
+            java.util.List<dev.dmitriikonovalov.opaabac.security.directory.DirectoryUser> matches, int limit) {
+        var list = new dev.dmitriikonovalov.example.usermgmt.openapi.model.DirectoryUserList()
+                .items(new java.util.ArrayList<>())
+                .limit(limit);
+        matches.forEach(m -> list.addItemsItem(
+                new dev.dmitriikonovalov.example.usermgmt.openapi.model.DirectoryUser()
+                        .subject(m.subject())
+                        .displayName(m.displayName())));
+        return list;
+    }
+
     public static dev.dmitriikonovalov.example.usermgmt.openapi.model.Team toDto(Team e) {
         return new dev.dmitriikonovalov.example.usermgmt.openapi.model.Team()
                 .id(e.getId())

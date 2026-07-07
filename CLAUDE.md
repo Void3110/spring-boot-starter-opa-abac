@@ -43,6 +43,18 @@ Java 21 · Spring Boot 3.4 · Gradle 8.12 (wrapper) · vanilla `org.openapi.gene
 ./profile.sh down      # stop infra
 ```
 
+### The user-directory module + rig flag
+
+`opa-abac-keycloak-directory` is an **optional** library module (the `UserDirectory` port's
+Keycloak-admin impl, ADR 0020): `compileOnly` on the starter, `runtimeOnly` on the example
+user-service, activated by `opa.abac.directory.keycloak.enabled=true`. Without it (or the flag) the
+starter wires the always-empty `NoOpUserDirectory` — fail-closed by default. On the local rig:
+
+```bash
+ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2   # identity search on the user-service
+                                             # (force-enables ENABLE_OIDC + ENABLE_USER_SERVICE)
+```
+
 ### Container runtime for tests (important)
 
 Integration tests (`CatalogCrudIT`) run against **real Postgres via Testcontainers** — never H2.
@@ -58,6 +70,7 @@ not code.
 opa-abac-core/                  # framework-agnostic ABAC model + OPA client (no Spring dep!)
 opa-abac-spring-security/       # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
 opa-abac-spring-data/           # partial-eval → JPA Specification data filtering
+opa-abac-keycloak-directory/    # OPTIONAL: Keycloak-admin impl of the UserDirectory port (ADR 0020)
 opa-abac-spring-boot-starter/   # auto-configuration (the published starter)
 example-catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
 compose.yaml · profile.sh       # local infra (Postgres now; Keycloak/APISIX/OPA/Jaeger added incrementally)

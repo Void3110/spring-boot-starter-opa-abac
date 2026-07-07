@@ -98,6 +98,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 > for the packaged demo it is same-origin (CORS moot); the `cors` plugin covers the Vite dev server
 > on `:3000` during development.
 
+`ENABLE_DIRECTORY=1` adds the **identity-directory search** to the user-service (the `UserDirectory`
+port, ADR 0020 — see the [[USER-DIRECTORY]] guide): the member picker can then offer **any realm
+account**, not just provisioned profiles. It force-enables `ENABLE_OIDC` + `ENABLE_USER_SERVICE` and
+wires the `catalog-directory` service account (`realm-management → view-users` **only**) into the
+usermgmt pod at the **in-network** `http://keycloak:8888`. Off by default — the rig then keeps the
+always-empty `NoOp` directory and the search sub-path of `/api/v1/users` answers 200-empty.
+
 ## User-management service (app-resolved roles) — opt-in
 
 Off by default. `ENABLE_USER_SERVICE=1 ./deploy.sh up` adds the `user-management-service` (the ABAC

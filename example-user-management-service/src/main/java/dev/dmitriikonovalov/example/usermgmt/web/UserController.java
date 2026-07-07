@@ -3,8 +3,10 @@ package dev.dmitriikonovalov.example.usermgmt.web;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.example.usermgmt.openapi.api.UserApi;
+import dev.dmitriikonovalov.example.usermgmt.openapi.model.DirectoryUserList;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserPage;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserRequest;
+import dev.dmitriikonovalov.opaabac.security.directory.UserDirectory;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,9 +22,11 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class UserController implements UserApi {
 
     private final UserRepository users;
+    private final UserDirectory directory;
 
-    public UserController(UserRepository users) {
+    public UserController(UserRepository users, UserDirectory directory) {
         this.users = users;
+        this.directory = directory;
     }
 
     @Override
@@ -37,6 +41,18 @@ public class UserController implements UserApi {
         }
         var result = users.findAll(PageDefaults.pageRequest(page, perPage));
         return ResponseEntity.ok(UserMgmtMapper.toUserPage(result));
+    }
+
+    @Override
+    public ResponseEntity<DirectoryUserList> searchUsers(String q, Integer limit) {
+        // The identity-directory search (USER-DIRECTORY-PORT): bearer-only like the sibling list —
+        // finding a subject grants nothing; the acting gate stays team:add-member. The port owns every
+        // fail-closed edge (blank q, outage, no match → empty), so this stays a pass-through and an
+        // outage is indistinguishable from a genuine empty (the no-oracle rule) — always 200, never an
+        // error. The endpoint holds no Keycloak/URL knowledge; the echoed limit is the contract clamp.
+        int effective = UserDirectory.clamp(limit == null ? 0 : limit);
+        return ResponseEntity.ok(
+                UserMgmtMapper.toDirectoryUserList(directory.search(q, effective), effective));
     }
 
     @Override

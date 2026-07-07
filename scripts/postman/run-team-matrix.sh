@@ -7,8 +7,15 @@
 # with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is
 # denied — all through the gateway, the role coming from the user-service.
 #
-# Prereq: the full rig is up WITH OIDC + OPA + the user-service:
-#   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+# Prereq: the full rig is up WITH OIDC + OPA + the user-service + the identity directory
+# (the USER-DIRECTORY-PORT cells 13-15 search the live directory; the flag force-enables the rest):
+#   ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2
+#
+# Directory preflight (E-pre): before newman, this runner mints the catalog-directory
+# client_credentials token and PINS the least-privilege posture (view-users read 200; user
+# create/update/delete all 403), proves the directory is live through the gateway, and wipes any
+# provisioned row for 'dora' — the RESERVED never-provisioned probe account (no credentials, no
+# matrix may bootstrap her; see README fixture registry) — so cell 13a stays order-independent.
 #
 # How it wires the demo data (the team-target catalog id and the IdP subjects are only known at run
 # time, so a static seed can't): it mints four in-network tokens (owner/viewer/custom-editor/non-member),
@@ -31,6 +38,10 @@ NETWORK="${COMPOSE_NETWORK:-opa-abac-example_default}"
 KEYCLOAK_TOKEN_URL="${KEYCLOAK_TOKEN_URL:-http://keycloak:8888/realms/catalog-demo/protocol/openid-connect/token}"
 CLIENT_ID="${CLIENT_ID:-catalog-gateway}"
 CLIENT_SECRET="${CLIENT_SECRET:-catalog-gateway-secret}"
+# The identity-directory service account (USER-DIRECTORY-PORT E-pre) — view-users ONLY.
+DIRECTORY_CLIENT_ID="${DIRECTORY_CLIENT_ID:-catalog-directory}"
+DIRECTORY_CLIENT_SECRET="${DIRECTORY_CLIENT_SECRET:-catalog-directory-secret}"
+UM_PG_CONTAINER="${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}"
 USER_SERVICE="${USER_SERVICE:-http://localhost:28090}"
 PG_CONTAINER="${PG_CONTAINER:-opa-abac-postgres}"
 GATEWAY="${GATEWAY:-http://localhost:9085}"
@@ -124,6 +135,71 @@ post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$VIEWER_UID\",\"roleCode\":\"reader\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$EDITOR_UID\",\"roleCode\":\"catalog-editor\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $DEMO_CATALOG_ID (owner/viewer/custom-editor bound)."
+
+# --- directory preflight (USER-DIRECTORY-PORT: E-pre + fixture hygiene) --------
+# Pins T5's least-privilege posture as COMMITTED assertions (not a one-time manual check) and makes
+# the directory cells deterministic. Fails fast with the actionable cause — the no-oracle contract
+# makes "directory off" and "no matches" identical at the endpoint, so the discriminators here are
+# the service-account grant (realm current?) and a search for 'dora', who provably exists in the realm.
+echo "==> Directory preflight (E-pre): least privilege + the directory live ..."
+DIR_TOKEN="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
+  -X POST "$KEYCLOAK_TOKEN_URL" \
+  -d grant_type=client_credentials -d "client_id=$DIRECTORY_CLIENT_ID" -d "client_secret=$DIRECTORY_CLIENT_SECRET" \
+  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+[ -n "$DIR_TOKEN" ] || {
+  echo "ERROR: could not mint the $DIRECTORY_CLIENT_ID service token — stale realm? Recreate Keycloak:" >&2
+  echo "  docker compose -p opa-abac-example -f ../../infra/compose.keycloak.yaml up -d --force-recreate keycloak" >&2
+  exit 1
+}
+
+kc_admin() { # method path [json-body] -> body + last line HTTP code
+  local method="$1" path="$2" body="${3:-}"
+  if [ -n "$body" ]; then
+    "$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s -w '\n%{http_code}' \
+      -X "$method" -H "Authorization: Bearer $DIR_TOKEN" -H 'Content-Type: application/json' \
+      -d "$body" "http://keycloak:8888/admin/realms/catalog-demo$path"
+  else
+    "$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s -w '\n%{http_code}' \
+      -X "$method" -H "Authorization: Bearer $DIR_TOKEN" \
+      "http://keycloak:8888/admin/realms/catalog-demo$path"
+  fi
+}
+
+# E-pre read half: view-users works, and the reserved probe account exists in the realm.
+resp="$(kc_admin GET '/users?username=dora&exact=true&max=2')"
+code="$(printf '%s' "$resp" | tail -n1)"
+[ "$code" = "200" ] || { echo "ERROR: E-pre view-users read got HTTP $code (want 200)." >&2; exit 1; }
+DORA_SUB="$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -n1)"
+[ -n "$DORA_SUB" ] || {
+  echo "ERROR: the reserved probe account 'dora' is not in the realm — recreate Keycloak to import the current realm-export." >&2
+  exit 1
+}
+
+# E-pre denied half: every write is 403 — the account holds view-users and NOTHING else.
+code="$(kc_admin POST '/users' '{"username":"evil","enabled":true}' | tail -n1)"
+[ "$code" = "403" ] || { echo "ERROR: E-pre — user CREATE got HTTP $code (want 403): the service account holds more than view-users." >&2; exit 1; }
+code="$(kc_admin PUT "/users/$DORA_SUB" '{"firstName":"Hacked"}' | tail -n1)"
+[ "$code" = "403" ] || { echo "ERROR: E-pre — user UPDATE got HTTP $code (want 403): the service account holds more than view-users." >&2; exit 1; }
+code="$(kc_admin DELETE "/users/$DORA_SUB" | tail -n1)"
+[ "$code" = "403" ] || { echo "ERROR: E-pre — user DELETE got HTTP $code (want 403): the service account holds more than view-users." >&2; exit 1; }
+echo "  E-pre: view-users read 200; create/update/delete all 403 (least privilege pinned)."
+
+# The directory must be LIVE through the gateway for cells 13/15.
+DIR_ITEMS="$(curl -s -H "Authorization: Bearer $OWNER_TOKEN" "$GATEWAY/api/v1/users/search?q=dora" \
+  | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["items"]))' 2>/dev/null || echo 0)"
+[ "$DIR_ITEMS" -ge 1 ] || {
+  echo "ERROR: the identity directory is OFF on the user-service (the realm account 'dora' was not returned)." >&2
+  echo "  Bring the rig up with: ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2" >&2
+  exit 1
+}
+
+# Fixture hygiene: 13a asserts dora has NO provisioned row. She is RESERVED for this probe (no
+# credentials, no matrix bootstraps her), so wiping any stray row (a demo click) is safe by design.
+"$RUNTIME" exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team_membership WHERE user_id IN (SELECT id FROM app_user WHERE subject = '$DORA_SUB');
+DELETE FROM app_user WHERE subject = '$DORA_SUB';
+SQL
+echo "  directory live through the gateway; dora unprovisioned (any stray row wiped)."
 
 # --- run newman --------------------------------------------------------------
 mkdir -p "$REPORT_DIR/$RUN_ID"

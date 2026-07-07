@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/security
   - area/api
@@ -8,12 +8,18 @@ tags:
 
 # USER-DIRECTORY-PORT — Keycloak-admin user-directory port (Slice 2)
 
-> **Status: Planning.** A reusable **`UserDirectory` search SPI** in the library + a concrete, optional
-> **Keycloak-admin implementation** (its own module) + a bearer-only `search` endpoint under
-> `/api/v1/users`, so the demo SPA's member picker can find **any realm account**, not just provisioned
-> profiles. Net-new external integration; purely additive (every seam is new — no shared mechanism
-> changed). Phase 7 of [[POC-ROADMAP]] (Slice 2 of the user-directory work; the query filters are the
-> separate, shipped-first [[DIRECTORY-QUERY-FILTERS|Slice 1]]).
+> **✅ Shipped (2026-07-07, the autonomous run).** The reusable **`UserDirectory` search SPI** in
+> `opa-abac-spring-security`, the concrete **`KeycloakUserDirectory`** in the new optional
+> `opa-abac-keycloak-directory` module (`client_credentials`, `view-users` only, fail-closed to empty,
+> no-oracle), the starter auto-config with the `NoOp` fallback, the bearer-only `search` sub-path of
+> `/api/v1/users` (bounded plain list, `{subject,displayName}` ceiling), the `catalog-directory`
+> realm client + `ENABLE_DIRECTORY=1` rig flag, and the SPA member picker searching the directory with
+> provision-on-select. Proven by U1–U2 / I2–I4 (module + starter + MockMvc suites green, whole build
+> green), E-pre/E1–E3 through the gateway (the extended team matrix: 21 requests, 24 assertions, 0
+> failed — a never-provisioned account found while its provisioned lookup stays empty), and the picker
+> verified in the browser (single debounced search call; carol provisioned-on-select then added).
+> Guide: [[USER-DIRECTORY]]. Phase 7 of [[POC-ROADMAP]] (Slice 2 of the user-directory work; the query
+> filters were the shipped-first [[DIRECTORY-QUERY-FILTERS|Slice 1]]).
 
 ## Why this slice exists
 
@@ -48,12 +54,12 @@ the existing `POST /users`).
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Port SPI: `UserDirectory` + `DirectoryUser` + `NoOpUserDirectory` (library) | 📋 TODO |
-| T2 | New module `opa-abac-keycloak-directory`: `KeycloakUserDirectory` impl | 📋 TODO |
-| T3 | Starter auto-config (`@ConditionalOnClass`+`@ConditionalOnProperty` + NoOp fallback) | 📋 TODO |
-| T4 | `search` endpoint under `/api/v1/users` (spec + controller + bounded-list DTO) | 📋 TODO |
-| T5 | Realm config: `catalog-directory` client + `view-users` + deploy wiring | 📋 TODO |
-| T6 | e2e (newman) + SPA picker rewrite + docs (guide + ADR link) + folder move | 📋 TODO |
+| T1 | Port SPI: `UserDirectory` + `DirectoryUser` + `NoOpUserDirectory` (library) | ✅ DONE |
+| T2 | New module `opa-abac-keycloak-directory`: `KeycloakUserDirectory` impl | ✅ DONE |
+| T3 | Starter auto-config (`@ConditionalOnClass`+`@ConditionalOnProperty` + NoOp fallback) | ✅ DONE |
+| T4 | `search` endpoint under `/api/v1/users` (spec + controller + bounded-list DTO) | ✅ DONE |
+| T5 | Realm config: `catalog-directory` client + `view-users` + deploy wiring | ✅ DONE |
+| T6 | e2e (newman) + SPA picker rewrite + docs (guide + ADR link) + folder move | ✅ DONE |
 
 ## Related
 

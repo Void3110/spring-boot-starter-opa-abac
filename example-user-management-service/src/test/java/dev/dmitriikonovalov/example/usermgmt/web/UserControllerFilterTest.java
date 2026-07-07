@@ -25,7 +25,8 @@ import org.springframework.data.domain.Pageable;
 class UserControllerFilterTest {
 
     private final UserRepository users = mock(UserRepository.class);
-    private final UserController controller = new UserController(users);
+    private final UserController controller = new UserController(
+            users, new dev.dmitriikonovalov.opaabac.security.directory.NoOpUserDirectory());
 
     private final User match = new User(UUID.randomUUID(), "sub-known", "Known");
 

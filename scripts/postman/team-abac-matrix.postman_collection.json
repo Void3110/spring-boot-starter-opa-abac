@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Team-based ABAC matrix (app-resolved roles via the user-service)",
-    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data. Extended by DIRECTORY-QUERY-FILTERS (Slice 1): the ?subject / ?targetType+?targetId one-shot lookups (matched -> count=1, unmatched -> empty page, half-specified pair -> 400 VALIDATION_FAILED), the bootstrap displayName upsert (re-seed converges on the same row), and the 204-with-JSON-Accept produces fix - each asserting the actual cut (counts, ids, status codes).",
+    "description": "Proves the Phase-4 app-resolved path end to end: a catalog request is authorized by a role resolved from real team membership in the user-management-service. The owner of a catalog can write; a member with the viewer role cannot; a member with a team-scoped custom editor role can; a non-member is denied. Roles are resolved by the catalog's HttpRoleDefinitionSupplier calling the user-service; the catalog id (team-target) and the tokens are injected by run-team-matrix.sh after it bootstraps the team data. Extended by DIRECTORY-QUERY-FILTERS (Slice 1): the ?subject / ?targetType+?targetId one-shot lookups (matched -> count=1, unmatched -> empty page, half-specified pair -> 400 VALIDATION_FAILED), the bootstrap displayName upsert (re-seed converges on the same row), and the 204-with-JSON-Accept produces fix - each asserting the actual cut (counts, ids, status codes). Extended by USER-DIRECTORY-PORT (Slice 2): the identity-directory search cells - 'dora' (the RESERVED never-provisioned probe account: no credentials, no matrix may bootstrap her; the runner's preflight wipes any stray provisioned row) is found while its provisioned ?subject lookup stays an empty page (the directory/provisioned cut), blank q is the no-oracle empty, and the 20-default/50-max limit clamp holds end-to-end.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -781,6 +781,199 @@
               "pm.test('a bare JSON Accept is admitted on the 204 op - no 406, body stays empty', function () {",
               "    pm.response.to.have.status(204);",
               "    pm.expect(pm.response.text()).to.be.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "13. Directory search: the NEVER-provisioned reserved account (dora) is found (E1)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users/search?q=dora",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users",
+            "search"
+          ],
+          "query": [
+            {
+              "key": "q",
+              "value": "dora"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('the directory serves dora - the reserved realm account outside the provisioned set', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const body = pm.response.json();",
+              "    pm.expect(body.items, 'directory rows').to.be.an('array').that.is.not.empty;",
+              "    const dora = body.items.find((u) => u.displayName === 'dora');",
+              "    pm.expect(dora, 'dora in the directory result').to.not.be.undefined;",
+              "    pm.expect(dora.subject, 'subject is the realm account id').to.be.a('string').and.not.be.empty;",
+              "    // the disclosure ceiling at the wire: exactly subject + displayName, nothing wider",
+              "    pm.expect(Object.keys(dora).sort()).to.eql(['displayName', 'subject']);",
+              "    pm.collectionVariables.set('dora_sub', dora.subject);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "13a. The same subject has NO users-table row (the E1 cut: directory, not the provisioned set)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users?subject={{dora_sub}}",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users"
+          ],
+          "query": [
+            {
+              "key": "subject",
+              "value": "{{dora_sub}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('the provisioned ?subject lookup for dora is an EMPTY page - she has no users-table row', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const page = pm.response.json();",
+              "    pm.expect(page.count, 'provisioned rows for the subject the directory just returned').to.eql(0);",
+              "    pm.expect(page.items).to.be.an('array').that.is.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "14. Directory search: blank q -> empty items, never an enumeration (E2)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users/search?q=",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users",
+            "search"
+          ],
+          "query": [
+            {
+              "key": "q",
+              "value": ""
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('a blank q is the no-oracle empty - 200, zero items, default limit echoed', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const body = pm.response.json();",
+              "    pm.expect(body.items).to.be.an('array').that.is.empty;",
+              "    pm.expect(body.limit, 'the echoed default').to.eql(20);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "15. Directory search: limit=1000 clamps to at most 50 end-to-end (E3)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{owner_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gateway}}/api/v1/users/search?q=o&limit=1000",
+          "host": [
+            "{{gateway}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users",
+            "search"
+          ],
+          "query": [
+            {
+              "key": "q",
+              "value": "o"
+            },
+            {
+              "key": "limit",
+              "value": "1000"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('the hard clamp holds through the whole stack: echoed limit 50, at most 50 rows', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const body = pm.response.json();",
+              "    pm.expect(body.limit, 'the echoed effective limit').to.eql(50);",
+              "    pm.expect(body.items.length, 'row bound').to.be.at.most(50);",
+              "    pm.expect(body.items.length, 'a broad q matches something').to.be.above(0);",
               "});"
             ],
             "type": "text/javascript"

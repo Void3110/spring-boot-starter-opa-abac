@@ -54,7 +54,8 @@ import org.springframework.context.annotation.ConfigurationCondition;
 @ConditionalOnProperty(prefix = "opa.abac", name = "enabled", havingValue = "true", matchIfMissing = true)
 @org.springframework.context.annotation.Import({
     OpaResilienceAutoConfiguration.class,
-    OwnershipAutoConfiguration.class // Slice B4: the cross-service ownership resolver (opt-in, ADR 0019)
+    OwnershipAutoConfiguration.class, // Slice B4: the cross-service ownership resolver (opt-in, ADR 0019)
+    OpaDirectoryAutoConfiguration.class // user-directory port: Keycloak opt-in, NoOp default (ADR 0020)
 })
 public class OpaAbacAutoConfiguration {
 

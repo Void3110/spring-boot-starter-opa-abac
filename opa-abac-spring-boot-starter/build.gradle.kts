@@ -40,9 +40,16 @@ dependencies {
     // opa.abac.resilience.enabled=false (the kill-switch → byte-identical to pre-B3). The U8 slice test
     // proves both classpath states via FilteredClassLoader.
 
+    // Keycloak user-directory (ADR 0020 §3): the optional module is compileOnly so the directory
+    // auto-config can construct KeycloakUserDirectory when an adopter adds the module, WITHOUT dragging
+    // Keycloak onto every adopter — the same treatment as web/security above. The @ConditionalOnClass
+    // keys off the admin-client type by name; a bare adopter gets the NoOpUserDirectory fallback.
+    compileOnly(project(":opa-abac-keycloak-directory"))
+
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation(project(":opa-abac-keycloak-directory"))
     testImplementation("org.springframework.boot:spring-boot-starter-security")
     testImplementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation(platform(libs.junit.bom))
