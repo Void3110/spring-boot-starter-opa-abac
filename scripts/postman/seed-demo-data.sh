@@ -15,10 +15,17 @@
 # Then:       scripts/postman/seed-demo-data.sh
 #
 # Roles demonstrated (all on one team that governs the demo catalog):
-#   editor   -> demo-admin   (READ/WRITE/TAG/GRANT)  — sees every verb allowed
+#   editor   -> owner        (system ladder)         — every verb INCLUDING team management: the
+#                                                      control plane (add/change/remove member,
+#                                                      define-roles, transfer) needs a SYSTEM role —
+#                                                      custom roles are management-incapable BY DESIGN
+#                                                      (ADR 0015 §5), so without an owner the demo
+#                                                      team could not be managed by anyone
 #   demo     -> demo-editor  (READ/WRITE/TAG)        — can edit + tag, cannot grant
 #   viewer   -> demo-viewer  (READ)                  — read-only; mutating verbs honestly false
 #   outsider -> (unbound)                            — no team role -> the "no access" story
+#   (demo-admin, level 30, stays DEFINED but unbound — the owner can grant it live from the SPA's
+#    member picker / role editor, which is exactly the custom-role authoring story.)
 
 set -euo pipefail
 
@@ -118,11 +125,27 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
   "{\"teamId\":\"$TEAM_ID\",\"code\":\"demo-viewer\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"],\"product\":[\"READ\"]}}" >/dev/null
 
-post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$ADMIN_UID\",\"roleCode\":\"demo-admin\"}" >/dev/null
+# The admin persona is the team OWNER (a system-ladder code): the control plane (team:add-member /
+# change-role / remove-member / define-roles / transfer) is carried ONLY by system codes — custom
+# roles are management-incapable by design (ADR 0015 §5). Binding a custom role here (the original
+# demo-admin) left the flagship team with NO member able to manage it, and the member picker's
+# add-member always answered 403 (found during the USER-DIRECTORY-PORT browser verify — see
+# docs/to-do/implemented/USER-DIRECTORY-PORT/STATUS-06.md).
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$ADMIN_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$EDITOR_UID\",\"roleCode\":\"demo-editor\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$VIEWER_UID\",\"roleCode\":\"demo-viewer\"}" >/dev/null
 # NOTE: 'outsider' is deliberately NOT bound — it demonstrates the no-team-role / no-access case.
-echo "  team $TEAM_ID governs $DEMO_CATALOG_ID; bound editor->admin, demo->editor, viewer->viewer."
+
+# Reset the demo roster to the canonical three. Without this, stale-subject memberships accumulate
+# across Keycloak re-imports (every realm re-create mints new subs, orphaning the old rows) and
+# demo-added members persist — and the seed promises a REPRODUCIBLE baseline. Scoped to this team
+# only; the users' profile rows are left alone (other tenants may reference them).
+"$RUNTIME" exec -i "${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team_membership
+ WHERE team_id = '$TEAM_ID'
+   AND user_id NOT IN ('$ADMIN_UID', '$EDITOR_UID', '$VIEWER_UID');
+SQL
+echo "  team $TEAM_ID governs $DEMO_CATALOG_ID; bound editor->owner, demo->demo-editor, viewer->demo-viewer (roster reset to the canonical three)."
 
 # --- create a small category tree through the gateway (as the admin) ----------
 echo "==> Creating demo categories through the gateway ..."
@@ -142,8 +165,8 @@ echo "  products under EMEA: $W1 $W2"
 
 echo ""
 echo "==> Demo data seeded. Open the SPA (http://localhost:3000 in dev) and sign in as:"
-echo "      editor / editor    -> admin role   (every action allowed)"
-echo "      demo   / demo      -> editor role  (edit + tag, no grant)"
-echo "      viewer / viewer    -> viewer role  (read-only; mutating actions shown false)"
+echo "      editor / editor    -> team OWNER   (every action incl. team management: add/change/remove members, roles, transfer)"
+echo "      demo   / demo      -> demo-editor  (edit + tag, no grant, no team management)"
+echo "      viewer / viewer    -> demo-viewer  (read-only; mutating actions shown false)"
 echo "      outsider / outsider-> no team role (the no-access case)"
 echo "    The 'Demo catalog' card's _actions change with the signed-in identity."
