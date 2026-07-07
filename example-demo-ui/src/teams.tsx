@@ -8,9 +8,9 @@ import {
   changeRole,
   createCatalog,
   createTeam,
-  listAllTeams,
   listAllUsers,
   listMembers,
+  lookupTeamByTarget,
   listRoleDefinitions,
   removeMember,
   transferOwnership,
@@ -37,12 +37,13 @@ const DEFAULT_ROLE = 'member'
  * typed denial (403/409/422) tell the story.
  */
 export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubject: string }) {
-  // Full-collection walks (listAll*): the API has no team-by-target or user-by-subject filter yet,
-  // and a page-0-only scan would silently miss rows past 100 (Slice-2 backlog: server-side filters).
-  const teams = useAsync(() => listAllTeams(), [catalogId])
+  // One-shot lookup (DIRECTORY-QUERY-FILTERS): the governing team answers in a single filtered
+  // request (?targetType&targetId) — no page-walk, no truncated miss. The user list is still a
+  // full walk: it feeds the member picker, whose real directory arrives with Slice 2.
+  const teams = useAsync(() => lookupTeamByTarget('catalog', catalogId), [catalogId])
   const users = useAsync(() => listAllUsers(), [])
 
-  const team = teams.data?.find((t) => t.targetType === 'catalog' && t.targetId === catalogId)
+  const team = teams.data?.items[0]
 
   return (
     <div className="mt-6">

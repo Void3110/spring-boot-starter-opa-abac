@@ -171,6 +171,16 @@ state). This keeps the contract simple; adopt `PATCH` only if partial update bec
 | `201 Created` | `POST` that creates a resource (returns the created body) | `POST /catalogs` · `POST /teams/{id}/members` |
 | `204 No Content` | `DELETE`, and a `POST` custom-op with no body | `DELETE /categories/{id}` · `POST /teams/{id}/transfer-ownership` |
 
+> **A `204` op must still admit a JSON `Accept`** *(fixed in Phase 7 Slice 1,
+> [[DIRECTORY-QUERY-FILTERS]])*. An operation whose only declared content is its errors'
+> `application/problem+json` generates `produces={problem+json}` — and Spring's content negotiation
+> then **406**s a bare `Accept: application/json` *before the handler runs* (plain `json` is not
+> compatible with `problem+json`). Convention: every 204-only operation `$ref`s the shared
+> `NoContent` response component, whose **empty, schema-less** `application/json` content widens the
+> producible types while keeping the `204` status, the absent body, *and* the generated
+> `ResponseEntity<Void>` signature (a schema — even `{}` — would flip it to `Object`). Spec-level,
+> never a Java `produces` override.
+
 **Client / server errors**
 
 | Code | When | Example |
@@ -441,6 +451,24 @@ is a disclosure bug.
 | Violation | **`400 VALIDATION_FAILED`** `problem+json` ([§6](#6-error-handling)) — **no clamping**: silently returning 100 rows when 500 were asked changes meaning without telling the client |
 | Past-the-end | **`200` + empty `items` + the exact `count`** — never `404`; under ABAC the last page is subject-relative, and a 404 would break paging loops and read as an existence probe |
 
+### Exact-match lookup filters — a one-item page, never a new sub-path
+
+*(Adopted in Phase 7 Slice 1, [[DIRECTORY-QUERY-FILTERS]].)* A single-resource lookup keyed by a
+unique attribute is expressed as an **optional exact-match query filter on the list endpoint** —
+`GET /users?subject=` and `GET /teams?targetType=&targetId=` — not as a dedicated `by-<key>`
+sub-path. The rules:
+
+- **Present ⇒ a one-item page** in the same envelope (`count` 0 or 1): the client's `Page<T>` code
+  is unchanged and `count` stays honest. A window past the single match follows the normal
+  past-the-end rule above.
+- **Unmatched ⇒ an empty page (`count=0`)** — never `404` (that's for *path* ids, not query
+  filters) and **never a fallthrough to the full list**: a filter narrows, it must not widen.
+- **A composite-key pair is all-or-nothing:** both params → the lookup; both absent → the unchanged
+  paged list; **exactly one → `400 VALIDATION_FAILED`** — a half-specified key is a client error,
+  not a whole-collection scan wearing a filter mask.
+- **Absent/blank ⇒ byte-for-byte the unfiltered paged list** — the filter is an additive branch on
+  the endpoint, never a replacement of it.
+
 ### Ordering: deterministic by construction
 
 - **Fixed server-side total order on every list: `createdAt ASC, id ASC`** (both inherited from
@@ -538,6 +566,8 @@ of these is a deliberate slice, not a drive-by.
 - [ ] Coarse `@OpaPreAuthorize` gate **+** a row-level cut (partial-eval residual ∧ scope) — empty list,
       never the full table, for a subject with no grant.
 - [ ] *(target)* paginated via the shared envelope rather than a bare array.
+- [ ] A unique-key lookup is an **exact-match query filter** on the list (one-item page; miss = empty
+      page, never 404; composite pair = both-or-`400`; absent = the unchanged paged list — [§7](#7-pagination)).
 
 ### An internal endpoint
 - [ ] Under `/internal/**`, `permitAll()`, **never** gateway-fronted; its isolation documented at the

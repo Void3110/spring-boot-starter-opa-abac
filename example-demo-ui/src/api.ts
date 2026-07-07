@@ -202,14 +202,11 @@ export function listUsers(page = 0, perPage = 100): Promise<Page<User>> {
   return request<Page<User>>(`/api/v1/users?page=${page}&perPage=${perPage}`)
 }
 
-export function listTeams(page = 0, perPage = 100): Promise<Page<Team>> {
-  return request<Page<Team>>(`/api/v1/teams?page=${page}&perPage=${perPage}`)
-}
-
-// perPage is hard-capped at 100 server-side, so anything that scans a whole collection (the team-
-// by-target lookup, the user directory, ensureUser's find-by-subject) must walk pages — a page-0
-// scan silently misses rows once the store outgrows one page. Slice-2 backlog: server-side
-// ?targetType/?targetId and ?subject filters make these walks one-shot.
+// perPage is hard-capped at 100 server-side, so scanning a whole collection means walking pages.
+// The single-resource lookups no longer walk: server-side exact-match filters (?subject on /users,
+// ?targetType+?targetId on /teams) answer them in one request (DIRECTORY-QUERY-FILTERS). The one
+// remaining walk is the member-picker directory (listAllUsers) — replaced by the UserDirectory
+// search in Slice 2.
 async function listAll<T>(fetchPage: (page: number) => Promise<Page<T>>): Promise<T[]> {
   const first = await fetchPage(0)
   const items = [...first.items]
@@ -227,8 +224,25 @@ export function listAllUsers(): Promise<User[]> {
   return listAll((p) => listUsers(p))
 }
 
-export function listAllTeams(): Promise<Team[]> {
-  return listAll((p) => listTeams(p))
+/**
+ * One-shot user lookup by IdP subject (the `?subject=` exact-match filter): a one-item page — 0 or
+ * 1 rows, never a page-walk, never a truncated miss.
+ */
+export async function findUserBySubject(subject: string): Promise<User | null> {
+  const page = await request<Page<User>>(
+    `/api/v1/users?subject=${encodeURIComponent(subject)}`,
+  )
+  return page.items[0] ?? null
+}
+
+/**
+ * One-shot lookup of the team governing a team-target (the `?targetType=&targetId=` exact-match
+ * pair filter, both-or-400): a one-item page — `items[0]` is the governing team or absent.
+ */
+export function lookupTeamByTarget(targetType: string, targetId: string): Promise<Page<Team>> {
+  return request<Page<Team>>(
+    `/api/v1/teams?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`,
+  )
 }
 
 export function listMembers(teamId: string, page = 0, perPage = 100): Promise<Page<Membership>> {
@@ -292,11 +306,10 @@ export function deleteRoleDefinition(teamId: string, code: string): Promise<void
 /**
  * Ensure the signed-in identity has a User profile row. Memberships (and team creation) key on the
  * user-service's own uuid, so a first-time identity must be provisioned before it can own anything.
- * Idempotent: finds the row by subject first (walking all pages), creates it only when missing.
+ * Idempotent: one exact `?subject=` lookup (non-truncating — no page-walk), create only on a miss.
  */
 export async function ensureUser(subject: string, displayName: string): Promise<User> {
-  const users = await listAllUsers()
-  const existing = users.find((u) => u.subject === subject)
+  const existing = await findUserBySubject(subject)
   if (existing) return existing
   return request<User>(`/api/v1/users`, {
     method: 'POST',

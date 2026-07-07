@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/api
   - area/spring
@@ -8,12 +8,14 @@ tags:
 
 # DIRECTORY-QUERY-FILTERS — server-side directory / query filters (the `listAll*`-killers)
 
-> **Status: Planning.** Adds server-side lookup filters to the user-service list endpoints so a
-> single-resource lookup is one request, not a whole-collection page-walk — plus two small correctness
-> fixes (a `produces` media-type gap and a bootstrap displayName upsert). Purely additive to
-> `example-user-management-service`; no library change, no external dependency.
-> Phase 7 of [[POC-ROADMAP]] (Slice 1 of the user-directory work; the Keycloak-admin `UserDirectory`
-> port is the separate Slice 2).
+> **✅ Shipped (2026-07-07, the autonomous run).** Added server-side lookup filters to the
+> user-service list endpoints — a single-resource lookup is now one request, not a whole-collection
+> page-walk — plus the two ride-along correctness fixes (the 204/`Accept` `produces` gap and the
+> bootstrap displayName upsert). Purely additive to `example-user-management-service`; no library
+> change, no external dependency. Proven by U1–U4 / I1–I4 (194 module tests green) and E1–E4 through
+> the gateway (the extended team matrix: 17 requests, 20 assertions, 0 failed); the SPA's `ensureUser`
+> and team-by-target lookups verified one-shot in the browser. Phase 7 of [[POC-ROADMAP]] (Slice 1 of
+> the user-directory work; the Keycloak-admin `UserDirectory` port is the separate Slice 2).
 
 ## Why this slice exists
 
@@ -55,7 +57,7 @@ silent truncation — which is also the clean foundation Slice 2's provisioning 
 | T2 | `?targetType`+`?targetId` filter on `GET /api/v1/teams` | ✅ DONE |
 | T3 | `produces` spec fix — 204 endpoints accept a JSON `Accept` | ✅ DONE |
 | T4 | Bootstrap `displayName` upsert (`/internal/bootstrap/users`) | ✅ DONE |
-| T5 | e2e (newman) + docs + SPA one-shot adoption + folder move | 📋 TODO |
+| T5 | e2e (newman) + docs + SPA one-shot adoption + folder move | ✅ DONE |
 
 ## Related
 
