@@ -51,7 +51,7 @@ silent truncation — which is also the clean foundation Slice 2's provisioning 
 
 | # | Title | Status |
 |---|---|---|
-| T1 | `?subject` filter on `GET /api/v1/users` | 📋 TODO |
+| T1 | `?subject` filter on `GET /api/v1/users` | ✅ DONE |
 | T2 | `?targetType`+`?targetId` filter on `GET /api/v1/teams` | 📋 TODO |
 | T3 | `produces` spec fix — 204 endpoints accept a JSON `Accept` | 📋 TODO |
 | T4 | Bootstrap `displayName` upsert (`/internal/bootstrap/users`) | 📋 TODO |

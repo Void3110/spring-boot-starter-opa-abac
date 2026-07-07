@@ -52,6 +52,15 @@ paths:
       summary: List users
       operationId: listUsers
       parameters:
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Exact-match filter on the IdP subject. When present, the result is a one-item page
+            (count 0 or 1) in the same envelope — an unmatched subject is an empty page, never 404.
+            Absent or blank, the full paged list is returned unchanged.
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
       responses:

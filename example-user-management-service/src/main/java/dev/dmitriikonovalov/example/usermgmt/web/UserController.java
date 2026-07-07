@@ -26,7 +26,15 @@ public class UserController implements UserApi {
     }
 
     @Override
-    public ResponseEntity<UserPage> listUsers(Integer page, Integer perPage) {
+    public ResponseEntity<UserPage> listUsers(String subject, Integer page, Integer perPage) {
+        // The ?subject exact-match lookup (DIRECTORY-QUERY-FILTERS): an additive branch — present
+        // and non-blank narrows to a one-item page (empty on a miss, never 404, never the full
+        // list); absent/blank falls through to the unchanged paged findAll.
+        if (subject != null && !subject.isBlank()) {
+            var match = PageDefaults.onePage(
+                    users.findBySubject(subject), PageDefaults.pageRequest(page, perPage));
+            return ResponseEntity.ok(UserMgmtMapper.toUserPage(match));
+        }
         var result = users.findAll(PageDefaults.pageRequest(page, perPage));
         return ResponseEntity.ok(UserMgmtMapper.toUserPage(result));
     }
