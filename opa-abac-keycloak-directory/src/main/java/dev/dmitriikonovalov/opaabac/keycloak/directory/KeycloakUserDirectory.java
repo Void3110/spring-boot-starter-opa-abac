@@ -25,8 +25,9 @@ import org.slf4j.LoggerFactory;
  * (which never even contacts Keycloak — the realm is not enumerable), zero matches. Outage vs
  * genuine-empty differ <em>only</em> in the WARN log — the caller and the UI cannot tell them apart
  * (the deliberate no-oracle property, §8). The {@code limit} is clamped here, in the implementation
- * ({@code <= 0} → {@value #DEFAULT_LIMIT}, {@code > }{@value #MAX_LIMIT} → {@value #MAX_LIMIT}), and
- * re-enforced on the response — a misbehaving server cannot widen the bound.
+ * (the contract's {@link UserDirectory#clamp} — default {@value UserDirectory#DEFAULT_LIMIT}, hard max
+ * {@value UserDirectory#MAX_LIMIT}), and re-enforced on the response — a misbehaving server cannot
+ * widen the bound.
  *
  * <h2>Disclosure</h2>
  * Maps only {@code id → subject} (the IdP {@code sub} — the join key the application provisions
@@ -40,8 +41,6 @@ import org.slf4j.LoggerFactory;
  */
 public final class KeycloakUserDirectory implements UserDirectory, AutoCloseable {
 
-    static final int DEFAULT_LIMIT = 20;
-    static final int MAX_LIMIT = 50;
     static final int TIMEOUT_MS = 3000;
 
     private static final Logger log = LoggerFactory.getLogger(KeycloakUserDirectory.class);
@@ -72,7 +71,7 @@ public final class KeycloakUserDirectory implements UserDirectory, AutoCloseable
             // Never enumerate the realm: a blank query is answered locally, no Keycloak call (§8).
             return List.of();
         }
-        int clamped = clamp(limit);
+        int clamped = UserDirectory.clamp(limit);
         try {
             return keycloak.realm(realm).users().search(query.strip(), 0, clamped).stream()
                     .limit(clamped) // re-enforce: the bound holds even if the server ignores `max`
@@ -97,13 +96,6 @@ public final class KeycloakUserDirectory implements UserDirectory, AutoCloseable
             }
         }
         return false;
-    }
-
-    private static int clamp(int limit) {
-        if (limit <= 0) {
-            return DEFAULT_LIMIT;
-        }
-        return Math.min(limit, MAX_LIMIT);
     }
 
     private static DirectoryUser toDirectoryUser(UserRepresentation user) {

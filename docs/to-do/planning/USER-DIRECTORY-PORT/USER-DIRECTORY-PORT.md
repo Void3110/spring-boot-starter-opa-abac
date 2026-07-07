@@ -51,7 +51,7 @@ the existing `POST /users`).
 | T1 | Port SPI: `UserDirectory` + `DirectoryUser` + `NoOpUserDirectory` (library) | ✅ DONE |
 | T2 | New module `opa-abac-keycloak-directory`: `KeycloakUserDirectory` impl | ✅ DONE |
 | T3 | Starter auto-config (`@ConditionalOnClass`+`@ConditionalOnProperty` + NoOp fallback) | ✅ DONE |
-| T4 | `search` endpoint under `/api/v1/users` (spec + controller + bounded-list DTO) | 📋 TODO |
+| T4 | `search` endpoint under `/api/v1/users` (spec + controller + bounded-list DTO) | ✅ DONE |
 | T5 | Realm config: `catalog-directory` client + `view-users` + deploy wiring | 📋 TODO |
 | T6 | e2e (newman) + SPA picker rewrite + docs (guide + ADR link) + folder move | 📋 TODO |
 

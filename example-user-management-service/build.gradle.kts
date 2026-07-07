@@ -20,6 +20,13 @@ dependencies {
     // feeds role definitions to.
     implementation(project(":opa-abac-spring-boot-starter"))
 
+    // The optional Keycloak user-directory module (USER-DIRECTORY-PORT, ADR 0020). runtimeOnly on
+    // purpose: the controller codes against the UserDirectory PORT only (no Keycloak type in app
+    // code); this dep just puts the impl on the runtime classpath so the starter's opt-in
+    // (opa.abac.directory.keycloak.enabled=true, set by the rig) can wire it. Without the flag the
+    // NoOp default answers empty — the endpoint works either way.
+    runtimeOnly(project(":opa-abac-keycloak-directory"))
+
     // The app declares its own security chain (the starter intentionally does not).
     implementation("org.springframework.boot:spring-boot-starter-security")
 

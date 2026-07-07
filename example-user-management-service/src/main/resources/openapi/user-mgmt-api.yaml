@@ -92,6 +92,44 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/users/search:
+    get:
+      tags: [User]
+      summary: Search the identity directory
+      operationId: searchUsers
+      description: >-
+        Searches the identity directory (every realm account, not just provisioned profiles) through
+        the library's UserDirectory port. Bearer-only, like the sibling list — finding a subject grants
+        nothing; the authorization boundary for acting on a result stays the team membership gate. The
+        result is a bounded plain list (top-`limit` matches), deliberately not a page envelope. Fail
+        closed, no-oracle: a blank `q`, zero matches, and a directory outage are all the same `200`
+        with empty `items` — the response never reveals directory state.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            The search text (a username/name prefix or fragment). Blank or absent returns empty items
+            without consulting the directory (the realm is not enumerable).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: >-
+            Maximum rows to return. Clamped by the implementation — absent or non-positive becomes 20,
+            anything above 50 becomes 50 (the hard max; the directory is never unbounded). The response
+            echoes the effective value.
+      responses:
+        '200':
+          description: The bounded list of matching directory accounts (possibly empty — see above).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryUserList'
+
   /api/v1/users/{userId}:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -723,6 +761,35 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+
+    DirectoryUserList:
+      type: object
+      required: [items, limit]
+      description: >-
+        A bounded plain list of identity-directory accounts — deliberately NOT the page envelope: no
+        count, no pages (the directory has no cheap server-side cursor; type to narrow instead).
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryUser'
+        limit:
+          type: integer
+          description: The effective (clamped) limit this search ran with.
+
+    DirectoryUser:
+      type: object
+      required: [subject, displayName]
+      description: >-
+        One identity-directory account — the disclosure ceiling: exactly the IdP subject and a
+        renderable display name, never anything wider (no email, roles, or attributes).
+      properties:
+        subject:
+          type: string
+          description: The IdP subject (Keycloak `sub`) — the join key a profile provisions against.
+        displayName:
+          type: string
+          description: A renderable name (the account's username; the subject when the directory holds none).
 
     Team:
       type: object

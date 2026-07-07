@@ -28,16 +28,35 @@ import java.util.List;
  */
 public interface UserDirectory {
 
+    /** The limit applied when the caller asks for none (or a non-positive value). */
+    int DEFAULT_LIMIT = 20;
+
+    /** The hard maximum — a directory search is never unbounded, whatever the caller asks. */
+    int MAX_LIMIT = 50;
+
     /**
      * Finds directory accounts matching {@code query}.
      *
      * @param query the search text (a username / name prefix or fragment); blank or {@code null} yields
      *     an empty list <em>without</em> a directory call
-     * @param limit the maximum number of rows to return — implementations clamp it ({@code <= 0} → the
-     *     default 20, {@code > 50} → the hard max 50; never unbounded)
+     * @param limit the maximum number of rows to return — implementations clamp it via {@link #clamp}
+     *     ({@code <= 0} → {@value #DEFAULT_LIMIT}, {@code > }{@value #MAX_LIMIT} →
+     *     {@value #MAX_LIMIT}; never unbounded)
      * @return the matching accounts, bounded by the clamped {@code limit}; <strong>empty on every error
      *     edge</strong> (unreachable / timeout / auth failure / blank query / no matches) — fail-closed,
      *     never throwing
      */
     List<DirectoryUser> search(String query, int limit);
+
+    /**
+     * The contract's limit clamp — one rule for implementations (bounding the directory call) and for
+     * HTTP boundaries (echoing the <em>effective</em> limit honestly): non-positive →
+     * {@value #DEFAULT_LIMIT}, above {@value #MAX_LIMIT} → {@value #MAX_LIMIT}, otherwise as asked.
+     */
+    static int clamp(int limit) {
+        if (limit <= 0) {
+            return DEFAULT_LIMIT;
+        }
+        return Math.min(limit, MAX_LIMIT);
+    }
 }
