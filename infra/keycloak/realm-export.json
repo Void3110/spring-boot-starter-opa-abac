@@ -270,6 +270,25 @@
       "realmRoles": [
         "catalog-viewer"
       ]
+    },
+    {
+      "username": "perf",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "perf@example.com",
+      "firstName": "Perf",
+      "lastName": "Load",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "perf",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor",
+        "catalog-viewer"
+      ]
     }
   ]
 }

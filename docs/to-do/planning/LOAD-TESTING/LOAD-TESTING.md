@@ -46,7 +46,7 @@ baseline.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Harness skeleton: `run-load.sh` + `perf` realm user + bulk fixtures + registry entries | 📋 TODO |
+| T1 | Harness skeleton: `run-load.sh` + `perf` realm user + bulk fixtures + registry entries | ✅ DONE |
 | T2 | Gate-overhead scenario + the two-pass guarded/baseline orchestration (the headline) | 📋 TODO |
 | T3 | Partial-eval list scenario + the ceiling ramp (knee detection) | 📋 TODO |
 | T4 | Enrichment fan-out scenario + `amplification.py` (Jaeger-attributed ratio) | 📋 TODO |
