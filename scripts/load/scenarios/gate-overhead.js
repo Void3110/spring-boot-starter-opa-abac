@@ -24,7 +24,9 @@ export const options = {
       rate: RATE,
       timeUnit: '1s',
       duration: `${DURATION}s`,
-      preAllocatedVUs: Math.max(10, Math.ceil(RATE / 2)),
+      // Fully pre-allocated: k6's lazy VU initialization drops iterations under transient
+      // latency spikes (VU-init lag, not true saturation) — drops must MEAN saturation.
+      preAllocatedVUs: Math.max(50, RATE * 3),
       maxVUs: Math.max(50, RATE * 3),
     },
   },

@@ -80,18 +80,49 @@ def per_trace_counts(trace: dict, service: str):
 
 
 def fetch_traces(args):
+    """Chunked fetch: many small windowed queries instead of one huge one.
+
+    These traces can be ENORMOUS (a 20-row enriched list page is ~2,000 spans; a 100-row page far
+    more), and a single high-limit /api/traces response over them is a 100MB+ payload that can
+    kill the Jaeger query service mid-read (observed live). So the window is split into slices,
+    each queried with a small limit, deduplicated by traceID, stopping once the sample target is
+    comfortably above the floor. A failed slice is skipped (logged) — the MIN_TRACES floor still
+    decides validity at the end.
+    """
     if args.input:
         with open(args.input) as f:
             return json.load(f)["data"]
-    query = urllib.parse.urlencode({
-        "service": args.service,
-        "operation": args.operation,
-        "start": args.window_start * 1_000_000,  # Jaeger wants microseconds
-        "end": args.window_end * 1_000_000,
-        "limit": args.limit,
-    })
-    with urllib.request.urlopen(f"{args.jaeger}/api/traces?{query}") as resp:
-        return json.load(resp)["data"]
+
+    target = args.min_traces + max(10, args.min_traces // 4)
+    slices = 30
+    span = max(1, (args.window_end - args.window_start) // slices)
+    seen, traces = set(), []
+    for i in range(slices):
+        s = args.window_start + i * span
+        e = min(args.window_end, s + span)
+        if s >= args.window_end:
+            break
+        query = urllib.parse.urlencode({
+            "service": args.service,
+            "operation": args.operation,
+            "start": s * 1_000_000,  # Jaeger wants microseconds
+            "end": e * 1_000_000,
+            "limit": 10,
+        })
+        try:
+            with urllib.request.urlopen(f"{args.jaeger}/api/traces?{query}", timeout=60) as resp:
+                batch = json.load(resp)["data"]
+        except (OSError, ValueError) as exc:
+            print(f"WARN: trace slice {i + 1}/{slices} failed ({exc}) — skipping", file=sys.stderr)
+            continue
+        for t in batch:
+            tid = t.get("traceID")
+            if tid and tid not in seen:
+                seen.add(tid)
+                traces.append(t)
+        if len(traces) >= target:
+            break
+    return traces
 
 
 def main() -> int:

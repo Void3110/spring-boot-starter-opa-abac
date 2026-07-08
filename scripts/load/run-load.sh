@@ -112,6 +112,22 @@ for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS LADDER_DURATION PHASE; do
 done
 [[ "$LADDER" =~ ^[0-9]+(,[0-9]+)*$ ]] || red "LADDER must be a comma-separated list of rates (got '$LADDER')."
 
+# The rig must end guarded on EVERY exit path, in every mode. A saturation flood can take a
+# dependency down with it (observed: OPA OOM-killed at the list-collapse point) — restart a dead
+# OPA on the way out. Full/fault modes override this trap with the heavier restore_guarded_on_exit
+# while a rig mutation is in flight, then re-arm it once restored.
+heal_rig_on_exit() {
+  local rc=$?
+  trap - EXIT
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${OPA_CONTAINER}\$" \
+      && ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${OPA_CONTAINER}\$"; then
+    echo "==> EXIT: OPA container is down (a saturation casualty?) — restarting it ..." >&2
+    docker start "$OPA_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  exit "$rc"
+}
+trap heal_rig_on_exit EXIT
+
 # --- preflight (abort red with the actionable command — never run on a wrong rig) ---
 preflight() {
   command -v k6 >/dev/null 2>&1 || red "k6 not found. Install with: brew install k6"
@@ -525,7 +541,7 @@ run_fault_timeline() { # $1 = opa | supplier-transient | supplier-down
   fi
   assert_gateway_posture
   RIG_FLIPPED=0
-  trap - EXIT
+  trap heal_rig_on_exit EXIT
   teardown_fixtures
 }
 
@@ -611,9 +627,10 @@ case "$MODE" in
     assert_gateway_posture
     mint_perf_token
     seed_fixtures
+    # The headline first, flip back-to-back around it: the two gate-overhead passes sit in the
+    # tightest possible window (comparability), and the delta is never hostage to a later
+    # guarded-only scenario reddening (e.g. enrichment saturating at the standard rate).
     run_scenario_pass "gate-overhead" "guarded"
-    run_scenario_pass "list-filter" "guarded"   # steady list latency (guarded-only scenario)
-    run_scenario_pass "enrichment" "guarded"    # the fan-out page (guarded-only scenario)
     # Pass 2 — baseline. From here until the restore completes, a red exit must restore guarded.
     trap restore_guarded_on_exit EXIT
     RIG_FLIPPED=1
@@ -627,8 +644,12 @@ case "$MODE" in
     assert_pod_state "true"
     assert_gateway_posture
     RIG_FLIPPED=0
-    trap - EXIT
+    trap heal_rig_on_exit EXIT
     compute_delta
+    # The guarded-only scenarios, on the restored rig (same canonical posture, asserted above).
+    mint_perf_token
+    run_scenario_pass "list-filter" "guarded"   # steady list latency
+    run_scenario_pass "enrichment" "guarded"    # the fan-out page
     teardown_fixtures
     ;;
   fault-opa)

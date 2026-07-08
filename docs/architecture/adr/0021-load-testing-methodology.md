@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/active
+  - status/shipped
   - type/decision
   - area/architecture
   - area/infra
@@ -8,7 +8,7 @@ tags:
 
 # ADR 0021 — Load-testing methodology (the pre-publish performance baseline)
 
-**Status:** Accepted (planned — Phase 7.2, [[LOAD-TESTING]])
+**Status:** Shipped (Phase 7.2, [[LOAD-TESTING]] — the baseline lives in the root `PERFORMANCE.md`)
 **Date:** 2026-07-07
 **Context tags:** k6, open-model load, gate-overhead delta, partial-eval ceiling, amplification ratio, fail-closed latency
 

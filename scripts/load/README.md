@@ -6,9 +6,6 @@ OPA → user-service), in the same idiom as the `scripts/postman/` e2e runners. 
 pinned in [ADR 0021](../../docs/architecture/adr/0021-load-testing-methodology.md) — report-only
 numbers, validity-only gates: **no invalid number is ever recorded**.
 
-> **Skeleton (T1).** The runner, fixtures, and identity are in place; the scenarios land ticket by
-> ticket (T2 gate-overhead, T3 ceiling, T4 amplification, T5 faults). Finalized with T6.
-
 ## Prerequisites
 
 ```bash
@@ -29,11 +26,11 @@ docker compose -p opa-abac-example -f infra/compose.keycloak.yaml up -d --force-
 cd scripts/load
 ./run-load.sh guarded          # preflight + seed + the guarded pass
 ./run-load.sh baseline         # the unguarded pass (rig must be ENABLE_OPA=0 — asserted, not trusted)
-./run-load.sh full             # guarded -> redeploy baseline -> measure -> RESTORE guarded   [T2]
-./run-load.sh ceiling          # the partial-eval list ladder (knee detection)                [T3]
-./run-load.sh fault-opa        # three-phase fault pass (docker pause on OPA)                 [T5]
-./run-load.sh fault-supplier-transient   # three-phase fault pass (B3 stub, transient)        [T5]
-./run-load.sh fault-supplier-down        # three-phase fault pass (B3 stub, down)             [T5]
+./run-load.sh full             # guarded -> redeploy baseline -> measure -> RESTORE guarded (the headline delta)
+./run-load.sh ceiling          # the partial-eval list ladder (knee detection, early stop)
+./run-load.sh fault-opa        # three-phase fault pass (docker pause on OPA)
+./run-load.sh fault-supplier-transient   # three-phase fault pass (B3 stub, transient)
+./run-load.sh fault-supplier-down        # three-phase fault pass (B3 stub, down)
 ```
 
 ## Knobs (env)
@@ -68,7 +65,23 @@ k6 absent), the **pod-state probe** (`docker exec` env assert — never trust-th
 leftover stub role-source or a paused OPA), the post-seed count assert, k6 validity thresholds
 (T2+), per-phase fault checks (T5), and the `MIN_TRACES` guard (T4).
 
-Raw k6 exports land in `results/` (gitignored).
+Raw artifacts land in `results/<run>/` (gitignored): k6 summary exports per rep, the
+gate-overhead delta, per-stage ladder summaries + `ceiling.json`, per-scenario amplification
+tables (JSON + markdown), and per-mode fault streams + phase tables.
+
+## Official-run protocol
+
+The published baseline lives in the root [`PERFORMANCE.md`](../../PERFORMANCE.md). To reproduce it:
+
+1. **Quiesce the machine** (no builds, no browser stress — the generator and the rig share it).
+2. **Fresh images, fresh rig, fresh trace store:** `./deploy.sh build` (+ the usermgmt image),
+   `docker compose -p opa-abac-example -f infra/compose.jaeger.yaml down -v`, then
+   `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`. The validity gates REFUSE a
+   degraded rig (a prior saturation event leaves thrashed JVMs / open breakers / a bloated trace
+   store) rather than record it — redeploy instead of retrying.
+3. `REPS=3 ./run-load.sh full`, then `ceiling`, then the three `fault-*` modes.
+4. Scenarios that exceed a measured ceiling get their steady numbers below the knee, explicitly
+   labeled (the official baseline used 5 req/s for list/enrichment — see PERFORMANCE.md §2/§3).
 
 ## Offline tests
 
