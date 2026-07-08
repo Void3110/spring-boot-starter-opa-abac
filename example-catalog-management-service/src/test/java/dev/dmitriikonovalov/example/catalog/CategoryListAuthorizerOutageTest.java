@@ -39,16 +39,20 @@ class CategoryListAuthorizerOutageTest {
     private final CategoryRepository categories = mock(CategoryRepository.class);
     private final RoleDefinitionSupplier supplier = mock(RoleDefinitionSupplier.class);
     private final AbacQueryService queryService = mock(AbacQueryService.class);
+
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<AbacQueryService> queryServiceProvider = mock(ObjectProvider.class);
     @SuppressWarnings("unchecked")
     private final ObjectProvider<SubtreeSpecResolver> subtreeProvider = mock(ObjectProvider.class);
 
     private final CategoryListAuthorizer authorizer =
-            new CategoryListAuthorizer(categories, supplier, queryService, subtreeProvider);
+            new CategoryListAuthorizer(categories, supplier, queryServiceProvider, subtreeProvider);
 
     private final Pageable pageable = PageRequest.of(0, 20, Sort.by("createdAt").ascending().and(Sort.by("id")));
 
     @BeforeEach
     void authenticate() {
+        when(queryServiceProvider.getIfAvailable()).thenReturn(queryService);
         AbacContext.Subject subject =
                 new AbacContext.Subject("user-1", List.of("catalog-editor"), Map.of());
         SecurityContextHolder.getContext().setAuthentication(new AbacAuthentication(subject));

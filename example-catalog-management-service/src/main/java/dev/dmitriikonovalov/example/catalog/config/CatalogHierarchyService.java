@@ -8,6 +8,7 @@ import dev.dmitriikonovalov.opaabac.core.VersionGuard;
 import dev.dmitriikonovalov.opaabac.core.Versioned;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.HierarchicalPathMaintainer;
 import dev.dmitriikonovalov.opaabac.data.model.AbstractHierarchicalEntity;
+import org.springframework.beans.factory.ObjectProvider;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.util.List;
@@ -27,15 +28,32 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CatalogHierarchyService {
 
-    private final HierarchicalPathMaintainer maintainer;
+    /** Absent when the starter is off (opa.abac.enabled=false, the unguarded-baseline rig): reads only. */
+    private final ObjectProvider<HierarchicalPathMaintainer> maintainerProvider;
     private final CategoryRepository categories;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public CatalogHierarchyService(HierarchicalPathMaintainer maintainer, CategoryRepository categories) {
-        this.maintainer = maintainer;
+    public CatalogHierarchyService(
+            ObjectProvider<HierarchicalPathMaintainer> maintainerProvider, CategoryRepository categories) {
+        this.maintainerProvider = maintainerProvider;
         this.categories = categories;
+    }
+
+    /**
+     * The library path maintainer, or a loud failure when the starter is off — the unguarded-baseline
+     * rig (ADR 0021 §2) serves reads; a write that needs path maintenance must never corrupt lineage by
+     * silently skipping it.
+     */
+    private HierarchicalPathMaintainer maintainer() {
+        HierarchicalPathMaintainer maintainer = maintainerProvider.getIfAvailable();
+        if (maintainer == null) {
+            throw new IllegalStateException(
+                    "hierarchy path maintenance requires the opa-abac starter (opa.abac.enabled=true); "
+                            + "the unguarded-baseline profile serves reads only");
+        }
+        return maintainer;
     }
 
     /**
@@ -52,7 +70,7 @@ public class CatalogHierarchyService {
     @Transactional
     public <T extends AbstractHierarchicalEntity> T createWithPath(T entity, UnaryOperator<T> save) {
         entity.abacParent().ifPresent(this::lockParentRow);
-        maintainer.assignPath(entity);
+        maintainer().assignPath(entity);
         return save.apply(entity);
     }
 
@@ -64,7 +82,7 @@ public class CatalogHierarchyService {
      */
     @Transactional
     public <T extends AbstractHierarchicalEntity> T assignPath(T entity) {
-        maintainer.assignPath(entity);
+        maintainer().assignPath(entity);
         return entity;
     }
 
@@ -139,8 +157,8 @@ public class CatalogHierarchyService {
         //    cycle). The catalog hierarchy spans TWO tables — category and product — so the descendant
         //    Products under the moved Categories must be rewritten too (a single-table UPDATE can't reach
         //    them). Both run in the SAME transaction; the first call validates the new parent + cycle.
-        maintainer.reparent("category", oldPath, newParent);
-        maintainer.reparentDescendantsInTable("product", oldPath, newParent);
+        maintainer().reparent("category", oldPath, newParent);
+        maintainer().reparentDescendantsInTable("product", oldPath, newParent);
 
         // 4) Re-read fresh (the persistence context was cleared), so the returned entity has the new path.
         return categories.findById(categoryId).orElseThrow();
