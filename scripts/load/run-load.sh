@@ -60,6 +60,8 @@ PG_CONTAINER="${PG_CONTAINER:-opa-abac-postgres}"
 UM_PG_CONTAINER="${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}"
 OPA_CONTAINER="${OPA_CONTAINER:-opa-abac-opa}"
 RESULTS_DIR="$SELF_DIR/results"
+APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
+APISIX_API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 
 # The load identity (registry-reserved — no matrix may bind or assert on it).
 PERF_USER="${PERF_USER:-perf}"
@@ -139,13 +141,31 @@ assert_pod_state() {
       || red "pod $pod resolves roles from '$v' (expected http://usermgmt:8080 — a leftover resilience-stub rig?).
   Redeploy guarded: ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]}"
   done
-  if [ "$expected" = "true" ]; then
-    docker ps --format '{{.Names}}' | grep -q "^${OPA_CONTAINER}\$" \
-      || red "OPA container '$OPA_CONTAINER' not running — the guarded pass needs it."
-    [ "$(docker inspect -f '{{.State.Paused}}' "$OPA_CONTAINER")" = "false" ] \
-      || red "OPA container '$OPA_CONTAINER' is PAUSED (a leftover fault run?). Unpause: docker unpause $OPA_CONTAINER"
-  fi
-  note "pod state asserted: OPA_ABAC_ENABLED=$expected on ${#PODS[@]} pod(s), role source = usermgmt"
+  # BOTH passes need a live, unpaused OPA: the app gate in guarded, the gateway's coarse
+  # allow-all opa plugin in both (the identical-gateway invariant, ADR 0021 §2).
+  docker ps --format '{{.Names}}' | grep -q "^${OPA_CONTAINER}\$" \
+    || red "OPA container '$OPA_CONTAINER' not running — both passes cross the gateway opa plugin."
+  [ "$(docker inspect -f '{{.State.Paused}}' "$OPA_CONTAINER")" = "false" ] \
+    || red "OPA container '$OPA_CONTAINER' is PAUSED (a leftover fault run?). Unpause: docker unpause $OPA_CONTAINER"
+  note "pod state asserted: OPA_ABAC_ENABLED=$expected on ${#PODS[@]} pod(s), role source = usermgmt, OPA up"
+}
+
+# Assert the GATEWAY posture — probed via the admin API, never trusted. The two-pass delta is only
+# valid if the gateway is byte-identical across passes: bearer validation (openid-connect) AND the
+# coarse allow-all opa plugin present in BOTH. `deploy.sh up` with ENABLE_OPA=0 drops the opa plugin
+# from the route, so the baseline deploy re-adds it via init-routes.sh (the same committed mechanism)
+# — this probe is what catches a pass where that rewire didn't happen.
+assert_gateway_posture() {
+  local route
+  route="$(curl -s --max-time 5 -H "X-API-KEY: $APISIX_API_KEY" "$APISIX_ADMIN/apisix/admin/routes/catalog-all" || true)"
+  [ -n "$route" ] || red "APISIX admin unreachable at $APISIX_ADMIN — cannot assert the gateway posture."
+  printf '%s' "$route" | grep -q '"openid-connect"' \
+    || red "the catalog-all route carries no openid-connect plugin — the rig must run ENABLE_OIDC=1."
+  printf '%s' "$route" | grep -q '"opa"' \
+    || red "the catalog-all route carries no gateway opa plugin — the posture would differ between passes.
+  Re-wire it: ENABLE_OIDC=1 ENABLE_OPA=1 ENABLE_USER_SERVICE=1 bash $REPO_ROOT/infra/apisix/init-routes.sh
+  (or run './run-load.sh full', which orchestrates both passes and keeps the gateway identical)"
+  note "gateway posture asserted: openid-connect + opa plugin on catalog-all"
 }
 
 # --- in-network token minting (issuer must match what APISIX validates) --------
@@ -261,27 +281,154 @@ DELETE FROM catalog WHERE id = '$LOAD_CATALOG_ID';
 SQL
 }
 
+# --- k6 orchestration (per scenario: discarded warm-up invocation, then REPS measured runs) -----
+# k6 thresholds are validity gates: a non-zero k6 exit aborts the run red (set -e) and nothing is
+# recorded — in full mode the EXIT trap below restores the guarded rig first.
+k6_run() { # $1 scenario file, $2 duration (s), $3 summary-export path
+  k6 run --quiet \
+    -e RATE="$RATE" -e DURATION="$2" \
+    -e GATEWAY="$GATEWAY" -e PERF_TOKEN="$PERF_TOKEN" -e LOAD_CATALOG_ID="$LOAD_CATALOG_ID" \
+    --summary-export "$3" \
+    "$SELF_DIR/scenarios/$1"
+}
+
+run_scenario_pass() { # $1 scenario basename (no .js), $2 pass name (guarded|baseline)
+  local scenario="$1" pass="$2" rep
+  note "[$pass] warm-up: $scenario at RATE=$RATE for ${WARMUP}s (discarded) ..."
+  k6_run "$scenario.js" "$WARMUP" "$RUN_DIR/$scenario-$pass-warmup.summary.json"
+  for rep in $(seq 1 "$REPS"); do
+    note "[$pass] measured run $rep/$REPS: $scenario at RATE=$RATE for ${DURATION}s ..."
+    k6_run "$scenario.js" "$DURATION" "$RUN_DIR/$scenario-$pass-rep$rep.summary.json"
+  done
+  note "[$pass] $scenario: $REPS measured run(s) recorded in $RUN_DIR/"
+}
+
+# --- the two-pass rig flip (full mode) — deploy.sh mechanisms only, always restored ------------
+# The canonical posture for both passes: ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 (+ defaults
+# ENABLE_TRACING=1), pods --pods N as found. Only ENABLE_OPA flips. Because deploy.sh with
+# ENABLE_OPA=0 also drops the gateway's coarse allow-all opa plugin from the route, the baseline
+# deploy re-runs init-routes.sh with ENABLE_OPA=1 — the gateway stays byte-identical across passes
+# (ADR 0021 §2: the app-side library gate is the ONLY variable); assert_gateway_posture verifies.
+deploy_rig() { # $1 = guarded | baseline
+  local shape="$1"
+  if [ "$shape" = "baseline" ]; then
+    note "redeploying the rig UNGUARDED (ENABLE_OPA=0 — pods only; the gateway keeps its opa plugin) ..."
+    ENABLE_OIDC=1 ENABLE_OPA=0 ENABLE_USER_SERVICE=1 "$REPO_ROOT/deploy.sh" up --pods "${#PODS[@]}"
+    note "re-wiring the gateway opa plugin (identical gateway across passes) ..."
+    ENABLE_OIDC=1 ENABLE_OPA=1 ENABLE_TRACING=1 ENABLE_USER_SERVICE=1 \
+      APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$APISIX_API_KEY" \
+      bash "$REPO_ROOT/infra/apisix/init-routes.sh"
+  else
+    note "deploying the guarded rig (canonical posture) ..."
+    ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 "$REPO_ROOT/deploy.sh" up --pods "${#PODS[@]}"
+  fi
+}
+
+# The fail-closed edge of the harness itself: a red run must NEVER leave the rig unguarded.
+# Armed before the baseline flip; disarmed after the explicit restore succeeds.
+RIG_FLIPPED=0
+restore_guarded_on_exit() {
+  local rc=$?
+  trap - EXIT
+  if [ "$RIG_FLIPPED" = "1" ]; then
+    echo "==> EXIT trap: the rig is unguarded — restoring the guarded posture ..." >&2
+    if ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 "$REPO_ROOT/deploy.sh" up --pods "${#PODS[@]}"; then
+      echo "==> EXIT trap: guarded rig restored." >&2
+    else
+      echo "FATAL: could not restore the guarded rig. Restore manually:" >&2
+      echo "  ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]}" >&2
+    fi
+  fi
+  exit "$rc"
+}
+
+# --- the delta block (full mode): REPS medians, guarded vs baseline, absolute + relative --------
+compute_delta() {
+  note "computing the gate-overhead delta (REPS=$REPS medians) ..."
+  python3 - "$RUN_DIR" "$REPS" "$RATE" "$DURATION" <<'PY'
+import json, statistics, sys, pathlib
+run_dir, reps, rate, duration = pathlib.Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4]
+STATS = ("med", "p(95)", "p(99)")
+
+def pass_stats(name):
+    per_stat = {}
+    for stat in STATS:
+        vals = []
+        for rep in range(1, reps + 1):
+            with open(run_dir / f"gate-overhead-{name}-rep{rep}.summary.json") as f:
+                vals.append(json.load(f)["metrics"]["http_req_duration"][stat])
+        per_stat[stat] = statistics.median(vals)
+    return per_stat
+
+guarded, baseline = pass_stats("guarded"), pass_stats("baseline")
+delta = {
+    "scenario": "gate-overhead", "rate_rps": int(rate), "duration_s": int(duration), "reps": reps,
+    "guarded_ms": guarded, "baseline_ms": baseline,
+    "delta_ms": {s: round(guarded[s] - baseline[s], 2) for s in STATS},
+    "delta_pct": {s: round((guarded[s] - baseline[s]) / baseline[s] * 100, 1) if baseline[s] else None
+                  for s in STATS},
+}
+out = run_dir / "gate-overhead-delta.json"
+out.write_text(json.dumps(delta, indent=2) + "\n")
+label = {"med": "p50", "p(95)": "p95", "p(99)": "p99"}
+print(f"\n=== gate-overhead delta (RATE={rate} req/s, {duration}s x REPS={reps}, medians) ===")
+print(f"{'':6} {'guarded':>10} {'baseline':>10} {'delta':>10} {'delta%':>8}")
+for s in STATS:
+    print(f"{label[s]:6} {guarded[s]:9.2f}ms {baseline[s]:9.2f}ms {delta['delta_ms'][s]:9.2f}ms "
+          f"{delta['delta_pct'][s]:7.1f}%")
+print(f"written: {out}\n")
+PY
+}
+
 # --- modes ---------------------------------------------------------------------
-mkdir -p "$RESULTS_DIR"
+RUN_ID="$(date +%Y%m%d-%H%M%S)-$MODE"
+RUN_DIR="$RESULTS_DIR/$RUN_ID"
+mkdir -p "$RUN_DIR"
 
 case "$MODE" in
   guarded)
     preflight
     assert_pod_state "true"
+    assert_gateway_posture
     mint_perf_token
     seed_fixtures
-    note "harness skeleton (T1): scenarios land with T2 — preflight, seed, and teardown proven."
+    run_scenario_pass "gate-overhead" "guarded"
     teardown_fixtures
     ;;
   baseline)
     preflight
     assert_pod_state "false"   # aborts red BEFORE any load if the rig is guarded
+    assert_gateway_posture
     mint_perf_token
     seed_fixtures
-    note "harness skeleton (T1): scenarios land with T2 — preflight, seed, and teardown proven."
+    run_scenario_pass "gate-overhead" "baseline"
     teardown_fixtures
     ;;
   full)
-    red "mode 'full' (two-pass guarded/baseline orchestration) lands with T2 — not implemented yet."
+    preflight
+    # Pass 1 — guarded, on the canonical posture (deployed, not assumed: the delta is only valid
+    # when both passes run the same flag set, so full owns the rig shape for its duration).
+    deploy_rig "guarded"
+    assert_pod_state "true"
+    assert_gateway_posture
+    mint_perf_token
+    seed_fixtures
+    run_scenario_pass "gate-overhead" "guarded"
+    # Pass 2 — baseline. From here until the restore completes, a red exit must restore guarded.
+    trap restore_guarded_on_exit EXIT
+    RIG_FLIPPED=1
+    deploy_rig "baseline"
+    assert_pod_state "false"
+    assert_gateway_posture
+    mint_perf_token
+    run_scenario_pass "gate-overhead" "baseline"
+    # Restore the guarded rig (also on any red path above, via the trap).
+    deploy_rig "guarded"
+    assert_pod_state "true"
+    assert_gateway_posture
+    RIG_FLIPPED=0
+    trap - EXIT
+    compute_delta
+    teardown_fixtures
     ;;
 esac

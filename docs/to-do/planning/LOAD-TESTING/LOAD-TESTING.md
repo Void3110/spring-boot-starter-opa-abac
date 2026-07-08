@@ -47,7 +47,7 @@ baseline.
 | # | Title | Status |
 |---|---|---|
 | T1 | Harness skeleton: `run-load.sh` + `perf` realm user + bulk fixtures + registry entries | ✅ DONE |
-| T2 | Gate-overhead scenario + the two-pass guarded/baseline orchestration (the headline) | 📋 TODO |
+| T2 | Gate-overhead scenario + the two-pass guarded/baseline orchestration (the headline) | ✅ DONE |
 | T3 | Partial-eval list scenario + the ceiling ramp (knee detection) | 📋 TODO |
 | T4 | Enrichment fan-out scenario + `amplification.py` (Jaeger-attributed ratio) | 📋 TODO |
 | T5 | Resilience-under-fault passes (B3 stub modes + OPA `docker pause`) | 📋 TODO |
