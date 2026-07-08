@@ -297,14 +297,48 @@ k6_run() { # $1 scenario file, $2 duration (s), $3 summary-export path, [$4 rate
 }
 
 run_scenario_pass() { # $1 scenario basename (no .js), $2 pass name (guarded|baseline)
-  local scenario="$1" pass="$2" rep
+  local scenario="$1" pass="$2" rep window_start window_end
   note "[$pass] warm-up: $scenario at RATE=$RATE for ${WARMUP}s (discarded) ..."
   k6_run "$scenario.js" "$WARMUP" "$RUN_DIR/$scenario-$pass-warmup.summary.json"
+  window_start="$(date +%s)"
   for rep in $(seq 1 "$REPS"); do
     note "[$pass] measured run $rep/$REPS: $scenario at RATE=$RATE for ${DURATION}s ..."
     k6_run "$scenario.js" "$DURATION" "$RUN_DIR/$scenario-$pass-rep$rep.summary.json"
   done
+  window_end="$(date +%s)"
   note "[$pass] $scenario: $REPS measured run(s) recorded in $RUN_DIR/"
+  # The amplification ratio is a guarded-pass-only metric (ADR 0021 §6), attributed over exactly
+  # this scenario's measured window (scenarios run sequentially, so windows never overlap).
+  if [ "$pass" = "guarded" ]; then
+    run_amplification "$scenario" "$window_start" "$window_end"
+  fi
+}
+
+scenario_operation() { # the catalog server-span name Jaeger indexes the scenario's traces under
+  case "$1" in
+    gate-overhead) echo "GET /api/v1/catalogs/{catalogId}" ;;
+    list-filter|enrichment) echo "GET /api/v1/catalogs/{catalogId}/categories" ;;
+    *) red "no Jaeger operation mapping for scenario '$1'" ;;
+  esac
+}
+
+run_amplification() { # $1 scenario, $2 window start (epoch s), $3 window end
+  local scenario="$1" offered floor
+  # The sample floor self-scales: half the offered requests, capped at the ADR's ~500, floored at
+  # 20 for short smokes. Below the floor the window is INVALID (exit 2) — never extrapolated.
+  offered=$(( RATE * DURATION * REPS ))
+  floor=$(( offered / 2 ))
+  [ "$floor" -gt 500 ] && floor=500
+  [ "$floor" -lt 20 ] && floor=20
+  sleep 5   # let the OTEL batch exporters flush the tail of the window into Jaeger
+  note "amplification: attributing '$scenario' traces (floor $floor) ..."
+  python3 "$SELF_DIR/amplification.py" \
+    --scenario "$scenario" \
+    --operation "$(scenario_operation "$scenario")" \
+    --window-start "$2" --window-end "$(( $3 + 5 ))" \
+    --min-traces "$floor" \
+    --out "$RUN_DIR/$scenario-amplification" \
+    || red "amplification for '$scenario': invalid trace window — nothing recorded."
 }
 
 # --- the ceiling ladder (ceiling mode) — knee per ADR 0021 §5, evaluated by knee.py -------------
@@ -448,6 +482,7 @@ case "$MODE" in
     seed_fixtures
     run_scenario_pass "gate-overhead" "guarded"
     run_scenario_pass "list-filter" "guarded"
+    run_scenario_pass "enrichment" "guarded"
     teardown_fixtures
     ;;
   ceiling)
@@ -479,6 +514,7 @@ case "$MODE" in
     seed_fixtures
     run_scenario_pass "gate-overhead" "guarded"
     run_scenario_pass "list-filter" "guarded"   # steady list latency (guarded-only scenario)
+    run_scenario_pass "enrichment" "guarded"    # the fan-out page (guarded-only scenario)
     # Pass 2 — baseline. From here until the restore completes, a red exit must restore guarded.
     trap restore_guarded_on_exit EXIT
     RIG_FLIPPED=1

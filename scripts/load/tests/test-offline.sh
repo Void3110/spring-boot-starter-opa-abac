@@ -40,6 +40,21 @@ else
   check "malformed summary lands red (exit 2)" "2" "2"
 fi
 
+
+echo "== U3: amplification.py against the synthetic trace fixtures =="
+AMP="python3 $LOAD_DIR/amplification.py"
+out="$($AMP --scenario gate-overhead --input "$SELF_DIR/amplification-cases/gate-overhead-clean.json" --min-traces 5)"
+check "clean gate-overhead attributes within bounds" "yes" "$(printf '%s' "$out" | grep -q 'resolve | 1 | 1 | 1 | within' && printf '%s' "$out" | grep -q 'decide | 1 | 1 | 1 | within' && echo yes || echo no)"
+check "the markdown table renders" "yes" "$(printf '%s' "$out" | grep -q '| outbound op | pinned bound |' && echo yes || echo no)"
+out="$($AMP --scenario enrichment --input "$SELF_DIR/amplification-cases/enrichment-exceeded.json" --min-traces 5)"
+check "per-row resolve scaling lands as an EXCEEDED finding" "yes" "$(printf '%s' "$out" | grep -q 'resolve.*EXCEEDED' && printf '%s' "$out" | grep -q 'FINDINGS' && echo yes || echo no)"
+check "batch-eval above its pinned bound is EXCEEDED too" "yes" "$(printf '%s' "$out" | grep -q 'batch-eval | 1 | 2 | 2 | EXCEEDED' && echo yes || echo no)"
+if $AMP --scenario gate-overhead --input "$SELF_DIR/amplification-cases/gate-overhead-clean.json" --min-traces 50 >/dev/null 2>&1; then
+  check "MIN_TRACES floor aborts red on a thin window (exit 2)" "2" "0"
+else
+  check "MIN_TRACES floor aborts red on a thin window (exit 2)" "2" "2"
+fi
+
 echo
 if [ "$FAILURES" -gt 0 ]; then
   echo "OFFLINE TESTS RED: $FAILURES failure(s)" >&2
