@@ -649,6 +649,10 @@ Two of the four tools are **upstream** (others' work we adopt); two are **this r
 - **deep-review** — the phase-④ review harness; its portable form is
   [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). Built by composing the Anthropic
   patterns above, tuned to this repo's invariants.
+- **security-review** — the *whole-surface* counterpart to deep-review: not diff-scoped but a fan-out over
+  the real attack surface, adversarially verified and **live-probed against the running rig**, written as
+  a dated report (report-only; fixes are a follow-up branch). Portable form:
+  [`SECURITY-REVIEW-SKILL-TEMPLATE.md`](../code-review/SECURITY-REVIEW-SKILL-TEMPLATE.md).
 - **autonomous-implement** (template only, for now) — the phase-③ runner discipline as a skill wrapper,
   for repos that outgrow pasting the bare §4 prompt. Portable form:
   [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md).
@@ -701,6 +705,9 @@ automate; revising the skeleton is a human, ADR-worthy decision.)
   autonomous run, before push/PR/merge.
 - `docs/code-review/DEEP-REVIEW-TEMPLATE.md` — the vendor-neutral, adaptable version of the review
   harness (for adopting this flow in another project).
+- `docs/code-review/SECURITY-REVIEW-SKILL-TEMPLATE.md` — the vendor-neutral whole-surface *security*
+  review harness (fan-out → adversarial verify → live probe → cross-angle → dated report); the
+  pre-publish / post-slice counterpart to the diff-scoped deep-review.
 
 **The tooling (§8) — upstream:**
 - **Mulch** — [`github.com/jayminwest/mulch`](https://github.com/jayminwest/mulch) (Jaymin West).
