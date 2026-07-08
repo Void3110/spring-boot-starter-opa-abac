@@ -10,7 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -57,18 +57,18 @@ class SubtreeSpecResolverTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Specification<AbacDataObject> stubSpec() {
-        return (Specification<AbacDataObject>) mock(Specification.class);
+    private static Specification<AbacResource> stubSpec() {
+        return (Specification<AbacResource>) mock(Specification.class);
     }
 
     @Test // U1 — role on the governing root grants the verb AND the relation is inheritable → Optional.of
     void granted_andInheritable_widens() {
-        Specification<AbacDataObject> subtree = stubSpec();
+        Specification<AbacResource> subtree = stubSpec();
         when(supplier.lookup(USER, "catalog", CATALOG_ID))
                 .thenReturn(Optional.of(catalogGrantsRead()));
-        when(ancestorResolver.<AbacDataObject>subtreeOf("catalog", CATALOG_ID)).thenReturn(subtree);
+        when(ancestorResolver.<AbacResource>subtreeOf("catalog", CATALOG_ID)).thenReturn(subtree);
 
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
 
         assertThat(result).containsSame(subtree);
@@ -79,7 +79,7 @@ class SubtreeSpecResolverTest {
     void roleResolvedOnGoverningRoot_once() {
         when(supplier.lookup(USER, "catalog", CATALOG_ID))
                 .thenReturn(Optional.of(catalogGrantsRead()));
-        when(ancestorResolver.<AbacDataObject>subtreeOf(anyString(), anyString())).thenReturn(stubSpec());
+        when(ancestorResolver.<AbacResource>subtreeOf(anyString(), anyString())).thenReturn(stubSpec());
 
         resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
 
@@ -90,7 +90,7 @@ class SubtreeSpecResolverTest {
     @Test // U2 — relation NOT declared inheritable (default-off) → empty, no widening, no resolver call
     void notInheritable_isEmpty() {
         // "widget" is not in the inheritance declaration at all.
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "widget", CATALOG_ROOT, "read");
 
         assertThat(result).isEmpty();
@@ -102,7 +102,7 @@ class SubtreeSpecResolverTest {
     void inheritableButNotFromThisRootType_isEmpty() {
         // category inherits from catalog; a product-root would not be an inheritable ancestor of a category.
         ParentRef productRoot = new ParentRef("product", "p-1");
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", productRoot, "read");
 
         assertThat(result).isEmpty();
@@ -113,7 +113,7 @@ class SubtreeSpecResolverTest {
     void noRoleDefinition_isEmpty() {
         when(supplier.lookup(USER, "catalog", CATALOG_ID)).thenReturn(Optional.empty());
 
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
 
         assertThat(result).isEmpty();
@@ -127,7 +127,7 @@ class SubtreeSpecResolverTest {
                 new RoleDefinition("r", Map.of(), Map.of("catalog", List.of("write")));
         when(supplier.lookup(USER, "catalog", CATALOG_ID)).thenReturn(Optional.of(catalogWriteOnly));
 
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
 
         assertThat(result).isEmpty();
@@ -149,7 +149,7 @@ class SubtreeSpecResolverTest {
         when(supplier.lookup(anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("supplier down"));
 
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
 
         assertThat(result).isEmpty();
@@ -163,7 +163,7 @@ class SubtreeSpecResolverTest {
         when(supplier.lookup(anyString(), anyString(), anyString()))
                 .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
 
-        Optional<Specification<AbacDataObject>> result =
+        Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");
 
         assertThat(result).isEmpty();
@@ -186,10 +186,10 @@ class SubtreeSpecResolverTest {
     @Test // even a granted+inheritable resolution that throws inside subtreeOf is safe — Optional present but
     // subtreeOf is itself fail-closed (empty predicate). Here we just confirm the resolver propagates the spec.
     void granted_propagatesResolverSpec() {
-        Specification<AbacDataObject> subtree = stubSpec();
+        Specification<AbacResource> subtree = stubSpec();
         when(supplier.lookup(USER, "catalog", CATALOG_ID))
                 .thenReturn(Optional.of(catalogGrantsRead()));
-        when(ancestorResolver.<AbacDataObject>subtreeOf(any(), any())).thenReturn(subtree);
+        when(ancestorResolver.<AbacResource>subtreeOf(any(), any())).thenReturn(subtree);
         assertThat(resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read")).containsSame(subtree);
     }
 }

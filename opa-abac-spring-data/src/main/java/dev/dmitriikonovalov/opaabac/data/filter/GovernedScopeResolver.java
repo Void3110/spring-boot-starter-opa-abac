@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.data.filter;
 
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
@@ -58,7 +58,7 @@ public interface GovernedScopeResolver {
      * @param <T>          the queried entity type
      * @return the governed-id {@link Specification}; never {@code null}, never throwing
      */
-    default <T extends AbacDataObject> Specification<T> governedScope(String subject, String resourceType) {
+    default <T extends AbacResource> Specification<T> governedScope(String subject, String resourceType) {
         List<UUID> ids = governedIds(subject, resourceType);
         if (ids.isEmpty()) {
             return denyAll();
@@ -75,7 +75,7 @@ public interface GovernedScopeResolver {
      * @param <T> the queried entity type
      * @return a {@link Specification} whose predicate is always false
      */
-    static <T extends AbacDataObject> Specification<T> denyAll() {
+    static <T extends AbacResource> Specification<T> denyAll() {
         return (root, query, cb) -> cb.disjunction(); // an empty OR → false → selects no rows
     }
 }

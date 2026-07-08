@@ -3,7 +3,7 @@ package dev.dmitriikonovalov.example.catalog.config;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,7 +35,7 @@ public class CatalogResourceResolver implements AbacResourceResolver {
     }
 
     @Override
-    public Optional<AbacDataObject> resolve(String resourceType, String resourceId) {
+    public Optional<AbacResource> resolve(String resourceType, String resourceId) {
         UUID id;
         try {
             id = UUID.fromString(resourceId);

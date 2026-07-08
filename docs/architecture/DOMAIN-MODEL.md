@@ -29,7 +29,7 @@ library provides two `@MappedSuperclass` bases — and the *secure* one is autho
 AbstractAuditableEntity   (id + audit + @Version)          — plain, no tags
         ▲
         │ extends
-AbstractSecuredEntity      (+ JSONB tags, implements AbacDataObject)  — authorizable
+AbstractSecuredEntity      (+ JSONB tags, implements AbacResource)  — authorizable
         ▲
         │ extends
 CatalogEntity / CategoryEntity / ProductEntity   (declare abacResourceType())
@@ -52,7 +52,7 @@ A `@MappedSuperclass` with `@EntityListeners(AuditingEntityListener.class)`, imp
 `Hibernate.getClass`) so a lazy proxy equals its loaded entity, and never use mutable fields.
 
 > **Why plain `UUID` (not a typed-id value object):** the ABAC layer (`AbacContext`,
-> `AbacDataObject`) is String/`UUID`-based and no current or planned feature needs a typed id, so a
+> `AbacResource`) is String/`UUID`-based and no current or planned feature needs a typed id, so a
 > wrapper would be ceremony with no payoff. It can be reintroduced additively if a future feature
 > ever requires it.
 
@@ -67,7 +67,7 @@ Extends the plain base and adds two things:
    @Column(name = "tags", columnDefinition = "jsonb", nullable = false)
    private ResourceTags tags = ResourceTags.empty();
    ```
-2. **`AbacDataObject`** (from `opa-abac-core`) — so the framework can build an
+2. **`AbacResource`** (from `opa-abac-core`) — so the framework can build an
    `AbacContext.Resource` with no per-entity glue:
    - `abacResourceType()` — **abstract**; each entity declares its type.
    - `abacResourceId()` — default `getId().toString()`.

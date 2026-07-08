@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.Team;
 import dev.dmitriikonovalov.example.usermgmt.security.TeamEnrichable;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -98,7 +98,7 @@ class TeamEnrichmentAdviceTest {
     }
 
     /** The resolved snapshot the cache hands back for a team. */
-    record ResolvedTeam(String id) implements AbacDataObject {
+    record ResolvedTeam(String id) implements AbacResource {
         @Override public String abacResourceType() { return "team"; }
         @Override public String abacResourceId() { return id; }
         @Override public Map<String, Object> abacAttributes() { return Map.of(); }

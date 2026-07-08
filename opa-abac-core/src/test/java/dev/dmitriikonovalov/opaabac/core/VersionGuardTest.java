@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
 /** Unit tests for {@link VersionGuard} (QA cases U1–U3) — the decision-to-action version binding. */
 class VersionGuardTest {
 
-    /** A resolved resource as the gate sees it: both an {@link AbacDataObject} and {@link Versioned}. */
-    private record Resource(String type, String id, Integer version) implements AbacDataObject, Versioned {
+    /** A resolved resource as the gate sees it: both an {@link AbacResource} and {@link Versioned}. */
+    private record Resource(String type, String id, Integer version) implements AbacResource, Versioned {
         @Override
         public String abacResourceType() {
             return type;
@@ -79,7 +79,7 @@ class VersionGuardTest {
                 .hasMessageContaining("category/c-1");
     }
 
-    @Test // U2 — a non-AbacDataObject snapshot falls back to the class name in the message
+    @Test // U2 — a non-AbacResource snapshot falls back to the class name in the message
     void describesBareVersionedByClassName() {
         assertThatThrownBy(() -> VersionGuard.requireUnchanged(new BareVersioned(1), new BareVersioned(2)))
                 .isInstanceOf(VersionConflictException.class)

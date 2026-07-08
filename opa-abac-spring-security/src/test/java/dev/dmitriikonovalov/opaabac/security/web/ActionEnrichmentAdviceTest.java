@@ -3,7 +3,7 @@ package dev.dmitriikonovalov.opaabac.security.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
@@ -268,7 +268,7 @@ class ActionEnrichmentAdviceTest {
     }
 
     /** The resolved snapshot the cache hands back (carries the attributes the verdict sees). */
-    record ResolvedCategory(String id) implements AbacDataObject {
+    record ResolvedCategory(String id) implements AbacResource {
         @Override public String abacResourceType() { return "category"; }
         @Override public String abacResourceId() { return id; }
         @Override public Map<String, Object> abacAttributes() { return Map.of("region", "emea"); }

@@ -812,7 +812,7 @@ class OpaAbacAutoConfigurationTest {
         }
     }
 
-    record EnrichmentRow(String id) implements dev.dmitriikonovalov.opaabac.core.AbacDataObject {
+    record EnrichmentRow(String id) implements dev.dmitriikonovalov.opaabac.core.AbacResource {
         @Override
         public String abacResourceType() {
             return "category";

@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for the additive ancestor chain on {@link AbacContext.Resource} and the
- * {@link AbacDataObject#abacParent()} default (QA cases U2–U4). The chain serializes as
+ * {@link AbacResource#abacParent()} default (QA cases U2–U4). The chain serializes as
  * {@code input.resource.ancestors}, root-first and leaf-excluded, and is <b>omitted when empty</b> so a
  * non-hierarchical resource serializes byte-for-byte as before.
  */
@@ -64,9 +64,9 @@ class AbacContextResourceTest {
                 .containsExactlyInAnyOrder("type", "id", "attributes");
     }
 
-    @Test // U4 — abacParent() defaults to empty on a plain AbacDataObject
+    @Test // U4 — abacParent() defaults to empty on a plain AbacResource
     void abacParentDefaultsToEmpty() {
-        AbacDataObject plain = new AbacDataObject() {
+        AbacResource plain = new AbacResource() {
             @Override
             public String abacResourceType() {
                 return "catalog";
@@ -82,7 +82,7 @@ class AbacContextResourceTest {
 
     @Test // U4 — a hierarchical object can declare its one hop
     void abacParentCanDeclareOneHop() {
-        AbacDataObject child = new AbacDataObject() {
+        AbacResource child = new AbacResource() {
             @Override
             public String abacResourceType() {
                 return "product";

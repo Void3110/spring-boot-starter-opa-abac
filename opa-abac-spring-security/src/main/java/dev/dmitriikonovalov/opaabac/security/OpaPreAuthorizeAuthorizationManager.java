@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
@@ -34,7 +34,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * Enforces {@link OpaPreAuthorize} as an {@link AuthorizationManager} over a {@link MethodInvocation}.
  *
  * <p>For an annotated method it: reads the {@link AbacContext.Subject} from the current
- * {@link AbacAuthentication}; resolves the resource (an {@link AbacDataObject} via {@code resource()},
+ * {@link AbacAuthentication}; resolves the resource (an {@link AbacResource} via {@code resource()},
  * else type/id via SpEL); looks up the caller's {@link RoleDefinition}; builds the single
  * {@link AbacContext}; and asks the {@link OpaClient}.
  *
@@ -179,11 +179,11 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         StandardEvaluationContext spelContext = new StandardEvaluationContext();
         bindArguments(spelContext, invocation);
 
-        // 1) An AbacDataObject named by resource() wins (the caller holds the instance). Decision
+        // 1) An AbacResource named by resource() wins (the caller holds the instance). Decision
         //    inputs are unchanged by resolution support; the instance is cached on allow.
         if (!annotation.resource().isBlank()) {
             Object value = evaluate(annotation.resource(), spelContext);
-            if (value instanceof AbacDataObject dataObject) {
+            if (value instanceof AbacResource dataObject) {
                 AbacContext.Resource resource = new AbacContext.Resource(
                         dataObject.abacResourceType(), dataObject.abacResourceId(), dataObject.abacAttributes());
                 return withRoleResourceOverride(
@@ -259,7 +259,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      * collapses the chain — and must never be confused in either direction.
      */
     private ResolvedCheck resolveInstance(String type, String id) {
-        AbacDataObject instance = resolutionSupport.resolver().resolve(type, id).orElse(null);
+        AbacResource instance = resolutionSupport.resolver().resolve(type, id).orElse(null);
         if (instance == null) {
             log.debug("OPA pre-authorize denied (fail-closed): resource '{}/{}' did not resolve", type, id);
             return null;

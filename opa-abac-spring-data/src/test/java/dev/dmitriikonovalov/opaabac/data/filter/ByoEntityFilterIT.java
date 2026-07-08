@@ -3,7 +3,7 @@ package dev.dmitriikonovalov.opaabac.data.filter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.Condition;
 import dev.dmitriikonovalov.opaabac.core.Conjunction;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
@@ -41,7 +41,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * The <strong>bring-your-own-entity</strong> contract proof (pre-publish API polish): the data-filter
  * must work for an entity that does <em>not</em> extend {@code AbstractSecuredEntity} — it only
- * implements the interfaces ({@link AbacDataObject} + {@link Taggable}) and maps its own JSONB tags
+ * implements the interfaces ({@link AbacResource} + {@link Taggable}) and maps its own JSONB tags
  * column. The load-bearing cut: the filter addresses the JPA <em>attribute</em>
  * {@link Taggable#TAGS_ATTRIBUTE}, never the DB column — so this fixture deliberately maps the
  * attribute {@code tags} onto a differently-named column ({@code custom_tags}). Before the
@@ -162,7 +162,7 @@ class ByoEntityFilterIT {
 
     @Entity
     @Table(name = "byo_tagged_entity")
-    static class ByoTaggedEntity implements AbacDataObject, Taggable {
+    static class ByoTaggedEntity implements AbacResource, Taggable {
 
         @Id
         private UUID id;

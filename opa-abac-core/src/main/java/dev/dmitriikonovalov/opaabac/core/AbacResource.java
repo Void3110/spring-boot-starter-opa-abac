@@ -7,7 +7,7 @@ import java.util.Optional;
  * A domain object that can be authorized: exposes its ABAC resource type, id, and attributes
  * so the framework can build an {@link AbacContext.Resource} without coupling to the domain type.
  */
-public interface AbacDataObject {
+public interface AbacResource {
 
     String abacResourceType();
 

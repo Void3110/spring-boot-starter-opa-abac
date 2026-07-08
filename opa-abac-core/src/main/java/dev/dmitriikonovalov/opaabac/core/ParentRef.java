@@ -6,7 +6,7 @@ import java.util.Objects;
  * A neutral reference to a resource's immediate parent — its ABAC {@code (type, id)}.
  *
  * <p>This is the declarative source of truth for <em>one hop</em> up a resource hierarchy: a
- * {@link AbacDataObject} returns its immediate parent via {@link AbacDataObject#abacParent()}, and the
+ * {@link AbacResource} returns its immediate parent via {@link AbacResource#abacParent()}, and the
  * framework walks those hops to build the full ancestor chain that travels to OPA as
  * {@code input.resource.ancestors}. It carries no Spring or persistence concern — it is a plain value
  * type so {@code opa-abac-core} stays framework-agnostic.

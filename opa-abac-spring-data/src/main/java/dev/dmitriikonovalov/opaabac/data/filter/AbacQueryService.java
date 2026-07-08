@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.data.filter;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
@@ -136,10 +136,10 @@ public class AbacQueryService {
      * @param scope        the caller's own scoping (e.g. {@code catalogId = ?}); AND-ed with the residual.
      *                     May be {@code null} for "no extra scope".
      * @param queryContext the subject + action + resourceType (resource UNKNOWN — it is the row)
-     * @param <T>          the entity type (an {@link AbacDataObject}, so per-row contexts can be built)
+     * @param <T>          the entity type (an {@link AbacResource}, so per-row contexts can be built)
      * @return the authorized rows, never {@code null}
      */
-    public <T extends AbacDataObject> List<T> findAuthorized(
+    public <T extends AbacResource> List<T> findAuthorized(
             JpaSpecificationExecutor<T> repo, Specification<T> scope, AbacContext queryContext) {
         return findAuthorized(repo, scope, queryContext, null);
     }
@@ -158,7 +158,7 @@ public class AbacQueryService {
      *     widening (the tag-only path). A failed resolution should arrive as {@code null} or an empty
      *     (always-false) predicate — never wider.
      */
-    public <T extends AbacDataObject> List<T> findAuthorized(
+    public <T extends AbacResource> List<T> findAuthorized(
             JpaSpecificationExecutor<T> repo,
             Specification<T> scope,
             AbacContext queryContext,
@@ -230,7 +230,7 @@ public class AbacQueryService {
      *     same total)
      * @throws IllegalArgumentException if {@code pageable} carries no sort
      */
-    public <T extends AbacDataObject> Page<T> findAuthorized(
+    public <T extends AbacResource> Page<T> findAuthorized(
             JpaSpecificationExecutor<T> repo,
             Specification<T> scope,
             AbacContext queryContext,
@@ -331,29 +331,29 @@ public class AbacQueryService {
      * never written, keeping the cache an authorized-snapshot store consistent with the gate's allow-only
      * write. Caches the same instance the query returned → no double-load, no attribute drift.
      */
-    private <T extends AbacDataObject> List<T> cacheSurvivors(List<T> survivors) {
+    private <T extends AbacResource> List<T> cacheSurvivors(List<T> survivors) {
         cacheEach(survivors);
         return survivors;
     }
 
     /** {@link #cacheSurvivors(List)} for a page — writes the page's content rows, returns the same page. */
-    private <T extends AbacDataObject> Page<T> cacheSurvivors(Page<T> survivors) {
+    private <T extends AbacResource> Page<T> cacheSurvivors(Page<T> survivors) {
         cacheEach(survivors.getContent());
         return survivors;
     }
 
     /** Write each survivor's {@code (type,id)} snapshot through to the cache; a no-op when none is wired. */
-    private void cacheEach(Iterable<? extends AbacDataObject> survivors) {
+    private void cacheEach(Iterable<? extends AbacResource> survivors) {
         if (resourceCache == null) {
             return;
         }
-        for (AbacDataObject survivor : survivors) {
+        for (AbacResource survivor : survivors) {
             resourceCache.put(survivor.abacResourceType(), survivor.abacResourceId(), survivor);
         }
     }
 
     /** Drop the rows a per-row batch decision rejects (the allowlist finisher), hierarchy-aware. */
-    private <T extends AbacDataObject> List<T> batchFilter(List<T> candidates, AbacContext queryContext) {
+    private <T extends AbacResource> List<T> batchFilter(List<T> candidates, AbacContext queryContext) {
         if (candidates.isEmpty()) {
             return List.of();
         }
@@ -380,7 +380,7 @@ public class AbacQueryService {
      * <p>Fail-closed: a per-row ancestor-resolution failure → <strong>empty</strong> ancestors → that row is
      * decided on its <em>direct</em> grant only (never wider). With no resolver, every row is direct-only.
      */
-    private AbacContext withResource(AbacContext queryContext, AbacDataObject row) {
+    private AbacContext withResource(AbacContext queryContext, AbacResource row) {
         List<ParentRef> ancestors = resolveAncestors(row);
         AbacContext.Resource resource = new AbacContext.Resource(
                 row.abacResourceType(), row.abacResourceId(), row.abacAttributes(), ancestors);
@@ -393,7 +393,7 @@ public class AbacQueryService {
     }
 
     /** The row's ancestor chain (fail-closed to empty on any resolver failure or when hierarchy is off). */
-    private List<ParentRef> resolveAncestors(AbacDataObject row) {
+    private List<ParentRef> resolveAncestors(AbacResource row) {
         if (ancestorResolver == null) {
             return List.of();
         }

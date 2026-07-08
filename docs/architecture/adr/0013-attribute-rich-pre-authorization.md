@@ -9,6 +9,9 @@ tags:
 
 # ADR 0013 — Attribute-rich pre-authorization: resource resolution at the gate
 
+> **Naming note (2026-07-08, pre-publish API polish):** the interface this ADR calls `AbacDataObject` was renamed **`AbacResource`** before the first publish — it names the role the object plays in the authorization query (`input.resource`), completing the `AbacResourceResolver`/`AbacResourceCache` naming family. The decision content is unchanged.
+
+
 **Status:** Accepted (planned — Phase 5.97, [[RESOURCE-RESOLUTION]])
 **Date:** 2026-06
 **Context tags:** `@OpaPreAuthorize`, resource resolution, request-scoped cache, TOCTOU / version binding, governing-root role, fail-closed
@@ -52,7 +55,7 @@ and deliberately rejects the registry half.
 
 Two small, Spring-free interfaces in **`opa-abac-core`**:
 
-- **`AbacResourceResolver`** — `Optional<AbacDataObject> resolve(String resourceType, String resourceId)`.
+- **`AbacResourceResolver`** — `Optional<AbacResource> resolve(String resourceType, String resourceId)`.
   Implemented by the app as **one bean**, dispatching on `resourceType` internally (the catalog example: a
   three-way switch over its repositories).
 - **`AncestorChainSupplier`** — `List<ParentRef> ancestorsOf(String resourceType, String resourceId)`.
