@@ -314,8 +314,12 @@ SQL
 # k6 thresholds are validity gates: a non-zero k6 exit aborts the run red (set -e) and nothing is
 # recorded — in full mode the EXIT trap below restores the guarded rig first.
 k6_run() { # $1 scenario file, $2 duration (s), $3 summary-export path, [$4 rate], [$5 LADDER_STAGE]
+  # EXPECTED_COUNT = the emea third of the fixture set (rows with i%3==1 for i in 1..N = ceil(N/3)):
+  # the residual's authorized count, asserted by the list/enrichment scenarios as a validity gate —
+  # a page that stops discriminating is a wrong measurement subject, never a valid number.
   k6 run --quiet \
     -e RATE="${4:-$RATE}" -e DURATION="$2" -e LADDER_STAGE="${5:-0}" \
+    -e EXPECTED_COUNT="$(( (FIXTURE_ROWS + 2) / 3 ))" \
     -e GATEWAY="$GATEWAY" -e PERF_TOKEN="$PERF_TOKEN" -e LOAD_CATALOG_ID="$LOAD_CATALOG_ID" \
     --summary-export "$3" \
     "$SELF_DIR/scenarios/$1"

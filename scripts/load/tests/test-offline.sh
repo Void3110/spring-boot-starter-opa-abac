@@ -66,6 +66,29 @@ check "synthetic slow-deny fails the fault-phase validity red (exit 2)" "2" "$rc
 if $PH --stream "$SELF_DIR/phases-cases/no-recovery.ndjson" >/dev/null 2>&1; then rc=0; else rc=$?; fi
 check "incomplete recovery lands red (exit 2)" "2" "$rc"
 
+echo "== U4b: the mode-divergent transient branch (deep-review fix) =="
+# The SAME all-2xx stream must be VALID under supplier-transient (retries absorb the blip;
+# zero denials required) and INVALID under opa (a fault phase with no denials = no fault injected).
+PHT="python3 $LOAD_DIR/phases.py --fault-start 1000000060 --fault-end 1000000120"
+if $PHT --mode supplier-transient --stream "$SELF_DIR/phases-cases/transient-clean.ndjson" >/dev/null 2>&1; then rc=0; else rc=$?; fi
+check "all-2xx fault phase is VALID under supplier-transient" "0" "$rc"
+if $PHT --mode opa --stream "$SELF_DIR/phases-cases/transient-clean.ndjson" >/dev/null 2>&1; then rc=0; else rc=$?; fi
+check "the same stream is INVALID under opa (no denials => no fault)" "2" "$rc"
+
+echo "== U1b: the --help mode/knob surface (deep-review fix) =="
+help_out="$("$LOAD_DIR/run-load.sh" --help)"
+for token in guarded baseline full ceiling fault-supplier-transient fault-supplier-down fault-opa \
+             RATE= DURATION= WARMUP= REPS= FIXTURE_ROWS= LADDER= LADDER_DURATION= PHASE= KEEP_FIXTURES=; do
+  if printf '%s' "$help_out" | grep -q "$token"; then
+    echo "  ok: --help lists $token"
+  else
+    echo "  FAIL: --help missing $token" >&2
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+if "$LOAD_DIR/run-load.sh" bogus-mode >/dev/null 2>&1; then rc=0; else rc=$?; fi
+check "unknown mode exits red" "1" "$rc"
+
 echo
 if [ "$FAILURES" -gt 0 ]; then
   echo "OFFLINE TESTS RED: $FAILURES failure(s)" >&2

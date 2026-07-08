@@ -16,6 +16,9 @@ const DURATION = Number(__ENV.DURATION || 120);
 const GATEWAY = __ENV.GATEWAY || 'http://localhost:9085';
 const TOKEN = __ENV.PERF_TOKEN;
 const CATALOG_ID = __ENV.LOAD_CATALOG_ID;
+// The authorized count the tag-gated residual must produce (the emea third of FIXTURE_ROWS) —
+// same validity gate as list-filter: a non-discriminating page is a wrong measurement subject.
+const EXPECTED_COUNT = Number(__ENV.EXPECTED_COUNT || 0);
 
 export const options = {
   scenarios: {
@@ -49,5 +52,7 @@ export default function () {
   check(res, {
     'status 200': (r) => r.status === 200,
     'page carries _actions': (r) => String(r.body).includes('"_actions"'),
+    'authorized count is the residual cut': (r) =>
+      EXPECTED_COUNT === 0 || Number(JSON.parse(String(r.body)).count) === EXPECTED_COUNT,
   });
 }

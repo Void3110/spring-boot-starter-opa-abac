@@ -22,8 +22,12 @@ const GATEWAY = __ENV.GATEWAY || 'http://localhost:9085';
 const TOKEN = __ENV.PERF_TOKEN;
 const CATALOG_ID = __ENV.LOAD_CATALOG_ID;
 const LADDER_STAGE = __ENV.LADDER_STAGE === '1';
+// The authorized row count the residual MUST produce (the emea third of FIXTURE_ROWS): a page that
+// stops discriminating is a wrong MEASUREMENT SUBJECT, not a saturation signal — red in every mode.
+const EXPECTED_COUNT = Number(__ENV.EXPECTED_COUNT || 0);
 
 const authFailures = new Counter('auth_failures');
+const wrongCount = new Counter('wrong_count');
 
 export const options = {
   scenarios: {
@@ -40,14 +44,17 @@ export const options = {
   },
   thresholds: LADDER_STAGE
     ? {
-        // Ceiling stage: drops/errors/latency are knee signals, not validity failures.
+        // Ceiling stage: drops/errors/latency are knee signals, not validity failures —
+        // but auth failures and a non-discriminating residual are broken-rig signals: red.
         auth_failures: ['count==0'],
+        wrong_count: ['count==0'],
       }
     : {
         http_req_failed: ['rate==0'],
         checks: ['rate==1'],
         dropped_iterations: ['count==0'],
         auth_failures: ['count==0'],
+        wrong_count: ['count==0'],
       },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   maxRedirects: 0,
@@ -62,6 +69,13 @@ export default function () {
   });
   if (res.status === 401 || res.status === 403) {
     authFailures.add(1);
+  }
+  if (res.status === 200 && EXPECTED_COUNT > 0) {
+    // The envelope's `count` is the subject-relative authorized total — THE residual's cut.
+    const count = Number(JSON.parse(String(res.body)).count);
+    if (count !== EXPECTED_COUNT) {
+      wrongCount.add(1);
+    }
   }
   check(res, {
     'status 200': (r) => r.status === 200,

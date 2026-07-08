@@ -133,7 +133,6 @@ def main() -> int:
     p.add_argument("--window-start", type=int, help="epoch seconds (required live)")
     p.add_argument("--window-end", type=int, help="epoch seconds (required live)")
     p.add_argument("--jaeger", default="http://localhost:26686")
-    p.add_argument("--limit", type=int, default=1500)
     p.add_argument("--min-traces", type=int, required=True,
                    help="the sample floor — below it the window is INVALID (exit 2), never extrapolated")
     p.add_argument("--input", help="offline: a saved Jaeger API response (U3)")
