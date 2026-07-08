@@ -46,6 +46,7 @@ cd scripts/load
 | `REPS` | `1` | Measured-run repetitions (official baseline: `REPS=3`, medians) |
 | `FIXTURE_ROWS` | `1000` | Seeded category count under the load catalog |
 | `LADDER` | `10,25,50,100,150,200` | Ceiling-mode stages (req/s) |
+| `LADDER_DURATION` | `60` | Ceiling-mode per-stage window (s); ADR-pinned 60 for the official run |
 | `KEEP_FIXTURES` | `0` | `1` = skip the teardown-on-green (keep the `dddd…` fixtures) |
 
 ## Fixtures + identity (registry-reserved)
@@ -67,3 +68,11 @@ leftover stub role-source or a paused OPA), the post-seed count assert, k6 valid
 (T2+), per-phase fault checks (T5), and the `MIN_TRACES` guard (T4).
 
 Raw k6 exports land in `results/` (gitignored).
+
+## Offline tests
+
+`tests/test-offline.sh` runs the no-rig checks (script syntax; the analysis functions against the
+committed synthetic fixtures — `knee.py` over `tests/knee-cases/`). In ceiling-ladder stages,
+saturation signals (slow p99, errors, dropped iterations) are recorded **data** for the knee
+function; the one validity gate kept is `auth_failures == 0` — a 401/403 means a broken rig/ACL
+chain and lands red, never an instant fake knee.

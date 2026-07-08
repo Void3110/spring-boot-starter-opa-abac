@@ -22,7 +22,9 @@
 #   guarded                   preflight (pod state ASSERTED guarded) + seed + the guarded pass
 #   baseline                  preflight (pod state ASSERTED unguarded: ENABLE_OPA=0) + seed + the baseline pass
 #   full                      guarded pass -> redeploy baseline -> baseline pass -> RESTORE the guarded rig
-#   ceiling                   the partial-eval list ladder (knee detection)             [lands with T3]
+#   ceiling                   the partial-eval list ladder: LADDER stages of LADDER_DURATION seconds,
+#                             knee per ADR 0021 §5 (p99 > 1 s OR >1% failed/dropped), early stop at the
+#                             knee, honest "no knee within the ladder" otherwise
 #   fault-supplier-transient  three-phase fault pass, B3 stub STUB_MODE=transient       [lands with T5]
 #   fault-supplier-down       three-phase fault pass, B3 stub STUB_MODE=down            [lands with T5]
 #   fault-opa                 three-phase fault pass, docker pause on the OPA container [lands with T5]
@@ -33,7 +35,8 @@
 #   WARMUP=60        discarded warm-up invocation length, seconds
 #   REPS=1           measured-run repetitions (the official baseline uses REPS=3, medians)
 #   FIXTURE_ROWS=1000  seeded category count under the load catalog
-#   LADDER=10,25,50,100,150,200  ceiling-mode stages, req/s                              [lands with T3]
+#   LADDER=10,25,50,100,150,200  ceiling-mode stages, req/s
+#   LADDER_DURATION=60  ceiling-mode per-stage window, seconds (ADR-pinned 60 for the official run)
 #   KEEP_FIXTURES=0  1 = skip the teardown-on-green (keep the dddd… fixtures)
 #
 # Fixtures + identity (the registry, scripts/postman/README.md):
@@ -79,6 +82,7 @@ WARMUP="${WARMUP:-60}"
 REPS="${REPS:-1}"
 FIXTURE_ROWS="${FIXTURE_ROWS:-1000}"
 LADDER="${LADDER:-10,25,50,100,150,200}"
+LADDER_DURATION="${LADDER_DURATION:-60}"
 KEEP_FIXTURES="${KEEP_FIXTURES:-0}"
 
 usage() {
@@ -92,15 +96,15 @@ note() { echo "==> $*"; }
 MODE="${1:-}"
 case "$MODE" in
   -h|--help|help|"") usage; [ -n "$MODE" ] || exit 1; exit 0 ;;
-  guarded|baseline|full) ;;
-  ceiling) red "mode 'ceiling' lands with T3 — not implemented yet." ;;
+  guarded|baseline|full|ceiling) ;;
   fault-supplier-transient|fault-supplier-down|fault-opa) red "mode '$MODE' lands with T5 — not implemented yet." ;;
   *) usage >&2; red "unknown mode '$MODE'." ;;
 esac
 
-for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS; do
+for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS LADDER_DURATION; do
   [[ "${!knob}" =~ ^[0-9]+$ ]] || red "$knob must be a positive integer (got '${!knob}')."
 done
+[[ "$LADDER" =~ ^[0-9]+(,[0-9]+)*$ ]] || red "LADDER must be a comma-separated list of rates (got '$LADDER')."
 
 # --- preflight (abort red with the actionable command — never run on a wrong rig) ---
 preflight() {
@@ -284,9 +288,9 @@ SQL
 # --- k6 orchestration (per scenario: discarded warm-up invocation, then REPS measured runs) -----
 # k6 thresholds are validity gates: a non-zero k6 exit aborts the run red (set -e) and nothing is
 # recorded — in full mode the EXIT trap below restores the guarded rig first.
-k6_run() { # $1 scenario file, $2 duration (s), $3 summary-export path
+k6_run() { # $1 scenario file, $2 duration (s), $3 summary-export path, [$4 rate], [$5 LADDER_STAGE]
   k6 run --quiet \
-    -e RATE="$RATE" -e DURATION="$2" \
+    -e RATE="${4:-$RATE}" -e DURATION="$2" -e LADDER_STAGE="${5:-0}" \
     -e GATEWAY="$GATEWAY" -e PERF_TOKEN="$PERF_TOKEN" -e LOAD_CATALOG_ID="$LOAD_CATALOG_ID" \
     --summary-export "$3" \
     "$SELF_DIR/scenarios/$1"
@@ -301,6 +305,56 @@ run_scenario_pass() { # $1 scenario basename (no .js), $2 pass name (guarded|bas
     k6_run "$scenario.js" "$DURATION" "$RUN_DIR/$scenario-$pass-rep$rep.summary.json"
   done
   note "[$pass] $scenario: $REPS measured run(s) recorded in $RUN_DIR/"
+}
+
+# --- the ceiling ladder (ceiling mode) — knee per ADR 0021 §5, evaluated by knee.py -------------
+# 60 s (LADDER_DURATION) constant-rate stages up the LADDER; each stage's summary is judged by
+# knee.py (p99 > 1 s OR >1% failed/dropped — the pinned definition, no alternate criteria here).
+# Early stop at the knee; ceiling = the last passing stage; an honest "no knee within the ladder"
+# when nothing breaks. Stage k6 runs use LADDER_STAGE=1: saturation signals are recorded DATA, and
+# only auth failures (broken rig/ACL) exit red. knee.py exit 2 (unreadable summary) aborts red.
+run_ceiling_ladder() {
+  local stages=() rate ceiling="" knee="" signal="" line verdict
+  IFS=',' read -ra stages <<< "$LADDER"
+  note "ceiling ladder: stages ${LADDER} req/s x ${LADDER_DURATION}s (warm-up ${WARMUP}s at ${stages[0]} req/s)"
+  k6_run "list-filter.js" "$WARMUP" "$RUN_DIR/list-filter-ladder-warmup.summary.json" "${stages[0]}" 1
+  : > "$RUN_DIR/ceiling-stages.txt"
+  for rate in "${stages[@]}"; do
+    note "[ceiling] stage: $rate req/s for ${LADDER_DURATION}s ..."
+    k6_run "list-filter.js" "$LADDER_DURATION" "$RUN_DIR/list-filter-stage-$rate.summary.json" "$rate" 1
+    line="$(python3 "$SELF_DIR/knee.py" "$RUN_DIR/list-filter-stage-$rate.summary.json")" \
+      || red "stage $rate: knee.py could not evaluate the summary — invalid run, nothing recorded."
+    echo "rate=$rate $line" | tee -a "$RUN_DIR/ceiling-stages.txt"
+    verdict="$(printf '%s' "$line" | sed -n 's/^verdict=\([a-z]*\).*/\1/p')"
+    if [ "$verdict" = "knee" ]; then
+      knee="$rate"
+      signal="$(printf '%s' "$line" | sed -n 's/.*signal=\([a-z]*\).*/\1/p')"
+      break
+    fi
+    ceiling="$rate"
+  done
+  {
+    echo ""
+    echo "=== partial-eval list ceiling (ladder ${LADDER} req/s, ${LADDER_DURATION}s stages) ==="
+    if [ -n "$knee" ]; then
+      echo "knee at $knee req/s (signal: $signal); ceiling = ${ceiling:-none — the FIRST stage knelt} req/s"
+    else
+      echo "no knee within the ladder (honest result); ceiling = $ceiling req/s (the last stage tried)"
+    fi
+  } | tee "$RUN_DIR/ceiling-verdict.txt"
+  python3 - "$RUN_DIR" "$LADDER" "$LADDER_DURATION" "${ceiling:-}" "${knee:-}" "${signal:-}" <<'PY'
+import json, sys, pathlib
+run_dir, ladder, dur, ceiling, knee, signal = sys.argv[1:7]
+stages = []
+for raw in (pathlib.Path(run_dir) / "ceiling-stages.txt").read_text().splitlines():
+    kv = dict(p.split("=", 1) for p in raw.split())
+    stages.append({k: (float(v) if k not in ("verdict", "signal") else v) for k, v in kv.items()})
+out = {"ladder_rps": [int(x) for x in ladder.split(",")], "stage_duration_s": int(dur),
+       "stages": stages, "ceiling_rps": int(ceiling) if ceiling else None,
+       "knee_rps": int(knee) if knee else None, "knee_signal": signal or None}
+(pathlib.Path(run_dir) / "ceiling.json").write_text(json.dumps(out, indent=2) + "\n")
+print(f"written: {run_dir}/ceiling.json")
+PY
 }
 
 # --- the two-pass rig flip (full mode) — deploy.sh mechanisms only, always restored ------------
@@ -393,6 +447,16 @@ case "$MODE" in
     mint_perf_token
     seed_fixtures
     run_scenario_pass "gate-overhead" "guarded"
+    run_scenario_pass "list-filter" "guarded"
+    teardown_fixtures
+    ;;
+  ceiling)
+    preflight
+    assert_pod_state "true"      # the ladder measures the guarded PE path only
+    assert_gateway_posture
+    mint_perf_token
+    seed_fixtures                # post-seed count assert = the fixture dependency gate before stage 1
+    run_ceiling_ladder
     teardown_fixtures
     ;;
   baseline)
@@ -414,6 +478,7 @@ case "$MODE" in
     mint_perf_token
     seed_fixtures
     run_scenario_pass "gate-overhead" "guarded"
+    run_scenario_pass "list-filter" "guarded"   # steady list latency (guarded-only scenario)
     # Pass 2 — baseline. From here until the restore completes, a red exit must restore guarded.
     trap restore_guarded_on_exit EXIT
     RIG_FLIPPED=1
