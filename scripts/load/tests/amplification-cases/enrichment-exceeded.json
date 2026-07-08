@@ -1,0 +1,2034 @@
+{
+ "data": [
+  {
+   "traceID": "t0",
+   "spans": [
+    {
+     "traceID": "t0",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs/{catalogId}",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s9",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s10",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s11",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s12",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s13",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s14",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s15",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s16",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s17",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s18",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s19",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s20",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s21",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s22",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s23",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "s24",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t1",
+   "spans": [
+    {
+     "traceID": "t1",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs/{catalogId}",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s9",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s10",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s11",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s12",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s13",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s14",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s15",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s16",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s17",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s18",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s19",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s20",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s21",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s22",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s23",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "s24",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t2",
+   "spans": [
+    {
+     "traceID": "t2",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs/{catalogId}",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s9",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s10",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s11",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s12",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s13",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s14",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s15",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s16",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s17",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s18",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s19",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s20",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s21",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s22",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s23",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "s24",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t3",
+   "spans": [
+    {
+     "traceID": "t3",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs/{catalogId}",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s9",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s10",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s11",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s12",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s13",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s14",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s15",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s16",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s17",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s18",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s19",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s20",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s21",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s22",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s23",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "s24",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t4",
+   "spans": [
+    {
+     "traceID": "t4",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs/{catalogId}",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s9",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s10",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s11",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s12",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s13",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s14",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s15",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s16",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s17",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s18",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s19",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s20",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s21",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s22",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=r"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s23",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "s24",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/category/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  }
+ ]
+}

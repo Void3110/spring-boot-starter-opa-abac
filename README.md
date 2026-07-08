@@ -204,6 +204,14 @@ pause to ask — and what should planning have pre-resolved) so the *next* slice
 - **Open Policy Agent (OPA) 1.x** — the decision engine the library calls; the local rig runs it for you
 - **PostgreSQL** — the example uses Postgres-specific features (JSONB tags, `ltree` materialized paths)
 
+## Performance
+
+What does the authorization layer cost? Measured on the real rig by the committed k6 harness
+([`scripts/load/`](scripts/load/)): the per-request gate delta (p50 **+2.7 ms** on the reference
+laptop), the partial-eval list ceiling, the attributed per-request cross-service call counts, and
+fail-closed behavior under dependency outages — see **[PERFORMANCE.md](PERFORMANCE.md)** (numbers,
+methodology, findings, and the one-command rerun).
+
 ## Documentation
 
 The full architecture, decision records, and per-feature guides live in [`docs/`](docs/README.md):

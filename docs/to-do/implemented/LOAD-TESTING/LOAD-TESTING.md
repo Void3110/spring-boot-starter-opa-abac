@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/shipped
   - type/index
   - area/infra
   - area/architecture
@@ -8,7 +8,9 @@ tags:
 
 # LOAD-TESTING — the pre-publish performance baseline (Phase 7.2)
 
-> **Status: Planning.** A committed, one-command, re-runnable **k6 harness** (`scripts/load/`) that
+> **Status: ✅ SHIPPED (2026-07-08).** The harness is committed, the official baseline lives in the
+> root `PERFORMANCE.md`, and the findings (per-row resolve amplification above all) are 7.3's input.
+> Originally: A committed, one-command, re-runnable **k6 harness** (`scripts/load/`) that
 > measures the library's four hot paths through the real rig and writes the publish-facing
 > **`PERFORMANCE.md`**: the authorization-gate overhead delta (p50/95/99 vs an unguarded baseline —
 > the headline number), the partial-eval list-filtering ceiling, the enrichment fan-out boundedness,
@@ -46,12 +48,12 @@ baseline.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Harness skeleton: `run-load.sh` + `perf` realm user + bulk fixtures + registry entries | 📋 TODO |
-| T2 | Gate-overhead scenario + the two-pass guarded/baseline orchestration (the headline) | 📋 TODO |
-| T3 | Partial-eval list scenario + the ceiling ramp (knee detection) | 📋 TODO |
-| T4 | Enrichment fan-out scenario + `amplification.py` (Jaeger-attributed ratio) | 📋 TODO |
-| T5 | Resilience-under-fault passes (B3 stub modes + OPA `docker pause`) | 📋 TODO |
-| T6 | Official `REPS=3` baseline → `PERFORMANCE.md` + README link + `scripts/load/README.md` + folder move | 📋 TODO |
+| T1 | Harness skeleton: `run-load.sh` + `perf` realm user + bulk fixtures + registry entries | ✅ DONE |
+| T2 | Gate-overhead scenario + the two-pass guarded/baseline orchestration (the headline) | ✅ DONE |
+| T3 | Partial-eval list scenario + the ceiling ramp (knee detection) | ✅ DONE |
+| T4 | Enrichment fan-out scenario + `amplification.py` (Jaeger-attributed ratio) | ✅ DONE |
+| T5 | Resilience-under-fault passes (B3 stub modes + OPA `docker pause`) | ✅ DONE |
+| T6 | Official `REPS=3` baseline → `PERFORMANCE.md` + README link + `scripts/load/README.md` + folder move | ✅ DONE |
 
 ## Related
 

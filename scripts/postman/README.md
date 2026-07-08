@@ -63,6 +63,7 @@ never be an id another matrix **grants on**. Current registry — keep it unique
 | `9999…` | `run-permission-categories-matrix.sh` | team-governed (the 6.5 ladder/boundary cells; the ladder subject is REBOUND across roles, and two roles are DB-seeded bypasses: `pc-stale` flat, `pc-super20` GRANT-at-20) |
 | `aaaa…` | `run-action-enrichment-matrix.sh` | team-governed (Phase 6 affordance `_actions` cells: a read+write role `ae-writer` + a read-only role `ae-reader`; emea/apac categories — the honest-`false`, writer-all-true, per-row-page, and verb-set-exclusion cells; the seeded team's own `_actions` cells live in the user-mgmt module tests, not this gateway matrix) |
 | `cccc…` | `run-resilience-matrix.sh` | a single fixture Category the B3 resilience matrix GETs; the role is **resolved from the fault-injecting stub**, not the user-service DB, so this id grants nothing in the shared store and collides with no other matrix |
+| `dddd…` | `scripts/load/run-load.sh` (Phase 7.2) | the **load-test fixture set** (granted): 1 catalog + `FIXTURE_ROWS` bulk-seeded categories, read/written only by the reserved `perf` load identity; teardown-on-green like every matrix. No other matrix may grant on, assert on, or seed under this prefix. |
 
 **Reserved realm account:** `dora` (USER-DIRECTORY-PORT) — the **never-provisioned** directory-probe
 persona for the team matrix's E1 cut (cells 13/13a: found in the directory, `count=0` in the
@@ -70,6 +71,12 @@ provisioned lookup). She has **no credentials** (cannot log in, cannot be token-
 matrix may bootstrap her** into the user-service; `run-team-matrix.sh`'s preflight wipes any stray
 provisioned row (a demo click) before newman. The same discipline as the id registry, applied to a
 subject: an account one matrix asserts as *absent* must never be an account another matrix *creates*.
+
+**Reserved realm account:** `perf` (LOAD-TESTING, Phase 7.2) — the **dedicated load identity**
+`scripts/load/run-load.sh` runs every k6 scenario as. The runner bootstraps her profile and her
+single membership (a tag-gated read/write role on the load team governing the `dddd…` catalog) on
+every run. **No matrix may bind her to a team, grant on her, or assert on her** — a stray grant
+would silently change what the load numbers measure. She holds no membership outside the load team.
 
 (Discovered the hard way: the hierarchy matrix originally used `4444…` as its foreign catalog; a past
 list-matrix run had granted the same reader an inheritable role on it, flipping the re-parent assert

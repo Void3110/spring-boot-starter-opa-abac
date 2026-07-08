@@ -55,3 +55,6 @@ CLAUDE.local.md
 # Python bytecode (e.g. scripts/postman helpers)
 __pycache__/
 *.pyc
+
+# Load-testing raw exports (scripts/load/run-load.sh)
+scripts/load/results/
