@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.opaabac.data.filter;
 import dev.dmitriikonovalov.opaabac.core.Condition;
 import dev.dmitriikonovalov.opaabac.core.Conjunction;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
+import dev.dmitriikonovalov.opaabac.data.model.Taggable;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
@@ -70,7 +71,7 @@ public final class ResidualSpecificationFactory {
         // CONDITIONAL — OR of conjunctions (DNF).
         List<Conjunction> clauses = residual.clauses();
         return (root, query, cb) -> {
-            Path<?> tagsPath = root.get("tags");
+            Path<?> tagsPath = root.get(Taggable.TAGS_ATTRIBUTE);
             List<Predicate> disjuncts = new ArrayList<>(clauses.size());
             for (Conjunction conjunction : clauses) {
                 if (conjunction.isEmpty()) {

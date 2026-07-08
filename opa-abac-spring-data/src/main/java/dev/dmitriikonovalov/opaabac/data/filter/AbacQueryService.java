@@ -6,6 +6,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
+import dev.dmitriikonovalov.opaabac.data.model.Taggable;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolutionException;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
 import jakarta.persistence.criteria.Expression;
@@ -314,7 +315,11 @@ public class AbacQueryService {
         //   ≡  (value IS NULL)  OR  (value <> 'true')   — exactly the IS-DISTINCT-FROM semantics.
         return (root, query, cb) -> {
             Expression<String> denyText =
-                    cb.function("jsonb_extract_path_text", String.class, root.get("tags"), cb.literal(DENY_TAG));
+                    cb.function(
+                            "jsonb_extract_path_text",
+                            String.class,
+                            root.get(Taggable.TAGS_ATTRIBUTE),
+                            cb.literal(DENY_TAG));
             return cb.or(cb.isNull(denyText), cb.notEqual(denyText, "true"));
         };
     }
