@@ -55,6 +55,17 @@ else
   check "MIN_TRACES floor aborts red on a thin window (exit 2)" "2" "2"
 fi
 
+echo "== U4: phases.py against the synthetic request streams =="
+PH="python3 $LOAD_DIR/phases.py --fault-start 1000000060 --fault-end 1000000120 --mode opa"
+out="$($PH --stream "$SELF_DIR/phases-cases/clean-opa.ndjson" 2>/dev/null)"; rc=$?
+check "clean fault run is valid (exit 0)" "0" "$rc"
+check "phase attribution correct at the boundaries" "yes" "$(printf '%s' "$out" | grep -Eq '\| healthy \| 120 \| 120 \| 0 \| 0' && printf '%s' "$out" | grep -Eq '\| fault \| 120 \| 0 \| 120 \| 0' && echo yes || echo no)"
+check "time-to-recovery detected" "yes" "$(printf '%s' "$out" | grep -q 'time-to-recovery: 1.5s' && echo yes || echo no)"
+if $PH --stream "$SELF_DIR/phases-cases/slow-deny.ndjson" >/dev/null 2>&1; then rc=0; else rc=$?; fi
+check "synthetic slow-deny fails the fault-phase validity red (exit 2)" "2" "$rc"
+if $PH --stream "$SELF_DIR/phases-cases/no-recovery.ndjson" >/dev/null 2>&1; then rc=0; else rc=$?; fi
+check "incomplete recovery lands red (exit 2)" "2" "$rc"
+
 echo
 if [ "$FAILURES" -gt 0 ]; then
   echo "OFFLINE TESTS RED: $FAILURES failure(s)" >&2

@@ -47,6 +47,7 @@ cd scripts/load
 | `FIXTURE_ROWS` | `1000` | Seeded category count under the load catalog |
 | `LADDER` | `10,25,50,100,150,200` | Ceiling-mode stages (req/s) |
 | `LADDER_DURATION` | `60` | Ceiling-mode per-stage window (s); ADR-pinned 60 for the official run |
+| `PHASE` | `60` | Fault-mode phase length (s); ADR-pinned 60 — shorter for smokes |
 | `KEEP_FIXTURES` | `0` | `1` = skip the teardown-on-green (keep the `dddd…` fixtures) |
 
 ## Fixtures + identity (registry-reserved)

@@ -25,9 +25,13 @@
 #   ceiling                   the partial-eval list ladder: LADDER stages of LADDER_DURATION seconds,
 #                             knee per ADR 0021 §5 (p99 > 1 s OR >1% failed/dropped), early stop at the
 #                             knee, honest "no knee within the ladder" otherwise
-#   fault-supplier-transient  three-phase fault pass, B3 stub STUB_MODE=transient       [lands with T5]
-#   fault-supplier-down       three-phase fault pass, B3 stub STUB_MODE=down            [lands with T5]
-#   fault-opa                 three-phase fault pass, docker pause on the OPA container [lands with T5]
+#   fault-supplier-transient  three-phase timeline (PHASE s healthy/fault/recovery) on the B3 stub rig;
+#                             the fault phase recreates the stub in STUB_MODE=transient
+#   fault-supplier-down       same timeline; the fault phase recreates the stub in STUB_MODE=down
+#                             (typed fast 403s expected — B2's wall under load)
+#   fault-opa                 same timeline on the canonical guarded rig; the fault phase is a real
+#                             docker pause on the OPA container (the nastier hang), unpaused after
+#                             All fault modes ALWAYS restore the guarded rig (trap on exit).
 #
 # Knobs (env):
 #   RATE=50          arrival rate, req/s (constant-arrival-rate; identical across passes)
@@ -37,6 +41,7 @@
 #   FIXTURE_ROWS=1000  seeded category count under the load catalog
 #   LADDER=10,25,50,100,150,200  ceiling-mode stages, req/s
 #   LADDER_DURATION=60  ceiling-mode per-stage window, seconds (ADR-pinned 60 for the official run)
+#   PHASE=60         fault-mode phase length, seconds (ADR-pinned 60; shorter for smokes)
 #   KEEP_FIXTURES=0  1 = skip the teardown-on-green (keep the dddd… fixtures)
 #
 # Fixtures + identity (the registry, scripts/postman/README.md):
@@ -83,7 +88,9 @@ REPS="${REPS:-1}"
 FIXTURE_ROWS="${FIXTURE_ROWS:-1000}"
 LADDER="${LADDER:-10,25,50,100,150,200}"
 LADDER_DURATION="${LADDER_DURATION:-60}"
+PHASE="${PHASE:-60}"
 KEEP_FIXTURES="${KEEP_FIXTURES:-0}"
+COMPOSE_PROJECT="opa-abac-example"
 
 usage() {
   # The header comment IS the doc — print the contiguous header block (skip the shebang).
@@ -96,12 +103,11 @@ note() { echo "==> $*"; }
 MODE="${1:-}"
 case "$MODE" in
   -h|--help|help|"") usage; [ -n "$MODE" ] || exit 1; exit 0 ;;
-  guarded|baseline|full|ceiling) ;;
-  fault-supplier-transient|fault-supplier-down|fault-opa) red "mode '$MODE' lands with T5 — not implemented yet." ;;
+  guarded|baseline|full|ceiling|fault-supplier-transient|fault-supplier-down|fault-opa) ;;
   *) usage >&2; red "unknown mode '$MODE'." ;;
 esac
 
-for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS LADDER_DURATION; do
+for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS LADDER_DURATION PHASE; do
   [[ "${!knob}" =~ ^[0-9]+$ ]] || red "$knob must be a positive integer (got '${!knob}')."
 done
 [[ "$LADDER" =~ ^[0-9]+(,[0-9]+)*$ ]] || red "LADDER must be a comma-separated list of rates (got '$LADDER')."
@@ -125,8 +131,11 @@ preflight() {
 
 # Assert the ACTUAL pod state matches the pass — docker exec env probe, never trust-the-flag.
 # $1 = expected OPA_ABAC_ENABLED ("true" for guarded, "false" for baseline).
+# $2 = expected role source: "usermgmt" (default) or "resolve-stub" (the supplier-fault rig,
+#      where resolving from the B3 stub is the DELIBERATE posture — everywhere else it poisons).
 assert_pod_state() {
-  local expected="$1" pod v
+  local expected="$1" source="${2:-usermgmt}" pod v
+  local source_url="http://$source:8080"
   for pod in "${PODS[@]}"; do
     v="$(docker exec "$pod" printenv OPA_ABAC_ENABLED 2>/dev/null || echo '<unset>')"
     if [ "$v" != "$expected" ]; then
@@ -139,19 +148,19 @@ assert_pod_state() {
   Redeploy: ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]}"
       fi
     fi
-    # The role source must be the REAL user-service — a leftover B3 stub rig would poison every number.
     v="$(docker exec "$pod" printenv CATALOG_USER_SERVICE_BASE_URL 2>/dev/null || echo '<unset>')"
-    [ "$v" = "http://usermgmt:8080" ] \
-      || red "pod $pod resolves roles from '$v' (expected http://usermgmt:8080 — a leftover resilience-stub rig?).
-  Redeploy guarded: ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]}"
+    [ "$v" = "$source_url" ] \
+      || red "pod $pod resolves roles from '$v' (this pass expects $source_url).
+  Redeploy the pass's rig (or the guarded default: ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]})"
   done
-  # BOTH passes need a live, unpaused OPA: the app gate in guarded, the gateway's coarse
-  # allow-all opa plugin in both (the identical-gateway invariant, ADR 0021 §2).
+  # Every pass needs a live, unpaused OPA at its START: the app gate when guarded, the gateway's
+  # coarse allow-all opa plugin always (the identical-gateway invariant, ADR 0021 §2). The
+  # fault-opa mode pauses it MID-run, deliberately — never at a pass boundary.
   docker ps --format '{{.Names}}' | grep -q "^${OPA_CONTAINER}\$" \
-    || red "OPA container '$OPA_CONTAINER' not running — both passes cross the gateway opa plugin."
+    || red "OPA container '$OPA_CONTAINER' not running — every pass crosses the gateway opa plugin."
   [ "$(docker inspect -f '{{.State.Paused}}' "$OPA_CONTAINER")" = "false" ] \
     || red "OPA container '$OPA_CONTAINER' is PAUSED (a leftover fault run?). Unpause: docker unpause $OPA_CONTAINER"
-  note "pod state asserted: OPA_ABAC_ENABLED=$expected on ${#PODS[@]} pod(s), role source = usermgmt, OPA up"
+  note "pod state asserted: OPA_ABAC_ENABLED=$expected on ${#PODS[@]} pod(s), role source = $source, OPA up"
 }
 
 # Assert the GATEWAY posture — probed via the admin API, never trusted. The two-pass delta is only
@@ -412,22 +421,112 @@ deploy_rig() { # $1 = guarded | baseline
   fi
 }
 
-# The fail-closed edge of the harness itself: a red run must NEVER leave the rig unguarded.
-# Armed before the baseline flip; disarmed after the explicit restore succeeds.
+# The fail-closed edge of the harness itself: a red run must NEVER leave the rig unguarded,
+# stub-wired, or with OPA paused. Armed before any rig mutation (the baseline flip, a fault
+# injection, the stub-rig deploy); disarmed only after the explicit restore is asserted. The
+# restore is unconditional-cleanup shaped: unpause OPA if paused, drop the stub, redeploy guarded.
 RIG_FLIPPED=0
 restore_guarded_on_exit() {
   local rc=$?
   trap - EXIT
   if [ "$RIG_FLIPPED" = "1" ]; then
-    echo "==> EXIT trap: the rig is unguarded — restoring the guarded posture ..." >&2
+    echo "==> EXIT trap: the rig may be faulted/unguarded — restoring the guarded posture ..." >&2
+    docker unpause "$OPA_CONTAINER" >/dev/null 2>&1 || true
+    docker compose -p "$COMPOSE_PROJECT" -f "$REPO_ROOT/infra/compose.resilience-stub.yaml" down >/dev/null 2>&1 || true
     if ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 "$REPO_ROOT/deploy.sh" up --pods "${#PODS[@]}"; then
       echo "==> EXIT trap: guarded rig restored." >&2
     else
       echo "FATAL: could not restore the guarded rig. Restore manually:" >&2
-      echo "  ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]}" >&2
+      echo "  docker unpause $OPA_CONTAINER; ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods ${#PODS[@]}" >&2
     fi
   fi
   exit "$rc"
+}
+
+# --- the three-phase fault timeline (T5, ADR 0021 §7) -------------------------------------------
+# PHASE s healthy -> PHASE s faulted -> PHASE s recovery, at RATE, with the fault injected/cleared
+# by the runner at the REAL boundaries it records. The k6 stream (--out json) is sliced per phase
+# by phases.py, whose per-phase validity (typed fast denials, completed recovery) decides red.
+# The supplier fault is the B3 stub recreated into the fault mode mid-run; the OPA fault is a real
+# docker pause. Restore (unpause / stub-down / guarded redeploy) is trap-armed the whole time.
+stub_compose_up() { # $1 = STUB_MODE
+  STUB_MODE="$1" STUB_FAILS=1 docker compose -p "$COMPOSE_PROJECT" \
+    -f "$REPO_ROOT/infra/compose.resilience-stub.yaml" up -d --force-recreate 2>/dev/null
+}
+
+run_fault_timeline() { # $1 = opa | supplier-transient | supplier-down
+  local mode="$1" total=$(( PHASE * 3 ))
+  local stream="$RUN_DIR/resilience-$mode.ndjson"
+  local fault_start fault_end k6_pid
+
+  trap restore_guarded_on_exit EXIT
+  RIG_FLIPPED=1
+  if [ "$mode" = "opa" ]; then
+    deploy_rig "guarded"
+    assert_pod_state "true" "usermgmt"
+  else
+    note "deploying the resilience-stub rig (guarded pods, role source = the B3 stub, STUB_MODE=up) ..."
+    ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ENABLE_RESILIENCE_STUB=1 STUB_MODE=up \
+      "$REPO_ROOT/deploy.sh" up --pods "${#PODS[@]}"
+    assert_pod_state "true" "resolve-stub"
+  fi
+  assert_gateway_posture
+  mint_perf_token
+  seed_fixtures
+
+  note "[fault-$mode] warm-up at RATE=$RATE for ${WARMUP}s (healthy rig, discarded) ..."
+  k6_run "resilience.js" "$WARMUP" "$RUN_DIR/resilience-$mode-warmup.summary.json"
+
+  note "[fault-$mode] three-phase run: ${PHASE}s healthy -> ${PHASE}s fault -> ${PHASE}s recovery at RATE=$RATE ..."
+  k6 run --quiet \
+    -e RATE="$RATE" -e DURATION="$total" \
+    -e GATEWAY="$GATEWAY" -e PERF_TOKEN="$PERF_TOKEN" -e LOAD_CATALOG_ID="$LOAD_CATALOG_ID" \
+    --summary-export "$RUN_DIR/resilience-$mode.summary.json" \
+    --out "json=$stream" \
+    "$SELF_DIR/scenarios/resilience.js" &
+  k6_pid=$!
+
+  sleep "$PHASE"
+  # fault_start BEFORE the injection: boundary requests land in the fault bucket, so the healthy
+  # phase stays provably clean (the validity check demands it).
+  fault_start="$(date +%s)"
+  case "$mode" in
+    opa) note "[fault-$mode] injecting: docker pause $OPA_CONTAINER"; docker pause "$OPA_CONTAINER" ;;
+    *)   note "[fault-$mode] injecting: stub -> STUB_MODE=${mode#supplier-}"; stub_compose_up "${mode#supplier-}" ;;
+  esac
+
+  sleep "$PHASE"
+  case "$mode" in
+    opa) note "[fault-$mode] clearing: docker unpause $OPA_CONTAINER"; docker unpause "$OPA_CONTAINER" ;;
+    *)   note "[fault-$mode] clearing: stub -> STUB_MODE=up"; stub_compose_up "up" ;;
+  esac
+  # fault_end AFTER the clear completes: requests failing during the clear stay in the fault bucket.
+  fault_end="$(date +%s)"
+
+  if ! wait "$k6_pid"; then
+    red "[fault-$mode] k6 exited non-zero (dropped iterations — the offered rate was not kept) — invalid timeline."
+  fi
+
+  note "[fault-$mode] slicing the stream by the recorded fault boundaries ..."
+  python3 "$SELF_DIR/phases.py" \
+    --stream "$stream" --fault-start "$fault_start" --fault-end "$fault_end" \
+    --mode "$mode" \
+    --out "$RUN_DIR/resilience-$mode-phases" \
+    || red "[fault-$mode] per-phase validity failed — red run, nothing recorded as a result."
+
+  # Restore the guarded rig (the trap covers every red path above).
+  if [ "$mode" = "opa" ]; then
+    assert_pod_state "true" "usermgmt"     # unpaused + healthy, probed not trusted
+  else
+    note "[fault-$mode] restoring the guarded rig (dropping the stub role source) ..."
+    docker compose -p "$COMPOSE_PROJECT" -f "$REPO_ROOT/infra/compose.resilience-stub.yaml" down >/dev/null 2>&1 || true
+    deploy_rig "guarded"
+    assert_pod_state "true" "usermgmt"
+  fi
+  assert_gateway_posture
+  RIG_FLIPPED=0
+  trap - EXIT
+  teardown_fixtures
 }
 
 # --- the delta block (full mode): REPS medians, guarded vs baseline, absolute + relative --------
@@ -531,5 +630,17 @@ case "$MODE" in
     trap - EXIT
     compute_delta
     teardown_fixtures
+    ;;
+  fault-opa)
+    preflight
+    run_fault_timeline "opa"
+    ;;
+  fault-supplier-transient)
+    preflight
+    run_fault_timeline "supplier-transient"
+    ;;
+  fault-supplier-down)
+    preflight
+    run_fault_timeline "supplier-down"
     ;;
 esac

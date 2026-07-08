@@ -50,7 +50,7 @@ baseline.
 | T2 | Gate-overhead scenario + the two-pass guarded/baseline orchestration (the headline) | ✅ DONE |
 | T3 | Partial-eval list scenario + the ceiling ramp (knee detection) | ✅ DONE |
 | T4 | Enrichment fan-out scenario + `amplification.py` (Jaeger-attributed ratio) | ✅ DONE |
-| T5 | Resilience-under-fault passes (B3 stub modes + OPA `docker pause`) | 📋 TODO |
+| T5 | Resilience-under-fault passes (B3 stub modes + OPA `docker pause`) | ✅ DONE |
 | T6 | Official `REPS=3` baseline → `PERFORMANCE.md` + README link + `scripts/load/README.md` + folder move | 📋 TODO |
 
 ## Related
