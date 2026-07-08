@@ -8,7 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -79,7 +79,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         public void unannotated() {}
     }
 
-    record SampleProduct(String id) implements AbacDataObject {
+    record SampleProduct(String id) implements AbacResource {
         @Override public String abacResourceType() { return "product"; }
         @Override public String abacResourceId() { return id; }
         @Override public Map<String, Object> abacAttributes() { return Map.of("status", "draft"); }
@@ -260,7 +260,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         assertThat(captor.getValue().roleDefinition()).isNull(); // no role_definition → fallback eligible
     }
 
-    @Test // U29 — resource() SpEL resolves an AbacDataObject instance
+    @Test // U29 — resource() SpEL resolves an AbacResource instance
     void resourceInstance_resolvedFromSpel() throws Exception {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);

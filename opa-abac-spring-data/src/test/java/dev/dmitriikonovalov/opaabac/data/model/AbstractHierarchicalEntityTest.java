@@ -53,7 +53,7 @@ class AbstractHierarchicalEntityTest {
         assertThat(category.abacParent()).contains(new ParentRef("catalog", CATALOG_ID.toString()));
     }
 
-    @Test // it is still a secured entity (tags + AbacDataObject inherited)
+    @Test // it is still a secured entity (tags + AbacResource inherited)
     void remainsASecuredEntity() {
         TestCategory category = new TestCategory(CATEGORY_ID);
         assertThat(category).isInstanceOf(AbstractSecuredEntity.class);

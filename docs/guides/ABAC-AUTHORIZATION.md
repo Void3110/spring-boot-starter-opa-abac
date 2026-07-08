@@ -129,7 +129,7 @@ public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UU
 ```
 
 `resourceType` / `resourceId` / `resource` are SpEL evaluated against the method arguments;
-`resource(...)` may name an `AbacDataObject` instance for callers that hold one. The manager
+`resource(...)` may name an `AbacResource` instance for callers that hold one. The manager
 (`AuthorizationManager<MethodInvocation>`) reads the subject, resolves the resource, looks up the role
 definition, builds the `AbacContext`, and asks OPA; deny surfaces as `AccessDeniedException` → 403.
 
@@ -199,6 +199,6 @@ exception is the narrow `catalog:create` realm-role fallback in `catalog.rego`. 
 
 ## Related
 - [[TWO-LAYER-AUTHORIZATION]] — gateway (coarse) vs app (fine-grained), and why the demo enricher was retired.
-- [[DOMAIN-MODEL]] — the `AbacDataObject` resource side this consumes.
+- [[DOMAIN-MODEL]] — the `AbacResource` resource side this consumes.
 - [[ACTION-ENRICHMENT]] — the read-side `_actions` affordance layer that mirrors this enforcement (not a gate).
 - [[E2E-TESTING]] — the allow/deny matrix.

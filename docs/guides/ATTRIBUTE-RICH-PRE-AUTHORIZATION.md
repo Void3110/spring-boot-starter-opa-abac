@@ -46,7 +46,7 @@ on the **leaf** id. Three consequences:
   AbacResourceCache.put(type, id, instance)     — the handler reuses the authorized snapshot
 ```
 
-- **`AbacResourceResolver`** (core, Spring-free): `Optional<AbacDataObject> resolve(type, id)` — the
+- **`AbacResourceResolver`** (core, Spring-free): `Optional<AbacResource> resolve(type, id)` — the
   app implements **one** dispatching bean (the catalog example: a 15-line switch over three
   repositories, loading **by id alone** — URL scoping stays in the handler).
 - **`AncestorChainSupplier`** (core): bound by the **starter** to the hierarchy module's

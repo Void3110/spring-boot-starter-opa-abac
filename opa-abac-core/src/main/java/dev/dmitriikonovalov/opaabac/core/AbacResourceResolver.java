@@ -28,5 +28,5 @@ public interface AbacResourceResolver {
      * @return the resolved instance, or {@link Optional#empty()} when it does not exist or the type is
      *         not recognized — the caller denies
      */
-    Optional<AbacDataObject> resolve(String resourceType, String resourceId);
+    Optional<AbacResource> resolve(String resourceType, String resourceId);
 }

@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
@@ -87,7 +87,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         }
     }
 
-    record SampleProduct(String id, Map<String, Object> attributes) implements AbacDataObject {
+    record SampleProduct(String id, Map<String, Object> attributes) implements AbacResource {
         @Override public String abacResourceType() { return "product"; }
         @Override public String abacResourceId() { return id; }
         @Override public Map<String, Object> abacAttributes() { return attributes; }

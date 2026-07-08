@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -90,7 +90,7 @@ public class SubtreeSpecResolver {
      * @return {@code Optional.of(subtreeSpec)} when the inheritable gate passes; {@link Optional#empty()}
      *     otherwise (fail-closed) — never {@code null}
      */
-    public <T extends AbacDataObject> Optional<Specification<T>> subtreeSpec(
+    public <T extends AbacResource> Optional<Specification<T>> subtreeSpec(
             AbacContext.Subject subject, String childType, ParentRef governingRoot, String verb) {
         Objects.requireNonNull(childType, "childType");
         Objects.requireNonNull(governingRoot, "governingRoot");

@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
@@ -62,7 +62,7 @@ public class HierarchicalAuthorizer {
      * @param leaf    the loaded resource being accessed (supplies type, id, tags, and its parent hop)
      * @return {@code true} iff the policy allows; never throws for an authorization concern
      */
-    public boolean isAllowed(AbacContext.Subject subject, String verb, AbacDataObject leaf) {
+    public boolean isAllowed(AbacContext.Subject subject, String verb, AbacResource leaf) {
         Objects.requireNonNull(verb, "verb");
         Objects.requireNonNull(leaf, "leaf");
         if (subject == null) {

@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security.web;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
@@ -213,7 +213,7 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
     private RowContext prepareRow(AbacContext.Subject subject, Enrichable dto) {
         String type = dto.abacResourceType();
         String id = dto.getId().toString();
-        Optional<AbacDataObject> resolved = cache.get(type, id, AbacDataObject.class);
+        Optional<AbacResource> resolved = cache.get(type, id, AbacResource.class);
         if (resolved.isEmpty()) {
             return null; // cache miss → omit (degrade visibly, never re-resolve in the advice)
         }

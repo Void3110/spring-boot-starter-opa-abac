@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.Condition;
 import dev.dmitriikonovalov.opaabac.core.Conjunction;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
@@ -638,7 +638,7 @@ class AbacQueryServiceTest {
     }
 
     /** A minimal authorizable row. */
-    record Row(String id) implements AbacDataObject {
+    record Row(String id) implements AbacResource {
         @Override
         public String abacResourceType() {
             return "category";
@@ -651,7 +651,7 @@ class AbacQueryServiceTest {
     }
 
     /** A hierarchical authorizable row (declares a parent) for the hierarchy-aware batch tests. */
-    record HierRow(String id) implements AbacDataObject {
+    record HierRow(String id) implements AbacResource {
         @Override
         public String abacResourceType() {
             return "category";

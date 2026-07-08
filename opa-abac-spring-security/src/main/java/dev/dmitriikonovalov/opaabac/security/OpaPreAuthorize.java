@@ -18,7 +18,7 @@ import java.lang.annotation.Target;
  * An annotation evaluated before the method runs cannot see a return value or a not-yet-loaded entity,
  * so {@link #resourceType()} / {@link #resourceId()} name the resource coarsely while the <em>decision</em>
  * is rich (role-definition driven). For callers that already hold the instance, {@link #resource()} may
- * name an {@link dev.dmitriikonovalov.opaabac.core.AbacDataObject} directly. With an
+ * name an {@link dev.dmitriikonovalov.opaabac.core.AbacResource} directly. With an
  * {@link dev.dmitriikonovalov.opaabac.core.AbacResourceResolver} registered (opt-in), a declared
  * {@link #resourceId()} is <em>resolved</em>: the gate decides on the instance's real attributes and
  * ancestor chain, the role looked up once on the governing root — see the attribute-rich
@@ -42,7 +42,7 @@ public @interface OpaPreAuthorize {
     String resourceId() default "";
 
     /**
-     * SpEL → an {@link dev.dmitriikonovalov.opaabac.core.AbacDataObject} instance, for callers that hold
+     * SpEL → an {@link dev.dmitriikonovalov.opaabac.core.AbacResource} instance, for callers that hold
      * one. When set and non-null it supplies the resource type/id/attributes, overriding
      * {@link #resourceType()} / {@link #resourceId()}.
      */

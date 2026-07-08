@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
@@ -38,8 +38,8 @@ class HierarchicalAuthorizerTest {
     private final OpaClient opaClient = mock(OpaClient.class);
     private final RoleDefinitionSupplier supplier = mock(RoleDefinitionSupplier.class);
 
-    private static AbacDataObject product() {
-        return new AbacDataObject() {
+    private static AbacResource product() {
+        return new AbacResource() {
             @Override
             public String abacResourceType() {
                 return "product";

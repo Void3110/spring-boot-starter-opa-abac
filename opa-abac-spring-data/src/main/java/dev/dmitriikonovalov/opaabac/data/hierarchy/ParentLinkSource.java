@@ -6,7 +6,7 @@ import java.util.Optional;
 /**
  * Supplies a resource's <em>immediate</em> parent from the live adjacency linkage, for
  * {@link RecursiveCteAncestorResolver}. This is the authoritative one-hop relation (the same fact
- * {@code AbacDataObject.abacParent()} declares), read from the database without any denormalized path
+ * {@code AbacResource.abacParent()} declares), read from the database without any denormalized path
  * column — so it is correct-by-construction on a re-parent (no materialized state to rewrite).
  *
  * <p>An implementation typically backs this with a recursive CTE (or a per-hop query) that climbs the

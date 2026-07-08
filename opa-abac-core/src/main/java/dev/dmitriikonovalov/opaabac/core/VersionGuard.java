@@ -38,8 +38,8 @@ public final class VersionGuard {
     }
 
     private static String describe(Versioned snapshot, Versioned current) {
-        Versioned source = snapshot instanceof AbacDataObject ? snapshot : current;
-        if (source instanceof AbacDataObject abac) {
+        Versioned source = snapshot instanceof AbacResource ? snapshot : current;
+        if (source instanceof AbacResource abac) {
             return abac.abacResourceType() + "/" + abac.abacResourceId();
         }
         return source.getClass().getSimpleName();

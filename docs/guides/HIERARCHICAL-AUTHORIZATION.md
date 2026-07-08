@@ -17,7 +17,7 @@ tags:
 ## The idea in one paragraph
 
 A secured resource declares its **immediate parent** as a neutral `(type, id)` (`abacParent()` on
-`AbacDataObject`, core, Spring-free). An `AncestorResolver` walks that linkage into the **full ancestor
+`AbacResource`, core, Spring-free). An `AncestorResolver` walks that linkage into the **full ancestor
 chain** (root-first, leaf-excluded), with a **depth bound** and **cycle detection**. The chain travels to
 OPA as `input.resource.ancestors`; the **role is resolved once on the governing root**; the policy decides
 `direct_leaf_grant OR (inheritable ancestor grant)`, then **deny-overrides** narrows. A failed walk
@@ -28,7 +28,7 @@ strips a direct grant. Inheritance is **opt-in per relation, default-off**.
 
 | Layer | What |
 |-------|------|
-| **`opa-abac-core`** (Spring-free) | `ParentRef(type,id)`; `AbacDataObject.abacParent() → Optional<ParentRef>` (default empty); `AbacContext.Resource.ancestors` serialized as `input.resource.ancestors` (root-first, leaf-excluded, omitted when empty). |
+| **`opa-abac-core`** (Spring-free) | `ParentRef(type,id)`; `AbacResource.abacParent() → Optional<ParentRef>` (default empty); `AbacContext.Resource.ancestors` serialized as `input.resource.ancestors` (root-first, leaf-excluded, omitted when empty). |
 | **`opa-abac-spring-data`** | The `AncestorResolver` SPI (`ancestorsOf(leafType, leafId)`) + two impls — `LtreeAncestorResolver` (default, decodes a denormalized `ltree` path in one indexed read) and `RecursiveCteAncestorResolver` (walks live `parent_id` adjacency). The opt-in `AbstractHierarchicalEntity` (ltree `path` column + path-maintainer + **atomic `reparent`**). The `HierarchicalAuthorizer` seam tying resolver → context → OPA. |
 | **`opa-abac-spring-boot-starter`** | Auto-config (`opa.abac.hierarchy.*`): `enabled` (default **false**), `resolver` (`ltree`/`cte`), `maxDepth`, the `inheritable` map. Wires the resolver once the app supplies a data-access source bean. |
 | **The policy (Rego)** | The `inherited_grant` clause + `deny-overrides`, gated by opt-in `data.<pkg>.inheritable[leaf][ancestor]`. |

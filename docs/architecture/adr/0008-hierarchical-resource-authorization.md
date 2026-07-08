@@ -9,6 +9,9 @@ tags:
 
 # ADR 0008 — Hierarchical (N-level ancestor) resource authorization
 
+> **Naming note (2026-07-08, pre-publish API polish):** the interface this ADR calls `AbacDataObject` was renamed **`AbacResource`** before the first publish — it names the role the object plays in the authorization query (`input.resource`), completing the `AbacResourceResolver`/`AbacResourceCache` naming family. The decision content is unchanged.
+
+
 **Status:** Accepted (implemented — Slice 5.5-A, [[HIERARCHY-SINGLE-RESOURCE]])
 **Date:** 2026-06
 **Context tags:** ABAC, OPA, resource hierarchy, ancestor inheritance, partial-eval, fail-closed, ltree
@@ -49,7 +52,7 @@ nested-set, closure-table) with their read-vs-write-vs-reparent trade-offs.
 A resource is authorized against its **ancestor chain**, resolved app-side and supplied to OPA, with
 **opt-in** inheritance, **deny-overrides**, and a strict **fail-closed** posture. Eight pinned choices:
 
-1. **Parent linkage in core, the walk in spring-data.** `AbacDataObject` (core, Spring-free) gains an
+1. **Parent linkage in core, the walk in spring-data.** `AbacResource` (core, Spring-free) gains an
    optional default `abacParent() → Optional<ParentRef>` (`ParentRef` = a neutral `(type, id)` record in
    core). It is the *declarative* source of truth for one hop. The **N-level walk** is an
    `AncestorResolver` **SPI** in `opa-abac-spring-data` — core learns the *concept* of a parent but holds

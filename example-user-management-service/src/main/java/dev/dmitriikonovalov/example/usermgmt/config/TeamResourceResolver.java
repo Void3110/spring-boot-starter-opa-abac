@@ -2,14 +2,14 @@ package dev.dmitriikonovalov.example.usermgmt.config;
 
 import dev.dmitriikonovalov.example.usermgmt.domain.Team;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * Resolves a {@code team} to its {@link AbacDataObject} (a {@link Team}, which extends the secured base
+ * Resolves a {@code team} to its {@link AbacResource} (a {@link Team}, which extends the secured base
  * and carries its attributes), so the request-scoped {@code AbacResourceCache} can hold the resolved
  * snapshot for the action-enrichment advice to read (Phase 6).
  *
@@ -34,7 +34,7 @@ public class TeamResourceResolver implements AbacResourceResolver {
     }
 
     @Override
-    public Optional<AbacDataObject> resolve(String resourceType, String resourceId) {
+    public Optional<AbacResource> resolve(String resourceType, String resourceId) {
         if (!"team".equals(resourceType)) {
             return Optional.empty();
         }
@@ -44,6 +44,6 @@ public class TeamResourceResolver implements AbacResourceResolver {
         } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
-        return teams.findById(id).map(team -> (AbacDataObject) team);
+        return teams.findById(id).map(team -> (AbacResource) team);
     }
 }

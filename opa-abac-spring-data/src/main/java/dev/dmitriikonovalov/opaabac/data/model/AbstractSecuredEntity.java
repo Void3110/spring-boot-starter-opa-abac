@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.data.model;
 
-import dev.dmitriikonovalov.opaabac.core.AbacDataObject;
+import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.MappedSuperclass;
@@ -16,7 +16,7 @@ import org.hibernate.type.SqlTypes;
  * <ol>
  *   <li><b>Tags</b> — a JSONB {@code tags} column backed by {@link ResourceTags}, the resource-side
  *       attributes an OPA policy reads.</li>
- *   <li><b>{@link AbacDataObject}</b> — so the framework can build an authorization context resource
+ *   <li><b>{@link AbacResource}</b> — so the framework can build an authorization context resource
  *       from any secured entity with no per-entity glue.</li>
  * </ol>
  *
@@ -26,7 +26,7 @@ import org.hibernate.type.SqlTypes;
  */
 @MappedSuperclass
 public abstract class AbstractSecuredEntity extends AbstractAuditableEntity
-        implements Taggable, AbacDataObject {
+        implements Taggable, AbacResource {
 
     @Convert(converter = ResourceTagsConverter.class)
     @JdbcTypeCode(SqlTypes.JSON)
