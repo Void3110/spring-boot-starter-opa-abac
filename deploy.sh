@@ -48,6 +48,11 @@ ENABLE_OIDC="${ENABLE_OIDC:-0}"
 # (the app-resolved path). Off by default — opt in with ENABLE_USER_SERVICE=1 ./deploy.sh up.
 # When on, the catalog pods get CATALOG_ROLE_SOURCE=http pointed at http://usermgmt:8080.
 ENABLE_USER_SERVICE="${ENABLE_USER_SERVICE:-0}"
+# ADR 0022: the root-read tag exemption ships ON via infra/opa/policies/config.json (members always
+# read/list the governing root; required_tags gate mutations + everything below the root). Set
+# ROOT_READ_TAG_EXEMPTION=0|1 to override the LIVE flag right after OPA starts — an in-memory
+# /v1/data PUT, so an OPA container restart reverts to the file default. Unset = file default.
+ROOT_READ_TAG_EXEMPTION="${ROOT_READ_TAG_EXEMPTION:-}"
 # Slice B3: a fault-injecting stand-in for the resolve endpoint, for the resilience e2e. Off by default —
 # opt in with ENABLE_RESILIENCE_STUB=1 [STUB_MODE=transient|down] [STUB_FAILS=1] ./deploy.sh up. When on,
 # the catalog pods get CATALOG_ROLE_SOURCE=http pointed at http://resolve-stub:8080 (NOT the real
@@ -198,6 +203,26 @@ app_compose() { docker compose -p "$PROJECT" -f "$GEN_COMPOSE" "$@"; }
 apisix_compose() { docker compose -p "$PROJECT" -f "$APISIX_COMPOSE" "$@"; }
 jaeger_compose() { docker compose -p "$PROJECT" -f "$JAEGER_COMPOSE" "$@"; }
 opa_compose() { docker compose -p "$PROJECT" -f "$OPA_COMPOSE" "$@"; }
+
+# ADR 0022: override the root-read tag exemption on the RUNNING OPA. Only acts when
+# ROOT_READ_TAG_EXEMPTION is explicitly set (0|1); otherwise the config.json file default rules.
+# The PUT writes OPA's in-memory store — an OPA restart re-seeds from the file, reverting the
+# override (deliberate: the committed default is the durable truth; the env is a demo/test toggle).
+apply_root_read_exemption() {
+  [ -n "$ROOT_READ_TAG_EXEMPTION" ] || return 0
+  local value=false
+  [ "$ROOT_READ_TAG_EXEMPTION" = "1" ] && value=true
+  local i
+  for i in $(seq 1 20); do
+    if curl -sf -X PUT "http://localhost:28181/v1/data/config/root_read_tag_exemption" \
+        -H 'Content-Type: application/json' -d "$value" >/dev/null 2>&1; then
+      echo "    root-read tag exemption -> $value (in-memory override; an OPA restart reverts to the file default)"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "WARNING: could not apply the root-read tag exemption override (OPA not answering on :28181)" >&2
+}
 keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
 usermgmt_compose() { docker compose -p "$PROJECT" -f "$USERMGMT_COMPOSE" "$@"; }
 resolve_stub_compose() { docker compose -p "$PROJECT" -f "$RESILIENCE_STUB_COMPOSE" "$@"; }
@@ -305,6 +330,7 @@ case "$CMD" in
     fi
     if [ "$ENABLE_OPA" = "1" ]; then
       echo "==> Starting OPA (allow-all policy)..."; opa_compose up -d
+      apply_root_read_exemption
     fi
     if [ "$ENABLE_OIDC" = "1" ]; then
       echo "==> Starting Keycloak (realm import)..."; keycloak_compose up -d

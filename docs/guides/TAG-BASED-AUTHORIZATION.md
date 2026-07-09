@@ -51,8 +51,10 @@ TagDefinition(key, scope GLOBAL|TEAM, teamId?, valueType STRING|ENUM,
 - Seeded global demo keys: `sensitivity` (ENUM/SINGLE/`[public,internal,confidential]`) and `region`
   (ENUM/MULTI/`[emea,amer,apac]`).
 
-**Read:** `GET /api/v1/tag-definitions[?teamId=]` (any authenticated caller — the vocabulary isn't
-sensitive). **Manage** (a team's keys): `POST/PUT/DELETE /api/v1/teams/{teamId}/tag-definitions`, secured
+**Read:** `GET /api/v1/tag-definitions[?teamId=]` **and** `GET /api/v1/teams/{teamId}/tag-definitions`
+(any authenticated caller — the vocabulary isn't sensitive, and an *assigner* needs it to know what is
+legal to assign; the two paths serve identical rows, and only the team-scoped one is gateway-exposed).
+**Manage** (a team's keys): `POST/PUT/DELETE /api/v1/teams/{teamId}/tag-definitions`, secured
 by `@OpaPreAuthorize(team:define-tags)` — **owner or administrator** (admins curate the vocabulary writers
 assign from). Global/system keys are immutable (409).
 
@@ -118,6 +120,17 @@ resource-side model *with the default inverted to fail-closed* — it would get 
 > So the genuine empty list comes from **no role definition** (the fail-closed boundary), *not* from "a
 > role with no tags". A role with the permission and no tag requirement sees everything it's permitted to —
 > tags only ever *subtract*.
+
+**The one carve-out — the governing root (ADR [[0022-root-read-tag-exemption|0022]]).** Uniform
+subtraction had a lockout: a tag-requiring role stopped reaching the **untagged catalog shell** — team
+member, correct role, empty grid — because membership only *selects* the role; it granted nothing the
+role's filter couldn't void. Since ADR 0022, READ-level verbs (`view`/`list`) on the **catalog** (the
+resource the team-target explicitly names) are exempt from `requiredTags` by default
+(`data.config.root_read_tag_exemption`, shipped `true`; absent = strict, fail-closed;
+`ROOT_READ_TAG_EXEMPTION=0 ./deploy.sh up` flips the live rig). Mutations on the root and everything
+below it stay fully tag-gated — and catalogs are now **taggable** (the category-style delta dispatch on
+the catalog PUT), so root tags gate *who may mutate the catalog itself*. The 7.0.5 list↔GET agreement
+invariant holds in both flag states.
 
 **A worked data-flow** (the e2e demo, traced through the rego):
 
@@ -226,6 +239,43 @@ Proven through the gateway by the tag matrix (see [[E2E-TESTING]] → "Tag-based
 ALL_OF, the dictionary define dogfood (owner 201 / member 403), and an illegal assignment (422) round it
 out. A team key defined at runtime governs assignment + (via a role) decisions immediately — **no
 redeploy**.
+
+## Bringing your own tag dictionary (the library/app boundary)
+
+Everything in Layers 1–2 is **example-app code, on purpose**. The starter ships the tag *mechanics*
+— all of them key-agnostic — and owns **no dictionary**:
+
+| The starter owns (opaque `key → value(s)`) | The application owns (vocabulary + workflow) |
+|---|---|
+| `ResourceTags` + `Taggable` (`TAGS_ATTRIBUTE`) — the JSONB storage shape (`opa-abac-spring-data`) | The `TagDefinition` model, GLOBAL/TEAM scoping, immutable system keys (user-service) |
+| The partial-eval residual compiling `tags.*` conditions into SQL | Assignment validation (`TagAssignmentService` + the fail-closed `TagDefinitionClient`) |
+| `RoleDefinition.requiredTags`/`matchMode` → `required_tags`/`match_mode` in OPA input (`opa-abac-core`) | The `/internal/tag-definitions` resolve endpoint + the `team:define-tags` authoring gate |
+| `input.resource.tags` at the gate + enrichment | Which keys exist at all — seeded, user-managed, or none |
+
+So an adopter may hardcode three keys, seed globals the way the example does (Liquibase,
+`system=true`), run a full user-managed dictionary (the TEAM scope), or skip tags entirely — the
+library behaves identically in all four. The only coupling that matters is between the *app's own*
+policies/role definitions and the keys it actually assigns; dictionary validation is what keeps that
+coupling honest, and the example is the reference implementation to copy from.
+
+**The one integration trap (we hit it ourselves):** address the dictionary by the resource's
+**governing root**, never the raw resource. The user-service resolves the applicable team by exact
+team-target match, and teams target roots (catalogs) — so
+`validateAndBuild("catalog", catalogId, …)`, not `("category", categoryId, …)`. Passing a non-root
+still validates the globals but **silently drops the team's custom keys** (they stop resolving —
+every team-key assignment answers 422 "unknown key"). Same caller-resolves-the-root rule the
+effective-role fetch follows.
+
+**Pinned decision (2026-07-09): no tag-dictionary interfaces in the starter for 1.0.** Every starter
+SPI exists because library machinery calls it at decision time (`RoleDefinitionSupplier`,
+`AncestorChainSupplier`, `GovernedScopeResolver`, `UserDirectory`…); nothing in the library ever
+needs a tag *definition* — assignment validation is a write-path application concern. A dictionary
+port would be the first seam with no library consumer, and it would freeze one vocabulary schema
+(ENUM/STRING × SINGLE/MULTI) at 1.0 that isn't the starter's to own. If real adopter demand
+appears, the move is additive and its shape is known: an **optional module** (the
+`opa-abac-keycloak-directory` precedent) carrying a `TagDefinitionView` contract, the generic
+assignment validator, and an ancestor-wired `applicableTo(resource)` source — which would also make
+the governing-root trap disappear by construction.
 
 ## Boundaries (deferred)
 

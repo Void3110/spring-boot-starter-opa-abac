@@ -57,8 +57,15 @@ public class TagDefinitionController implements TagDefinitionApi {
 
     // --- team-scoped management (dogfood-secured: team:define-tags) ------------
 
+    /**
+     * <b>Read, not management — no gate.</b> This returns byte-identical rows to the bearer-only flat
+     * listing above ({@code GET /tag-definitions?teamId=} calls the same service method), so a
+     * {@code define-tags} gate here protected nothing — while breaking every ASSIGNER below
+     * owner/administrator: a TAG-capable member needs the vocabulary to know what is legal to
+     * assign, and the SPA's pickers read it through this path (the gateway exposes only
+     * {@code /api/v1/teams*}). {@code define-tags} keeps gating the mutations below.
+     */
     @Override
-    @OpaPreAuthorize(action = "team:define-tags", resourceType = "'team'", resourceId = "#teamId")
     public ResponseEntity<TagDefinitionPage> listTeamTagDefinitions(
             UUID teamId, Integer page, Integer perPage) {
         var result = tagDefinitions.list(teamId, PageDefaults.pageRequest(page, perPage));

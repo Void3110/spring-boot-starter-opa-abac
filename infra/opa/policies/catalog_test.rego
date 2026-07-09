@@ -366,22 +366,27 @@ test_filter_tagged_role_matching_tag_lists if {
 	catalog.filter with input as filter_tagged_input(emea_role_def, {"region": "emea"})
 }
 
-# R5 — SAME tag-gated role, catalog tagged region=apac -> filter FALSE. This is the fix: the list
-# path now excludes the mismatched catalog, agreeing with `allow` (which 403s it). Pre-fix this was
-# true (the leak).
+# R5 — SAME tag-gated role, catalog tagged region=apac -> filter FALSE in STRICT mode. This is the
+# 7.0.5 fix: the list path excludes the mismatched catalog, agreeing with `allow` (which 403s it).
+# Pre-fix this was true (the leak). Strict mode is pinned explicitly (`with data.config as {}`)
+# because under the ROOT-READ EXEMPTION (ADR 0022 — the shipped config.json default) both list AND
+# view pass instead; the 7.0.5 invariant is list<->GET AGREEMENT, never one-sided strictness — the
+# exemption-mode agreement is pinned by the E-cells below.
 test_filter_tagged_role_mismatched_tag_denies if {
 	not catalog.filter with input as filter_tagged_input(emea_role_def, {"region": "apac"})
+		with data.config as {}
 }
 
-# R6 — list<->single-GET AGREEMENT on the mismatched catalog: `filter` false AND `allow` false for the
-# same role+resource. The invariant the High violated ("list and single-GET agree on visible rows").
+# R6 — list<->single-GET AGREEMENT on the mismatched catalog in STRICT mode: `filter` false AND
+# `allow` false for the same role+resource. (Exemption-mode agreement: E4.)
 test_filter_and_allow_agree_on_mismatched_tag if {
 	mismatched := filter_tagged_input(emea_role_def, {"region": "apac"})
-	not catalog.filter with input as mismatched
+	not catalog.filter with input as mismatched with data.config as {}
 	not catalog.allow with input as object.union(mismatched, {"action": "catalog:view"})
+		with data.config as {}
 }
 
-# R7 — ALL_OF tag-gated role: filter true only when EVERY required key matches.
+# R7 — ALL_OF tag-gated role in STRICT mode: filter true only when EVERY required key matches.
 test_filter_tagged_role_all_of if {
 	all_of_role := {
 		"code": "emea-active-viewer",
@@ -391,7 +396,66 @@ test_filter_tagged_role_all_of if {
 		"match_mode": "ALL_OF",
 	}
 	catalog.filter with input as filter_tagged_input(all_of_role, {"region": "emea", "status": "active"})
+		with data.config as {}
 	not catalog.filter with input as filter_tagged_input(all_of_role, {"region": "emea", "status": "retired"})
+		with data.config as {}
+}
+
+# --- ADR 0022: the ROOT-READ TAG EXEMPTION (E1–E6) -----------------------------------------------
+#
+# The catalog is the governing root — the resource the team-target explicitly names — so READ-level
+# verbs (view/list) on it are exempt from required_tags when data.config.root_read_tag_exemption is
+# true (the shipped config.json default; `opa test` loads it from this directory, so the E-cells run
+# against the REAL default). Mutations on the root and everything below stay tag-gated. An absent
+# flag means STRICT — the widening is an explicit deployment choice, never a missing-file default.
+
+# E1 — exemption ON (dir default): tag-gated role VIEWS the untagged catalog (the membership grant
+# on the named root is not voided by the role's tag filter — the alice lockout, fixed).
+test_exempt_root_view_untagged_catalog if {
+	catalog.allow with input as object.union(
+		catalog_tag_input(regional_catalog_writer, {}),
+		{"action": "catalog:view"},
+	)
+}
+
+# E2 — exemption ON: the same role LISTS (filter true — the tag conjunct drops from the residual).
+test_exempt_root_list_untagged_catalog if {
+	catalog.filter with input as filter_tagged_input(emea_role_def, {})
+}
+
+# E3 — exemption ON: mutations on the root stay tag-gated — the untagged catalog still denies
+# update for the tag-gated role (the exemption is READ-only; catalog tags gate mutations).
+test_exempt_root_update_still_tag_gated if {
+	not catalog.allow with input as catalog_tag_input(regional_catalog_writer, {})
+}
+
+# E4 — exemption ON: list<->single-GET AGREEMENT on the mismatched catalog — BOTH pass (the
+# exemption-mode counterpart of R6; agreement holds in both flag states).
+test_exempt_filter_and_allow_agree if {
+	mismatched := filter_tagged_input(emea_role_def, {"region": "apac"})
+	catalog.filter with input as mismatched
+	catalog.allow with input as object.union(mismatched, {"action": "catalog:view"})
+}
+
+# E5 — flag ABSENT -> STRICT: the untagged catalog view denies (fail-closed on missing config;
+# the exemption never activates by omission).
+test_absent_flag_is_strict if {
+	not catalog.allow with input as object.union(
+		catalog_tag_input(regional_catalog_writer, {}),
+		{"action": "catalog:view"},
+	)
+		with data.config as {}
+}
+
+# E6 — flag EXPLICITLY false -> STRICT (the deploy.sh toggle's off state).
+test_false_flag_is_strict if {
+	not catalog.allow with input as object.union(
+		catalog_tag_input(regional_catalog_writer, {}),
+		{"action": "catalog:view"},
+	)
+		with data.config as {"root_read_tag_exemption": false}
+	not catalog.filter with input as filter_tagged_input(emea_role_def, {})
+		with data.config as {"root_read_tag_exemption": false}
 }
 
 # --- Phase 5 batch primitive (extended to catalog for Phase 6 action enrichment) ---

@@ -36,8 +36,14 @@ public class TagAssignmentService {
      * Validate {@code submittedTags} for a resource and return the {@link ResourceTags} to persist. An
      * empty/absent map yields {@link ResourceTags#empty()} without a definitions fetch.
      *
-     * @param resourceType the resource type being tagged (e.g. {@code "category"})
-     * @param resourceId   the resource id (used to resolve the governing team's keys)
+     * <p><b>Address the dictionary by the governing root.</b> The user-service resolves the applicable
+     * team by exact team-target match, and teams target roots (catalogs) — so callers pass the tagged
+     * resource's GOVERNING ROOT here, not the resource itself (the caller-resolves-the-root rule the
+     * effective-role fetch already follows). Passing a non-root resolves no team: the globals still
+     * validate, but the team's custom keys silently stop applying.
+     *
+     * @param resourceType the governing root's type (e.g. {@code "catalog"} for category tags)
+     * @param resourceId   the governing root's id (resolves the team whose custom keys apply)
      * @param submittedTags {@code key -> scalar String | List<String>} as posted by the client
      */
     public ResourceTags validateAndBuild(

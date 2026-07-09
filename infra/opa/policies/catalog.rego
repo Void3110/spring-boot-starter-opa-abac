@@ -26,6 +26,16 @@
 # conjunct only NARROWS the role-definition grant path (it never widens; the create fallback below
 # carries no tag requirement, as creation precedes any resource).
 #
+# ROOT-READ TAG EXEMPTION (ADR 0022): the catalog is the GOVERNING ROOT — the resource the
+# team-target explicitly names. A role-level required_tags filter voiding that direct, admin-created
+# binding on the named resource itself produces a navigation lockout (the member can't even see the
+# catalog shell whose categories they may reach), while protecting only shell metadata — content
+# below stays tag-filtered per row regardless. So READ-level verbs (view/list) on the root are
+# exempt from the tag requirement WHEN data.config.root_read_tag_exemption is true (the shipped
+# config.json default). Mutating verbs on the root and everything below the root stay tag-gated.
+# An ABSENT flag means STRICT (no exemption) — config can only be widened by explicit deployment
+# choice, never by a missing file (fail-closed).
+#
 # OPA 1.x: `if`/`in`/`contains`/`some`/`every` are built-in keywords — no imports needed. Default deny.
 
 package catalog
@@ -114,11 +124,21 @@ tags_satisfied if {
 	}
 }
 
-# Vacuous truth: a role with no tag requirement is unaffected (back-compat). This is the ONLY
-# path that passes when required_tags is absent/empty; a present-but-malformed required_tags
-# with an unknown/missing match_mode matches none of the rules above -> tags_satisfied fails -> deny.
+# Vacuous truth: a role with no tag requirement is unaffected (back-compat). Alongside the
+# root-read exemption below, these are the only paths that pass when the tag rules above don't;
+# a present-but-malformed required_tags with an unknown/missing match_mode matches none of the
+# match rules -> tags_satisfied fails -> deny (unless the verb is an exempt root read).
 tags_satisfied if {
 	not has_required_tags
+}
+
+# ROOT-READ TAG EXEMPTION (ADR 0022): membership IS the explicit grant on the resource the
+# team-target names, so required_tags never gate READ-level navigation of the root itself.
+# This package only ever decides catalogs (the root type), so the verb gate is the whole test.
+# The flag is data, not input: concrete at partial-eval time, so the list residual folds clean.
+tags_satisfied if {
+	data.config.root_read_tag_exemption == true
+	verb in {"view", "list"}
 }
 
 has_required_tags if {
@@ -175,6 +195,15 @@ filter_list_denied if {
 # No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).
 filter_tags_satisfied if {
 	not has_required_tags
+}
+
+# ROOT-READ TAG EXEMPTION (ADR 0022): `filter` IS the root list path (the "list" chain above), so
+# with the exemption on, the tag conjunct drops from the list residual entirely. The flag is DATA —
+# concrete at compile time — so this branch folds to TRUE (never a residual condition) and the
+# governed-id base scope alone decides, matching the exempt single-GET `allow`. List and view agree
+# in BOTH flag states: strict -> both tag-gated; exempt -> both membership-only.
+filter_tags_satisfied if {
+	data.config.root_read_tag_exemption == true
 }
 
 # A required key is satisfied when an acceptable value matches the resource's tag — for a SCALAR tag by

@@ -246,10 +246,92 @@ class TagDecisionGateIT {
         assertThat(ActionAwareOpaClient.askedActions).containsExactly("category:delete");
     }
 
+    // --- the CATALOG mirror (ADR 0022 — taggable catalogs adopt the same dispatch) ----------------
+    // Deep-review finding (2026-07-10): the catalog PUT gained the identical delta dispatch but every
+    // dispatch cell above targets the category endpoint — these cells pin the catalog handler.
+
+    @Test // I13c — a tags-delta-only catalog PUT asks exactly [catalog:assign-tags]
+    void catalogTagsDeltaOnlyAsksAssignTagsAlone() throws Exception {
+        var catalog = seedCatalog(Map.of("region", List.of("emea")));
+        ActionAwareOpaClient.rule = allowOnly("catalog:assign-tags"); // update would DENY
+
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"dispatch-it-catalog\",\"tags\":{\"region\":[\"emea\",\"amer\"]}}"))
+                .andExpect(status().isOk());
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:assign-tags");
+        assertThat(catalogs.findById(catalog.getId()).orElseThrow().getTags().asMap())
+                .containsEntry("region", List.of("emea", "amer"));
+    }
+
+    @Test // I14c — content-delta-only asks [catalog:update]; both deltas ask both, in order
+    void catalogBothDeltasAskBothDecisionsInOrder() throws Exception {
+        var catalog = seedCatalog(Map.of());
+        ActionAwareOpaClient.rule = allowOnly("catalog:update");
+
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"renamed\"}"))
+                .andExpect(status().isOk());
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:update");
+
+        ActionAwareOpaClient.askedActions.clear();
+        ActionAwareOpaClient.rule = allowOnly("catalog:update", "catalog:assign-tags");
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"renamed-again\",\"tags\":{\"region\":[\"emea\"]}}"))
+                .andExpect(status().isOk());
+        assertThat(ActionAwareOpaClient.askedActions)
+                .containsExactly("catalog:update", "catalog:assign-tags");
+    }
+
+    @Test // I15c — a denied catalog:assign-tags (WRITE-no-TAG) leaves the row untouched
+    void catalogDeniedAssignTagsLeavesTheEntityUntouched() throws Exception {
+        var catalog = seedCatalog(Map.of("region", List.of("emea")));
+        Integer versionBefore = catalogs.findById(catalog.getId()).orElseThrow().getVersion();
+        ActionAwareOpaClient.rule = allowOnly("catalog:update"); // TAG is what's missing
+
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"dispatch-it-catalog\",\"tags\":{\"region\":[\"apac\"]}}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("ACCESS_DENIED"));
+
+        var row = catalogs.findById(catalog.getId()).orElseThrow();
+        assertThat(row.getName()).isEqualTo("dispatch-it-catalog");
+        assertThat(row.getTags().asMap()).containsEntry("region", List.of("emea"));
+        assertThat(row.getVersion()).isEqualTo(versionBefore); // the deny preceded ANY mutation
+    }
+
+    @Test // I16c — catalog create-with-tags is the UNCONDITIONAL 422 (unlike the category's
+    // type-level assign-tags decision): a new catalog has no team yet, so the decision could never
+    // resolve — rejected loudly AFTER the create gate allowed, and nothing persists.
+    void catalogCreateWithTagsAnswers422PersistsNothing() throws Exception {
+        long before = catalogs.count();
+        ActionAwareOpaClient.rule = allowOnly("catalog:create");
+
+        mockMvc.perform(post("/api/v1/catalogs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"tagged-at-birth\",\"tags\":{\"region\":[\"emea\"]}}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errorCode").value("TAG_VALUE_ILLEGAL"));
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:create");
+        assertThat(catalogs.count()).isEqualTo(before); // nothing persisted
+    }
+
     // --- seeding ----------------------------------------------------------------
 
     private CatalogEntity seedCatalog() {
+        return seedCatalog(Map.of());
+    }
+
+    private CatalogEntity seedCatalog(Map<String, Object> tags) {
         var entity = new CatalogEntity(UUID.randomUUID(), "dispatch-it-catalog", null);
+        if (!tags.isEmpty()) {
+            entity.setTags(ResourceTags.fromMap(tags));
+        }
         hierarchy.assignPath(entity);
         return catalogs.save(entity);
     }

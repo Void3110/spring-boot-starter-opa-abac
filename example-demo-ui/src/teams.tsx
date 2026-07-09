@@ -12,6 +12,7 @@ import {
   ensureUser,
   listAllUsers,
   listMembers,
+  listTeamTagDefinitions,
   lookupTeamByTarget,
   listRoleDefinitions,
   removeMember,
@@ -20,6 +21,7 @@ import {
 } from './api'
 import { type Notice, NoticeLine, errText, useAsync } from './components'
 import { RolesSection } from './roles'
+import { TagKeysSection } from './tags'
 
 // The system ladder (10 reader … 40 owner). Owner is never assignable — ownership moves only
 // through transfer-ownership — so the pickers offer the four authorable tiers.
@@ -39,7 +41,16 @@ const DEFAULT_ROLE = 'member'
  * alone can't pre-answer (see TeamEnrichable), so the UI shows the action and lets the server's
  * typed denial (403/409/422) tell the story.
  */
-export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubject: string }) {
+export function TeamPanel({
+  catalogId,
+  mySubject,
+  onDictionaryChanged,
+}: {
+  catalogId: string
+  mySubject: string
+  /** Fired after a tag-key change so the parent's tag pickers can refresh their dictionary. */
+  onDictionaryChanged?: () => void
+}) {
   // One-shot lookup (DIRECTORY-QUERY-FILTERS): the governing team answers in a single filtered
   // request (?targetType&targetId) — no page-walk, no truncated miss. The user list only resolves
   // roster rows to display names now — the member picker searches the identity directory
@@ -77,6 +88,7 @@ export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubje
           usersReady={users.data !== null}
           mySubject={mySubject}
           onUsersChanged={users.reload}
+          onDictionaryChanged={onDictionaryChanged}
         />
       )}
     </div>
@@ -102,16 +114,20 @@ function Roster({
   usersReady,
   mySubject,
   onUsersChanged,
+  onDictionaryChanged,
 }: {
   team: Team
   users: User[]
   usersReady: boolean
   mySubject: string
   onUsersChanged: () => void
+  onDictionaryChanged?: () => void
 }) {
   const members = useAsync(() => listMembers(team.id), [team.id])
   // Owner-only (team:define-roles) — everyone else falls back to the hardcoded system ladder.
   const roleDefs = useAsync(() => listRoleDefinitions(team.id), [team.id])
+  // The dictionary this team sees (global + its own keys) — the TagKeysSection edits it.
+  const tagKeys = useAsync(() => listTeamTagDefinitions(team.id), [team.id])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   // Hold the manage controls until the directory is in: `me` and display names come from it, and
@@ -219,6 +235,24 @@ function Roster({
         roleDefs={roleDefs.data}
         error={roleDefs.error}
         onChanged={roleDefs.reload}
+      />
+      <TagKeysSection
+        team={team}
+        tagDefs={tagKeys.data}
+        error={tagKeys.error}
+        // Key authoring is the management verb (team:define-tags), reachable only from the system
+        // owner/administrator tiers — custom roles are management-incapable by design (ADR 0015),
+        // so the roster's own role code predicts the deny. A prediction, not a decision: the
+        // controls stay usable and the server's 403 is the demo.
+        likelyDenied={
+          !['owner', 'administrator'].includes(
+            (me && roster.find((m) => m.userId === me.id)?.roleCode) ?? '',
+          )
+        }
+        onChanged={() => {
+          tagKeys.reload()
+          onDictionaryChanged?.() // the pickers in the categories section share this dictionary
+        }}
       />
       <NoticeLine notice={notice} />
     </div>
@@ -465,7 +499,19 @@ function AddMemberForm({
  * team (owner-on-create, ADR 0019). A catalog without a team is invisible to everyone — so when
  * step 2 fails we keep the created catalog and retry only the team.
  */
-export function CreateCatalogPanel({ onCreated }: { onCreated: () => void }) {
+export function CreateCatalogPanel({
+  onCreated,
+  likelyDenied = false,
+}: {
+  onCreated: () => void
+  /**
+   * The caller's token lacks catalog-editor — the one realm role catalog:create needs (the B4
+   * narrow fallback). A prediction, not a decision: the button stays fully usable on purpose
+   * (the roles-form posture) so submitting demonstrates the live 403 — the server decides,
+   * never the UI. Amber, not red: red is reserved for server-computed denials (_actions).
+   */
+  likelyDenied?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -515,9 +561,19 @@ export function CreateCatalogPanel({ onCreated }: { onCreated: () => void }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-3 rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-ink)] transition-colors hover:bg-[var(--color-canvas)]"
+        title={
+          likelyDenied
+            ? 'Your realm roles lack catalog-editor — creating will answer 403. Left usable on purpose: the server decides, never the UI.'
+            : undefined
+        }
+        className="mb-3 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
+        style={
+          likelyDenied
+            ? { borderColor: '#fcd34d', color: '#b45309', background: '#fef3c7' }
+            : { borderColor: 'var(--color-line)', color: 'var(--color-brand-ink)' }
+        }
       >
-        + New catalog
+        {likelyDenied ? '⚠ ' : ''}+ New catalog
       </button>
     )
 
@@ -531,6 +587,13 @@ export function CreateCatalogPanel({ onCreated }: { onCreated: () => void }) {
           close
         </button>
       </div>
+      {likelyDenied && (
+        <p className="mt-1 text-xs" style={{ color: '#b45309' }}>
+          ⚠ Creating a catalog needs the <code>catalog-editor</code> realm role — this identity
+          doesn't hold it. The form is left usable on purpose: submitting demonstrates the live
+          403 (the server decides, never the UI).
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
           autoFocus

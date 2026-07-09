@@ -65,6 +65,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
 
   /api/v1/catalogs/{catalogId}:
     parameters:
@@ -105,6 +107,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     delete:
       tags: [Catalog]
       summary: Delete a catalog
@@ -214,6 +220,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     delete:
       tags: [Category]
       summary: Delete a category
@@ -487,6 +497,14 @@ components:
           type: string
           format: date-time
           readOnly: true
+        tags:
+          type: object
+          additionalProperties: true
+          description: >
+            Dictionary-validated tags on this catalog. Each value is a string (single-valued key) or
+            an array of strings (multi-valued key), per the tag definition. Under the root-read tag
+            exemption (ADR 0022, the default) these gate the catalog's MUTATIONS for tag-requiring
+            roles, not members' read/list access; with the exemption disabled they gate reads too.
         _actions:
           type: object
           additionalProperties:
@@ -507,6 +525,14 @@ components:
         description:
           type: string
           maxLength: 2000
+        tags:
+          type: object
+          additionalProperties: true
+          description: >
+            Tags to assign, validated against the tag dictionary (422 on an unknown key or illegal
+            value; nothing silently dropped). Accepted on UPDATE only — a create carrying tags is
+            rejected 422: the type-level assign-tags decision resolves through the governing team,
+            and a new catalog has no team until the owner-on-create step binds one.
 
     Category:
       type: object

@@ -108,7 +108,6 @@ class ResourceResolutionGateIT {
         ProgrammableOpaClient.rule = ctx -> false; // fail-closed default; each case sets its rule
         ProgrammableOpaClient.captured.clear();
         RecordingRoleSupplier.lookups.clear();
-        RaceInjector.BEFORE_CATALOG_HANDLER.set(null);
         RaceInjector.BEFORE_SAVE.set(null);
         RaceInjector.BEFORE_MUTATE.set(null);
     }
@@ -186,24 +185,33 @@ class ResourceResolutionGateIT {
 
     // --- I4: the deterministic version-guard race ------------------------------
 
-    @Test // I4 — an out-of-band bump between gate and handler → 409, the mutation does NOT apply.
-    // Phase 6.5 moved this cell from the category PUT to the CATALOG PUT: the category update now
-    // dispatches its decisions IN-handler (delta-aware), so the annotation-gate→handler window this
-    // cell pins only exists on the statically-annotated handlers (catalog/product update).
+    @Test // I4 — an out-of-band bump between gate and write → 409, the mutation does NOT apply.
+    // Phase 6.5 moved this cell from the category PUT to the catalog PUT; ADR 0022 moved it AGAIN,
+    // to the PRODUCT PUT — the catalog update now delta-dispatches its decisions in-handler too
+    // (taggable catalogs), so the annotated-gate→write window this cell pins survives only on the
+    // statically-annotated product update. The race fires between the handler's scope checks and
+    // mutate()'s locked load: the gate's snapshot no longer matches the row the write would touch.
     void gateWindowRaceAnswers409AndMutationDoesNotApply() throws Exception {
         var catalog = seedCatalog();
+        var root = seedCategory(catalog.getId(), null, "root-cat", Map.of());
+        var product = seedProduct(root.getId(), "widget");
         ProgrammableOpaClient.rule = ctx -> true;
-        RaceInjector.BEFORE_CATALOG_HANDLER.set(() -> jdbc.update(
-                "update catalog set version = version + 1, name = 'raced' where id = ?", catalog.getId()));
+        RaceInjector.BEFORE_MUTATE.set(() -> jdbc.update(
+                "update product set version = version + 1, name = 'raced' where id = ?", product.getId()));
 
-        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), root.getId(), product.getId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"mine\"}"))
+                        .content("{\"name\":\"mine\",\"sku\":\"SKU-1\",\"priceCents\":100,\"currency\":\"USD\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errorCode").value("STATE_CONFLICT"));
 
-        var row = catalogs.findById(catalog.getId()).orElseThrow();
-        assertThat(row.getName()).isEqualTo("raced"); // the out-of-band writer's state survived
+        // The caller's write did NOT apply. (Unlike the old catalog-window cell, the race hook here
+        // fires INSIDE mutate()'s transaction — the unordered aspect is innermost — so the racer's
+        // own bump rolls back with the aborted write and the row reverts to its seeded state; the
+        // durable pin is that "mine" never landed, not which writer's state survived.)
+        var row = products.findById(product.getId()).orElseThrow();
+        assertThat(row.getName()).isEqualTo("widget");
     }
 
     // --- I5: the dao advice, live (the audited 500-class) -----------------------
@@ -401,27 +409,17 @@ class ResourceResolutionGateIT {
     }
 
     /**
-     * Deterministic race injection. Each hook fires at most once (get-and-clear). An unordered
-     * aspect is {@code LOWEST_PRECEDENCE}, so {@code BEFORE_CATALOG_HANDLER} runs <em>inside</em> the
-     * order-190 method-security interceptor — i.e. after the gate decided and cached, before the
-     * handler loads (the I4 window; on the CATALOG update since Phase 6.5 — the category update
-     * dispatches in-handler and no longer has this window). {@code BEFORE_SAVE} fires immediately
-     * before the repository save — after the handler's load and guard (the I5 window the
-     * {@code @Version} column owns).
+     * Deterministic race injection. Each hook fires at most once (get-and-clear). {@code BEFORE_SAVE}
+     * fires immediately before the repository save — after the handler's load and guard (the I5
+     * window the {@code @Version} column owns). {@code BEFORE_MUTATE} fires between the product
+     * handler's scope checks and mutate()'s locked load (the I4 gate-window and I8 update-vs-delete
+     * cells; the product PUT is the last statically-annotated mutation — catalog and category
+     * updates delta-dispatch in-handler since 6.5/ADR 0022 and no longer have the window).
      */
     @Aspect
     static class RaceInjector {
-        static final AtomicReference<Runnable> BEFORE_CATALOG_HANDLER = new AtomicReference<>();
         static final AtomicReference<Runnable> BEFORE_SAVE = new AtomicReference<>();
         static final AtomicReference<Runnable> BEFORE_MUTATE = new AtomicReference<>();
-
-        @Before("execution(* dev.dmitriikonovalov.example.catalog.web.CatalogController.updateCatalog(..))")
-        void beforeCatalogHandler() {
-            Runnable race = BEFORE_CATALOG_HANDLER.getAndSet(null);
-            if (race != null) {
-                race.run();
-            }
-        }
 
         @Before("this(dev.dmitriikonovalov.example.catalog.domain.CatalogRepository) && execution(* save(..))")
         void beforeSave() {
