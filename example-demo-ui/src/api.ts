@@ -1,4 +1,4 @@
-import { userManager } from './auth'
+import { freshUser } from './auth'
 
 // Minimal typed client over the catalog API, through the gateway. Types mirror the OpenAPI shapes
 // (see example-catalog-management-service/.../openapi/catalog-api.yaml). Each enriched resource may
@@ -7,6 +7,9 @@ import { userManager } from './auth'
 
 /** The Phase-6 affordance map: which actions the caller may perform on this resource. */
 export type Actions = Record<string, boolean>
+
+/** A resource's tag map: string for a SINGLE-cardinality key, string[] for MULTI. */
+export type Tags = Record<string, string | string[]>
 
 export interface Catalog {
   id: string
@@ -51,6 +54,27 @@ export interface Team {
   targetType: string
   targetId: string
   _actions?: Actions
+}
+
+/** One tag-dictionary entry (user-service): the vocabulary tag assignments are validated against. */
+export interface TagDefinition {
+  id: string
+  key: string
+  scope: 'GLOBAL' | 'TEAM'
+  teamId?: string | null
+  valueType: 'STRING' | 'ENUM'
+  cardinality: 'SINGLE' | 'MULTI'
+  allowedValues?: string[]
+  valuePattern?: string | null
+  system: boolean
+}
+
+export interface TagDefinitionRequest {
+  key: string
+  valueType: 'STRING' | 'ENUM'
+  cardinality: 'SINGLE' | 'MULTI'
+  allowedValues?: string[]
+  valuePattern?: string | null
 }
 
 export interface Membership {
@@ -100,7 +124,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const user = await userManager.getUser()
+  // freshUser refreshes an expired access token on demand (refresh grant) — without it, a demo
+  // session older than the token lifespan sends a dead bearer and every call 401s at the gateway.
+  const user = await freshUser()
   const headers = new Headers(init?.headers)
   // Not a bare application/json: several 204-only endpoints (e.g. DELETE role-definition) declare
   // only problem+json response content, so a json-only Accept fails Spring's content negotiation
@@ -117,6 +143,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       detail = body.detail ?? body.errorCode ?? detail
     } catch {
       /* non-JSON error body; keep statusText */
+    }
+    // A gateway 401 carries no problem body — after the on-demand refresh above, it means the
+    // whole session lapsed (refresh token idle-timed-out). Say so instead of a bare "Unauthorized".
+    if (res.status === 401 && detail === res.statusText) {
+      detail = 'session expired — use "Switch identity" to sign in again'
     }
     throw new ApiError(res.status, detail)
   }
@@ -152,10 +183,37 @@ export function listProducts(
 }
 
 // --- mutations (driven by the affordance buttons) ----------------------------
+// The creates are NOT keyed off `_actions`: enrichment probes only instance-scoped verbs on the
+// resource itself, and child-create is a type-level decision resolved against the parent
+// (roleResource, ADR 0018) — so the UI offers the form and a denied POST answers honestly.
+export function createCategory(
+  catalogId: string,
+  body: { name: string; description?: string; tags?: Tags },
+): Promise<Category> {
+  return request<Category>(`/api/v1/catalogs/${catalogId}/categories`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function createProduct(
+  catalogId: string,
+  categoryId: string,
+  body: { name: string; priceCents: number; currency: string; description?: string },
+): Promise<Product> {
+  return request<Product>(`/api/v1/catalogs/${catalogId}/categories/${categoryId}/products`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+// PUT is a full replace — and ABSENT tags mean "clear all tags" (the server's delta dispatch reads
+// null as an empty map, and clearing IS a tags change). Callers must echo the current tags back
+// unless a tag change is exactly what they're asking for.
 export function updateCategory(
   catalogId: string,
   id: string,
-  patch: { name: string; description?: string },
+  patch: { name: string; description?: string; parentId?: string | null; tags?: Tags },
 ): Promise<Category> {
   return request<Category>(`/api/v1/catalogs/${catalogId}/categories/${id}`, {
     method: 'PUT',
@@ -171,7 +229,7 @@ export function updateProduct(
   catalogId: string,
   categoryId: string,
   id: string,
-  patch: { name: string; description?: string; priceCents?: number },
+  patch: { name: string; description?: string; priceCents?: number; currency?: string },
 ): Promise<Product> {
   return request<Product>(`/api/v1/catalogs/${catalogId}/categories/${categoryId}/products/${id}`, {
     method: 'PUT',
@@ -200,6 +258,48 @@ export function createTeam(body: {
 
 export function listUsers(page = 0, perPage = 100): Promise<Page<User>> {
   return request<Page<User>>(`/api/v1/users?page=${page}&perPage=${perPage}`)
+}
+
+/**
+ * The tag dictionary visible to a team: the GLOBAL keys plus the team's own custom keys. This is
+ * the team-scoped path deliberately — the flat `/api/v1/tag-definitions` listing is NOT
+ * gateway-exposed (the gateway proxies only /api/v1/teams* + /api/v1/users* to the user-service),
+ * while this one rides the /api/v1/teams* route. Drives the tag pickers; assignments are
+ * validated against the dictionary server-side either way.
+ */
+export function listTeamTagDefinitions(teamId: string, page = 0, perPage = 100): Promise<Page<TagDefinition>> {
+  return request<Page<TagDefinition>>(
+    `/api/v1/teams/${teamId}/tag-definitions?page=${page}&perPage=${perPage}`,
+  )
+}
+
+// Tag-key authoring (owner/administrator — team:define-tags); global/system keys are immutable
+// server-side, so mutations address team-scoped keys only.
+export function createTeamTagDefinition(
+  teamId: string,
+  body: TagDefinitionRequest,
+): Promise<TagDefinition> {
+  return request<TagDefinition>(`/api/v1/teams/${teamId}/tag-definitions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateTeamTagDefinition(
+  teamId: string,
+  key: string,
+  body: Omit<TagDefinitionRequest, 'key'>,
+): Promise<TagDefinition> {
+  return request<TagDefinition>(
+    `/api/v1/teams/${teamId}/tag-definitions/${encodeURIComponent(key)}`,
+    { method: 'PUT', body: JSON.stringify(body) },
+  )
+}
+
+export function deleteTeamTagDefinition(teamId: string, key: string): Promise<void> {
+  return request<void>(`/api/v1/teams/${teamId}/tag-definitions/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+  })
 }
 
 // perPage is hard-capped at 100 server-side, so scanning a whole collection means walking pages.

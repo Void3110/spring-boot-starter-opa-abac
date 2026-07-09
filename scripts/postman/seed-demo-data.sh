@@ -110,9 +110,11 @@ SQL
 
 # --- bootstrap the team + roles + memberships (subject side) ------------------
 echo "==> Bootstrapping the demo team, roles, and memberships ..."
-ADMIN_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$ADMIN_SUB\",\"displayName\":\"Demo admin\"}" | json_field userId)"
-EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$EDITOR_SUB\",\"displayName\":\"Demo editor\"}" | json_field userId)"
-VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$VIEWER_SUB\",\"displayName\":\"Demo viewer\"}" | json_field userId)"
+# Display names mirror the Keycloak logins — the roster then agrees with who you signed in as
+# AND with the picker path (KeycloakUserDirectory maps username -> displayName the same way).
+ADMIN_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$ADMIN_SUB\",\"displayName\":\"$ADMIN_USER\"}" | json_field userId)"
+EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$EDITOR_SUB\",\"displayName\":\"$EDITOR_USER\"}" | json_field userId)"
+VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$VIEWER_SUB\",\"displayName\":\"$VIEWER_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_CATALOG_ID\"}" | json_field teamId)"
 [ -n "$TEAM_ID" ] || { echo "ERROR: failed to bootstrap the demo team." >&2; exit 1; }

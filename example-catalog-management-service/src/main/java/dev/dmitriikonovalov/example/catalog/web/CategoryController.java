@@ -90,9 +90,12 @@ public class CategoryController implements CategoryApi {
                 request.getDescription());
         // Validate + assign tags against the dictionary before persisting (fail-closed: an illegal tag
         // throws 422 and a definitions-fetch failure throws 503 — nothing is stored either way). The
-        // remote call stays OUTSIDE the create transaction below.
+        // remote call stays OUTSIDE the create transaction below. The dictionary is addressed by the
+        // GOVERNING ROOT (the catalog — the team-target), never the raw resource: the user-service's
+        // target matcher is exact, so only the root resolves the team whose custom keys apply — the
+        // same caller-resolves-the-root rule the effective-role fetch follows.
         entity.setTags(tagAssignment.validateAndBuild(
-                "category", categoryId.toString(), request.getTags()));
+                "catalog", catalogId.toString(), request.getTags()));
         // Path derivation + INSERT in one transaction, parent row locked — a concurrent re-parent of
         // the parent cannot leave this child under a branch that no longer exists.
         var saved = hierarchy.createWithPath(entity, categories::save);
@@ -152,9 +155,10 @@ public class CategoryController implements CategoryApi {
         guardGateSnapshot(entity);
         // Tag validation calls the tag-definition service (slow, fail-closed) — it must run before,
         // never inside, the locked re-parent transaction below (and AFTER authorization, so an
-        // unauthorized caller learns nothing from the 422 vocabulary).
+        // unauthorized caller learns nothing from the 422 vocabulary). Addressed by the governing
+        // root (see createCategory) so the team's custom keys resolve.
         var tags = tagAssignment.validateAndBuild(
-                "category", categoryId.toString(), request.getTags());
+                "catalog", catalogId.toString(), request.getTags());
         if (!Objects.equals(entity.getParentId(), request.getParentId())) {
             if (request.getParentId() != null) {
                 // New parent must exist within the same catalog.

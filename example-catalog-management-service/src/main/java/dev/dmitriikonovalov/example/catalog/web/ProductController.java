@@ -44,7 +44,16 @@ public class ProductController implements ProductApi {
     public ResponseEntity<ProductPage> listProducts(
             UUID catalogId, UUID categoryId, Integer page, Integer perPage) {
         requireCategory(catalogId, categoryId);
+        // Deliberately a plain repository page, not a data-filter cut: products carry no tags, so
+        // rows have no policy variance — the type-level gate above IS the access decision.
         var result = products.findByCategoryId(categoryId, PageDefaults.pageRequest(page, perPage));
+        // But that means nothing seeds the request-scoped cache on this path (the filtered lists seed
+        // it via their survivors), and the enrichment advice omits on a cache miss — so seed each row
+        // here or product lists never carry `_actions`.
+        AbacResourceCache cache = resourceCache.getIfAvailable();
+        if (cache != null) {
+            result.forEach(p -> cache.put(p.abacResourceType(), p.abacResourceId(), p));
+        }
         return ResponseEntity.ok(CatalogMapper.toProductPage(result));
     }
 

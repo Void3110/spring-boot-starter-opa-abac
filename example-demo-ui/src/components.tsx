@@ -87,13 +87,17 @@ export type ActionResult = { verb: string; ok: boolean; message: string }
  * grants the verb; `view` is informational (no-op). `onAct` performs the real API call for a verb
  * and returns the outcome — so a click proves the gate (a 403 surfaces honestly, an allowed call
  * succeeds). Verbs absent from the map (e.g. a non-enriched resource) render disabled + explained.
+ * A verb listed in `opens` opens UI (an editor) instead of calling the API — the decision proof
+ * then happens on that editor's own submit, so no fabricated "succeeded" line is shown here.
  */
 export function ActionButtons({
   actions,
   onAct,
+  opens,
 }: {
   actions?: Actions
   onAct: (verb: string) => Promise<void>
+  opens?: Record<string, () => void>
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [result, setResult] = useState<ActionResult | null>(null)
@@ -124,7 +128,7 @@ export function ActionButtons({
             <button
               key={verb}
               disabled={disabled}
-              onClick={() => run(verb)}
+              onClick={() => (opens?.[verb] ? opens[verb]() : run(verb))}
               title={allowed ? `Perform ${verb}` : `Not allowed for your role`}
               className="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed"
               style={

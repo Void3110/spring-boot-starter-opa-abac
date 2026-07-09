@@ -53,11 +53,28 @@ export function logout(): Promise<void> {
   return userManager.signoutRedirect()
 }
 
-/** The current user, or null if not signed in / expired. */
-export async function currentUser(): Promise<AuthUser | null> {
+/**
+ * The current user with a VALID access token — refreshing on demand when it has lapsed. This is
+ * the "manually / on demand" renewal the UserManager config promises (no silent-renew iframe):
+ * an expired access token + a refresh token → one refresh-grant call to the token endpoint.
+ * Returns null when there is no session or the refresh itself fails (SSO idle timeout / revoked)
+ * — callers treat that as signed out rather than sending a dead bearer that would 401 anyway.
+ */
+export async function freshUser(): Promise<AuthUser | null> {
   const user = await userManager.getUser()
-  if (!user || user.expired) return null
-  return user
+  if (!user) return null
+  if (!user.expired) return user
+  if (!user.refresh_token) return null
+  try {
+    return await userManager.signinSilent()
+  } catch {
+    return null
+  }
+}
+
+/** The current user, or null if not signed in (an expired token is refreshed on demand). */
+export function currentUser(): Promise<AuthUser | null> {
+  return freshUser()
 }
 
 /** Decode the username + realm roles for display. Roles live in the ACCESS token's realm_access

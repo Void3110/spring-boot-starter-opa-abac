@@ -12,6 +12,7 @@ import {
   ensureUser,
   listAllUsers,
   listMembers,
+  listTeamTagDefinitions,
   lookupTeamByTarget,
   listRoleDefinitions,
   removeMember,
@@ -20,6 +21,7 @@ import {
 } from './api'
 import { type Notice, NoticeLine, errText, useAsync } from './components'
 import { RolesSection } from './roles'
+import { TagKeysSection } from './tags'
 
 // The system ladder (10 reader … 40 owner). Owner is never assignable — ownership moves only
 // through transfer-ownership — so the pickers offer the four authorable tiers.
@@ -39,7 +41,16 @@ const DEFAULT_ROLE = 'member'
  * alone can't pre-answer (see TeamEnrichable), so the UI shows the action and lets the server's
  * typed denial (403/409/422) tell the story.
  */
-export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubject: string }) {
+export function TeamPanel({
+  catalogId,
+  mySubject,
+  onDictionaryChanged,
+}: {
+  catalogId: string
+  mySubject: string
+  /** Fired after a tag-key change so the parent's tag pickers can refresh their dictionary. */
+  onDictionaryChanged?: () => void
+}) {
   // One-shot lookup (DIRECTORY-QUERY-FILTERS): the governing team answers in a single filtered
   // request (?targetType&targetId) — no page-walk, no truncated miss. The user list only resolves
   // roster rows to display names now — the member picker searches the identity directory
@@ -77,6 +88,7 @@ export function TeamPanel({ catalogId, mySubject }: { catalogId: string; mySubje
           usersReady={users.data !== null}
           mySubject={mySubject}
           onUsersChanged={users.reload}
+          onDictionaryChanged={onDictionaryChanged}
         />
       )}
     </div>
@@ -102,16 +114,20 @@ function Roster({
   usersReady,
   mySubject,
   onUsersChanged,
+  onDictionaryChanged,
 }: {
   team: Team
   users: User[]
   usersReady: boolean
   mySubject: string
   onUsersChanged: () => void
+  onDictionaryChanged?: () => void
 }) {
   const members = useAsync(() => listMembers(team.id), [team.id])
   // Owner-only (team:define-roles) — everyone else falls back to the hardcoded system ladder.
   const roleDefs = useAsync(() => listRoleDefinitions(team.id), [team.id])
+  // The dictionary this team sees (global + its own keys) — the TagKeysSection edits it.
+  const tagKeys = useAsync(() => listTeamTagDefinitions(team.id), [team.id])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   // Hold the manage controls until the directory is in: `me` and display names come from it, and
@@ -219,6 +235,15 @@ function Roster({
         roleDefs={roleDefs.data}
         error={roleDefs.error}
         onChanged={roleDefs.reload}
+      />
+      <TagKeysSection
+        team={team}
+        tagDefs={tagKeys.data}
+        error={tagKeys.error}
+        onChanged={() => {
+          tagKeys.reload()
+          onDictionaryChanged?.() // the pickers in the categories section share this dictionary
+        }}
       />
       <NoticeLine notice={notice} />
     </div>

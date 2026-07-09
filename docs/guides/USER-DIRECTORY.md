@@ -89,6 +89,31 @@ Without the dependency + flag, injection points get the `NoOp` (empty) directory
 nothing and stays fail-closed. A custom impl (LDAP, SCIM, a static list) is one `UserDirectory` bean —
 the starter backs off.
 
+## Onboarding around the starter — where profile enrichment lives
+
+The common corporate flow this seam slots into: users live in LDAP/AD, **federated into the IdP**;
+in the UI someone searches for a colleague who has never opened the app; picking them creates the
+application's own profile row, an onboarding step binds them into a team, and from then on
+authorization sees them. The starter owns exactly one step of that — **finding the person** — on
+purpose. Every other step is application domain, and the seam for each already exists:
+
+| Onboarding step | Owner | The seam |
+|---|---|---|
+| Search every account the IdP knows (LDAP-federated ones included — federation is invisible to the search API) | **starter** | `UserDirectory.search` — this guide |
+| Create the app's profile on first sight | application | **provision-on-select**: resolve-or-create keyed on the IdP `subject` (the example's `ensureUser`: `GET /users?subject=…` → `POST /users`). Idempotent — "first login" and "first added-to-a-team" converge on the same row. |
+| Enrich the profile (email, department, full name…) | application | the app's own IdP/HR-system call with **its own credential and its own disclosure decisions** — deliberately *not* through `UserDirectory`. `DirectoryUser` is a disclosure ceiling on a surface reachable by any authenticated user; widening it would turn the picker into a PII oracle. |
+| Subject attributes for policy (`input.subject.attributes`) | **starter** | token-first: have the IdP put them in the JWT (mappers / federation) → `attribute-claims` carries them into OPA input with zero code. A non-token source = replace the `AbacSubjectExtractor` bean (`@ConditionalOnMissingBean` — the starter backs off). |
+| Bind membership → profile | application (+ starter resolve) | membership rows point at the profile (one profile ↔ many teams); the effective-role resolve seam reads them. Membership is **first-class data, never a tag** (ADR [[0018-team-scoped-resource-isolation|0018]]). |
+
+**Why there is no onboarding/enrichment port.** In tag-based ABAC designs, onboarding *must* write
+authorization state (e.g. appending the new login to a `team-members` tag on every resource) — so an
+enrichment hook is authz-critical. Here that responsibility is superseded: membership is first-class
+and resolved at decision time, so onboarding has **no authorization-critical write** — what remains
+(profile schema, workflow, what to store) differs per application and belongs there. Deferring is
+also the cheap direction: if a real consumer need emerges, the minimal moves are additive and
+non-breaking (a `findBySubject` on the port, a widened `DirectoryUser`), whereas a speculative port
+published at 1.0 is a seam maintained forever.
+
 ## The local rig
 
 ```bash

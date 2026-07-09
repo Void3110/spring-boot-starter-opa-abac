@@ -227,6 +227,43 @@ ALL_OF, the dictionary define dogfood (owner 201 / member 403), and an illegal a
 out. A team key defined at runtime governs assignment + (via a role) decisions immediately — **no
 redeploy**.
 
+## Bringing your own tag dictionary (the library/app boundary)
+
+Everything in Layers 1–2 is **example-app code, on purpose**. The starter ships the tag *mechanics*
+— all of them key-agnostic — and owns **no dictionary**:
+
+| The starter owns (opaque `key → value(s)`) | The application owns (vocabulary + workflow) |
+|---|---|
+| `ResourceTags` + `Taggable` (`TAGS_ATTRIBUTE`) — the JSONB storage shape (`opa-abac-spring-data`) | The `TagDefinition` model, GLOBAL/TEAM scoping, immutable system keys (user-service) |
+| The partial-eval residual compiling `tags.*` conditions into SQL | Assignment validation (`TagAssignmentService` + the fail-closed `TagDefinitionClient`) |
+| `RoleDefinition.requiredTags`/`matchMode` → `required_tags`/`match_mode` in OPA input (`opa-abac-core`) | The `/internal/tag-definitions` resolve endpoint + the `team:define-tags` authoring gate |
+| `input.resource.tags` at the gate + enrichment | Which keys exist at all — seeded, user-managed, or none |
+
+So an adopter may hardcode three keys, seed globals the way the example does (Liquibase,
+`system=true`), run a full user-managed dictionary (the TEAM scope), or skip tags entirely — the
+library behaves identically in all four. The only coupling that matters is between the *app's own*
+policies/role definitions and the keys it actually assigns; dictionary validation is what keeps that
+coupling honest, and the example is the reference implementation to copy from.
+
+**The one integration trap (we hit it ourselves):** address the dictionary by the resource's
+**governing root**, never the raw resource. The user-service resolves the applicable team by exact
+team-target match, and teams target roots (catalogs) — so
+`validateAndBuild("catalog", catalogId, …)`, not `("category", categoryId, …)`. Passing a non-root
+still validates the globals but **silently drops the team's custom keys** (they stop resolving —
+every team-key assignment answers 422 "unknown key"). Same caller-resolves-the-root rule the
+effective-role fetch follows.
+
+**Pinned decision (2026-07-09): no tag-dictionary interfaces in the starter for 1.0.** Every starter
+SPI exists because library machinery calls it at decision time (`RoleDefinitionSupplier`,
+`AncestorChainSupplier`, `GovernedScopeResolver`, `UserDirectory`…); nothing in the library ever
+needs a tag *definition* — assignment validation is a write-path application concern. A dictionary
+port would be the first seam with no library consumer, and it would freeze one vocabulary schema
+(ENUM/STRING × SINGLE/MULTI) at 1.0 that isn't the starter's to own. If real adopter demand
+appears, the move is additive and its shape is known: an **optional module** (the
+`opa-abac-keycloak-directory` precedent) carrying a `TagDefinitionView` contract, the generic
+assignment validator, and an ancestor-wired `applicableTo(resource)` source — which would also make
+the governing-root trap disappear by construction.
+
 ## Boundaries (deferred)
 
 `@AutoTag` auto-population (a JPA listener) · subject-tag-vs-resource-tag equality matching · partial-eval

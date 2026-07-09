@@ -11,6 +11,10 @@ import {
   type Catalog,
   type Category,
   type Product,
+  type TagDefinition,
+  type Tags,
+  createCategory,
+  createProduct,
   deleteCategory,
   deleteProduct,
   ensureUser,
@@ -18,6 +22,8 @@ import {
   listCatalogs,
   listCategories,
   listProducts,
+  listTeamTagDefinitions,
+  lookupTeamByTarget,
   updateCategory,
   updateProduct,
 } from './api'
@@ -145,7 +151,15 @@ function Console({ user }: { user: AuthUser }) {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="text-sm font-medium">{username}</div>
-            <RoleChips roles={roles} />
+            {/* These are the IdP's coarse labels from the access token — what actually drives the
+                affordances is the per-catalog TEAM role (membership → OPA). The label keeps the
+                two from being read as one thing. */}
+            <div className="flex items-center justify-end gap-1.5">
+              <span className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
+                Keycloak realm roles
+              </span>
+              <RoleChips roles={roles} />
+            </div>
           </div>
           <button
             onClick={() => logout()}
@@ -247,6 +261,16 @@ function CatalogDetail({
   // The single GET is enriched (unlike the list) — fetch it for the catalog's own _actions.
   const full = useAsync(() => getCatalog(catalog.id), [catalog.id])
   const cats = useAsync(() => listCategories(catalog.id), [catalog.id])
+  // The tag dictionary (global + this catalog's team keys) drives the tag pickers. Resolved via
+  // the governing team because only the team-scoped listing is gateway-exposed; a catalog without
+  // a resolvable team just renders the forms without tag fields.
+  const tagDefs = useAsync(async () => {
+    const teams = await lookupTeamByTarget('catalog', catalog.id)
+    const team = teams.items[0]
+    if (!team) return null
+    return listTeamTagDefinitions(team.id)
+  }, [catalog.id])
+  const [tagEditing, setTagEditing] = useState<string | null>(null)
 
   return (
     <div>
@@ -268,10 +292,32 @@ function CatalogDetail({
         </div>
       </Card>
 
-      <TeamPanel catalogId={catalog.id} mySubject={mySubject} />
+      <TeamPanel
+        catalogId={catalog.id}
+        mySubject={mySubject}
+        onDictionaryChanged={tagDefs.reload}
+      />
 
       <div className="mt-6">
-        <SectionHead title="Categories" hint="Each category's action buttons reflect your role. Try update/delete — a denied one is locked." />
+        <SectionHead title="Categories" hint="Each category's action buttons reflect your role. Try update/delete — a denied one is locked. Creating is OPA-decided too: the form is offered to everyone and a denied submit answers honestly." />
+        <InlineCreatePanel
+          label="New category"
+          fields={[
+            { key: 'name', placeholder: 'Category name', required: true },
+            { key: 'description', placeholder: 'Description (optional)', grow: true },
+          ]}
+          tagDefs={tagDefs.data?.items}
+          onCreate={async (v, tags) => {
+            // Tags ride the create only when set: tag-on-create asks the TYPE-LEVEL assign-tags
+            // decision on top of the create gate (Phase 6.5) — an empty map shouldn't ask it.
+            await createCategory(catalog.id, {
+              name: v.name.trim(),
+              description: v.description?.trim() || undefined,
+              tags: Object.keys(tags).length > 0 ? tags : undefined,
+            })
+            cats.reload()
+          }}
+        />
         {cats.error && <ErrorBox label="categories" message={cats.error} />}
         {!cats.data && !cats.error && <Loading what="categories" />}
         {cats.data && cats.data.items.length === 0 && (
@@ -300,22 +346,38 @@ function CatalogDetail({
               <div className="mt-3">
                 <ActionButtons
                   actions={cat._actions}
+                  opens={{ 'assign-tags': () => setTagEditing(tagEditing === cat.id ? null : cat.id) }}
                   onAct={async (verb) => {
-                    // PUT is a full replace — send the existing name so it isn't nulled.
+                    // PUT is a full replace — echo name AND tags/parent, or the server reads the
+                    // absence as "clear tags" / "re-parent to root" (the delta dispatch).
                     if (verb === 'update')
                       await updateCategory(catalog.id, cat.id, {
                         name: cat.name,
                         description: `edited @ ${new Date().toISOString()}`,
+                        parentId: cat.parentId ?? null,
+                        tags: cat.tags ?? {},
                       })
                     else if (verb === 'delete') await deleteCategory(catalog.id, cat.id)
-                    else if (verb === 'assign-tags')
-                      await updateCategory(catalog.id, cat.id, {
-                        name: cat.name,
-                        description: cat.description ?? '',
-                      })
                     cats.reload()
                   }}
                 />
+                {tagEditing === cat.id && tagDefs.data && (
+                  <TagEditor
+                    defs={tagDefs.data.items}
+                    initial={cat.tags ?? {}}
+                    onClose={() => setTagEditing(null)}
+                    onSave={async (tags) => {
+                      // Content echoed unchanged — this PUT asks exactly the assign-tags decision.
+                      await updateCategory(catalog.id, cat.id, {
+                        name: cat.name,
+                        description: cat.description ?? undefined,
+                        parentId: cat.parentId ?? null,
+                        tags,
+                      })
+                      cats.reload()
+                    }}
+                  />
+                )}
               </div>
             </Card>
           ))}
@@ -346,7 +408,26 @@ function CategoryDetail({
           { label: category.name },
         ]}
       />
-      <SectionHead title={`Products in ${category.name}`} hint="Product affordances mirror your role just like categories." />
+      <SectionHead title={`Products in ${category.name}`} hint="Product affordances mirror your role just like categories — including create, which OPA decides on submit." />
+      <InlineCreatePanel
+        label="New product"
+        fields={[
+          { key: 'name', placeholder: 'Product name', required: true },
+          { key: 'price', placeholder: 'Price in USD (e.g. 19.99)', required: true },
+        ]}
+        onCreate={async (v) => {
+          const priceCents = Math.round(Number(v.price) * 100)
+          if (!Number.isFinite(priceCents) || priceCents < 0) {
+            throw new Error('price must be a non-negative number like 19.99')
+          }
+          await createProduct(catalog.id, category.id, {
+            name: v.name.trim(),
+            priceCents,
+            currency: 'USD',
+          })
+          prods.reload()
+        }}
+      />
       {prods.error && <ErrorBox label="products" message={prods.error} />}
       {!prods.data && !prods.error && <Loading what="products" />}
       {prods.data && prods.data.items.length === 0 && (
@@ -371,6 +452,9 @@ function CategoryDetail({
                     await updateProduct(catalog.id, category.id, p.id, {
                       name: p.name,
                       description: `edited @ ${new Date().toISOString()}`,
+                      // PUT is a full replace — echo the price fields so they aren't nulled.
+                      priceCents: p.priceCents,
+                      currency: p.currency,
                     })
                   else if (verb === 'delete') await deleteProduct(catalog.id, category.id, p.id)
                   prods.reload()
@@ -380,6 +464,261 @@ function CategoryDetail({
           </Card>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The tag-picker rows, driven by the live tag dictionary: ENUM keys render their closed value set
+ * (chips for MULTI, a select for SINGLE); STRING keys render free text (comma-separated for MULTI,
+ * normalized to an array at submit via {@link normalizeTags}). Unknown keys can't be typed at all —
+ * but the server validates against the dictionary anyway (422, nothing silently dropped).
+ */
+function TagFields({
+  defs,
+  value,
+  onChange,
+}: {
+  defs: TagDefinition[]
+  value: Tags
+  onChange: (next: Tags) => void
+}) {
+  const set = (key: string, v: string | string[] | undefined) => {
+    const next = { ...value }
+    if (v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) delete next[key]
+    else next[key] = v
+    onChange(next)
+  }
+  if (defs.length === 0) return null
+  return (
+    <div className="mt-2 grid gap-1.5">
+      {defs.map((def) => {
+        const current = value[def.key]
+        return (
+          <div key={def.key} className="flex flex-wrap items-center gap-2">
+            <span className="w-24 text-xs font-medium text-[var(--color-muted)]">{def.key}</span>
+            {def.valueType === 'ENUM' && def.cardinality === 'MULTI' && (
+              <div className="flex flex-wrap gap-1">
+                {(def.allowedValues ?? []).map((v) => {
+                  const arr = Array.isArray(current) ? current : []
+                  const selected = arr.includes(v)
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => set(def.key, selected ? arr.filter((x) => x !== v) : [...arr, v])}
+                      className="rounded-md border px-2 py-0.5 text-xs transition-colors"
+                      style={
+                        selected
+                          ? { borderColor: 'var(--color-brand)', color: 'var(--color-brand-ink)', background: '#eef2ff' }
+                          : { borderColor: 'var(--color-line)', color: 'var(--color-muted)' }
+                      }
+                    >
+                      {v}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {def.valueType === 'ENUM' && def.cardinality === 'SINGLE' && (
+              <select
+                value={typeof current === 'string' ? current : ''}
+                onChange={(e) => set(def.key, e.target.value || undefined)}
+                className="rounded-md border border-[var(--color-line)] bg-transparent px-2 py-1 text-xs"
+              >
+                <option value="">— none —</option>
+                {(def.allowedValues ?? []).map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            )}
+            {def.valueType === 'STRING' && (
+              <input
+                value={Array.isArray(current) ? current.join(', ') : (current ?? '')}
+                onChange={(e) => set(def.key, e.target.value)}
+                placeholder={def.cardinality === 'MULTI' ? 'comma, separated' : (def.valuePattern ?? 'value')}
+                className="rounded-md border border-[var(--color-line)] bg-transparent px-2 py-1 text-xs"
+              />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** MULTI keys typed as free text become arrays; empties drop out — the shape the validator expects. */
+function normalizeTags(defs: TagDefinition[], value: Tags): Tags {
+  const out: Tags = {}
+  for (const [k, v] of Object.entries(value)) {
+    const def = defs.find((d) => d.key === k)
+    if (def?.cardinality === 'MULTI' && typeof v === 'string') {
+      const arr = v.split(',').map((s) => s.trim()).filter(Boolean)
+      if (arr.length > 0) out[k] = arr
+    } else if (Array.isArray(v) ? v.length > 0 : v.trim() !== '') {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+/**
+ * The assign-tags editor behind a category card's `assign-tags` button. Saving PUTs the category
+ * with its content echoed UNCHANGED and only the tags different — so the server's delta dispatch
+ * asks exactly the assign-tags decision (a TAG-capable role succeeds; a denied one answers 403
+ * honestly, right here).
+ */
+function TagEditor({
+  defs,
+  initial,
+  onSave,
+  onClose,
+}: {
+  defs: TagDefinition[]
+  initial: Tags
+  onSave: (tags: Tags) => Promise<void>
+  onClose: () => void
+}) {
+  const [value, setValue] = useState<Tags>(initial)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await onSave(normalizeTags(defs, value))
+      onClose()
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-dashed border-[var(--color-line)] p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+          Assign tags — validated against the dictionary, decided by OPA
+        </span>
+        <button onClick={onClose} className="text-xs text-[var(--color-muted)] hover:underline">
+          close
+        </button>
+      </div>
+      <TagFields defs={defs} value={value} onChange={setValue} />
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          disabled={busy}
+          onClick={save}
+          className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[var(--color-brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? '…' : 'Save tags'}
+        </button>
+        {error && <span className="text-xs text-[var(--color-deny)]">assign-tags failed: {error}</span>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Inline create affordance for child resources (categories/products). Deliberately NOT keyed off
+ * `_actions`: enrichment probes only instance-scoped verbs on the resource itself (affordance
+ * honesty — Enrichable.abacActions), while child-create is a type-level decision resolved against
+ * the parent. So the form is offered to everyone and a denied POST answers honestly — the same
+ * posture as the team panel.
+ */
+function InlineCreatePanel({
+  label,
+  fields,
+  tagDefs,
+  onCreate,
+}: {
+  label: string
+  fields: { key: string; placeholder: string; required?: boolean; grow?: boolean }[]
+  tagDefs?: TagDefinition[]
+  onCreate: (values: Record<string, string>, tags: Tags) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [tags, setTags] = useState<Tags>({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reset = () => {
+    setOpen(false)
+    setValues({})
+    setTags({})
+    setError(null)
+  }
+
+  const submit = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await onCreate(values, normalizeTags(tagDefs ?? [], tags))
+      reset()
+    } catch (e) {
+      setError(errText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const ready = fields.every((f) => !f.required || (values[f.key] ?? '').trim().length > 0)
+
+  if (!open)
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mb-3 rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-ink)] transition-colors hover:bg-[var(--color-canvas)]"
+      >
+        + {label}
+      </button>
+    )
+
+  return (
+    <div className="mb-4 rounded-xl border border-dashed border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+          {label} — OPA decides on submit
+        </span>
+        <button onClick={reset} className="text-xs text-[var(--color-muted)] hover:underline">
+          close
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {fields.map((f, i) => (
+          <input
+            key={f.key}
+            autoFocus={i === 0}
+            value={values[f.key] ?? ''}
+            onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            placeholder={f.placeholder}
+            className={`rounded-md border border-[var(--color-line)] bg-transparent px-2.5 py-1.5 text-sm${f.grow ? ' min-w-48 flex-1' : ''}`}
+          />
+        ))}
+        <button
+          disabled={busy || !ready}
+          onClick={submit}
+          className="rounded-md bg-[var(--color-brand)] px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[var(--color-brand-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? '…' : 'Create'}
+        </button>
+      </div>
+      {tagDefs && tagDefs.length > 0 && (
+        <div className="mt-3">
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
+            Tags (optional — tag-on-create asks the assign-tags decision too)
+          </span>
+          <TagFields defs={tagDefs} value={tags} onChange={setTags} />
+        </div>
+      )}
+      {error && (
+        <div className="mt-2 text-xs text-[var(--color-deny)]">create failed: {error}</div>
+      )}
     </div>
   )
 }
