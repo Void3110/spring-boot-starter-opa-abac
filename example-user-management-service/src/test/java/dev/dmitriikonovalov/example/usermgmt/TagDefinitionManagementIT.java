@@ -126,6 +126,26 @@ class TagDefinitionManagementIT extends AbstractSecuredPostgresIT {
         assertThat(create.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
+    // --- G3b: READING the team dictionary is not management — a plain member lists it (200) -------
+    // The vocabulary-isn't-sensitive stance: the flat ?teamId listing already serves the identical
+    // rows bearer-only, and an ASSIGNER needs the vocabulary to know what is legal to assign. The
+    // define-tags gate stays on the mutations (the G2/G3 cells above).
+
+    @Test
+    void memberCanReadTheTeamDictionary() {
+        Team team = team();
+        User member = user("member");
+        grant(team, member, SystemRoles.MEMBER_ID);
+
+        var list = rest.exchange(
+                "/api/v1/teams/{t}/tag-definitions",
+                HttpMethod.GET,
+                AbacTestConfig.as(member.getSubject()),
+                String.class,
+                team.getId());
+        assertThat(list.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
     // --- G4: editing a global/system key is immutable (409) -------------------
 
     @Test

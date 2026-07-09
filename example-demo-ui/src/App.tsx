@@ -156,7 +156,10 @@ function Console({ user }: { user: AuthUser }) {
                 affordances is the per-catalog TEAM role (membership → OPA). The label keeps the
                 two from being read as one thing. */}
             <div className="flex items-center justify-end gap-1.5">
-              <span className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
+              <span
+                className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]"
+                title="From the IdP access token. In this demo a realm role carries exactly one power — catalog-editor may CREATE catalogs; everything else comes from per-catalog team membership."
+              >
                 Keycloak realm roles
               </span>
               <RoleChips roles={roles} />
@@ -184,7 +187,12 @@ function Console({ user }: { user: AuthUser }) {
       )}
       <main className="flex-1 overflow-auto px-6 py-6">
         {view.kind === 'catalogs' && (
-          <CatalogGrid onOpen={(catalog) => setView({ kind: 'catalog', catalog })} />
+          <CatalogGrid
+            // catalog:create is the one realm-role-decided verb (the B4 narrow fallback), so the
+            // SPA can predict the deny from the token it already parsed for the header chips.
+            canCreate={roles.includes('catalog-editor')}
+            onOpen={(catalog) => setView({ kind: 'catalog', catalog })}
+          />
         )}
         {view.kind === 'catalog' && (
           <CatalogDetail
@@ -217,7 +225,13 @@ function Card({ children }: { children: React.ReactNode }) {
   )
 }
 
-function CatalogGrid({ onOpen }: { onOpen: (c: Catalog) => void }) {
+function CatalogGrid({
+  canCreate,
+  onOpen,
+}: {
+  canCreate: boolean
+  onOpen: (c: Catalog) => void
+}) {
   const { data, error, reload } = useAsync(() => listCatalogs(), [])
   if (error) return <ErrorBox label="catalogs" message={error} />
   if (!data) return <Loading what="catalogs" />
@@ -228,7 +242,18 @@ function CatalogGrid({ onOpen }: { onOpen: (c: Catalog) => void }) {
   return (
     <div>
       <SectionHead title="Catalogs" hint="Open a catalog to see its categories — that's where the affordances get rich. Catalog lists themselves aren't enriched." />
-      <CreateCatalogPanel onCreated={reload} />
+      {/* The B4 story, stated where a new user first wonders about it: realm roles ≠ access. */}
+      <p className="-mt-1 mb-3 max-w-3xl text-xs text-[var(--color-muted)]">
+        Your <span className="text-[10px] uppercase tracking-wide">Keycloak realm roles</span>{' '}
+        (top right) come from the IdP token and carry exactly <em>one</em> power in this demo:{' '}
+        <code className="rounded bg-[var(--color-canvas)] px-1">catalog-editor</code> may create
+        new catalogs. Which catalogs you see here — and every button inside — comes from
+        per-catalog <em>team membership</em> instead (membership is the sole access path). An
+        identity holding only{' '}
+        <code className="rounded bg-[var(--color-canvas)] px-1">catalog-viewer</code> sees an
+        empty list until a team admits it — try <em>outsider</em>.
+      </p>
+      <CreateCatalogPanel onCreated={reload} likelyDenied={!canCreate} />
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map((c) => (
           <button key={c.id} onClick={() => onOpen(c)} className="text-left">
@@ -335,6 +360,13 @@ function CatalogDetail({
                 }}
               />
             )}
+            {catalogTagEditing && !tagDefs.data && (
+              <p className="mt-2 text-xs text-[var(--color-deny)]">
+                The tag dictionary isn't readable for this identity
+                {tagDefs.error ? ` (${tagDefs.error})` : ''} — the editor needs it to offer legal
+                values.
+              </p>
+            )}
           </div>
         )}
       </Card>
@@ -424,6 +456,13 @@ function CatalogDetail({
                       cats.reload()
                     }}
                   />
+                )}
+                {tagEditing === cat.id && !tagDefs.data && (
+                  <p className="mt-2 text-xs text-[var(--color-deny)]">
+                    The tag dictionary isn't readable for this identity
+                    {tagDefs.error ? ` (${tagDefs.error})` : ''} — the editor needs it to offer
+                    legal values.
+                  </p>
                 )}
               </div>
             </Card>

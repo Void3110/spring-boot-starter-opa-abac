@@ -51,8 +51,10 @@ TagDefinition(key, scope GLOBAL|TEAM, teamId?, valueType STRING|ENUM,
 - Seeded global demo keys: `sensitivity` (ENUM/SINGLE/`[public,internal,confidential]`) and `region`
   (ENUM/MULTI/`[emea,amer,apac]`).
 
-**Read:** `GET /api/v1/tag-definitions[?teamId=]` (any authenticated caller — the vocabulary isn't
-sensitive). **Manage** (a team's keys): `POST/PUT/DELETE /api/v1/teams/{teamId}/tag-definitions`, secured
+**Read:** `GET /api/v1/tag-definitions[?teamId=]` **and** `GET /api/v1/teams/{teamId}/tag-definitions`
+(any authenticated caller — the vocabulary isn't sensitive, and an *assigner* needs it to know what is
+legal to assign; the two paths serve identical rows, and only the team-scoped one is gateway-exposed).
+**Manage** (a team's keys): `POST/PUT/DELETE /api/v1/teams/{teamId}/tag-definitions`, secured
 by `@OpaPreAuthorize(team:define-tags)` — **owner or administrator** (admins curate the vocabulary writers
 assign from). Global/system keys are immutable (409).
 

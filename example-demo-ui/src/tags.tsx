@@ -21,11 +21,19 @@ export function TagKeysSection({
   team,
   tagDefs,
   error,
+  likelyDenied = false,
   onChanged,
 }: {
   team: Team
   tagDefs: Page<TagDefinition> | null
   error: string | null
+  /**
+   * The caller's roster role predicts a define-tags deny (owner/administrator only — custom
+   * roles are management-incapable by design). A prediction, not a decision: the controls stay
+   * usable on purpose (the roles-form posture) so submitting demonstrates the live 403. Amber,
+   * not red — red is reserved for server-computed denials.
+   */
+  likelyDenied?: boolean
   onChanged: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -80,9 +88,38 @@ export function TagKeysSection({
       {open && (
         <div className="mt-2">
           <p className="mb-2 text-xs text-[var(--color-muted)]">
-            The dictionary the tag pickers validate against: global keys plus this team's own. A
-            key defined here is assignable on this catalog's categories immediately.
+            The dictionary the tag pickers validate against — two scopes:
           </p>
+          <div className="mb-2 grid gap-1 text-xs text-[var(--color-muted)]">
+            <div>
+              <span
+                className="mr-1.5 rounded px-1.5 py-0.5"
+                style={{ background: 'var(--color-canvas)' }}
+              >
+                global
+              </span>
+              Seeded system keys (e.g. region, sensitivity) — shared by <em>every</em> team and
+              catalog, immutable at runtime (editing one answers 409).
+            </div>
+            <div>
+              <span
+                className="mr-1.5 rounded px-1.5 py-0.5"
+                style={{ background: '#eef2ff', color: 'var(--color-brand-ink)' }}
+              >
+                team
+              </span>
+              This team's own keys — defined by its owner/administrator, assignable only on the
+              resources <em>this</em> team governs, editable and deletable here. A key defined
+              below is usable in the pickers immediately, no redeploy.
+            </div>
+          </div>
+          {likelyDenied && (
+            <p className="mb-2 text-xs" style={{ color: '#b45309' }}>
+              ⚠ Defining and editing keys is owner/administrator work (team:define-tags) — your
+              role on this team can't. The controls are left usable on purpose: submitting
+              demonstrates the live 403 (the server decides, never the UI).
+            </p>
+          )}
           {error && (
             <p className="text-xs text-[var(--color-deny)]">
               Tag keys not visible to you: {error}
@@ -98,6 +135,7 @@ export function TagKeysSection({
                   key={d.key}
                   def={d}
                   busy={busy}
+                  likelyDenied={likelyDenied}
                   onEdit={() => setEditing(d)}
                   onDelete={() => remove(d.key)}
                 />
@@ -107,9 +145,19 @@ export function TagKeysSection({
           {!error && !editing && (
             <button
               onClick={() => setEditing('new')}
-              className="mt-2 rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-ink)] transition-colors hover:bg-[var(--color-canvas)]"
+              title={
+                likelyDenied
+                  ? 'Your role on this team lacks define-tags — submitting will answer 403. Left usable on purpose.'
+                  : undefined
+              }
+              className="mt-2 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
+              style={
+                likelyDenied
+                  ? { borderColor: '#fcd34d', color: '#b45309', background: '#fef3c7' }
+                  : { borderColor: 'var(--color-line)', color: 'var(--color-brand-ink)' }
+              }
             >
-              + Define tag key
+              {likelyDenied ? '⚠ ' : ''}+ Define tag key
             </button>
           )}
           {editing && (
@@ -119,6 +167,7 @@ export function TagKeysSection({
               key={editing === 'new' ? '«new»' : editing.key}
               initial={editing === 'new' ? null : editing}
               busy={busy}
+              likelyDenied={likelyDenied}
               onSubmit={submit}
               onCancel={() => setEditing(null)}
             />
@@ -133,11 +182,13 @@ export function TagKeysSection({
 function TagKeyRow({
   def,
   busy,
+  likelyDenied = false,
   onEdit,
   onDelete,
 }: {
   def: TagDefinition
   busy: boolean
+  likelyDenied?: boolean
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -155,6 +206,11 @@ function TagKeyRow({
           <span className="font-medium">{def.key}</span>
           <span
             className="rounded px-1.5 py-0.5 text-xs"
+            title={
+              custom
+                ? "This team's own key — owner/administrator-managed, assignable only on resources this team governs"
+                : 'Seeded system key — shared by every team and catalog, immutable at runtime'
+            }
             style={
               custom
                 ? { background: '#eef2ff', color: 'var(--color-brand-ink)' }
@@ -169,17 +225,36 @@ function TagKeyRow({
             <button
               onClick={onEdit}
               disabled={busy}
-              className="rounded-md border border-[var(--color-line)] px-2 py-0.5 text-xs transition-colors hover:bg-[var(--color-canvas)]"
+              title={
+                likelyDenied
+                  ? 'Your role lacks define-tags — saving will answer 403 (left usable on purpose)'
+                  : undefined
+              }
+              className="rounded-md border px-2 py-0.5 text-xs transition-colors"
+              style={
+                likelyDenied
+                  ? { borderColor: '#fcd34d', color: '#b45309', background: '#fef3c7' }
+                  : { borderColor: 'var(--color-line)' }
+              }
             >
-              edit
+              {likelyDenied ? '⚠ ' : ''}edit
             </button>
             <button
               onClick={onDelete}
               disabled={busy}
-              className="rounded-md border px-2 py-0.5 text-xs transition-colors hover:bg-[#fef2f2]"
-              style={{ borderColor: '#fecaca', color: 'var(--color-deny)' }}
+              title={
+                likelyDenied
+                  ? 'Your role lacks define-tags — deleting will answer 403 (left usable on purpose)'
+                  : undefined
+              }
+              className="rounded-md border px-2 py-0.5 text-xs transition-colors"
+              style={
+                likelyDenied
+                  ? { borderColor: '#fcd34d', color: '#b45309', background: '#fef3c7' }
+                  : { borderColor: '#fecaca', color: 'var(--color-deny)' }
+              }
             >
-              ✕
+              {likelyDenied ? '⚠ ' : ''}✕
             </button>
           </div>
         )}
@@ -194,11 +269,13 @@ function TagKeyRow({
 function TagKeyForm({
   initial,
   busy,
+  likelyDenied = false,
   onSubmit,
   onCancel,
 }: {
   initial: TagDefinition | null
   busy: boolean
+  likelyDenied?: boolean
   onSubmit: (req: TagDefinitionRequest) => void
   onCancel: () => void
 }) {
@@ -283,6 +360,12 @@ function TagKeyForm({
         The server enforces the contract (owner/administrator only; ENUM needs values; global keys
         immutable) — denials and 422s answer honestly below.
       </p>
+      {likelyDenied && (
+        <p className="mt-1 text-xs" style={{ color: '#b45309' }}>
+          ⚠ Your role on this team lacks define-tags — this {initial ? 'save' : 'create'} will
+          answer the live 403. Left usable on purpose: the server decides, never the UI.
+        </p>
+      )}
       <button
         disabled={busy || key.trim().length === 0}
         onClick={submit}

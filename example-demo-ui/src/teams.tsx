@@ -240,6 +240,15 @@ function Roster({
         team={team}
         tagDefs={tagKeys.data}
         error={tagKeys.error}
+        // Key authoring is the management verb (team:define-tags), reachable only from the system
+        // owner/administrator tiers — custom roles are management-incapable by design (ADR 0015),
+        // so the roster's own role code predicts the deny. A prediction, not a decision: the
+        // controls stay usable and the server's 403 is the demo.
+        likelyDenied={
+          !['owner', 'administrator'].includes(
+            (me && roster.find((m) => m.userId === me.id)?.roleCode) ?? '',
+          )
+        }
         onChanged={() => {
           tagKeys.reload()
           onDictionaryChanged?.() // the pickers in the categories section share this dictionary
@@ -490,7 +499,19 @@ function AddMemberForm({
  * team (owner-on-create, ADR 0019). A catalog without a team is invisible to everyone — so when
  * step 2 fails we keep the created catalog and retry only the team.
  */
-export function CreateCatalogPanel({ onCreated }: { onCreated: () => void }) {
+export function CreateCatalogPanel({
+  onCreated,
+  likelyDenied = false,
+}: {
+  onCreated: () => void
+  /**
+   * The caller's token lacks catalog-editor — the one realm role catalog:create needs (the B4
+   * narrow fallback). A prediction, not a decision: the button stays fully usable on purpose
+   * (the roles-form posture) so submitting demonstrates the live 403 — the server decides,
+   * never the UI. Amber, not red: red is reserved for server-computed denials (_actions).
+   */
+  likelyDenied?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -540,9 +561,19 @@ export function CreateCatalogPanel({ onCreated }: { onCreated: () => void }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-3 rounded-md border border-[var(--color-line)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand-ink)] transition-colors hover:bg-[var(--color-canvas)]"
+        title={
+          likelyDenied
+            ? 'Your realm roles lack catalog-editor — creating will answer 403. Left usable on purpose: the server decides, never the UI.'
+            : undefined
+        }
+        className="mb-3 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
+        style={
+          likelyDenied
+            ? { borderColor: '#fcd34d', color: '#b45309', background: '#fef3c7' }
+            : { borderColor: 'var(--color-line)', color: 'var(--color-brand-ink)' }
+        }
       >
-        + New catalog
+        {likelyDenied ? '⚠ ' : ''}+ New catalog
       </button>
     )
 
@@ -556,6 +587,13 @@ export function CreateCatalogPanel({ onCreated }: { onCreated: () => void }) {
           close
         </button>
       </div>
+      {likelyDenied && (
+        <p className="mt-1 text-xs" style={{ color: '#b45309' }}>
+          ⚠ Creating a catalog needs the <code>catalog-editor</code> realm role — this identity
+          doesn't hold it. The form is left usable on purpose: submitting demonstrates the live
+          403 (the server decides, never the UI).
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
           autoFocus
