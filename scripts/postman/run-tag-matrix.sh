@@ -49,6 +49,9 @@ RUN_ID="${E2E_RUN_ID:-tag-$$}"
 OWNER_USER="${OWNER_USER:-editor}";   OWNER_PASS="${OWNER_PASS:-editor}"
 READER_USER="${READER_USER:-viewer}"; READER_PASS="${READER_PASS:-viewer}"
 STRICT_USER="${STRICT_USER:-demo}";   STRICT_PASS="${STRICT_PASS:-demo}"
+# ADR 0022 cells: a WRITE-holding tag-gated member — read of the untagged root is EXEMPT (200),
+# its mutation stays tag-gated (403). Needs write so the deny is the TAG conjunct, not permission.
+GATED_USER="${GATED_USER:-bob}";      GATED_PASS="${GATED_PASS:-bob}"
 
 DEMO_CATALOG_ID="${DEMO_CATALOG_ID:-22222222-2222-2222-2222-222222222222}"
 
@@ -97,7 +100,8 @@ echo "==> Minting owner/reader/strict tokens in-network ($NETWORK) ..."
 OWNER_TOKEN="$(mint_token "$OWNER_USER" "$OWNER_PASS")"
 READER_TOKEN="$(mint_token "$READER_USER" "$READER_PASS")"
 STRICT_TOKEN="$(mint_token "$STRICT_USER" "$STRICT_PASS")"
-for pair in "owner:$OWNER_TOKEN" "reader:$READER_TOKEN" "strict:$STRICT_TOKEN"; do
+GATED_TOKEN="$(mint_token "$GATED_USER" "$GATED_PASS")"
+for pair in "owner:$OWNER_TOKEN" "reader:$READER_TOKEN" "strict:$STRICT_TOKEN" "gated:$GATED_TOKEN"; do
   name="${pair%%:*}"; tok="${pair#*:}"
   [ -n "$tok" ] || { echo "ERROR: no token for '$name'. Is the rig up with OIDC and the user present?" >&2; exit 1; }
 done
@@ -105,7 +109,8 @@ done
 OWNER_SUB="$(token_sub "$OWNER_TOKEN")"
 READER_SUB="$(token_sub "$READER_TOKEN")"
 STRICT_SUB="$(token_sub "$STRICT_TOKEN")"
-echo "  subjects: owner=$OWNER_SUB reader=$READER_SUB strict=$STRICT_SUB"
+GATED_SUB="$(token_sub "$GATED_TOKEN")"
+echo "  subjects: owner=$OWNER_SUB reader=$READER_SUB strict=$STRICT_SUB gated=$GATED_SUB"
 
 # --- seed the demo catalog (the team-target) ---------------------------------
 # A prior run's Categories are deleted first so re-runs never accumulate (the FKs cascade to
@@ -124,6 +129,7 @@ echo "==> Bootstrapping the team, tag-gated roles, and memberships in the user-s
 OWNER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$OWNER_SUB\",\"displayName\":\"$OWNER_USER\"}" | json_field userId)"
 READER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$READER_SUB\",\"displayName\":\"$READER_USER\"}" | json_field userId)"
 STRICT_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$STRICT_SUB\",\"displayName\":\"$STRICT_USER\"}" | json_field userId)"
+GATED_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$GATED_SUB\",\"displayName\":\"$GATED_USER\"}" | json_field userId)"
 
 TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Tag demo\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_CATALOG_ID\"}" | json_field teamId)"
 
@@ -134,10 +140,17 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
   "{\"teamId\":\"$TEAM_ID\",\"code\":\"strict-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"],\"sensitivity\":[\"public\",\"internal\"]},\"matchMode\":\"ALL_OF\"}" >/dev/null
 
+# ADR 0022: a 'gated-writer' — catalog READ+WRITE with the same region requirement. Its READ of the
+# untagged root rides the root-read exemption (200); its WRITE is denied by the tag conjunct (403) —
+# WRITE permission present, so the contrast isolates the exemption boundary, never the permission check.
+post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"gated-writer\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+
 # Bind: owner -> owner (full write, to create Categories); reader -> regional-reader; strict -> strict-reader.
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"regional-reader\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$STRICT_UID\",\"roleCode\":\"strict-reader\"}" >/dev/null
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$GATED_UID\",\"roleCode\":\"gated-writer\"}" >/dev/null
 echo "  team $TEAM_ID governs catalog $DEMO_CATALOG_ID (owner + regional-reader + strict-reader bound)."
 
 # --- create three differently-tagged Categories via the gateway (owner) ------
@@ -167,6 +180,7 @@ newman run "$COLLECTION" \
   --env-var "owner_token=$OWNER_TOKEN" \
   --env-var "reader_token=$READER_TOKEN" \
   --env-var "strict_token=$STRICT_TOKEN" \
+  --env-var "gated_token=$GATED_TOKEN" \
   --env-var "editor_token=$OWNER_TOKEN" \
   --reporter-cli \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/tag-abac-matrix-report.json"

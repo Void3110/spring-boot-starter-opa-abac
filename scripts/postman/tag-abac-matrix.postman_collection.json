@@ -1,367 +1,464 @@
 {
-  "info": {
-    "name": "Tag-based ABAC matrix (the dynamic tag dictionary, Phase 4.5)",
-    "description": "Proves tag-based grants end to end through the gateway. The decisive case: the SAME member with the SAME tag-gated role reads two Categories that differ ONLY in their tags \u2014 the matching one is allowed (200), the non-matching one is denied (403). Plus ANY_OF vs ALL_OF, the dictionary define dogfood (owner 200 / member 403), and an illegal assignment (422). Run via run-tag-matrix.sh, which seeds the dictionary key, the tag-gated role, and the two tagged Categories at run time.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ "info": {
+  "name": "Tag-based ABAC matrix (the dynamic tag dictionary, Phase 4.5)",
+  "description": "Proves tag-based grants end to end through the gateway. The decisive case: the SAME member with the SAME tag-gated role reads two Categories that differ ONLY in their tags — the matching one is allowed (200), the non-matching one is denied (403). Plus ANY_OF vs ALL_OF, the dictionary define dogfood (owner 200 / member 403), and an illegal assignment (422). Run via run-tag-matrix.sh, which seeds the dictionary key, the tag-gated role, and the two tagged Categories at run time.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "item": [
+  {
+   "name": "1. Tag-match read: gated member reads the region=emea Category -> 200",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{reader_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{match_category_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('matching-tag Category is allowed', function () { pm.response.to.have.status(200); });"
+      ]
+     }
+    }
+   ]
   },
-  "item": [
-    {
-      "name": "1. Tag-match read: gated member reads the region=emea Category -> 200",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{reader_token}}"
-          }
-        ],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}",
-          "host": [
-            "{{gateway}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "catalogs",
-            "{{catalog_id}}",
-            "categories",
-            "{{match_category_id}}"
-          ]
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('matching-tag Category is allowed', function () { pm.response.to.have.status(200); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "2. DECISIVE \u2014 tag-mismatch read: SAME member reads the region=apac Category -> 403",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{reader_token}}"
-          }
-        ],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{mismatch_category_id}}",
-          "host": [
-            "{{gateway}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "catalogs",
-            "{{catalog_id}}",
-            "categories",
-            "{{mismatch_category_id}}"
-          ]
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "// Identical role + permission as request 1; only the resource's tags differ.",
-              "pm.test('non-matching-tag Category is denied (tags drive the decision)', function () { pm.response.to.have.status(403); });",
-              "// [phase-5.9 contract]",
-              "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
-              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
-              "  const b = pm.response.json();",
-              "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
-              "  pm.expect(b.status).to.eql(403);",
-              "  pm.expect(b).to.have.property('type');",
-              "  pm.expect(b).to.have.property('title');",
-              "  pm.expect(b).to.not.have.property('message');",
-              "});"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "3a. ALL_OF role: both keys satisfied -> 200",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{strict_token}}"
-          }
-        ],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{both_category_id}}",
-          "host": [
-            "{{gateway}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "catalogs",
-            "{{catalog_id}}",
-            "categories",
-            "{{both_category_id}}"
-          ]
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('ALL_OF: both required keys satisfied -> allowed', function () { pm.response.to.have.status(200); });"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "3b. ALL_OF role: only one key satisfied -> 403",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{strict_token}}"
-          }
-        ],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}",
-          "host": [
-            "{{gateway}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "catalogs",
-            "{{catalog_id}}",
-            "categories",
-            "{{match_category_id}}"
-          ]
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "// match_category has region=emea but NOT the required sensitivity -> ALL_OF fails.",
-              "pm.test('ALL_OF: a missing key denies', function () { pm.response.to.have.status(403); });",
-              "// [phase-5.9 contract]",
-              "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
-              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
-              "  const b = pm.response.json();",
-              "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
-              "  pm.expect(b.status).to.eql(403);",
-              "  pm.expect(b).to.have.property('type');",
-              "  pm.expect(b).to.have.property('title');",
-              "  pm.expect(b).to.not.have.property('message');",
-              "});"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "4a. Dictionary define dogfood: owner defines a team tag key -> 201",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{owner_token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/tag-definitions",
-          "host": [
-            "{{user_service}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "teams",
-            "{{team_id}}",
-            "tag-definitions"
-          ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{\"key\":\"{{define_key}}\",\"valueType\":\"ENUM\",\"cardinality\":\"SINGLE\",\"allowedValues\":[\"gold\",\"silver\"]}"
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('owner may define a team tag key', function () { pm.response.to.have.status(201); });",
-              "// [phase-5.9 contract]",
-              "pm.test('201 carries a Location header', () => {",
-              "  pm.expect(pm.response.headers.get('Location') || '').to.match(/\\/api\\/v1\\//);",
-              "});"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "4b. Dictionary define dogfood: viewer-member cannot define -> 403",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{reader_token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{user_service}}/api/v1/teams/{{team_id}}/tag-definitions",
-          "host": [
-            "{{user_service}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "teams",
-            "{{team_id}}",
-            "tag-definitions"
-          ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{\"key\":\"forbidden\",\"valueType\":\"STRING\",\"cardinality\":\"SINGLE\"}"
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('a non-admin member cannot define tags', function () { pm.response.to.have.status(403); });",
-              "// [phase-5.9 contract]",
-              "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
-              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
-              "  const b = pm.response.json();",
-              "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
-              "  pm.expect(b.status).to.eql(403);",
-              "  pm.expect(b).to.have.property('type');",
-              "  pm.expect(b).to.have.property('title');",
-              "  pm.expect(b).to.not.have.property('message');",
-              "});"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "5. Illegal assignment: a value outside the dictionary -> 422",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{editor_token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
-          "host": [
-            "{{gateway}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "catalogs",
-            "{{catalog_id}}",
-            "categories"
-          ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{\"name\":\"Illegal\",\"tags\":{\"sensitivity\":\"top-secret\"}}"
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('an out-of-dictionary value is rejected (422), never stored', function () { pm.response.to.have.status(422); });",
-              "// [phase-5.9 contract]",
-              "pm.test('422 body is RFC-7807 problem+json with TAG_VALUE_ILLEGAL', () => {",
-              "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
-              "  const b = pm.response.json();",
-              "  pm.expect(b.errorCode).to.eql('TAG_VALUE_ILLEGAL');",
-              "  pm.expect(b.status).to.eql(422);",
-              "  pm.expect(b).to.not.have.property('message');",
-              "});"
-            ]
-          }
-        }
-      ]
+  {
+   "name": "2. DECISIVE — tag-mismatch read: SAME member reads the region=apac Category -> 403",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{reader_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{mismatch_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{mismatch_category_id}}"
+     ]
     }
-  ],
-  "variable": [
+   },
+   "event": [
     {
-      "key": "gateway",
-      "value": "http://localhost:9085"
-    },
-    {
-      "key": "user_service",
-      "value": "http://localhost:28090"
-    },
-    {
-      "key": "catalog_id",
-      "value": ""
-    },
-    {
-      "key": "team_id",
-      "value": ""
-    },
-    {
-      "key": "match_category_id",
-      "value": ""
-    },
-    {
-      "key": "mismatch_category_id",
-      "value": ""
-    },
-    {
-      "key": "both_category_id",
-      "value": ""
-    },
-    {
-      "key": "define_key",
-      "value": "tier"
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// Identical role + permission as request 1; only the resource's tags differ.",
+       "pm.test('non-matching-tag Category is denied (tags drive the decision)', function () { pm.response.to.have.status(403); });",
+       "// [phase-5.9 contract]",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "  pm.expect(b).to.have.property('type');",
+       "  pm.expect(b).to.have.property('title');",
+       "  pm.expect(b).to.not.have.property('message');",
+       "});"
+      ]
+     }
     }
-  ]
+   ]
+  },
+  {
+   "name": "3a. ALL_OF role: both keys satisfied -> 200",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{strict_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{both_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{both_category_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('ALL_OF: both required keys satisfied -> allowed', function () { pm.response.to.have.status(200); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "3b. ALL_OF role: only one key satisfied -> 403",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{strict_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{match_category_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// match_category has region=emea but NOT the required sensitivity -> ALL_OF fails.",
+       "pm.test('ALL_OF: a missing key denies', function () { pm.response.to.have.status(403); });",
+       "// [phase-5.9 contract]",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "  pm.expect(b).to.have.property('type');",
+       "  pm.expect(b).to.have.property('title');",
+       "  pm.expect(b).to.not.have.property('message');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "4a. Dictionary define dogfood: owner defines a team tag key -> 201",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{user_service}}/api/v1/teams/{{team_id}}/tag-definitions",
+     "host": [
+      "{{user_service}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "teams",
+      "{{team_id}}",
+      "tag-definitions"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"key\":\"{{define_key}}\",\"valueType\":\"ENUM\",\"cardinality\":\"SINGLE\",\"allowedValues\":[\"gold\",\"silver\"]}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('owner may define a team tag key', function () { pm.response.to.have.status(201); });",
+       "// [phase-5.9 contract]",
+       "pm.test('201 carries a Location header', () => {",
+       "  pm.expect(pm.response.headers.get('Location') || '').to.match(/\\/api\\/v1\\//);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "4b. Dictionary define dogfood: viewer-member cannot define -> 403",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{reader_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{user_service}}/api/v1/teams/{{team_id}}/tag-definitions",
+     "host": [
+      "{{user_service}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "teams",
+      "{{team_id}}",
+      "tag-definitions"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"key\":\"forbidden\",\"valueType\":\"STRING\",\"cardinality\":\"SINGLE\"}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('a non-admin member cannot define tags', function () { pm.response.to.have.status(403); });",
+       "// [phase-5.9 contract]",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "  pm.expect(b).to.have.property('type');",
+       "  pm.expect(b).to.have.property('title');",
+       "  pm.expect(b).to.not.have.property('message');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "5. Illegal assignment: a value outside the dictionary -> 422",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{editor_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"Illegal\",\"tags\":{\"sensitivity\":\"top-secret\"}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('an out-of-dictionary value is rejected (422), never stored', function () { pm.response.to.have.status(422); });",
+       "// [phase-5.9 contract]",
+       "pm.test('422 body is RFC-7807 problem+json with TAG_VALUE_ILLEGAL', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('TAG_VALUE_ILLEGAL');",
+       "  pm.expect(b.status).to.eql(422);",
+       "  pm.expect(b).to.not.have.property('message');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "6a. ADR 0022 — gated-writer READS the untagged root catalog -> 200 (the root-read exemption)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// ADR 0022: the team-target IS the explicit grant on this exact resource — a tag-gated role's",
+       "// READ of the governing root is exempt from required_tags (data.config.root_read_tag_exemption,",
+       "// the shipped default). Strict mode (flag off/absent) would deny this same read.",
+       "pm.test('tag-gated member reads the UNTAGGED root (read exempt)', function () { pm.response.to.have.status(200); });",
+       "pm.test('the catalog body is the fixture', () => {",
+       "  pm.expect(pm.response.json().name).to.eql('Tag demo catalog');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "6b. ADR 0022 — the SAME gated-writer MUTATES the untagged root -> 403 (mutations stay tag-gated)",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"renamed-by-gated-writer\"}"
+    },
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// The exemption is READ-only: catalog:update carries the full tag conjunct, and the root is",
+       "// untagged. The role HOLDS catalog WRITE, so this 403 is the TAG boundary, never the permission",
+       "// check — together with 6a it pins both sides of ADR 0022 through the gateway.",
+       "pm.test('the same member cannot MUTATE the untagged root (tags gate mutations)', function () { pm.response.to.have.status(403); });",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "});"
+      ]
+     }
+    }
+   ]
+  }
+ ],
+ "variable": [
+  {
+   "key": "gateway",
+   "value": "http://localhost:9085"
+  },
+  {
+   "key": "user_service",
+   "value": "http://localhost:28090"
+  },
+  {
+   "key": "catalog_id",
+   "value": ""
+  },
+  {
+   "key": "team_id",
+   "value": ""
+  },
+  {
+   "key": "match_category_id",
+   "value": ""
+  },
+  {
+   "key": "mismatch_category_id",
+   "value": ""
+  },
+  {
+   "key": "both_category_id",
+   "value": ""
+  },
+  {
+   "key": "define_key",
+   "value": "tier"
+  },
+  {
+   "key": "gated_token",
+   "value": ""
+  }
+ ]
 }
