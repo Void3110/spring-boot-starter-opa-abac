@@ -119,6 +119,17 @@ resource-side model *with the default inverted to fail-closed* — it would get 
 > role with no tags". A role with the permission and no tag requirement sees everything it's permitted to —
 > tags only ever *subtract*.
 
+**The one carve-out — the governing root (ADR [[0022-root-read-tag-exemption|0022]]).** Uniform
+subtraction had a lockout: a tag-requiring role stopped reaching the **untagged catalog shell** — team
+member, correct role, empty grid — because membership only *selects* the role; it granted nothing the
+role's filter couldn't void. Since ADR 0022, READ-level verbs (`view`/`list`) on the **catalog** (the
+resource the team-target explicitly names) are exempt from `requiredTags` by default
+(`data.config.root_read_tag_exemption`, shipped `true`; absent = strict, fail-closed;
+`ROOT_READ_TAG_EXEMPTION=0 ./deploy.sh up` flips the live rig). Mutations on the root and everything
+below it stay fully tag-gated — and catalogs are now **taggable** (the category-style delta dispatch on
+the catalog PUT), so root tags gate *who may mutate the catalog itself*. The 7.0.5 list↔GET agreement
+invariant holds in both flag states.
+
 **A worked data-flow** (the e2e demo, traced through the rego):
 
 ```

@@ -20,12 +20,27 @@ import org.springframework.stereotype.Component;
  * Spring AOP requires the calls to cross a bean boundary, hence this dedicated bean (never
  * self-invocation from a controller method).
  *
- * <p>Category only: it is the one type whose REST requests carry {@code tags} — catalog and product
- * requests have no tags field, so their tags delta is never constructible and their PUTs keep a static
- * {@code <type>:update} annotation (a dispatch there would have an unreachable branch).
+ * <p>Category and catalog: the two types whose REST requests carry {@code tags}. Product requests
+ * have no tags field, so their tags delta is never constructible and their PUT keeps a static
+ * {@code product:update} annotation (a dispatch there would have an unreachable branch). Catalog
+ * create takes NO tags (rejected 422 before any decision): the type-level assign-tags decision
+ * resolves through the governing team, and a new catalog has no team until owner-on-create binds
+ * one — so catalog tag assignment starts at the first update.
  */
 @Component
 public class TagDecisionGate {
+
+    /** The content-change decision on a resolved catalog instance. */
+    @OpaPreAuthorize(action = "catalog:update", resourceType = "'catalog'", resourceId = "#catalogId")
+    public void requireCatalogUpdate(UUID catalogId) {
+        // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
+    }
+
+    /** The tag-relabel decision on a resolved catalog instance. */
+    @OpaPreAuthorize(action = "catalog:assign-tags", resourceType = "'catalog'", resourceId = "#catalogId")
+    public void requireCatalogAssignTags(UUID catalogId) {
+        // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
+    }
 
     /** The content-change decision on a resolved category instance. */
     @OpaPreAuthorize(action = "category:update", resourceType = "'category'", resourceId = "#categoryId")

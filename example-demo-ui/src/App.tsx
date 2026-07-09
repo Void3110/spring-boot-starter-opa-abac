@@ -24,6 +24,7 @@ import {
   listProducts,
   listTeamTagDefinitions,
   lookupTeamByTarget,
+  updateCatalog,
   updateCategory,
   updateProduct,
 } from './api'
@@ -271,6 +272,7 @@ function CatalogDetail({
     return listTeamTagDefinitions(team.id)
   }, [catalog.id])
   const [tagEditing, setTagEditing] = useState<string | null>(null)
+  const [catalogTagEditing, setCatalogTagEditing] = useState(false)
 
   return (
     <div>
@@ -290,6 +292,51 @@ function CatalogDetail({
             <ActionBadges actions={full.data?._actions} />
           )}
         </div>
+        <TagLine tags={full.data?.tags} />
+        {full.data?._actions?.['assign-tags'] !== undefined && (
+          <div className="mt-2">
+            <button
+              disabled={!full.data._actions['assign-tags']}
+              onClick={() => setCatalogTagEditing(!catalogTagEditing)}
+              title={
+                full.data._actions['assign-tags']
+                  ? 'Edit this catalog’s tags'
+                  : 'Not allowed for your role'
+              }
+              className="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed"
+              style={
+                full.data._actions['assign-tags']
+                  ? { borderColor: 'var(--color-line)', color: 'var(--color-brand-ink)', background: '#eef2ff' }
+                  : { borderColor: '#fecaca', color: 'var(--color-deny)', background: '#fef2f2', opacity: 0.7 }
+              }
+            >
+              {full.data._actions['assign-tags'] ? '' : '🔒 '}assign-tags
+            </button>
+            {/* The confusion-killer (ADR 0022): under the default root-read exemption, root tags do
+                NOT gate members' visibility — say what they DO gate. */}
+            <p className="mt-1 text-xs italic text-[var(--color-muted)]">
+              Root tags gate this catalog's <em>mutations</em> for tag-requiring roles — members
+              always see their team's catalog. With the exemption off (strict mode), they gate
+              reads too.
+            </p>
+            {catalogTagEditing && tagDefs.data && full.data && (
+              <TagEditor
+                defs={tagDefs.data.items}
+                initial={full.data.tags ?? {}}
+                onClose={() => setCatalogTagEditing(false)}
+                onSave={async (tags) => {
+                  // Content echoed unchanged — the delta dispatch asks exactly catalog:assign-tags.
+                  await updateCatalog(catalog.id, {
+                    name: full.data!.name,
+                    description: full.data!.description ?? undefined,
+                    tags,
+                  })
+                  full.reload()
+                }}
+              />
+            )}
+          </div>
+        )}
       </Card>
 
       <TeamPanel

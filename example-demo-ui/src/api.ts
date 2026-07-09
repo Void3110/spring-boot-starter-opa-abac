@@ -16,6 +16,7 @@ export interface Catalog {
   name: string
   description?: string
   createdAt: string
+  tags?: Tags
   _actions?: Actions
 }
 
@@ -209,7 +210,18 @@ export function createProduct(
 
 // PUT is a full replace — and ABSENT tags mean "clear all tags" (the server's delta dispatch reads
 // null as an empty map, and clearing IS a tags change). Callers must echo the current tags back
-// unless a tag change is exactly what they're asking for.
+// unless a tag change is exactly what they're asking for. Catalogs carry the same semantics since
+// ADR 0022 (taggable roots).
+export function updateCatalog(
+  id: string,
+  patch: { name: string; description?: string; tags?: Tags },
+): Promise<Catalog> {
+  return request<Catalog>(`/api/v1/catalogs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+}
+
 export function updateCategory(
   catalogId: string,
   id: string,

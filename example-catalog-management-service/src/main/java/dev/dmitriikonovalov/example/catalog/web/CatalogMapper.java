@@ -22,7 +22,8 @@ public final class CatalogMapper {
                 .id(e.getId())
                 .name(e.getName())
                 .description(e.getDescription())
-                .createdAt(e.getCreatedAt());
+                .createdAt(e.getCreatedAt())
+                .tags(e.getTags().asMap());
     }
 
     public static Category toDto(CategoryEntity e) {

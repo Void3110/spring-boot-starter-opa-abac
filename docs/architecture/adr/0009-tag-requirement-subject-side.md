@@ -9,7 +9,9 @@ tags:
 
 # ADR 0009 — The tag access requirement is subject-side (on the role), not resource-side
 
-**Status:** Accepted
+**Status:** Accepted — refined by [[0022-root-read-tag-exemption|ADR 0022]] (2026-07-09): READ-level
+verbs on the **governing root** are exempt from the requirement by default (a `data.config` flag);
+this ADR's subject-side model is otherwise unchanged.
 **Date:** 2026-06
 **Context tags:** ABAC, OPA, tags, fail-closed, partial-eval row filtering, AWS-IAM vs Keycloak
 
