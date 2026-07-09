@@ -170,10 +170,12 @@ class ActionEnrichmentIT {
                 .andExpect(jsonPath("$._actions.delete").value(true));
     }
 
-    // --- I6: the verified verb sets (catalog/product exclude assign-tags) -------
+    // --- I6: the verified verb sets (product excludes assign-tags; catalog INCLUDES it — ADR 0022) ---
 
-    @Test // I6 — a Catalog enriches with exactly [view,update,delete] — NO assign-tags
-    void catalogVerbSetExcludesAssignTags() throws Exception {
+    @Test // I6 — a Catalog enriches with exactly [view,update,delete,assign-tags]: catalogs are
+    // taggable since ADR 0022 (the update handler's delta dispatch carries catalog:assign-tags), so
+    // the verb joined the enrichment set. Pre-0022 this cell pinned its EXCLUSION.
+    void catalogVerbSetIncludesAssignTags() throws Exception {
         var catalog = seedCatalog();
         ProgrammableOpaClient.perContextRule = ctx -> true;
 
@@ -182,7 +184,7 @@ class ActionEnrichmentIT {
                 .andExpect(jsonPath("$._actions.view").value(true))
                 .andExpect(jsonPath("$._actions.update").value(true))
                 .andExpect(jsonPath("$._actions.delete").value(true))
-                .andExpect(jsonPath("$._actions.assign-tags").doesNotExist());
+                .andExpect(jsonPath("$._actions.['assign-tags']").value(true));
     }
 
     @Test // I6 — a Product enriches with exactly [view,update,delete] — NO assign-tags
