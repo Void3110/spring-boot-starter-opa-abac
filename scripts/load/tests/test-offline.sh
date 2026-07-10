@@ -49,6 +49,9 @@ check "the markdown table renders" "yes" "$(printf '%s' "$out" | grep -q '| outb
 out="$($AMP --scenario enrichment --input "$SELF_DIR/amplification-cases/enrichment-exceeded.json" --min-traces 5)"
 check "per-row resolve scaling lands as an EXCEEDED finding" "yes" "$(printf '%s' "$out" | grep -q 'resolve.*EXCEEDED' && printf '%s' "$out" | grep -q 'FINDINGS' && echo yes || echo no)"
 check "batch-eval above its pinned bound is EXCEEDED too" "yes" "$(printf '%s' "$out" | grep -q 'batch-eval | 1 | 2 | 2 | EXCEEDED' && echo yes || echo no)"
+out="$($AMP --scenario multi-root-list --input "$SELF_DIR/amplification-cases/multi-root-baseline.json" --min-traces 5)"
+check "multi-root per-row resolve (M per page) lands as an EXCEEDED finding" "yes" "$(printf '%s' "$out" | grep -q 'resolve | 1 | 4 | 4 | EXCEEDED' && echo yes || echo no)"
+check "multi-root compile stays within its pin" "yes" "$(printf '%s' "$out" | grep -q 'compile | 1 | 1 | 1 | within' && echo yes || echo no)"
 if $AMP --scenario gate-overhead --input "$SELF_DIR/amplification-cases/gate-overhead-clean.json" --min-traces 50 >/dev/null 2>&1; then
   check "MIN_TRACES floor aborts red on a thin window (exit 2)" "2" "0"
 else
@@ -77,8 +80,9 @@ check "the same stream is INVALID under opa (no denials => no fault)" "2" "$rc"
 
 echo "== U1b: the --help mode/knob surface (deep-review fix) =="
 help_out="$("$LOAD_DIR/run-load.sh" --help)"
-for token in guarded baseline full ceiling fault-supplier-transient fault-supplier-down fault-opa \
-             RATE= DURATION= WARMUP= REPS= FIXTURE_ROWS= LADDER= LADDER_DURATION= PHASE= KEEP_FIXTURES=; do
+for token in guarded baseline full ceiling multi-root fault-supplier-transient fault-supplier-down fault-opa \
+             RATE= DURATION= WARMUP= REPS= FIXTURE_ROWS= LADDER= LADDER_DURATION= PHASE= \
+             MULTI_ROOT_CATALOGS= MULTI_ROOT_RATE= KEEP_FIXTURES=; do
   if printf '%s' "$help_out" | grep -q "$token"; then
     echo "  ok: --help lists $token"
   else

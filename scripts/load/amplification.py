@@ -35,10 +35,14 @@ import urllib.request
 
 # The ADR 0021 §6 pinned per-scenario bounds — the library's design claims under proof.
 # An op observed but not pinned here is reported as "unpinned" (recorded, no verdict).
+# multi-root-list (RESOLVE-COALESCING T1): the catalogs page where every row is its own governing
+# root. The pin is the ADR 0024 target (one batch exchange); the pre-7.3 baseline run records the
+# honest EXCEEDED finding (resolve = M per page) — that artifact IS the "before" (QA P3).
 EXPECTED = {
     "gate-overhead": {"resolve": 1, "decide": 1},
     "list-filter": {"resolve": 1, "compile": 1},
     "enrichment": {"resolve": 1, "batch-eval": 1},
+    "multi-root-list": {"resolve": 1, "compile": 1},
 }
 
 OPS = ("resolve", "governed-scope", "tag", "decide", "batch-eval", "compile")

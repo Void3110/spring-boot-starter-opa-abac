@@ -64,6 +64,7 @@ never be an id another matrix **grants on**. Current registry — keep it unique
 | `aaaa…` | `run-action-enrichment-matrix.sh` | team-governed (Phase 6 affordance `_actions` cells: a read+write role `ae-writer` + a read-only role `ae-reader`; emea/apac categories — the honest-`false`, writer-all-true, per-row-page, and verb-set-exclusion cells; the seeded team's own `_actions` cells live in the user-mgmt module tests, not this gateway matrix) |
 | `cccc…` | `run-resilience-matrix.sh` | a single fixture Category the B3 resilience matrix GETs; the role is **resolved from the fault-injecting stub**, not the user-service DB, so this id grants nothing in the shared store and collides with no other matrix |
 | `dddd…` | `scripts/load/run-load.sh` (Phase 7.2) | the **load-test fixture set** (granted): 1 catalog + `FIXTURE_ROWS` bulk-seeded categories, read/written only by the reserved `perf` load identity; teardown-on-green like every matrix. No other matrix may grant on, assert on, or seed under this prefix. |
+| `dddd…-dd0…` | `scripts/load/run-load.sh multi-root` (Phase 7.3) | the **multi-root load sub-range** (granted), inside the `dddd…` reservation: `MULTI_ROOT_CATALOGS` catalogs (`…-dd0000000001` …), each with its own team + a `perf` membership (an un-gated catalog-READ role) — the catalogs-list page where every row is its own governing root. Same rules: only `perf`, teardown-on-green. |
 
 **Reserved realm account:** `dora` (USER-DIRECTORY-PORT) — the **never-provisioned** directory-probe
 persona for the team matrix's E1 cut (cells 13/13a: found in the directory, `count=0` in the
@@ -75,8 +76,10 @@ subject: an account one matrix asserts as *absent* must never be an account anot
 **Reserved realm account:** `perf` (LOAD-TESTING, Phase 7.2) — the **dedicated load identity**
 `scripts/load/run-load.sh` runs every k6 scenario as. The runner bootstraps her profile and her
 single membership (a tag-gated read/write role on the load team governing the `dddd…` catalog) on
-every run. **No matrix may bind her to a team, grant on her, or assert on her** — a stray grant
-would silently change what the load numbers measure. She holds no membership outside the load team.
+every run; the 7.3 `multi-root` mode instead binds her to the M multi-root teams (`dddd…-dd0…`
+above). **No matrix may bind her to a team, grant on her, or assert on her** — a stray grant
+would silently change what the load numbers measure. She holds no membership outside the
+harness-owned `dddd…` teams.
 
 (Discovered the hard way: the hierarchy matrix originally used `4444…` as its foreign catalog; a past
 list-matrix run had granted the same reader an inheritable role on it, flipping the re-parent assert
