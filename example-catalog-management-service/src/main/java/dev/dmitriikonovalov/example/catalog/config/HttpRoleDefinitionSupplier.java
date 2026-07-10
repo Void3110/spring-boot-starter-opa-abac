@@ -1,6 +1,8 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
@@ -14,7 +16,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.StringJoiner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -184,6 +191,131 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
         log.warn("Effective-role resolve returned HTTP {} — role-source outage, failing closed", status);
         throw new RoleResolutionException("effective-role source returned HTTP " + status);
     }
+
+    /**
+     * The batch form (Slice 7.3, ADR 0024): <strong>one</strong> exchange —
+     * {@code GET <base>/internal/effective-roles?userId=…&target=<type>:<id>&…} — resolving N targets,
+     * riding the <strong>same resolve {@link CallGuard} as one guarded call</strong> (one breaker
+     * event per page instead of N). Retry is safe for exactly the reasons the single lookup pins:
+     * the exchange is a <em>read-only GET</em> (side-effect-free invariant, ADR 0017 §3) running on
+     * the request thread outside any write transaction (no-lock invariant, ADR 0017 §4) — the guard
+     * retrying the whole batch can never double-execute anything.
+     *
+     * <h4>Classification — B2's strict rules, batched</h4>
+     * <ul>
+     *   <li><b>{@code 200} + a complete body</b> — exactly one entry per requested target — → the map
+     *       ({@code role:null} → {@link Optional#empty()}, the per-entry authoritative no-role).</li>
+     *   <li><b>a missing, extra, or duplicate entry</b> → <em>permanent</em> whole-batch outage
+     *       (strict completeness — a partial body never yields partial roles); likewise a
+     *       {@code 200}-blank or unparseable body.</li>
+     *   <li><b>5xx/429/timeout/connect</b> → transient, retried inside the guard; exhausted →
+     *       {@link RoleResolutionException}.</li>
+     *   <li><b>every 4xx</b> (incl. the server's 400 for a malformed target) and any other status
+     *       (a {@code 204} is not part of this contract) → permanent outage, no retry.</li>
+     *   <li><b>breaker open</b> → {@link RoleResolutionException} without an exchange.</li>
+     * </ul>
+     * An empty target set answers {@code Map.of()} with no HTTP; a null {@code userId} answers
+     * all-empty (authoritative no-role — the same no-coordinates posture as {@link #lookup}).
+     */
+    @Override
+    public Map<ResolveTarget, Optional<RoleDefinition>> lookupAll(String userId, Set<ResolveTarget> targets) {
+        if (targets.isEmpty()) {
+            return Map.of();
+        }
+        if (userId == null) {
+            Map<ResolveTarget, Optional<RoleDefinition>> none = new HashMap<>();
+            targets.forEach(t -> none.put(t, Optional.empty()));
+            return Map.copyOf(none);
+        }
+        StringJoiner query = new StringJoiner("&");
+        query.add("userId=" + enc(userId));
+        for (ResolveTarget target : targets) {
+            query.add("target=" + enc(target.resourceType()) + ":" + enc(target.resourceId()));
+        }
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create(baseUrl + "/internal/effective-roles?" + query))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        try {
+            // One guarded call for the WHOLE batch — the guard's retry unit is the exchange.
+            return resolveGuard.call(
+                    () -> exchangeAndClassifyBatch(request, targets),
+                    t -> t instanceof TransientResolveException,
+                    result -> false);
+        } catch (TransientResolveException e) {
+            throw new RoleResolutionException(e.getMessage(), e.getCause());
+        } catch (CallNotPermittedException e) {
+            log.warn("Effective-roles batch resolve fail-closed: resolve circuit breaker open");
+            throw new RoleResolutionException("effective-roles source unavailable (breaker open)", e);
+        }
+    }
+
+    /** One batch exchange + B2's strict classification with strict completeness (see {@link #lookupAll}). */
+    private Map<ResolveTarget, Optional<RoleDefinition>> exchangeAndClassifyBatch(
+            HttpRequest request, Set<ResolveTarget> targets) {
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (java.io.IOException e) {
+            log.warn("Effective-roles batch resolve failed ({}) — role-source outage, retrying/failing closed",
+                    e.getClass().getSimpleName());
+            throw new TransientResolveException("effective-roles source unavailable", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Effective-roles batch resolve interrupted — role-source outage, failing closed");
+            throw new RoleResolutionException("effective-roles resolve interrupted", e);
+        }
+
+        int status = response.statusCode();
+        if (status == 200) {
+            String body = response.body();
+            if (body == null || body.isBlank()) {
+                log.warn("Effective-roles batch resolve returned 200 with a blank body — role-source outage");
+                throw new RoleResolutionException("effective-roles 200 with empty body"); // permanent
+            }
+            List<BatchEntry> entries;
+            try {
+                entries = objectMapper.readValue(body, new TypeReference<List<BatchEntry>>() {});
+            } catch (com.fasterxml.jackson.core.JacksonException e) {
+                log.warn("Effective-roles batch 200 body was unparseable ({}) — role-source outage",
+                        e.getClass().getSimpleName());
+                throw new RoleResolutionException("effective-roles 200 body unparseable", e); // permanent
+            }
+            // Strict completeness: exactly one entry per requested target — a short, padded, or
+            // duplicated body is malformed and the WHOLE batch is an outage (never partial roles).
+            Map<ResolveTarget, Optional<RoleDefinition>> resolved = new HashMap<>();
+            for (BatchEntry entry : entries) {
+                if (entry == null || entry.resourceType() == null || entry.resourceId() == null) {
+                    throw new RoleResolutionException("effective-roles entry malformed"); // permanent
+                }
+                ResolveTarget key = new ResolveTarget(entry.resourceType(), entry.resourceId());
+                if (resolved.put(key, Optional.ofNullable(entry.role())) != null) {
+                    log.warn("Effective-roles batch returned a duplicate entry — role-source outage");
+                    throw new RoleResolutionException("effective-roles duplicate entry"); // permanent
+                }
+            }
+            if (resolved.size() != targets.size() || !resolved.keySet().containsAll(targets)) {
+                log.warn("Effective-roles batch returned {} entr(ies) for {} target(s) — role-source outage",
+                        resolved.size(), targets.size());
+                throw new RoleResolutionException("effective-roles response incomplete"); // permanent
+            }
+            return Map.copyOf(resolved);
+        }
+        if (RetryableClassification.retryableStatus(status)) {
+            log.warn("Effective-roles batch resolve returned HTTP {} — transient, retrying/failing closed",
+                    status);
+            throw new TransientResolveException("effective-roles source returned HTTP " + status, null);
+        }
+        // Every 4xx (incl. 400 malformed-target), a 204, and any other status → permanent outage.
+        log.warn("Effective-roles batch resolve returned HTTP {} — role-source outage, failing closed", status);
+        throw new RoleResolutionException("effective-roles source returned HTTP " + status);
+    }
+
+    /** One wire entry of the batch response; {@code role} is {@code null} for authoritative no-role. */
+    record BatchEntry(String resourceType, String resourceId, RoleDefinition role) {}
 
     private static String enc(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
