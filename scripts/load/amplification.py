@@ -105,6 +105,12 @@ def fetch_traces(args):
 
     target = args.min_traces + max(10, args.min_traces // 4)
     slices = 30
+    # Per-slice limit sized so the WHOLE chunked fetch can actually reach the official floor:
+    # 30 slices x 10 capped at 300 < the 500 floor of a full-length official window (a latent
+    # harness bug — the published 7.2 numbers were produced by the pre-chunking single query).
+    # ceil(target/slices)+5 keeps each response small (tens of single-request traces, never the
+    # one-shot 100MB+ query the chunking exists to prevent) while making the target reachable.
+    per_slice = max(10, -(-target // slices) + 5)
     span = max(1, (args.window_end - args.window_start) // slices)
     seen, traces = set(), []
     for i in range(slices):
@@ -117,7 +123,7 @@ def fetch_traces(args):
             "operation": args.operation,
             "start": s * 1_000_000,  # Jaeger wants microseconds
             "end": e * 1_000_000,
-            "limit": 10,
+            "limit": per_slice,
         })
         try:
             with urllib.request.urlopen(f"{args.jaeger}/api/traces?{query}", timeout=60) as resp:
