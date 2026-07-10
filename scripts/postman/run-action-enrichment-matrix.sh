@@ -9,12 +9,18 @@
 #       category — the verb-by-verb decision contrast, asserted key by key.
 #   E2  editor GET /categories (a CategoryPage) over mixed-tag rows — each items[i]._actions present and
 #       complete; a tag-matched row allows update, a tag-mismatched row denies it (per-row, one bulk call).
-#   E3  GET /teams/{id} (ungated) — 200, _actions ABSENT (the ungated cache-miss degrade).
-#   E4  omit-on-failure, live — force the enrichment bulk call to fail (OPA down) while the handler's own
-#       gate still passes -> 200 with the resource body intact and _actions ABSENT (never an all-false map).
+#   E3  reader GET /categories page vs the single GET — the same map both ways (page and single agree;
+#       the team _actions cells live in the user-mgmt module tests, not this gateway matrix).
+#   E4  omit-on-failure SMOKE (shell-driven, not a newman cell) — pause OPA, GET through the gateway,
+#       assert no fabricated map appears (see the E4 block below; the gate-allowed omit path proper is
+#       covered by the module ITs).
 #   E5  affordance != enforcement — an action the map reports false is independently denied by the real
 #       gate when attempted (the _actions:false matches a real 403 on the mutation).
-#   E6  the catalog/product verb sets exclude assign-tags (no such key); category keeps it.
+#   E6  the catalog verb set is exactly [view,update,delete,assign-tags] — catalogs are TAGGABLE since
+#       ADR 0022 (PR #65); product still excludes assign-tags at the type level.
+#   E7  the catalogs-LIST cut (Slice 7.3, the multi-root batch path live): the writer's governed row
+#       carries _actions (update:true); the reader's same row answers the honest cut (view:true,
+#       update:false) — same endpoint, different maps, through APISIX.
 #
 # Prereq: the full rig is up WITH OIDC + OPA + the user-service, with the Phase-6 images:
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
