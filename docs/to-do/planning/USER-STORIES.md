@@ -172,6 +172,13 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   saturate, that enrichment and cross-service chatter stay bounded, and how the system degrades under
   a dependency outage — and reproduce the numbers myself with one command. — **Phase 7.2**
   ([[LOAD-TESTING]], ADR [[0021-load-testing-methodology|0021]])
+- **F5** *As a developer running list-shaped endpoints on the starter*, a page costs **one** role
+  resolve and one ancestor walk per request — not one per row — whether the rows share a governing
+  root (request-scoped memo) or each row is its own root (one batch resolve round-trip); the price is
+  pinned and honest: a role answer is a **per-request snapshot** (revocation takes effect at the next
+  request boundary), and no partial batch ever yields partial roles. — **Phase 7.3**
+  ([[RESOLVE-COALESCING]], ADRs [[0023-request-scoped-resolution-memoization|0023]] +
+  [[0024-batch-role-resolution|0024]])
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
