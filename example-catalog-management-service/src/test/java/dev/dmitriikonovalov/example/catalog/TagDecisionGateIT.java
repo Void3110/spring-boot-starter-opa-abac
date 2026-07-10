@@ -49,7 +49,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * category update/create handlers asked — the TAG/WRITE boundary that a static annotation could
  * never express — and that a denied decision precedes any mutation.
  */
-@SpringBootTest(properties = "catalog.role-source=none")
+// The OPA-edge resilience guard is OFF here: this suite pins WHICH decisions the gate dispatches
+// and in what ORDER; the B3 guard deliberately retries a deny (one extra fast sidecar hop —
+// ResilientOpaClient's documented posture), which would double every denied action in the capture.
+@SpringBootTest(properties = {"catalog.role-source=none", "opa.abac.resilience.opa.enabled=false"})
 @Testcontainers
 @AutoConfigureMockMvc
 @Import(TagDecisionGateIT.DispatchTestConfig.class)

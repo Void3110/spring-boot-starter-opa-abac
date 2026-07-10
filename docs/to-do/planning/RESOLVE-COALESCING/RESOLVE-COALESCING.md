@@ -25,7 +25,7 @@ tags:
 | # | Ticket | Module(s) | Status |
 |---|--------|-----------|--------|
 | **T1** | Multi-root k6 scenario + fixtures + **pre-change baseline** | `scripts/load` | ✅ (baseline: resolve **51**/page, 290 traces) |
-| **T2** | Request-scoped memos (role + ancestor) + BPPs + flag | `opa-abac-spring-security` · starter | ⬜ |
+| **T2** | Request-scoped memos (role + ancestor) + BPPs + flag | `opa-abac-spring-security` · starter | ✅ (I3: 1 resolve/request; + the deferred-manager wiring fix) |
 | **T3** | `lookupAll` SPI + `ResolveTarget` (core) + memo batch integration | `opa-abac-core` · `opa-abac-spring-security` | ⬜ |
 | **T4** | Batch wire: `/internal/effective-roles` + `HttpRoleDefinitionSupplier.lookupAll` | example user-mgmt · example catalog | ⬜ |
 | **T5** | `ActionEnrichmentAdvice` batching pass | `opa-abac-spring-security` | ⬜ |

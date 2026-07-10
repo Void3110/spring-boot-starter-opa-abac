@@ -65,7 +65,16 @@ class OpaMethodSecuritySliceTest {
         when(supplier.lookup(Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(Optional.empty());
 
         var manager = new OpaPreAuthorizeAuthorizationManager(opaClient, supplier);
-        return new OpaMethodSecurityConfiguration().opaPreAuthorizeMethodInterceptor(manager);
+        // The factory takes an ObjectProvider (lazily drained on the first decision — see the
+        // config's javadoc); the slice test supplies the manager through a trivial provider.
+        org.springframework.beans.factory.ObjectProvider<OpaPreAuthorizeAuthorizationManager> provider =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override
+                    public OpaPreAuthorizeAuthorizationManager getObject() {
+                        return manager;
+                    }
+                };
+        return new OpaMethodSecurityConfiguration().opaPreAuthorizeMethodInterceptor(provider);
     }
 
     private void authenticate() {
