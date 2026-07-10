@@ -28,7 +28,7 @@ tags:
 | **T2** | Request-scoped memos (role + ancestor) + BPPs + flag | `opa-abac-spring-security` · starter | ✅ (I3: 1 resolve/request; + the deferred-manager wiring fix) |
 | **T3** | `lookupAll` SPI + `ResolveTarget` (core) + memo batch integration | `opa-abac-core` · `opa-abac-spring-security` | ✅ (additive; full build green) |
 | **T4** | Batch wire: `/internal/effective-roles` + `HttpRoleDefinitionSupplier.lookupAll` | example user-mgmt · example catalog | ✅ (one guarded GET; strict completeness) |
-| **T5** | `ActionEnrichmentAdvice` batching pass | `opa-abac-spring-security` | ⬜ |
+| **T5** | `ActionEnrichmentAdvice` batching pass | `opa-abac-spring-security` | ✅ (one `lookupAll`/page; multi-root bound re-pinned **2** = coarse single + batch) |
 | **T6** | Gateway timeout + adopter notes + re-measurement + bounds re-pin + e2e | `infra` · `PERFORMANCE.md` · `scripts/postman` | ⬜ |
 
 Critical path: **T1 → T2 → T3 → T4 → T5 → T6** (T1 first *by design* — its baseline must run against

@@ -50,7 +50,7 @@ out="$($AMP --scenario enrichment --input "$SELF_DIR/amplification-cases/enrichm
 check "per-row resolve scaling lands as an EXCEEDED finding" "yes" "$(printf '%s' "$out" | grep -q 'resolve.*EXCEEDED' && printf '%s' "$out" | grep -q 'FINDINGS' && echo yes || echo no)"
 check "batch-eval above its pinned bound is EXCEEDED too" "yes" "$(printf '%s' "$out" | grep -q 'batch-eval | 1 | 2 | 2 | EXCEEDED' && echo yes || echo no)"
 out="$($AMP --scenario multi-root-list --input "$SELF_DIR/amplification-cases/multi-root-baseline.json" --min-traces 5)"
-check "multi-root per-row resolve (M per page) lands as an EXCEEDED finding" "yes" "$(printf '%s' "$out" | grep -q 'resolve | 1 | 4 | 4 | EXCEEDED' && echo yes || echo no)"
+check "multi-root per-row resolve (M per page) lands as an EXCEEDED finding" "yes" "$(printf '%s' "$out" | grep -q 'resolve | 2 | 4 | 4 | EXCEEDED' && echo yes || echo no)"
 check "multi-root compile stays within its pin" "yes" "$(printf '%s' "$out" | grep -q 'compile | 1 | 1 | 1 | within' && echo yes || echo no)"
 if $AMP --scenario gate-overhead --input "$SELF_DIR/amplification-cases/gate-overhead-clean.json" --min-traces 50 >/dev/null 2>&1; then
   check "MIN_TRACES floor aborts red on a thin window (exit 2)" "2" "0"

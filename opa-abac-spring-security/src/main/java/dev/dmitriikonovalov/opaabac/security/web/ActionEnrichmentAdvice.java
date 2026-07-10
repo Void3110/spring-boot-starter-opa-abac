@@ -6,6 +6,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
+import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
@@ -13,9 +14,11 @@ import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.MethodParameter;
@@ -37,19 +40,38 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  *
  * <p>Recognized returns: a single {@link Enrichable}, an {@code Iterable<Enrichable>}, or a paged
  * envelope whose {@code getItems()} returns a {@code List} of {@link Enrichable} (the ADR-0012
- * {@code <Resource>Page} shape). For each distinct resource the advice resolves its cached snapshot,
- * its governing-root role (mirroring the 5.97 / hierarchical gate), and builds the flat
- * {@code rows × verbs} context list (row-major: row <em>i</em>, verb <em>j</em> → index {@code i·V+j}),
- * issues <strong>one</strong> {@link OpaClient#allowAll(List)} per type, and re-folds the positional
- * verdicts into a per-row {@code Map<verb,Boolean>}.
+ * {@code <Resource>Page} shape). Per resource-type group the flow is <strong>two-pass</strong>
+ * (Slice 7.3, ADR 0024 §5):
+ * <ol>
+ *   <li><b>Pass 1 — prepare.</b> For each row: verbs present? cached snapshot present? ancestor
+ *       chain resolved (through the request-memoized supplier) → the governing root (mirroring the
+ *       5.97 / hierarchical gate). Rows that cannot be prepared are dropped (their {@code _actions}
+ *       stays unset). The computable rows' <em>distinct</em> governing roots are collected.</li>
+ *   <li><b>One batch role resolution.</b> A single
+ *       {@link RoleDefinitionSupplier#lookupAll(String, Set)} resolves every distinct root at once —
+ *       one wire exchange even when every row is its own root (the multi-root page a
+ *       duplicate-target memo cannot help). Batching is unconditional code (call-coalescing with
+ *       identical point-in-time semantics — not caching), so it is not governed by the memo flag.</li>
+ *   <li><b>Pass 2 — decide + refold.</b> Per-row contexts are built from the returned map (an
+ *       {@code empty} entry → {@code role=null}, exactly the old per-row {@code orElse(null)}), the
+ *       flat {@code rows × verbs} context list (row-major: row <em>i</em>, verb <em>j</em> → index
+ *       {@code i·V+j}) goes to <strong>one</strong> {@link OpaClient#allowAll(List)} per type, and
+ *       the positional verdicts are re-folded into per-row {@code Map<verb,Boolean>}.</li>
+ * </ol>
  *
  * <h2>The degrade contract: omit, never fabricate (ADR 0016 §7)</h2>
  * A row's {@code _actions} is set <strong>only</strong> when it can be computed completely and
- * honestly. It is <strong>omitted</strong> (left unset) for that row on every failure class:
+ * honestly. It is <strong>omitted</strong> (left unset) on every failure class — per-row where the
+ * failure is the row's, for the whole group where it is the batch's:
  * <ul>
- *   <li>no authenticated subject;</li>
- *   <li>a cache miss (no resolved snapshot for the row);</li>
- *   <li>an ancestor-resolution failure or a {@link RoleResolutionException} (role-source outage);</li>
+ *   <li>no authenticated subject (all rows);</li>
+ *   <li>a cache miss (that row) or an ancestor-resolution failure (that row);</li>
+ *   <li>the batch role resolution throwing {@link RoleResolutionException} — a <em>whole-batch</em>
+ *       outage by contract (ADR 0024 §2): every root's answer is unknown, so the <strong>whole
+ *       group</strong> is omitted while the response body stays intact (affordance never blocks).
+ *       Pre-7.3 a role outage omitted the row that hit it; the batch form makes the same outage
+ *       omit the page's group — a fully-degraded page over a mixed-snapshot one (ADR 0023's
+ *       posture);</li>
  *   <li>{@code allowAll} throwing, or returning a list whose length does not match the batch;</li>
  *   <li><strong>an all-{@code false} verdict block</strong> for the row — the production
  *       {@link OpaClient#allowAll(List)} fails closed to all-{@code false} on a transport error, which
@@ -132,22 +154,25 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
     }
 
     /**
-     * Enrich one resource-type group with a single {@code allowAll}. Each row contributes its own
-     * resolved snapshot + governing-root role; a row that cannot be prepared is dropped from the batch
-     * (its {@code _actions} stays unset) so the batch carries only computable rows.
+     * Enrich one resource-type group: pass 1 prepares each row (snapshot + ancestors + governing
+     * root — a row that cannot be prepared is dropped, its {@code _actions} stays unset), then
+     * <strong>one</strong> {@link RoleDefinitionSupplier#lookupAll} resolves the distinct governing
+     * roots (a throw = whole-batch outage = the whole group omitted), then pass 2 builds the
+     * contexts from the returned map and issues the single {@code allowAll}.
      */
     private void enrichGroup(AbacContext.Subject subject, List<Enrichable> group) {
-        List<Enrichable> computable = new ArrayList<>(group.size());
-        List<AbacContext> contexts = new ArrayList<>();
+        // Pass 1 — prepare the computable rows and collect their DISTINCT governing roots.
+        List<PreparedRow> prepared = new ArrayList<>(group.size());
+        Set<ResolveTarget> roots = new LinkedHashSet<>();
         int verbCount = -1;
         for (Enrichable dto : group) {
             List<String> verbs = dto.abacActions();
             if (verbs == null || verbs.isEmpty()) {
                 continue; // nothing to ask → omit this row
             }
-            RowContext row = prepareRow(subject, dto);
-            if (row == null) {
-                continue; // cache miss / ancestor / role failure → omit this row (degrade)
+            RowInputs inputs = prepareRow(dto);
+            if (inputs == null) {
+                continue; // cache miss / ancestor failure → omit this row (degrade)
             }
             if (verbCount == -1) {
                 verbCount = verbs.size();
@@ -157,16 +182,54 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
                 // happens, omit the odd row rather than mis-fold.
                 continue;
             }
-            String type = dto.abacResourceType();
-            for (String verb : verbs) {
+            ParentRef root = inputs.ancestors().isEmpty()
+                    ? new ParentRef(dto.abacResourceType(), dto.getId().toString())
+                    : inputs.ancestors().get(0);
+            ResolveTarget target = new ResolveTarget(root.type(), root.id());
+            roots.add(target);
+            prepared.add(new PreparedRow(dto, verbs, inputs, target));
+        }
+        if (prepared.isEmpty()) {
+            return;
+        }
+
+        // One batch role resolution for the page's distinct roots (ADR 0024 §5) — one wire exchange
+        // even when every row is its own root. Unconditional: coalescing, not caching.
+        Map<ResolveTarget, Optional<RoleDefinition>> roles;
+        try {
+            roles = roleDefinitionSupplier.lookupAll(subject.id(), roots);
+        } catch (RoleResolutionException ex) {
+            // Whole-batch outage (B2's tri-state, batched): every root's answer is unknown → omit the
+            // whole group, response body intact (never fall back, never widen, never block).
+            log.warn("Action enrichment omitted for the group: role resolution outage (batch of {})",
+                    roots.size());
+            return;
+        }
+
+        // Pass 2 — contexts from the returned map (empty entry → role=null, the old orElse(null)).
+        List<Enrichable> computable = new ArrayList<>(prepared.size());
+        List<AbacContext> contexts = new ArrayList<>();
+        for (PreparedRow row : prepared) {
+            Optional<RoleDefinition> entry = roles.get(row.root());
+            if (entry == null) {
+                // Unreachable through the library (strict completeness is enforced by the contract
+                // and re-checked by the memo decorator) — but a raw custom supplier could misbehave;
+                // omit the row rather than enrich against a fabricated no-role.
+                log.warn("Action enrichment omitted for {}:{}: batch result missing its root entry",
+                        row.dto().abacResourceType(), row.dto().getId());
+                continue;
+            }
+            String type = row.dto().abacResourceType();
+            for (String verb : row.verbs()) {
                 contexts.add(new AbacContext(
                         subject,
                         type + ":" + verb,
-                        new AbacContext.Resource(type, dto.getId().toString(), row.attributes(), row.ancestors()),
-                        row.role(),
+                        new AbacContext.Resource(type, row.dto().getId().toString(),
+                                row.inputs().attributes(), row.inputs().ancestors()),
+                        entry.orElse(null),
                         Map.of()));
             }
-            computable.add(dto);
+            computable.add(row.dto());
         }
         if (computable.isEmpty()) {
             return;
@@ -207,10 +270,14 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
     }
 
     /**
-     * Resolve a row's enrichment inputs from the cache, mirroring the gate's governing-root role rule.
-     * Returns {@code null} on any failure (cache miss, ancestor failure, role outage) → the caller omits.
+     * Resolve a row's pass-1 enrichment inputs from the cache: the resolved snapshot attributes and
+     * the ancestor chain (through the request-memoized supplier — one real resolution per
+     * {@code (type,id)} per request even though the query path asked first). Returns {@code null} on
+     * a row-level failure (cache miss, ancestor failure) → the caller omits that row. The
+     * governing-root <em>role</em> is deliberately NOT resolved here — pass 1 only derives the root;
+     * the roles come back in one batch ({@code lookupAll}) for the whole group.
      */
-    private RowContext prepareRow(AbacContext.Subject subject, Enrichable dto) {
+    private RowInputs prepareRow(Enrichable dto) {
         String type = dto.abacResourceType();
         String id = dto.getId().toString();
         Optional<AbacResource> resolved = cache.get(type, id, AbacResource.class);
@@ -234,18 +301,7 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
                 return null;
             }
         }
-
-        ParentRef governingRoot = ancestors.isEmpty() ? new ParentRef(type, id) : ancestors.get(0);
-        RoleDefinition role;
-        try {
-            role = roleDefinitionSupplier.lookup(subject.id(), governingRoot.type(), governingRoot.id())
-                    .orElse(null);
-        } catch (RoleResolutionException ex) {
-            // Role-source outage (B2 tri-state) → unknown → omit (never fall back, never widen).
-            log.warn("Action enrichment omitted for {}:{}: role resolution outage", type, id);
-            return null;
-        }
-        return new RowContext(attributes, ancestors, role);
+        return new RowInputs(attributes, ancestors);
     }
 
     private static AbacContext.Subject currentSubject() {
@@ -256,8 +312,11 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
         return null; // no ABAC subject → cannot compute affordance (degrade)
     }
 
-    /** A row's prepared enrichment inputs (resolved snapshot attributes + ancestors + governing-root role). */
-    private record RowContext(Map<String, Object> attributes, List<ParentRef> ancestors, RoleDefinition role) {}
+    /** A row's pass-1 inputs (resolved snapshot attributes + ancestors) — the role arrives in pass 2. */
+    private record RowInputs(Map<String, Object> attributes, List<ParentRef> ancestors) {}
+
+    /** A computable row awaiting its pass-2 role: the DTO, its verbs, its inputs, its governing root. */
+    private record PreparedRow(Enrichable dto, List<String> verbs, RowInputs inputs, ResolveTarget root) {}
 
     // ---- enrichable collection ------------------------------------------------------------------
 

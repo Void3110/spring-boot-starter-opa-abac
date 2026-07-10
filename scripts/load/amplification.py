@@ -35,14 +35,20 @@ import urllib.request
 
 # The ADR 0021 §6 pinned per-scenario bounds — the library's design claims under proof.
 # An op observed but not pinned here is reported as "unpinned" (recorded, no verdict).
-# multi-root-list (RESOLVE-COALESCING T1): the catalogs page where every row is its own governing
-# root. The pin is the ADR 0024 target (one batch exchange); the pre-7.3 baseline run records the
-# honest EXCEEDED finding (resolve = M per page) — that artifact IS the "before" (QA P3).
+# multi-root-list (RESOLVE-COALESCING T1/T5): the catalogs page where every row is its own
+# governing root. The post-7.3 bound is TWO resolve wire calls — two questions at two lifecycle
+# points (the same rationale that re-pinned batch-eval to 2): the list authorizer's query-time
+# COARSE role (one single, on the first governed root — it drives the filter residual and is
+# fail-closed load-bearing) + the enrichment's response-time batch (one lookupAll for the page's
+# distinct roots, the query-time root memo-deduped out of it). The pre-7.3 baseline run recorded
+# the honest EXCEEDED finding against this pin (resolve = M+1 per page) — that artifact IS the
+# "before" (QA P3). Same-root scenarios stay at 1: there every caller shares one key, the request
+# memo collapses them, and a fully-hit batch never even delegates.
 EXPECTED = {
     "gate-overhead": {"resolve": 1, "decide": 1},
     "list-filter": {"resolve": 1, "compile": 1},
     "enrichment": {"resolve": 1, "batch-eval": 1},
-    "multi-root-list": {"resolve": 1, "compile": 1},
+    "multi-root-list": {"resolve": 2, "compile": 1},
 }
 
 OPS = ("resolve", "governed-scope", "tag", "decide", "batch-eval", "compile")
