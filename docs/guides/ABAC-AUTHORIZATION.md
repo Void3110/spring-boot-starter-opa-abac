@@ -66,6 +66,18 @@ empty → the policy decides without a role definition; a policy *may* define it
 fallback, though the catalog policies carry no blanket one post-B4). An application overrides it with
 **one bean**:
 
+> **Batch + request memo (Slice 7.3).** `lookupAll(userId, Set<ResolveTarget>)` is the seam's **batch
+> form** ([[0024-batch-role-resolution|ADR 0024]]): a `default` method (every lambda/impl stays valid)
+> answering **exactly one two-state entry per requested target** (`of`/`empty`); the *outage* is
+> **whole-batch** — any unknown answer throws for the whole call, and a short/extra/duplicate response is
+> malformed = outage (strict completeness — a partial body never yields partial roles). The enrichment
+> advice resolves each page's distinct governing roots through it in one exchange. Above the supplier, the
+> starter wraps the bean in a **request-scoped memo** ([[0023-request-scoped-resolution-memoization|ADR
+> 0023]]): one request sees exactly one resolve answer per `(userId, type, id)` — all three tri-state
+> outcomes replayed, including the throw — governed by `opa.abac.resolve-memo.enabled` (default **on**;
+> one flag also covers the ancestor-chain memo). A resolve answer is a per-request snapshot: a mid-request
+> role change lands at the next request boundary, and nothing survives the request.
+>
 > **Tri-state contract — an outage is not a no-role (Slice B2, ADR [[0014-supplier-outage-error-distinct|0014]]).**
 > `lookup(...)` distinguishes three outcomes, so a role-source *outage* can never be mistaken for an
 > authoritative *no-role* and silently widen access:

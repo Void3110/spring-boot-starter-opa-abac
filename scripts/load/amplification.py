@@ -44,11 +44,16 @@ import urllib.request
 # the honest EXCEEDED finding against this pin (resolve = M+1 per page) — that artifact IS the
 # "before" (QA P3). Same-root scenarios stay at 1: there every caller shares one key, the request
 # memo collapses them, and a fully-hit batch never even delegates.
+# batch-eval is pinned 2 on the category-list scenarios (Slice 7.3 re-pin): the query-time
+# allowlist FINISHER and the response-time AFFORDANCE batch are two different questions at two
+# lifecycle points (row inclusion vs verb map) — a wrong pin, not wrong code (ADR 0024 rejected
+# merging them on layering). The catalogs list (multi-root) runs only the affordance batch — its
+# residual fully reduces to SQL, so no finisher bulk: batch-eval pinned 1 there.
 EXPECTED = {
     "gate-overhead": {"resolve": 1, "decide": 1},
-    "list-filter": {"resolve": 1, "compile": 1},
-    "enrichment": {"resolve": 1, "batch-eval": 1},
-    "multi-root-list": {"resolve": 2, "compile": 1},
+    "list-filter": {"resolve": 1, "compile": 1, "batch-eval": 2},
+    "enrichment": {"resolve": 1, "batch-eval": 2},
+    "multi-root-list": {"resolve": 2, "compile": 1, "batch-eval": 1},
 }
 
 OPS = ("resolve", "governed-scope", "tag", "decide", "batch-eval", "compile")

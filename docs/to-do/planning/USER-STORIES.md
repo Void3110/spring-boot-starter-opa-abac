@@ -178,7 +178,7 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   pinned and honest: a role answer is a **per-request snapshot** (revocation takes effect at the next
   request boundary), and no partial batch ever yields partial roles. — **Phase 7.3**
   ([[RESOLVE-COALESCING]], ADRs [[0023-request-scoped-resolution-memoization|0023]] +
-  [[0024-batch-role-resolution|0024]])
+  [[0024-batch-role-resolution|0024]]) ✅
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so

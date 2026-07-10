@@ -90,14 +90,21 @@ The published baseline lives in the root [`PERFORMANCE.md`](../../PERFORMANCE.md
    `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`. The validity gates REFUSE a
    degraded rig (a prior saturation event leaves thrashed JVMs / open breakers / a bloated trace
    store) rather than record it — redeploy instead of retrying.
-3. `REPS=3 ./run-load.sh full`, then `ceiling`, then the three `fault-*` modes.
+3. `REPS=3 ./run-load.sh full`, then `RATE=5 DURATION=30 REPS=3 ./run-load.sh guarded` (the
+   below-the-knee steady numbers + attribution), then `ceiling`, then
+   `DURATION=30 REPS=3 ./run-load.sh multi-root`, then the three `fault-*` modes.
 4. Scenarios that exceed a measured ceiling get their steady numbers below the knee, explicitly
-   labeled (the official baseline used 5 req/s for list/enrichment — see PERFORMANCE.md §2/§3).
+   labeled (the official baseline uses 5 req/s for list/enrichment — see PERFORMANCE.md §2/§3).
+   A rig that has been through a saturation stage needs a **pod restart + fresh trace store**
+   before the next official window (thrashed JVMs / bloated Badger read as degraded-rig red).
 
 ## Offline tests
 
 `tests/test-offline.sh` runs the no-rig checks (script syntax; the analysis functions against the
 committed synthetic fixtures — `knee.py` over `tests/knee-cases/`). In ceiling-ladder stages,
 saturation signals (slow p99, errors, dropped iterations) are recorded **data** for the knee
-function; the one validity gate kept is `auth_failures == 0` — a 401/403 means a broken rig/ACL
-chain and lands red, never an instant fake knee.
+function — and since 7.3 that includes 401/403s: the gateway's OPA plugin carries a **bounded
+timeout**, so a saturation-adjacent OPA stall surfaces as a timeout-*deny* feeding the knee's
+`>1 % failed` signal. The broken-ACL-chain guard is the seed-time **canary probe** (red before any
+stage runs); the one k6 validity gate kept in ladder stages is `wrong_count == 0` (a page that
+stops discriminating is a wrong measurement subject).
