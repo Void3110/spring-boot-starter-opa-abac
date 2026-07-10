@@ -1,10 +1,14 @@
 package dev.dmitriikonovalov.opaabac.security;
 
+import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -70,6 +74,79 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
             memo.put(key, outcome);
         }
         return replay(outcome);
+    }
+
+    /**
+     * The batch form (ADR 0024), memo-integrated: memoized keys are served from the request memo and
+     * <strong>excluded</strong> from the delegated set; the misses go down as <strong>one</strong>
+     * {@code delegate.lookupAll} call; every returned entry is memoized; the merged (hits + fresh)
+     * map is returned strictly complete. Fail-closed edges:
+     * <ul>
+     *   <li>a memoized <em>outage</em> hit re-throws — this request's answer for that target IS the
+     *       outage, and a batch never yields partial roles (whole-batch semantics);</li>
+     *   <li>a delegate whole-batch outage memoizes the <strong>outage marker for every missed
+     *       target</strong> before re-throwing — a later single {@link #lookup} of any of them
+     *       replays the throw without touching the delegate;</li>
+     *   <li>a delegate return violating strict completeness (missing/extra entry) is treated as a
+     *       malformed batch → whole-batch outage, memoized the same way — the memo never launders a
+     *       partial map into a complete-looking one.</li>
+     * </ul>
+     * No request bound → pure pass-through, like {@link #lookup}.
+     */
+    @Override
+    public Map<ResolveTarget, Optional<RoleDefinition>> lookupAll(String userId, Set<ResolveTarget> targets) {
+        if (targets.isEmpty()) {
+            return Map.of();
+        }
+        Map<MemoKey, Object> memo = requestMemo();
+        if (memo == null) {
+            return delegate.lookupAll(userId, targets);
+        }
+        Map<ResolveTarget, Optional<RoleDefinition>> merged = new HashMap<>();
+        Set<ResolveTarget> misses = new LinkedHashSet<>();
+        for (ResolveTarget target : targets) {
+            Object outcome = memo.get(new MemoKey(userId, target.resourceType(), target.resourceId()));
+            if (outcome == null) {
+                misses.add(target);
+            } else {
+                merged.put(target, replay(outcome)); // an outage hit re-throws here — whole batch
+            }
+        }
+        if (!misses.isEmpty()) {
+            Map<ResolveTarget, Optional<RoleDefinition>> fresh = resolveBatch(userId, misses, memo);
+            for (ResolveTarget target : misses) {
+                Optional<RoleDefinition> entry = fresh.get(target);
+                memo.put(new MemoKey(userId, target.resourceType(), target.resourceId()), entry);
+                merged.put(target, entry);
+            }
+        }
+        return Map.copyOf(merged);
+    }
+
+    /**
+     * One real batch call for the misses; a whole-batch outage — thrown by the delegate <em>or</em>
+     * synthesized from a strict-completeness violation — is memoized for every missed target, then
+     * re-thrown.
+     */
+    private Map<ResolveTarget, Optional<RoleDefinition>> resolveBatch(
+            String userId, Set<ResolveTarget> misses, Map<MemoKey, Object> memo) {
+        RoleResolutionException outage;
+        try {
+            Map<ResolveTarget, Optional<RoleDefinition>> fresh = delegate.lookupAll(userId, misses);
+            if (fresh.size() == misses.size() && fresh.keySet().containsAll(misses)) {
+                return fresh;
+            }
+            outage = new RoleResolutionException(
+                    "lookupAll contract violation: expected exactly one entry per requested target ("
+                            + misses.size() + " requested, " + fresh.size() + " returned)");
+        } catch (RoleResolutionException e) {
+            outage = e;
+        }
+        Outage marker = new Outage(outage);
+        for (ResolveTarget target : misses) {
+            memo.put(new MemoKey(userId, target.resourceType(), target.resourceId()), marker);
+        }
+        throw outage;
     }
 
     /** One real delegate call; the outcome (value or the contractual outage) captured for replay. */

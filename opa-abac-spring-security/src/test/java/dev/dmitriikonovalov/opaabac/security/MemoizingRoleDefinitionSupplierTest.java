@@ -4,14 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -214,11 +218,125 @@ class MemoizingRoleDefinitionSupplierTest {
         assertThat(memo.lookup("u", "catalog", "c-1")).contains(ROLE_B);
     }
 
+    // --- U9: memo × batch integration -------------------------------------------
+
+    @Test // U9 — memoized keys are EXCLUDED from the delegated set; misses go down as ONE lookupAll
+    void batchExcludesHitsAndDelegatesMissesOnce() {
+        bindRequest();
+        ResolveTarget hit = new ResolveTarget("catalog", "c-hit");
+        ResolveTarget missA = new ResolveTarget("catalog", "c-a");
+        ResolveTarget missB = new ResolveTarget("catalog", "c-b");
+        delegate.answer("u", "catalog", "c-hit", () -> Optional.of(ROLE_A));
+        delegate.answer("u", "catalog", "c-a", () -> Optional.of(ROLE_B));
+        delegate.answer("u", "catalog", "c-b", Optional::empty);
+        memo.lookup("u", "catalog", "c-hit"); // memoize the hit
+
+        Map<ResolveTarget, Optional<RoleDefinition>> result =
+                memo.lookupAll("u", Set.of(hit, missA, missB));
+
+        assertThat(result).containsOnlyKeys(hit, missA, missB); // strictly complete merge
+        assertThat(result.get(hit)).contains(ROLE_A);
+        assertThat(result.get(missA)).contains(ROLE_B);
+        assertThat(result.get(missB)).isEmpty();
+        assertThat(delegate.batchCalls).singleElement().satisfies(batch -> {
+            assertThat(batch).containsExactlyInAnyOrder(missA, missB); // the hit never delegated
+        });
+        assertThat(delegate.calls("u", "catalog", "c-hit")).isEqualTo(1); // only the initial lookup
+    }
+
+    @Test // U9 — batch results are memoized: later single lookups replay without the delegate
+    void batchResultsFeedTheSingleLookupMemo() {
+        bindRequest();
+        ResolveTarget target = new ResolveTarget("catalog", "c-1");
+        delegate.answer("u", "catalog", "c-1", () -> Optional.of(ROLE_A));
+
+        memo.lookupAll("u", Set.of(target));
+        assertThat(memo.lookup("u", "catalog", "c-1")).contains(ROLE_A);
+        assertThat(memo.lookup("u", "catalog", "c-1")).contains(ROLE_A);
+
+        assertThat(delegate.calls("u", "catalog", "c-1")).isZero(); // no single-lookup delegation
+        assertThat(delegate.batchCalls).hasSize(1); // the one batch resolved it
+    }
+
+    @Test // U9 — a whole-batch outage memoizes the marker for EVERY missed target
+    void batchOutageMarksEveryMiss() {
+        bindRequest();
+        ResolveTarget a = new ResolveTarget("catalog", "c-a");
+        ResolveTarget b = new ResolveTarget("catalog", "c-b");
+        RoleResolutionException outage = new RoleResolutionException("role source down");
+        delegate.batchFailure = outage;
+
+        assertThatThrownBy(() -> memo.lookupAll("u", Set.of(a, b))).isSameAs(outage);
+
+        // A later SINGLE lookup of either target replays the throw with the delegate untouched.
+        assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-a")).isSameAs(outage);
+        assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-b")).isSameAs(outage);
+        assertThat(delegate.calls("u", "catalog", "c-a")).isZero();
+        assertThat(delegate.calls("u", "catalog", "c-b")).isZero();
+        assertThat(delegate.batchCalls).hasSize(1);
+    }
+
+    @Test // U9 — a memoized outage HIT inside a batch re-throws (a batch never yields partial roles)
+    void memoizedOutageHitFailsTheWholeBatch() {
+        bindRequest();
+        RoleResolutionException outage = new RoleResolutionException("down");
+        delegate.answer("u", "catalog", "c-out", () -> {
+            throw outage;
+        });
+        delegate.answer("u", "catalog", "c-ok", () -> Optional.of(ROLE_A));
+        assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-out")).isSameAs(outage);
+
+        assertThatThrownBy(() -> memo.lookupAll("u", Set.of(
+                new ResolveTarget("catalog", "c-out"), new ResolveTarget("catalog", "c-ok"))))
+                .isSameAs(outage);
+        assertThat(delegate.batchCalls).isEmpty(); // failed before any delegation
+    }
+
+    @Test // U9 — a delegate violating strict completeness is a whole-batch outage, memoized
+    void incompleteDelegateBatchIsAnOutage() {
+        bindRequest();
+        ResolveTarget a = new ResolveTarget("catalog", "c-a");
+        ResolveTarget b = new ResolveTarget("catalog", "c-b");
+        delegate.batchOverride = misses -> Map.of(a, Optional.of(ROLE_A)); // short map
+
+        assertThatThrownBy(() -> memo.lookupAll("u", Set.of(a, b)))
+                .isInstanceOf(RoleResolutionException.class)
+                .hasMessageContaining("contract violation");
+        // The violation is memoized as the outage for BOTH misses.
+        assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-a"))
+                .isInstanceOf(RoleResolutionException.class);
+        assertThat(delegate.calls("u", "catalog", "c-a")).isZero();
+    }
+
+    @Test // U9 — empty target set: empty map, no delegation, no memo touch
+    void emptyBatchShortCircuits() {
+        bindRequest();
+
+        assertThat(memo.lookupAll("u", Set.of())).isEmpty();
+        assertThat(delegate.batchCalls).isEmpty();
+    }
+
+    @Test // U9 — no request bound: the batch passes through verbatim
+    void batchPassesThroughWithoutRequest() {
+        RequestContextHolder.resetRequestAttributes();
+        ResolveTarget a = new ResolveTarget("catalog", "c-a");
+        delegate.answer("u", "catalog", "c-a", () -> Optional.of(ROLE_A));
+
+        memo.lookupAll("u", Set.of(a));
+        memo.lookupAll("u", Set.of(a));
+
+        assertThat(delegate.batchCalls).hasSize(2); // nothing memoized
+    }
+
     /** A scriptable counting delegate: one programmable answer per key, calls counted per key. */
     private static final class CountingSupplier implements RoleDefinitionSupplier {
 
         private final Map<String, Supplier<Optional<RoleDefinition>>> answers = new HashMap<>();
         private final Map<String, Integer> counts = new HashMap<>();
+        final List<Set<ResolveTarget>> batchCalls = new ArrayList<>();
+        RoleResolutionException batchFailure;
+        java.util.function.Function<Set<ResolveTarget>, Map<ResolveTarget, Optional<RoleDefinition>>>
+                batchOverride;
 
         void answer(String userId, String type, String id, Supplier<Optional<RoleDefinition>> outcome) {
             answers.put(key(userId, type, id), outcome);
@@ -237,6 +355,28 @@ class MemoizingRoleDefinitionSupplierTest {
                 throw new AssertionError("unscripted lookup: " + key);
             }
             return outcome.get();
+        }
+
+        @Override
+        public Map<ResolveTarget, Optional<RoleDefinition>> lookupAll(
+                String userId, Set<ResolveTarget> targets) {
+            batchCalls.add(targets);
+            if (batchFailure != null) {
+                throw batchFailure;
+            }
+            if (batchOverride != null) {
+                return batchOverride.apply(targets);
+            }
+            Map<ResolveTarget, Optional<RoleDefinition>> out = new HashMap<>();
+            for (ResolveTarget t : targets) {
+                Supplier<Optional<RoleDefinition>> outcome =
+                        answers.get(key(userId, t.resourceType(), t.resourceId()));
+                if (outcome == null) {
+                    throw new AssertionError("unscripted batch target: " + t);
+                }
+                out.put(t, outcome.get());
+            }
+            return out;
         }
 
         private static String key(String userId, String type, String id) {
