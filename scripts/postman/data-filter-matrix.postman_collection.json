@@ -1,172 +1,335 @@
 {
- "info": {
-  "name": "Data-filtering matrix (partial-eval list filtering)",
-  "description": "Proves OPA partial-evaluation list filtering through the gateway: two tag-gated readers hit the SAME list endpoint and get DIFFERENT row sets (filtered in SQL by the residual), an allow-all subject sees every row, and an empty-grant subject sees none. The decisive contrast is the row SET, not a single 200/403. Run via run-filter-matrix.sh, which mints tokens, bootstraps the team + tag-gated roles, and creates the differently-tagged Categories at run time.",
-  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
- },
- "variable": [
-  {
-   "key": "gateway",
-   "value": "http://localhost:9085"
-  },
-  {
-   "key": "collection_base_url",
-   "value": "{{gateway}}/api/v1"
-  }
- ],
- "item": [
-  {
-   "name": "Reader EMEA lists categories -> only the EMEA row",
-   "request": {
-    "method": "GET",
-    "header": [
-     {
-      "key": "Authorization",
-      "value": "Bearer {{reader_emea_token}}"
-     }
-    ],
-    "url": {
-     "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
-     "host": [
-      "{{collection_base_url}}"
-     ],
-     "path": [
-      "catalogs",
-      "{{catalog_id}}",
-      "categories"
-     ]
-    }
-   },
-   "event": [
-    {
-     "listen": "test",
-     "script": {
-      "type": "text/javascript",
-      "exec": [
-       "pm.test('200 OK', () => pm.response.code === 200);",
-       "const ids = pm.response.json().items.map(c => c.id);",
-       "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
-       "pm.test('does NOT see the APAC category', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
-       "pm.test('does NOT see the AMER category', () => pm.expect(ids).to.not.include(pm.variables.get('amer_category_id')));",
-       "pm.test('the cut is in SQL: exactly one row', () => pm.expect(ids.length).to.eql(1));"
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "name": "Reader APAC lists categories -> only the APAC row (different set, same endpoint)",
-   "request": {
-    "method": "GET",
-    "header": [
-     {
-      "key": "Authorization",
-      "value": "Bearer {{reader_apac_token}}"
-     }
-    ],
-    "url": {
-     "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
-     "host": [
-      "{{collection_base_url}}"
-     ],
-     "path": [
-      "catalogs",
-      "{{catalog_id}}",
-      "categories"
-     ]
-    }
-   },
-   "event": [
-    {
-     "listen": "test",
-     "script": {
-      "type": "text/javascript",
-      "exec": [
-       "pm.test('200 OK', () => pm.response.code === 200);",
-       "const ids = pm.response.json().items.map(c => c.id);",
-       "pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
-       "pm.test('does NOT see the EMEA category', () => pm.expect(ids).to.not.include(pm.variables.get('emea_category_id')));",
-       "pm.test('exactly one row (a DIFFERENT set than reader EMEA)', () => pm.expect(ids.length).to.eql(1));"
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "name": "Owner (allow-all) lists categories -> ALL rows",
-   "request": {
-    "method": "GET",
-    "header": [
-     {
-      "key": "Authorization",
-      "value": "Bearer {{owner_token}}"
-     }
-    ],
-    "url": {
-     "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
-     "host": [
-      "{{collection_base_url}}"
-     ],
-     "path": [
-      "catalogs",
-      "{{catalog_id}}",
-      "categories"
-     ]
-    }
-   },
-   "event": [
-    {
-     "listen": "test",
-     "script": {
-      "type": "text/javascript",
-      "exec": [
-       "pm.test('200 OK', () => pm.response.code === 200);",
-       "const ids = pm.response.json().items.map(c => c.id);",
-       "pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
-       "pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
-       "pm.test('sees the AMER category', () => pm.expect(ids).to.include(pm.variables.get('amer_category_id')));",
-       "pm.test('all three rows visible', () => pm.expect(ids.length).to.be.at.least(3));"
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "name": "Stranger (no role definition) lists categories -> 403 (membership is the sole access path)",
-   "request": {
-    "method": "GET",
-    "header": [
-     {
-      "key": "Authorization",
-      "value": "Bearer {{stranger_token}}"
-     }
-    ],
-    "url": {
-     "raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
-     "host": [
-      "{{collection_base_url}}"
-     ],
-     "path": [
-      "catalogs",
-      "{{catalog_id}}",
-      "categories"
-     ]
-    }
-   },
-   "event": [
-    {
-     "listen": "test",
-     "script": {
-      "type": "text/javascript",
-      "exec": [
-       "// Slice B4 (ADR 0018): a stranger with NO role definition is DENIED at the coarse",
-       "// type-level gate (membership is the sole access path) \u2014 was an empty 200 via the",
-       "// realm fallback; now a 403. The which-rows residual is moot when the gate denies.",
-       "pm.test('403 Forbidden (no role-def -> coarse gate denies; membership is the sole access path)', () => pm.response.code === 403);"
-      ]
-     }
-    }
-   ]
-  }
- ]
+	"info": {
+		"name": "Data-filtering matrix (partial-eval list filtering)",
+		"description": "Proves OPA partial-evaluation list filtering through the gateway: two tag-gated readers hit the SAME list endpoint and get DIFFERENT row sets (filtered in SQL by the residual), an allow-all subject sees every row, and an empty-grant subject sees none. The decisive contrast is the row SET, not a single 200/403. Run via run-filter-matrix.sh, which mints tokens, bootstraps the team + tag-gated roles, and creates the differently-tagged Categories at run time.\n\nTaggable products (ADR 0025): the same four-way contrast runs against the product list — two tag-gated readers get different product row sets from the same endpoint, the curator sees all rows, the stranger is denied at the coarse gate.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "gateway",
+			"value": "http://localhost:9085"
+		},
+		{
+			"key": "collection_base_url",
+			"value": "{{gateway}}/api/v1"
+		}
+	],
+	"item": [
+		{
+			"name": "Reader EMEA lists categories -> only the EMEA row",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{reader_emea_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK', () => pm.response.code === 200);",
+							"const ids = pm.response.json().items.map(c => c.id);",
+							"pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
+							"pm.test('does NOT see the APAC category', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
+							"pm.test('does NOT see the AMER category', () => pm.expect(ids).to.not.include(pm.variables.get('amer_category_id')));",
+							"pm.test('the cut is in SQL: exactly one row', () => pm.expect(ids.length).to.eql(1));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Reader APAC lists categories -> only the APAC row (different set, same endpoint)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{reader_apac_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK', () => pm.response.code === 200);",
+							"const ids = pm.response.json().items.map(c => c.id);",
+							"pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
+							"pm.test('does NOT see the EMEA category', () => pm.expect(ids).to.not.include(pm.variables.get('emea_category_id')));",
+							"pm.test('exactly one row (a DIFFERENT set than reader EMEA)', () => pm.expect(ids.length).to.eql(1));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Owner (allow-all) lists categories -> ALL rows",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{owner_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK', () => pm.response.code === 200);",
+							"const ids = pm.response.json().items.map(c => c.id);",
+							"pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
+							"pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
+							"pm.test('sees the AMER category', () => pm.expect(ids).to.include(pm.variables.get('amer_category_id')));",
+							"pm.test('all three rows visible', () => pm.expect(ids.length).to.be.at.least(3));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Stranger (no role definition) lists categories -> 403 (membership is the sole access path)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{stranger_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"// Slice B4 (ADR 0018): a stranger with NO role definition is DENIED at the coarse",
+							"// type-level gate (membership is the sole access path) — was an empty 200 via the",
+							"// realm fallback; now a 403. The which-rows residual is moot when the gate denies.",
+							"pm.test('403 Forbidden (no role-def -> coarse gate denies; membership is the sole access path)', () => pm.response.code === 403);"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Reader EMEA lists products -> only the EMEA row (taggable products, ADR 0025)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{reader_emea_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{products_category_id}}/products",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories",
+						"{{products_category_id}}",
+						"products"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK', () => pm.response.code === 200);",
+							"const ids = pm.response.json().items.map(p => p.id);",
+							"pm.test('sees the EMEA product', () => pm.expect(ids).to.include(pm.variables.get('emea_product_id')));",
+							"pm.test('does NOT see the APAC product', () => pm.expect(ids).to.not.include(pm.variables.get('apac_product_id')));",
+							"pm.test('does NOT see the AMER product', () => pm.expect(ids).to.not.include(pm.variables.get('amer_product_id')));",
+							"pm.test('the cut is in SQL: exactly one row', () => pm.expect(ids.length).to.eql(1));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Reader APAC lists products -> only the APAC row (different set, same endpoint)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{reader_apac_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{products_category_id}}/products",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories",
+						"{{products_category_id}}",
+						"products"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK', () => pm.response.code === 200);",
+							"const ids = pm.response.json().items.map(p => p.id);",
+							"pm.test('sees the APAC product', () => pm.expect(ids).to.include(pm.variables.get('apac_product_id')));",
+							"pm.test('does NOT see the EMEA product', () => pm.expect(ids).to.not.include(pm.variables.get('emea_product_id')));",
+							"pm.test('does NOT see the AMER product', () => pm.expect(ids).to.not.include(pm.variables.get('amer_product_id')));",
+							"pm.test('the cut is in SQL: exactly one row', () => pm.expect(ids.length).to.eql(1));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Owner (allow-all) lists products -> ALL rows",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{owner_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{products_category_id}}/products",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories",
+						"{{products_category_id}}",
+						"products"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK', () => pm.response.code === 200);",
+							"const ids = pm.response.json().items.map(p => p.id);",
+							"pm.test('sees all three products', () => {",
+							"  pm.expect(ids).to.include(pm.variables.get('emea_product_id'));",
+							"  pm.expect(ids).to.include(pm.variables.get('apac_product_id'));",
+							"  pm.expect(ids).to.include(pm.variables.get('amer_product_id'));",
+							"});",
+							"pm.test('exactly the three seeded rows', () => pm.expect(ids.length).to.eql(3));"
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "Stranger (no role definition) lists products -> 403 (membership is the sole access path)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{stranger_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{collection_base_url}}/catalogs/{{catalog_id}}/categories/{{products_category_id}}/products",
+					"host": [
+						"{{collection_base_url}}"
+					],
+					"path": [
+						"catalogs",
+						"{{catalog_id}}",
+						"categories",
+						"{{products_category_id}}",
+						"products"
+					]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"// Slice B4 (ADR 0018): a stranger with NO role definition is DENIED at the coarse",
+							"// type-level product:list gate — the which-rows residual is moot when the gate denies.",
+							"pm.test('403 Forbidden (no role-def -> coarse gate denies)', () => pm.response.code === 403);"
+						]
+					}
+				}
+			]
+		}
+	]
 }

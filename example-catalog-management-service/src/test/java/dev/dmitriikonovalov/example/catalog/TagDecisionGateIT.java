@@ -310,6 +310,37 @@ class TagDecisionGateIT {
         assertThat(row.getVersion()).isEqualTo(versionBefore); // the deny preceded ANY mutation
     }
 
+    @Test // the boundary's other direction, catalog: a TAG-only holder EDITING CONTENT is denied
+    void catalogDeniedUpdateBlocksContentEdit() throws Exception {
+        var catalog = seedCatalog(Map.of());
+        Integer versionBefore = catalogs.findById(catalog.getId()).orElseThrow().getVersion();
+        ActionAwareOpaClient.rule = allowOnly("catalog:assign-tags"); // WRITE is what's missing
+
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"edited\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("ACCESS_DENIED"));
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:update");
+        var row = catalogs.findById(catalog.getId()).orElseThrow();
+        assertThat(row.getName()).isEqualTo("dispatch-it-catalog");
+        assertThat(row.getVersion()).isEqualTo(versionBefore);
+    }
+
+    @Test // the conservative default, catalog: an empty-delta PUT still asks update
+    void catalogEmptyDeltaPutAsksUpdate() throws Exception {
+        var catalog = seedCatalog(Map.of());
+        ActionAwareOpaClient.rule = allowOnly("catalog:update");
+
+        mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"dispatch-it-catalog\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:update");
+    }
+
     @Test // I16c — catalog create-with-tags is the UNCONDITIONAL 422 (unlike the category's
     // type-level assign-tags decision): a new catalog has no team yet, so the decision could never
     // resolve — rejected loudly AFTER the create gate allowed, and nothing persists.
@@ -416,6 +447,43 @@ class TagDecisionGateIT {
         assertThat(ActionAwareOpaClient.askedActions)
                 .containsExactly("product:create", "product:assign-tags");
         assertThat(products.count()).isEqualTo(before); // nothing persisted
+    }
+
+    @Test // the boundary's other direction, product: a TAG-only holder EDITING CONTENT is denied
+    void productDeniedUpdateBlocksContentEdit() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        var product = seedProduct(cat.getId(), "kept-name", Map.of());
+        Integer versionBefore = products.findById(product.getId()).orElseThrow().getVersion();
+        ActionAwareOpaClient.rule = allowOnly("product:assign-tags"); // WRITE is what's missing
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), cat.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"edited\",\"sku\":\"SKU-1\",\"priceCents\":100,\"currency\":\"USD\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("ACCESS_DENIED"));
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("product:update");
+        var row = products.findById(product.getId()).orElseThrow();
+        assertThat(row.getName()).isEqualTo("kept-name");
+        assertThat(row.getVersion()).isEqualTo(versionBefore);
+    }
+
+    @Test // the conservative default, product: an empty-delta PUT still asks update
+    void productEmptyDeltaPutAsksUpdate() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        var product = seedProduct(cat.getId(), "same-name", Map.of());
+        ActionAwareOpaClient.rule = allowOnly("product:update");
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), cat.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"same-name\",\"sku\":\"SKU-1\",\"priceCents\":100,\"currency\":\"USD\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("product:update");
     }
 
     @Test // a bare product create (no tags) asks create alone — no phantom assign-tags decision
