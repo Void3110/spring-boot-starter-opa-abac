@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.security.AbacFilter;
@@ -60,7 +60,7 @@ public class OpaAbacSecurityBeans {
         }
         SubjectClaimsConfig claims = new SubjectClaimsConfig(
                 s.getIdClaim(), s.getRolesClaim(), s.getUsernameClaim(), s.getAttributeClaims(), s.isValidateExpiry());
-        return new JwtClaimsSubjectExtractor(new ObjectMapper(), claims);
+        return new JwtClaimsSubjectExtractor(JsonMapper.builder().build(), claims);
     }
 
     @Bean

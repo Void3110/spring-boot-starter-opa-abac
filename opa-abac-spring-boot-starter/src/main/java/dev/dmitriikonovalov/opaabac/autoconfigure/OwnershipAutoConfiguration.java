@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import dev.dmitriikonovalov.opaabac.security.ownership.DiscoveryOwnershipResolver;
 import dev.dmitriikonovalov.opaabac.security.ownership.OwnershipProperties;
 import dev.dmitriikonovalov.opaabac.security.ownership.ResourceOwnershipResolver;
@@ -37,8 +38,9 @@ class OwnershipAutoConfiguration {
     @ConditionalOnMissingBean(ResourceOwnershipResolver.class)
     ResourceOwnershipResolver discoveryOwnershipResolver(
             OwnershipProperties properties, ObjectProvider<ObjectMapper> objectMapper) {
-        // Use the application's ObjectMapper when present (the user-service has one via Jackson
-        // auto-config); fall back to a plain one so the starter wires cleanly even in a bare context.
-        return new DiscoveryOwnershipResolver(properties, objectMapper.getIfAvailable(ObjectMapper::new));
+        // Use the application's ObjectMapper when present — on Boot 4 that bean is Jackson 3's, so the
+        // ObjectProvider matches the auto-configured mapper again; fall back to a plain one so the
+        // starter wires cleanly even in a bare context.
+        return new DiscoveryOwnershipResolver(properties, objectMapper.getIfAvailable(() -> JsonMapper.builder().build()));
     }
 }

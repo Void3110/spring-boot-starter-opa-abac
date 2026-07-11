@@ -3,8 +3,8 @@ package dev.dmitriikonovalov.opaabac.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -59,8 +59,7 @@ class AbacContextResourceTest {
         // identical wire shape regardless of which constructor produced the empty chain
         assertThat(explicitEmptyJson).isEqualTo(legacyJson);
         // the exact prior field set — only type/id/attributes
-        assertThat(MAPPER.readTree(legacyJson).fieldNames())
-                .toIterable()
+        assertThat(MAPPER.readTree(legacyJson).propertyNames())
                 .containsExactlyInAnyOrder("type", "id", "attributes");
     }
 

@@ -18,6 +18,11 @@ dependencies {
     // (jakarta.persistence, JpaRepository, AbacDataObject), so consumers inherit JPA on their compile
     // classpath. Jackson (used by ResourceTagsConverter) comes transitively via this starter.
     api("org.springframework.boot:spring-boot-starter-data-jpa")
+    // Hibernate 7.2's JSON FormatMapper (required at boot once any @JdbcTypeCode(JSON) attribute
+    // exists) only detects Jackson 2 — it does not support tools.jackson yet, which is why Boot 4's
+    // BOM still manages the jackson-2 line. Runtime-only: no com.fasterxml databind type appears in
+    // any source; drop this when Hibernate ORM gains Jackson 3 support.
+    runtimeOnly("com.fasterxml.jackson.core:jackson-databind")
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

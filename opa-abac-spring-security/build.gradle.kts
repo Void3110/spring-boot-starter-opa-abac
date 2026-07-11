@@ -25,8 +25,6 @@ dependencies {
     api(libs.resilience4j.core)
 
     testImplementation("org.springframework.security:spring-security-test")
-    // Jackson-2 jsr310 for the ProblemDetail serialization pin (Boot 4 manages Jackson 3) — T5 removes it.
-    testImplementation(libs.jackson.datatype.jsr310)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.

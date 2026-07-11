@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security.ownership;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -157,7 +157,7 @@ public class DiscoveryOwnershipResolver implements ResourceOwnershipResolver {
                 return Optional.empty();
             }
             return Optional.of(node.asText());
-        } catch (com.fasterxml.jackson.core.JacksonException e) {
+        } catch (tools.jackson.core.JacksonException e) {
             log.warn("created-by body unparseable ({}) — not owner (fail-closed)",
                     e.getClass().getSimpleName());
             return Optional.empty();

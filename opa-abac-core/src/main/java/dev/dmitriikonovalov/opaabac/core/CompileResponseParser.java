@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.core;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import dev.dmitriikonovalov.opaabac.core.Condition.Operator;
 import java.util.ArrayList;
 import java.util.List;

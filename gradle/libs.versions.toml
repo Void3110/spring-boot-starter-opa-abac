@@ -8,7 +8,9 @@ springDependencyManagement = "1.1.7"
 openapiGenerator = "7.14.0"
 
 # Library deps
-jackson = "2.18.2"
+# Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
+# com.fasterxml 2.x artifact line (Jackson 3 reads them; databind brings them transitively).
+jackson = "3.1.4"
 slf4j = "2.0.16"
 # Resilience4j — this catalog pin is authoritative (the library modules do not import the Boot BOM
 # for it). 2.4.0 removed the internal CircuitBreakerStateMachine(name, config, Clock) constructor
@@ -37,10 +39,7 @@ testcontainers = "1.20.4"
 
 [libraries]
 # --- Library modules ---
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-# Test-only on the T4→T5 mixed state: Boot 4 manages Jackson 3 and no longer supplies the Jackson-2
-# jsr310 module the ProblemDetail serialization pin builds its mapper with. Removed by the T5 swap.
-jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 # Resilience4j (Slice B3): the circuit-breaker + core (IntervalFunction) modules back the CallGuard impl.
 # Versions are overridden by the Spring Boot BOM where the consuming module imports it.

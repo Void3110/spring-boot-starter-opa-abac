@@ -1,11 +1,12 @@
 package dev.dmitriikonovalov.opaabac.data.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import java.util.Map;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Serializes {@link ResourceTags} to/from the JSON text stored in the {@code tags} JSONB column.
@@ -15,16 +16,23 @@ import java.util.Map;
  * shared {@link ObjectMapper}. Empty/null tags map to {@code "{}"} (never SQL {@code NULL}), so the
  * column can stay {@code NOT NULL} and policies always see an object.
  *
- * <p>This is the idiomatic Hibernate 6.4 approach (converter + JSON jdbc type); a hand-rolled
+ * <p>This is the idiomatic Hibernate converter + JSON jdbc-type approach; a hand-rolled
  * {@code UserType} is a contingency that isn't needed here. Keeping serialization in a plain
  * converter also makes the round-trip unit-testable without a database.
+ *
+ * <p><b>Wire parity (SB4 port, W3).</b> The column holds rows written by the Jackson-2 converter;
+ * the Jackson-3 mapper must keep round-tripping them byte-compatibly. A bare {@code JsonMapper} does
+ * — pinned by {@code ResourceTagsConverterParityTest}, which reads back a hardcoded
+ * Jackson-2-written literal. Jackson 3 throws unchecked {@link JacksonException} (was the checked
+ * {@code JsonProcessingException}); the explicit catch keeps the converter's failure contract
+ * ({@code IllegalStateException}) identical.
  */
 @Converter
 public class ResourceTagsConverter implements AttributeConverter<ResourceTags, String> {
 
     private static final String EMPTY_JSON = "{}";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -35,7 +43,7 @@ public class ResourceTagsConverter implements AttributeConverter<ResourceTags, S
         }
         try {
             return MAPPER.writeValueAsString(attribute.asMap());
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize ResourceTags to JSON", e);
         }
     }
@@ -48,7 +56,7 @@ public class ResourceTagsConverter implements AttributeConverter<ResourceTags, S
         try {
             Map<String, Object> map = MAPPER.readValue(dbData, MAP_TYPE);
             return ResourceTags.fromMap(map);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to deserialize ResourceTags from JSON: " + dbData, e);
         }
     }

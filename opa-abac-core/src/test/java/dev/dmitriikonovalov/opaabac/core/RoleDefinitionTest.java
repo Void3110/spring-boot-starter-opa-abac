@@ -2,7 +2,7 @@ package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -70,8 +70,7 @@ class RoleDefinitionTest {
 
         assertThat(json).doesNotContain("required_tags").doesNotContain("match_mode");
         // The exact prior wire shape — only code/attributes/permissions.
-        assertThat(MAPPER.readTree(json).fieldNames())
-                .toIterable()
+        assertThat(MAPPER.readTree(json).propertyNames())
                 .containsExactlyInAnyOrder("code", "attributes", "permissions");
     }
 
@@ -144,8 +143,7 @@ class RoleDefinitionTest {
 
         assertThat(MAPPER.writeValueAsString(threeArg)).doesNotContain("denied_actions");
         assertThat(MAPPER.writeValueAsString(fiveArg)).doesNotContain("denied_actions");
-        assertThat(MAPPER.readTree(MAPPER.writeValueAsString(threeArg)).fieldNames())
-                .toIterable()
+        assertThat(MAPPER.readTree(MAPPER.writeValueAsString(threeArg)).propertyNames())
                 .containsExactlyInAnyOrder("code", "attributes", "permissions");
     }
 
