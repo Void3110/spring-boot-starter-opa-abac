@@ -44,7 +44,8 @@ public final class CatalogMapper {
                 .description(e.getDescription())
                 .sku(e.getSku())
                 .priceCents(e.getPriceCents())
-                .currency(e.getCurrency());
+                .currency(e.getCurrency())
+                .tags(e.getTags().asMap());
     }
 
     // --- the list envelope (ADR 0012): count = the page's totalElements (the subject's authorized

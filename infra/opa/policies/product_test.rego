@@ -496,3 +496,166 @@ test_bulk_empty if {
 	result := product.bulk with input as {"items": []}
 	result == []
 }
+
+# --- Taggable products: the assign-tags verb ---------------------------------
+#
+# Products carry tags now, so product:assign-tags became a live verb — dispatched from the PUT by
+# TagDecisionGate (instance-level) and asked type-level on a tag-carrying create. TAG grants it
+# through the shared category expansion; READ alone never does.
+
+test_assign_tags_tag_role_allows if {
+	product.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "product:assign-tags",
+		"resource": {"type": "product", "id": "p1"},
+		"role_definition": editor_role_def,
+		"environment": {},
+	}
+}
+
+test_assign_tags_read_only_denied if {
+	not product.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "product:assign-tags",
+		"resource": {"type": "product", "id": "p1"},
+		"role_definition": viewer_role_def,
+		"environment": {},
+	}
+}
+
+# Tag-on-create: the TYPE-LEVEL assign-tags decision, role resolved on the parent catalog (the
+# verb-agnostic coarse gate — same clause create/list ride).
+test_assign_tags_type_level_inheritable_opens if {
+	product.allow with input as product_type_input("product:assign-tags", editor_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_assign_tags_type_level_read_only_denied if {
+	not product.allow with input as product_type_input("product:assign-tags", viewer_role_def)
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+test_assign_tags_type_level_no_role_def_denied if {
+	not product.allow with input as {
+		"subject": {"id": "u", "roles": ["catalog-editor"]},
+		"action": "product:assign-tags",
+		"resource": {"type": "product", "id": null, "attributes": {}},
+		"environment": {},
+	}
+		with data.product.inheritable as {"product": {"catalog": true}}
+}
+
+# --- Taggable products: filter entrypoint (list filtering) -------------------
+#
+# The category.rego filter block ported when products became taggable; the decisive properties are
+# the same (see category_test.rego): ROLE-DEFINITION-ONLY (missing role-def fails CLOSED), the
+# category expansion consumed INLINE, "list" required in the expanded-minus-denied set, and the
+# membership tag match agreeing with the single-decision `allow` for scalar AND array tags.
+
+product_regional_reader := {
+	"code": "regional-reader",
+	"attributes": {"role_level": 10},
+	"permissions": {"product": ["READ"]},
+	"required_tags": {"region": ["emea", "amer"]},
+	"match_mode": "ANY_OF",
+}
+
+product_list_tag_input(role_def, tags) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "product:list",
+	"resource": {"type": "product", "id": "p1", "attributes": tags},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# An unrestricted role (no required tags) -> filter true for any listable product.
+test_filter_unrestricted_lists if {
+	product.filter with input as product_list_tag_input(viewer_role_def, {"region": "emea"})
+}
+
+# A tag-gated role + a matching SCALAR tag -> filter true.
+test_filter_tag_gated_scalar_match if {
+	product.filter with input as product_list_tag_input(product_regional_reader, {"region": "emea"})
+}
+
+# A tag-gated role + a matching ARRAY tag -> filter true (membership matches the array element).
+test_filter_tag_gated_array_match if {
+	product.filter with input as product_list_tag_input(product_regional_reader, {"region": ["emea", "amer"]})
+}
+
+# A tag-gated role + a non-matching tag -> filter false.
+test_filter_tag_gated_miss if {
+	not product.filter with input as product_list_tag_input(product_regional_reader, {"region": ["apac"]})
+}
+
+# filter AGREES with allow for both the scalar and the array case (the consistency property).
+test_filter_agrees_with_allow_scalar if {
+	req := product_list_tag_input(product_regional_reader, {"region": "emea"})
+	product.filter with input as req
+	product.allow with input as req
+}
+
+test_filter_agrees_with_allow_array if {
+	req := product_list_tag_input(product_regional_reader, {"region": ["emea", "amer"]})
+	product.filter with input as req
+	product.allow with input as req
+}
+
+# The fail-open-leak guard: NO role_definition -> filter false (DENY_ALL on partial eval) — a list
+# with no role definition is empty, never the whole table. `allow` agrees (B4: membership is the
+# sole access path).
+test_filter_no_role_definition_denies if {
+	req := {
+		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
+		"action": "product:list",
+		"resource": {"type": "product", "id": "p1", "attributes": {"region": "emea"}},
+		"environment": {},
+	}
+	not product.filter with input as req
+	not product.allow with input as req
+}
+
+# filter requires "list" in the EFFECTIVE set: a TAG-only role (no READ) -> filter false.
+test_filter_tag_only_role_denies if {
+	not product.filter with input as {
+		"action": "product:list",
+		"resource": {"type": "product", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": {"code": "x", "permissions": {"product": ["TAG"]}},
+		"environment": {},
+	}
+}
+
+# A grant on a DIFFERENT type does not open this type's list.
+test_filter_requires_grant_on_this_type if {
+	not product.filter with input as {
+		"action": "product:list",
+		"resource": {"type": "product", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": {"code": "x", "permissions": {"catalog": ["READ"]}},
+		"environment": {},
+	}
+}
+
+# A denial of "list" closes the filter even though READ grants it (deny-overrides at the
+# list boundary).
+test_filter_list_denied_closes if {
+	not product.filter with input as {
+		"action": "product:list",
+		"resource": {"type": "product", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": {
+			"code": "x",
+			"permissions": {"product": ["READ"]},
+			"denied_actions": {"product": ["list"]},
+		},
+		"environment": {},
+	}
+}
+
+# A stale flat token never opens the filter (∅-expansion at the list boundary).
+test_filter_stale_flat_token_denies if {
+	not product.filter with input as {
+		"action": "product:list",
+		"resource": {"type": "product", "id": "p1", "attributes": {"region": "emea"}},
+		"role_definition": stale_flat_role,
+		"environment": {},
+	}
+}

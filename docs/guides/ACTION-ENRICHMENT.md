@@ -109,9 +109,9 @@ caught two corrections):
 
 | Type | `abacActions()` | Note |
 |---|---|---|
-| `catalog` | `[view, update, delete]` | **no `assign-tags`** — catalog carries no tags, no such endpoint |
+| `catalog` | `[view, update, delete, assign-tags]` | `assign-tags` dispatched on the tags-delta `PUT` (ADR 0022, taggable roots) |
 | `category` | `[view, update, delete, assign-tags]` | `assign-tags` dispatched on the tags-delta `PUT` |
-| `product` | `[view, update, delete]` | **no `assign-tags`** — product carries no tags |
+| `product` | `[view, update, delete, assign-tags]` | `assign-tags` dispatched on the tags-delta `PUT` (taggable products) |
 | `team` | `[list-members, add-member, remove-member]` | the **OPA-decided subset** only (see honesty, below) |
 
 Excluded by design: `list`/`create` (collection-level) · `define-tags` (control-plane) · `assign-roles`

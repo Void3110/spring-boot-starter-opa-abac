@@ -20,12 +20,12 @@ import org.springframework.stereotype.Component;
  * Spring AOP requires the calls to cross a bean boundary, hence this dedicated bean (never
  * self-invocation from a controller method).
  *
- * <p>Category and catalog: the two types whose REST requests carry {@code tags}. Product requests
- * have no tags field, so their tags delta is never constructible and their PUT keeps a static
- * {@code product:update} annotation (a dispatch there would have an unreachable branch). Catalog
- * create takes NO tags (rejected 422 before any decision): the type-level assign-tags decision
- * resolves through the governing team, and a new catalog has no team until owner-on-create binds
- * one — so catalog tag assignment starts at the first update.
+ * <p>Catalog, category and product: all three REST request types carry {@code tags}, so all three
+ * updates dispatch here. Category and product accept tag-on-create (their governing team — the
+ * catalog's — exists before they do); catalog create takes NO tags (rejected 422 before any
+ * decision): the type-level assign-tags decision resolves through the governing team, and a new
+ * catalog has no team until owner-on-create binds one — so catalog tag assignment starts at the
+ * first update.
  */
 @Component
 public class TagDecisionGate {
@@ -62,6 +62,28 @@ public class TagDecisionGate {
     @OpaPreAuthorize(action = "category:assign-tags", resourceType = "'category'",
             roleResourceType = "'catalog'", roleResourceId = "#catalogId")
     public void requireCategoryAssignTagsForCreate(UUID catalogId) {
+        // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
+    }
+
+    /** The content-change decision on a resolved product instance. */
+    @OpaPreAuthorize(action = "product:update", resourceType = "'product'", resourceId = "#productId")
+    public void requireProductUpdate(UUID productId) {
+        // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
+    }
+
+    /** The tag-relabel decision on a resolved product instance. */
+    @OpaPreAuthorize(action = "product:assign-tags", resourceType = "'product'", resourceId = "#productId")
+    public void requireProductAssignTags(UUID productId) {
+        // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
+    }
+
+    /**
+     * The TYPE-LEVEL tag decision for product create — the category shape exactly: the role resolves
+     * on the governing {@code catalog} root; the decided resource stays {@code product}.
+     */
+    @OpaPreAuthorize(action = "product:assign-tags", resourceType = "'product'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
+    public void requireProductAssignTagsForCreate(UUID catalogId) {
         // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
     }
 }

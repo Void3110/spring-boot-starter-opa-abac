@@ -15,6 +15,8 @@ import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
+import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
+import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -78,6 +80,7 @@ class TagDecisionGateIT {
     @Autowired MockMvc mockMvc;
     @Autowired CatalogRepository catalogs;
     @Autowired CategoryRepository categories;
+    @Autowired ProductRepository products;
     @Autowired CatalogHierarchyService hierarchy;
 
     @BeforeEach
@@ -324,6 +327,112 @@ class TagDecisionGateIT {
         assertThat(catalogs.count()).isEqualTo(before); // nothing persisted
     }
 
+    // --- the PRODUCT mirror (taggable products adopt the same dispatch) --------------------------
+    // Same shape as the catalog cells above: the product PUT delta-dispatches, the create asks the
+    // type-level assign-tags only when tags ride it — pinned against the product endpoints.
+
+    @Test // I13p — a tags-delta-only product PUT asks exactly [product:assign-tags]
+    void productTagsDeltaOnlyAsksAssignTagsAlone() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        var product = seedProduct(cat.getId(), "kept-name", Map.of("region", List.of("emea")));
+        ActionAwareOpaClient.rule = allowOnly("product:assign-tags"); // update would DENY
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), cat.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"kept-name\",\"sku\":\"SKU-1\",\"priceCents\":100,"
+                                + "\"currency\":\"USD\",\"tags\":{\"region\":[\"emea\",\"amer\"]}}"))
+                .andExpect(status().isOk());
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("product:assign-tags");
+        assertThat(products.findById(product.getId()).orElseThrow().getTags().asMap())
+                .containsEntry("region", List.of("emea", "amer"));
+    }
+
+    @Test // I14p — content-delta-only asks [product:update]; both deltas ask both, in order
+    void productBothDeltasAskBothDecisionsInOrder() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        var product = seedProduct(cat.getId(), "old-name", Map.of());
+        ActionAwareOpaClient.rule = allowOnly("product:update");
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), cat.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"new-name\",\"sku\":\"SKU-1\",\"priceCents\":100,\"currency\":\"USD\"}"))
+                .andExpect(status().isOk());
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("product:update");
+
+        ActionAwareOpaClient.askedActions.clear();
+        ActionAwareOpaClient.rule = allowOnly("product:update", "product:assign-tags");
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), cat.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"renamed-again\",\"sku\":\"SKU-1\",\"priceCents\":100,"
+                                + "\"currency\":\"USD\",\"tags\":{\"region\":[\"emea\"]}}"))
+                .andExpect(status().isOk());
+        assertThat(ActionAwareOpaClient.askedActions)
+                .containsExactly("product:update", "product:assign-tags");
+    }
+
+    @Test // I15p — a denied product:assign-tags (WRITE-no-TAG) leaves the row untouched
+    void productDeniedAssignTagsLeavesTheEntityUntouched() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        var product = seedProduct(cat.getId(), "kept-name", Map.of("region", List.of("emea")));
+        Integer versionBefore = products.findById(product.getId()).orElseThrow().getVersion();
+        ActionAwareOpaClient.rule = allowOnly("product:update"); // TAG is what's missing
+
+        mockMvc.perform(put("/api/v1/catalogs/{c}/categories/{cat}/products/{p}",
+                        catalog.getId(), cat.getId(), product.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"kept-name\",\"sku\":\"SKU-1\",\"priceCents\":100,"
+                                + "\"currency\":\"USD\",\"tags\":{\"region\":[\"apac\"]}}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("ACCESS_DENIED"));
+
+        var row = products.findById(product.getId()).orElseThrow();
+        assertThat(row.getName()).isEqualTo("kept-name");
+        assertThat(row.getTags().asMap()).containsEntry("region", List.of("emea"));
+        assertThat(row.getVersion()).isEqualTo(versionBefore); // the deny preceded ANY mutation
+    }
+
+    @Test // I16p — product create-with-tags asks the TYPE-LEVEL assign-tags (a product's governing
+    // team exists before it does — its catalog's); denied → nothing persists.
+    void productCreateWithTagsDeniedAtTypeLevelPersistsNothing() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        long before = products.count();
+        ActionAwareOpaClient.rule = allowOnly("product:create"); // assign-tags DENIED
+
+        mockMvc.perform(post("/api/v1/catalogs/{c}/categories/{cat}/products",
+                        catalog.getId(), cat.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"tagged\",\"priceCents\":100,\"currency\":\"USD\","
+                                + "\"tags\":{\"region\":[\"emea\"]}}"))
+                .andExpect(status().isForbidden());
+
+        assertThat(ActionAwareOpaClient.askedActions)
+                .containsExactly("product:create", "product:assign-tags");
+        assertThat(products.count()).isEqualTo(before); // nothing persisted
+    }
+
+    @Test // a bare product create (no tags) asks create alone — no phantom assign-tags decision
+    void productCreateWithoutTagsAsksCreateAlone() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), "parent-cat", Map.of());
+        ActionAwareOpaClient.rule = allowOnly("product:create");
+
+        mockMvc.perform(post("/api/v1/catalogs/{c}/categories/{cat}/products",
+                        catalog.getId(), cat.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"plain\",\"priceCents\":100,\"currency\":\"USD\"}"))
+                .andExpect(status().isCreated());
+
+        assertThat(ActionAwareOpaClient.askedActions).containsExactly("product:create");
+    }
+
     // --- seeding ----------------------------------------------------------------
 
     private CatalogEntity seedCatalog() {
@@ -346,6 +455,15 @@ class TagDecisionGateIT {
         }
         hierarchy.assignPath(entity);
         return categories.save(entity);
+    }
+
+    private ProductEntity seedProduct(UUID categoryId, String name, Map<String, Object> tags) {
+        var entity = new ProductEntity(UUID.randomUUID(), categoryId, name, null, "SKU-1", 100L, "USD");
+        if (!tags.isEmpty()) {
+            entity.setTags(ResourceTags.fromMap(tags));
+        }
+        hierarchy.assignPath(entity);
+        return products.save(entity);
     }
 
     // --- the test doubles ---------------------------------------------------------

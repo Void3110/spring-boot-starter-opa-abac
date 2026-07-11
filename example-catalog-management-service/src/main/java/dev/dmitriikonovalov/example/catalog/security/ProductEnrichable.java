@@ -9,8 +9,9 @@ import java.util.List;
  * the action registry and validation allowlist for {@code product}.
  *
  * <p>Verbs are instance-scoped and verified against the live {@code @OpaPreAuthorize} endpoints:
- * {@code view}/{@code update}/{@code delete}. {@code list}/{@code create} are collection-level (excluded);
- * {@code product} carries no tags, so there is no {@code product:assign-tags} endpoint (excluded).
+ * {@code view}/{@code update}/{@code delete}/{@code assign-tags} (the last dispatched from the PUT via
+ * {@code TagDecisionGate}, like categories — products carry tags). {@code list}/{@code create} are
+ * collection-level (excluded).
  */
 public interface ProductEnrichable extends Enrichable {
 
@@ -21,6 +22,6 @@ public interface ProductEnrichable extends Enrichable {
 
     @Override
     default List<String> abacActions() {
-        return List.of("view", "update", "delete");
+        return List.of("view", "update", "delete", "assign-tags");
     }
 }

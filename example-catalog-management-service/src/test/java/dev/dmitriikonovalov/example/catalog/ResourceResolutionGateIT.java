@@ -187,10 +187,14 @@ class ResourceResolutionGateIT {
 
     @Test // I4 — an out-of-band bump between gate and write → 409, the mutation does NOT apply.
     // Phase 6.5 moved this cell from the category PUT to the catalog PUT; ADR 0022 moved it AGAIN,
-    // to the PRODUCT PUT — the catalog update now delta-dispatches its decisions in-handler too
-    // (taggable catalogs), so the annotated-gate→write window this cell pins survives only on the
-    // statically-annotated product update. The race fires between the handler's scope checks and
-    // mutate()'s locked load: the gate's snapshot no longer matches the row the write would touch.
+    // to the PRODUCT PUT (taggable catalogs made the catalog update dispatch in-handler). Taggable
+    // PRODUCTS then made the product PUT dispatch too — but unlike the earlier moves, this cell
+    // SURVIVES the change in place: the dispatched TagDecisionGate decisions still resolve the
+    // instance into the request cache (annotated resourceId, 5.97 write-through), and the product
+    // handler alone runs its version guard INSIDE mutate()'s locked transaction — so the
+    // gate→write window this cell pins still exists here, and only here. The race fires between
+    // the handler's dispatch and mutate()'s locked load: the gate's snapshot no longer matches
+    // the row the write would touch.
     void gateWindowRaceAnswers409AndMutationDoesNotApply() throws Exception {
         var catalog = seedCatalog();
         var root = seedCategory(catalog.getId(), null, "root-cat", Map.of());
