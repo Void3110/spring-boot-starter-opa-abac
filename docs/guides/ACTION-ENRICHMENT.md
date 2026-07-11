@@ -46,17 +46,28 @@ A library **`ActionEnrichmentAdvice`** (`opa-abac-spring-security`, package `…
 `<Resource>Page` shape, detected structurally — never a compile-time dependency on the example DTOs), it:
 
 1. Collects the enrichable DTOs and groups them **by resource type**.
-2. For each distinct DTO, reads its **resolved snapshot** from the request-scoped `AbacResourceCache`
-   (`cache.get(type, id)` — the Phase-5.97 cache; the advice never re-loads), resolves the ancestor chain,
-   and resolves the role **on the governing root** (`ancestors.isEmpty() ? leaf : ancestors[0]` — the same
-   rule the gate / `HierarchicalAuthorizer` use).
-3. Builds the flat `rows × verbs` context list in row-major order (row *i*, verb *j* → index *i·V+j*).
-4. Issues **one `OpaClient.allowAll` batch call per resource type** — reusing the Phase-5 batch primitive
+2. **Pass 1** (per row): reads its **resolved snapshot** from the request-scoped `AbacResourceCache`
+   (`cache.get(type, id)` — the Phase-5.97 cache; the advice never re-loads), resolves the ancestor chain
+   (through the Slice-7.3 request memo — one real resolution per `(type,id)` per request even though the
+   list's query path asked first), and derives the **governing root**
+   (`ancestors.isEmpty() ? leaf : ancestors[0]` — the same rule the gate / `HierarchicalAuthorizer` use).
+   The computable rows' **distinct** roots are collected.
+3. Resolves the roots' roles in **one `RoleDefinitionSupplier.lookupAll` batch** (Slice 7.3,
+   [[0024-batch-role-resolution|ADR 0024]]) — one wire exchange per page instead of one per row, even on
+   a page where every row is its own root (the multi-root catalogs list). Unconditional code
+   (call-coalescing, not caching — a single point-in-time exchange, so there is nothing for the
+   `opa.abac.resolve-memo.enabled` flag to govern here).
+4. **Pass 2**: builds the flat `rows × verbs` context list in row-major order (row *i*, verb *j* →
+   index *i·V+j*) from the returned map (an `empty` entry → `role=null`).
+5. Issues **one `OpaClient.allowAll` batch call per resource type** — reusing the Phase-5 batch primitive
    verbatim (no new `OpaClient` method).
-5. Re-folds the positional `List<Boolean>` into a per-row `Map<verb,Boolean>` and `setActions(map)`.
+6. Re-folds the positional `List<Boolean>` into a per-row `Map<verb,Boolean>` and `setActions(map)`.
 
 The first real consumer of the Phase-5 `allowAll` primitive: one OPA round-trip returns the verdict for a
-resource's whole action set, instead of one call per action.
+resource's whole action set, instead of one call per action. Degrade note (Slice 7.3): a **role-source
+outage now omits the whole group's `_actions`** (`lookupAll` is a whole-batch outage by contract — there
+are no per-target answers), where pre-7.3 it omitted the row that hit it; per-row rungs (no verbs, cache
+miss, ancestor failure) are unchanged, and the response body is never blocked.
 
 ## Opt-in: the `Enrichable` marker + the `x-implements` codegen recipe
 

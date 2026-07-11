@@ -358,3 +358,9 @@ OPA call, so OPA spans are a separate service rather than nested — expected).
   Don't `compose down --remove-orphans` on one file — it'll delete the others' containers.
 - **No upstream health-checks in Phase A**: if a pod dies, APISIX keeps round-robining to it
   (you'll see some 5xx) until you rescale. Active health-checking can be added later.
+- **Gateway OPA plugin timeout = 1000 ms** (`init-routes.sh`, integer milliseconds; APISIX default
+  is 3000). Under a *hung* OPA the plugin times out then **denies** (typed 403) — the 7.2 fault run
+  measured that deny at ~3.0 s with the default; 1000 ms bounds it at ~1.0 s (PERFORMANCE.md §4).
+  Semantics unchanged: a timeout still denies; only the wait shortens. **Tune against your OPA's
+  loaded p99, not its idle latency**: this OPA also serves the app's compile + bulk evals, and a
+  500 ms timeout produced steady-state 403s at 10 req/s under list load (measured, Slice 7.3).

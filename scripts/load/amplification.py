@@ -35,10 +35,25 @@ import urllib.request
 
 # The ADR 0021 §6 pinned per-scenario bounds — the library's design claims under proof.
 # An op observed but not pinned here is reported as "unpinned" (recorded, no verdict).
+# multi-root-list (RESOLVE-COALESCING T1/T5): the catalogs page where every row is its own
+# governing root. The post-7.3 bound is TWO resolve wire calls — two questions at two lifecycle
+# points (the same rationale that re-pinned batch-eval to 2): the list authorizer's query-time
+# COARSE role (one single, on the first governed root — it drives the filter residual and is
+# fail-closed load-bearing) + the enrichment's response-time batch (one lookupAll for the page's
+# distinct roots, the query-time root memo-deduped out of it). The pre-7.3 baseline run recorded
+# the honest EXCEEDED finding against this pin (resolve = M+1 per page) — that artifact IS the
+# "before" (QA P3). Same-root scenarios stay at 1: there every caller shares one key, the request
+# memo collapses them, and a fully-hit batch never even delegates.
+# batch-eval is pinned 2 on the category-list scenarios (Slice 7.3 re-pin): the query-time
+# allowlist FINISHER and the response-time AFFORDANCE batch are two different questions at two
+# lifecycle points (row inclusion vs verb map) — a wrong pin, not wrong code (ADR 0024 rejected
+# merging them on layering). The catalogs list (multi-root) runs only the affordance batch — its
+# residual fully reduces to SQL, so no finisher bulk: batch-eval pinned 1 there.
 EXPECTED = {
     "gate-overhead": {"resolve": 1, "decide": 1},
-    "list-filter": {"resolve": 1, "compile": 1},
-    "enrichment": {"resolve": 1, "batch-eval": 1},
+    "list-filter": {"resolve": 1, "compile": 1, "batch-eval": 2},
+    "enrichment": {"resolve": 1, "batch-eval": 2},
+    "multi-root-list": {"resolve": 2, "compile": 1, "batch-eval": 1},
 }
 
 OPS = ("resolve", "governed-scope", "tag", "decide", "batch-eval", "compile")
@@ -95,6 +110,12 @@ def fetch_traces(args):
 
     target = args.min_traces + max(10, args.min_traces // 4)
     slices = 30
+    # Per-slice limit sized so the WHOLE chunked fetch can actually reach the official floor:
+    # 30 slices x 10 capped at 300 < the 500 floor of a full-length official window (a latent
+    # harness bug — the published 7.2 numbers were produced by the pre-chunking single query).
+    # ceil(target/slices)+5 keeps each response small (tens of single-request traces, never the
+    # one-shot 100MB+ query the chunking exists to prevent) while making the target reachable.
+    per_slice = max(10, -(-target // slices) + 5)
     span = max(1, (args.window_end - args.window_start) // slices)
     seen, traces = set(), []
     for i in range(slices):
@@ -107,7 +128,7 @@ def fetch_traces(args):
             "operation": args.operation,
             "start": s * 1_000_000,  # Jaeger wants microseconds
             "end": e * 1_000_000,
-            "limit": 10,
+            "limit": per_slice,
         })
         try:
             with urllib.request.urlopen(f"{args.jaeger}/api/traces?{query}", timeout=60) as resp:

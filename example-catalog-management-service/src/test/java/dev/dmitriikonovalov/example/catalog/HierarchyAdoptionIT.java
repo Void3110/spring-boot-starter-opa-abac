@@ -20,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -36,6 +37,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  * proof is the newman e2e (T7).
  */
 class HierarchyAdoptionIT extends AbstractPostgresIT {
+
+    /**
+     * Direct {@code ancestorsOf} asserts must run OUTSIDE any request context: MockMvc suites on the
+     * same worker thread leave their {@code ServletRequestAttributes} bound after {@code perform()}
+     * (by design), and the ADR 0023 request memo would then replay the pre-reparent chain snapshot —
+     * per-request staleness semantics this suite does not test. Reset → pure pass-through.
+     */
+    @BeforeEach
+    void runOutsideAnyRequestContext() {
+        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+    }
 
     @Autowired
     private CatalogRepository catalogs;

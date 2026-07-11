@@ -93,6 +93,18 @@ Backoff is exponential with **full jitter**; the total-time **ceiling is a named
 **Three breakers, one per edge** (per-endpoint, not per-host): resolve and tag both hit the user-management
 host but stay independent, so a fault in `/internal/tag-definitions` cannot trip `/internal/effective-role`.
 
+> **The Slice-7.3 request memo sits OUTSIDE the guard** ([[0023-request-scoped-resolution-memoization|ADR
+> 0023]]): the decoration order is `memo(app supplier(CallGuard inside))`, so a memo hit never touches the
+> guard — the resolve breaker samples **real calls only** (at most one per key per request), strictly fewer
+> breaker events with no semantic change. A memoized outage replays as the outage *without* re-hammering a
+> struggling source through the guard. The **batch** resolve (`lookupAll`, [[0024-batch-role-resolution|ADR
+> 0024]]) rides the same resolve guard as **one guarded call** — one breaker event per page instead of one
+> per row; the whole exchange is the retry unit (safe: a read-only GET on the request thread). Since 7.3
+> the method-security advisor also resolves its manager lazily, so the gate path genuinely shares these
+> decorated beans (an eagerly-injected manager used to skip every bean-level wrapper, the OPA edge's
+> `ResilientOpaClient` included — with the side effect that a gate *deny* now costs the documented one
+> extra fast sidecar hop, because the OPA-edge guard deliberately retries the fail-closed `false`).
+
 > **Breaker outcome-invariance.** The breaker is a load/availability optimization over the fail-closed path,
 > **never a decision input.** Every state — closed, open, half-open — yields an outcome *already reachable
 > without the breaker*. An open breaker is *strictly more* fail-closed, never less: open OPA → `allow`

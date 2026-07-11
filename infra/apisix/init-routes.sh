@@ -118,7 +118,14 @@ if [ "${ENABLE_TRACING:-1}" = "1" ]; then
   PLUGINS="$PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
 fi
 if [ "${ENABLE_OPA:-1}" = "1" ]; then
-  PLUGINS="$PLUGINS,\"opa\":{\"_meta\":{\"priority\":2000},\"host\":\"http://opa:8181\",\"policy\":\"gateway\",\"response_allow_field\":\"result.allow\"}"
+  # timeout: INTEGER MILLISECONDS (APISIX opa plugin schema: integer, default 3000, min 1 — verified
+  # against the live 3.11 admin API). The default 3000 is what the 7.2 fault-opa run measured as the
+  # ~3.0 s timeout-bound deny under a hung OPA; 1000 ms bounds that deny at ~1.0 s (3x faster).
+  # Semantics unchanged — a timeout still DENIES (typed 403); only the wait shortens. Why not lower:
+  # this OPA also serves the app's compile + bulk evals, and under list load its tail crosses 500 ms
+  # even at modest rates — a 500 ms timeout produced steady-state 403s at 10 req/s (measured, 7.3).
+  # Tune against your OPA's loaded p99, not its idle latency. Slice 7.3, PERFORMANCE.md §4.
+  PLUGINS="$PLUGINS,\"opa\":{\"_meta\":{\"priority\":2000},\"host\":\"http://opa:8181\",\"policy\":\"gateway\",\"response_allow_field\":\"result.allow\",\"timeout\":1000}"
 fi
 
 # SPA single-origin auth: proxy Keycloak THROUGH the gateway so the browser does its entire

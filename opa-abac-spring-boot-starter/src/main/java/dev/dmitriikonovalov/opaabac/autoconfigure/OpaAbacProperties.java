@@ -73,6 +73,10 @@ public class OpaAbacProperties {
     @NestedConfigurationProperty
     private Resilience resilience = new Resilience();
 
+    /** Request-scoped resolution memoization settings (Slice 7.3, ADR 0023). */
+    @NestedConfigurationProperty
+    private ResolveMemo resolveMemo = new ResolveMemo();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -159,6 +163,14 @@ public class OpaAbacProperties {
 
     public void setResilience(Resilience resilience) {
         this.resilience = resilience;
+    }
+
+    public ResolveMemo getResolveMemo() {
+        return resolveMemo;
+    }
+
+    public void setResolveMemo(ResolveMemo resolveMemo) {
+        this.resolveMemo = resolveMemo;
     }
 
     /**
@@ -270,6 +282,30 @@ public class OpaAbacProperties {
     public static class ResourceResolution {
 
         /** Kill-switch for gate-side resource resolution. Default {@code true}; off → baseline semantics. */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * Request-scoped resolution memoization (Slice 7.3, ADR 0023). One flag governs <em>both</em> memo
+     * decorators (role + ancestor — one knob, one axis: request-scoped resolution memoization).
+     * {@code false} restores per-call resolution — snapshot-freshness semantics, <em>not</em> pre-7.3
+     * call counts (the enrichment advice's batch collection, ADR 0024, is unconditional code).
+     */
+    public static class ResolveMemo {
+
+        /**
+         * Kill-switch for the request-scoped memos. Default {@code true} (the memo is the fix for a
+         * measured defect); off → every resolve call reaches the supplier/resolver (per-call
+         * freshness at the measured per-request amplification cost).
+         */
         private boolean enabled = true;
 
         public boolean isEnabled() {

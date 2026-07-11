@@ -1,148 +1,387 @@
 {
-  "info": {
-    "name": "Action-enrichment matrix (affordance _actions via the response advice)",
-    "description": "Phase 6 live proof (ADR 0016): the _actions affordance map mirrors enforcement per granted permissions, honestly reports false on a read-only role, omits on the ungated-read degrade, excludes the verbs OPA does not fully decide, and never replaces the real gate. Run via run-action-enrichment-matrix.sh. NOTE: the tag requirement gates the WHOLE decision (incl. view), so a tag-mismatched row is not readable at all — the per-verb contrast here is grant-based (writer vs reader), not tag-based.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "E1a. Reader GET category -> 200, honest _actions (view:true, update/delete/assign-tags:false)",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{viewer_token}}" }],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories/{{emea_category_id}}",
-          "host": ["{{gateway}}"],
-          "path": ["api", "v1", "catalogs", "{{ae_catalog_id}}", "categories", "{{emea_category_id}}"]
-        }
-      },
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "const b = pm.response.json();",
-        "pm.test('_actions present and complete (every category verb keyed)', () => {",
-        "  pm.expect(b).to.have.property('_actions');",
-        "  pm.expect(b._actions).to.have.all.keys('view','update','delete','assign-tags');",
-        "});",
-        "pm.test('read-only role: view true, every mutating verb false (the honest map)', () => {",
-        "  pm.expect(b._actions.view).to.eql(true);",
-        "  pm.expect(b._actions.update).to.eql(false);",
-        "  pm.expect(b._actions.delete).to.eql(false);",
-        "  pm.expect(b._actions['assign-tags']).to.eql(false);",
-        "});"
-      ] } }]
-    },
-    {
-      "name": "E1b. Writer GET category -> 200, _actions all true (read+write role)",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{editor_token}}" }],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories/{{emea_category_id}}",
-          "host": ["{{gateway}}"],
-          "path": ["api", "v1", "catalogs", "{{ae_catalog_id}}", "categories", "{{emea_category_id}}"]
-        }
-      },
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "const b = pm.response.json();",
-        "pm.test('writer role: every verb true (the decision contrast vs the reader)', () => {",
-        "  pm.expect(b._actions.view).to.eql(true);",
-        "  pm.expect(b._actions.update).to.eql(true);",
-        "  pm.expect(b._actions.delete).to.eql(true);",
-        "  pm.expect(b._actions['assign-tags']).to.eql(true);",
-        "});"
-      ] } }]
-    },
-    {
-      "name": "E2. Writer GET categories page -> per-row complete _actions (one bulk for the page)",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{editor_token}}" }],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories?perPage=50",
-          "host": ["{{gateway}}"],
-          "path": ["api", "v1", "catalogs", "{{ae_catalog_id}}", "categories"],
-          "query": [{ "key": "perPage", "value": "50" }]
-        }
-      },
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "const b = pm.response.json();",
-        "pm.test('page has items, each with a complete _actions map (per-row, batched)', () => {",
-        "  pm.expect(b.items).to.be.an('array').that.is.not.empty;",
-        "  b.items.forEach(it => pm.expect(it._actions).to.have.all.keys('view','update','delete','assign-tags'));",
-        "});",
-        "pm.test('the writer sees update:true on every readable row', () => {",
-        "  b.items.forEach(it => pm.expect(it._actions.update).to.eql(true));",
-        "});"
-      ] } }]
-    },
-    {
-      "name": "E3. Reader GET category page vs single agree (the same map both ways)",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{viewer_token}}" }],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories?perPage=50",
-          "host": ["{{gateway}}"],
-          "path": ["api", "v1", "catalogs", "{{ae_catalog_id}}", "categories"],
-          "query": [{ "key": "perPage", "value": "50" }]
-        }
-      },
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "const b = pm.response.json();",
-        "pm.test('reader sees the same honest map per row on the list as on the single GET', () => {",
-        "  pm.expect(b.items).to.be.an('array').that.is.not.empty;",
-        "  b.items.forEach(it => {",
-        "    pm.expect(it._actions.view).to.eql(true);",
-        "    pm.expect(it._actions.update).to.eql(false);",
-        "  });",
-        "});"
-      ] } }]
-    },
-    {
-      "name": "E5. Affordance != enforcement: reader attempts the update its map reported false -> real 403",
-      "request": {
-        "method": "PUT",
-        "header": [
-          { "key": "Authorization", "value": "Bearer {{viewer_token}}" },
-          { "key": "Content-Type", "value": "application/json" }
-        ],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories/{{emea_category_id}}",
-          "host": ["{{gateway}}"],
-          "path": ["api", "v1", "catalogs", "{{ae_catalog_id}}", "categories", "{{emea_category_id}}"]
-        },
-        "body": { "mode": "raw", "raw": "{\"name\":\"reader-attempted rename\"}" }
-      },
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "pm.test('the _actions:false the reader saw matches a real 403 from the gate', () => pm.response.to.have.status(403));",
-        "pm.test('403 is RFC-7807 ACCESS_DENIED (enforcement decided independently of affordance)', () => {",
-        "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
-        "  pm.expect(pm.response.json().errorCode).to.eql('ACCESS_DENIED');",
-        "});"
-      ] } }]
-    },
-    {
-      "name": "E6. Verified verb sets: writer GET catalog -> [view,update,delete], NO assign-tags key",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{editor_token}}" }],
-        "url": {
-          "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}",
-          "host": ["{{gateway}}"],
-          "path": ["api", "v1", "catalogs", "{{ae_catalog_id}}"]
-        }
-      },
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "const b = pm.response.json();",
-        "pm.test('catalog verb set is exactly [view,update,delete] — assign-tags is NOT a key', () => {",
-        "  pm.expect(b._actions).to.have.all.keys('view','update','delete');",
-        "  pm.expect(b._actions).to.not.have.property('assign-tags');",
-        "});"
-      ] } }]
+ "info": {
+  "name": "Action-enrichment matrix (affordance _actions via the response advice)",
+  "description": "Phase 6 live proof (ADR 0016): the _actions affordance map mirrors enforcement per granted permissions, honestly reports false on a read-only role, omits on the ungated-read degrade, excludes the verbs OPA does not fully decide, and never replaces the real gate. Run via run-action-enrichment-matrix.sh. NOTE: the tag requirement gates the WHOLE decision (incl. view), so a tag-mismatched row is not readable at all — the per-verb contrast here is grant-based (writer vs reader), not tag-based.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "item": [
+  {
+   "name": "E1a. Reader GET category -> 200, honest _actions (view:true, update/delete/assign-tags:false)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{viewer_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories/{{emea_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{ae_catalog_id}}",
+      "categories",
+      "{{emea_category_id}}"
+     ]
     }
-  ]
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const b = pm.response.json();",
+       "pm.test('_actions present and complete (every category verb keyed)', () => {",
+       "  pm.expect(b).to.have.property('_actions');",
+       "  pm.expect(b._actions).to.have.all.keys('view','update','delete','assign-tags');",
+       "});",
+       "pm.test('read-only role: view true, every mutating verb false (the honest map)', () => {",
+       "  pm.expect(b._actions.view).to.eql(true);",
+       "  pm.expect(b._actions.update).to.eql(false);",
+       "  pm.expect(b._actions.delete).to.eql(false);",
+       "  pm.expect(b._actions['assign-tags']).to.eql(false);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E1b. Writer GET category -> 200, _actions all true (read+write role)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{editor_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories/{{emea_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{ae_catalog_id}}",
+      "categories",
+      "{{emea_category_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const b = pm.response.json();",
+       "pm.test('writer role: every verb true (the decision contrast vs the reader)', () => {",
+       "  pm.expect(b._actions.view).to.eql(true);",
+       "  pm.expect(b._actions.update).to.eql(true);",
+       "  pm.expect(b._actions.delete).to.eql(true);",
+       "  pm.expect(b._actions['assign-tags']).to.eql(true);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E2. Writer GET categories page -> per-row complete _actions (one bulk for the page)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{editor_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories?perPage=50",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{ae_catalog_id}}",
+      "categories"
+     ],
+     "query": [
+      {
+       "key": "perPage",
+       "value": "50"
+      }
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const b = pm.response.json();",
+       "pm.test('page has items, each with a complete _actions map (per-row, batched)', () => {",
+       "  pm.expect(b.items).to.be.an('array').that.is.not.empty;",
+       "  b.items.forEach(it => pm.expect(it._actions).to.have.all.keys('view','update','delete','assign-tags'));",
+       "});",
+       "pm.test('the writer sees update:true on every readable row', () => {",
+       "  b.items.forEach(it => pm.expect(it._actions.update).to.eql(true));",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E3. Reader GET category page vs single agree (the same map both ways)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{viewer_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories?perPage=50",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{ae_catalog_id}}",
+      "categories"
+     ],
+     "query": [
+      {
+       "key": "perPage",
+       "value": "50"
+      }
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const b = pm.response.json();",
+       "pm.test('reader sees the same honest map per row on the list as on the single GET', () => {",
+       "  pm.expect(b.items).to.be.an('array').that.is.not.empty;",
+       "  b.items.forEach(it => {",
+       "    pm.expect(it._actions.view).to.eql(true);",
+       "    pm.expect(it._actions.update).to.eql(false);",
+       "  });",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E5. Affordance != enforcement: reader attempts the update its map reported false -> real 403",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{viewer_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}/categories/{{emea_category_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{ae_catalog_id}}",
+      "categories",
+      "{{emea_category_id}}"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"reader-attempted rename\"}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('the _actions:false the reader saw matches a real 403 from the gate', () => pm.response.to.have.status(403));",
+       "pm.test('403 is RFC-7807 ACCESS_DENIED (enforcement decided independently of affordance)', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  pm.expect(pm.response.json().errorCode).to.eql('ACCESS_DENIED');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E6. Verified verb sets: writer GET catalog -> [view,update,delete,assign-tags] (taggable since ADR 0022)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{editor_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{ae_catalog_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{ae_catalog_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const b = pm.response.json();",
+       "pm.test('catalog verb set is exactly [view,update,delete,assign-tags] — taggable catalogs, ADR 0022 (PR #65)', () => {",
+       "  pm.expect(b._actions).to.have.all.keys('view','update','delete','assign-tags');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E7a. Writer GET catalogs LIST -> the governed row carries _actions (multi-root batch, 7.3)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{editor_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs?perPage=100",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs"
+     ],
+     "query": [
+      {
+       "key": "perPage",
+       "value": "100"
+      }
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const page = pm.response.json();",
+       "const row = page.items.find(i => i.id === pm.variables.get('ae_catalog_id'));",
+       "pm.test('the governed catalog is on the writer\\'s list (membership is the access path)', () => {",
+       "  pm.expect(row, 'the ae catalog row').to.exist;",
+       "});",
+       "pm.test('the CATALOGS-LIST row carries _actions — the multi-root batch path live (7.3)', () => {",
+       "  pm.expect(row._actions, '_actions on the list row').to.exist;",
+       "  pm.expect(row._actions.view).to.be.true;",
+       "  pm.expect(row._actions.update).to.be.true;",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "E7b. Reader GET catalogs LIST -> same row, the honest cut (view:true, update:false)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{viewer_token}}"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs?perPage=100",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs"
+     ],
+     "query": [
+      {
+       "key": "perPage",
+       "value": "100"
+      }
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('200', () => pm.response.to.have.status(200));",
+       "const page = pm.response.json();",
+       "const row = page.items.find(i => i.id === pm.variables.get('ae_catalog_id'));",
+       "pm.test('the same endpoint, the reader\\'s CUT: view true, update false (never a copy of the writer\\'s map)', () => {",
+       "  pm.expect(row, 'the ae catalog row').to.exist;",
+       "  pm.expect(row._actions, '_actions on the list row').to.exist;",
+       "  pm.expect(row._actions.view).to.be.true;",
+       "  pm.expect(row._actions.update).to.be.false;",
+       "});"
+      ]
+     }
+    }
+   ]
+  }
+ ]
 }

@@ -1,0 +1,754 @@
+{
+ "data": [
+  {
+   "traceID": "t0",
+   "spans": [
+    {
+     "traceID": "t0",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root0"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root1"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root2"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root3"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/governed-targets?userId=u&resourceType=catalog"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/compile"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t0",
+     "spanID": "c8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t1",
+   "spans": [
+    {
+     "traceID": "t1",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root0"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root1"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root2"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root3"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/governed-targets?userId=u&resourceType=catalog"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/compile"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t1",
+     "spanID": "c8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t2",
+   "spans": [
+    {
+     "traceID": "t2",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root0"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root1"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root2"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root3"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/governed-targets?userId=u&resourceType=catalog"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/compile"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t2",
+     "spanID": "c8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t3",
+   "spans": [
+    {
+     "traceID": "t3",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root0"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root1"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root2"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root3"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/governed-targets?userId=u&resourceType=catalog"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/compile"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t3",
+     "spanID": "c8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  },
+  {
+   "traceID": "t4",
+   "spans": [
+    {
+     "traceID": "t4",
+     "spanID": "s0",
+     "operationName": "GET /api/v1/catalogs",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "server"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c1",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root0"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c2",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root1"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c3",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root2"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c4",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/effective-role?userId=u&resourceType=catalog&resourceId=root3"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c5",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://usermgmt:8080/internal/governed-targets?userId=u&resourceType=catalog"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c6",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/compile"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c7",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    },
+    {
+     "traceID": "t4",
+     "spanID": "c8",
+     "operationName": "outbound",
+     "processID": "p1",
+     "tags": [
+      {
+       "key": "span.kind",
+       "value": "client"
+      },
+      {
+       "key": "url.full",
+       "value": "http://opa:8181/v1/data/catalog/bulk"
+      }
+     ]
+    }
+   ],
+   "processes": {
+    "p1": {
+     "serviceName": "catalog-management-service"
+    }
+   }
+  }
+ ]
+}

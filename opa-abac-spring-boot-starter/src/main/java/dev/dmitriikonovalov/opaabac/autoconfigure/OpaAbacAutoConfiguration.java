@@ -55,7 +55,8 @@ import org.springframework.context.annotation.ConfigurationCondition;
 @org.springframework.context.annotation.Import({
     OpaResilienceAutoConfiguration.class,
     OwnershipAutoConfiguration.class, // Slice B4: the cross-service ownership resolver (opt-in, ADR 0019)
-    OpaDirectoryAutoConfiguration.class // user-directory port: Keycloak opt-in, NoOp default (ADR 0020)
+    OpaDirectoryAutoConfiguration.class, // user-directory port: Keycloak opt-in, NoOp default (ADR 0020)
+    OpaResolveMemoAutoConfiguration.class // Slice 7.3: request-scoped resolution memos (ADR 0023)
 })
 public class OpaAbacAutoConfiguration {
 

@@ -21,6 +21,11 @@
 # Modes:
 #   guarded                   preflight (pod state ASSERTED guarded) + seed + the guarded pass
 #   baseline                  preflight (pod state ASSERTED unguarded: ENABLE_OPA=0) + seed + the baseline pass
+#   multi-root                the multi-root catalogs-list scenario (RESOLVE-COALESCING T1): M
+#                             catalogs, each its own governing root (own team + perf membership) —
+#                             the page shape a duplicate-target memo cannot help. Runs at
+#                             MULTI_ROOT_RATE (default 5 — the steady below-the-knee posture; RATE
+#                             is ignored in this mode), with attribution
 #   full                      guarded pass -> redeploy baseline -> baseline pass -> RESTORE the guarded rig
 #   ceiling                   the partial-eval list ladder: LADDER stages of LADDER_DURATION seconds,
 #                             knee per ADR 0021 §5 (p99 > 1 s OR >1% failed/dropped), early stop at the
@@ -42,6 +47,9 @@
 #   LADDER=10,25,50,100,150,200  ceiling-mode stages, req/s
 #   LADDER_DURATION=60  ceiling-mode per-stage window, seconds (ADR-pinned 60 for the official run)
 #   PHASE=60         fault-mode phase length, seconds (ADR-pinned 60; shorter for smokes)
+#   MULTI_ROOT_CATALOGS=50  multi-root mode: the seeded catalog/team count M (1..100 — one page)
+#   MULTI_ROOT_RATE=5       multi-root mode: arrival rate, req/s (the mode ignores RATE: the
+#                           pre-7.3 page costs M sequential resolves, so it must run below the knee)
 #   KEEP_FIXTURES=0  1 = skip the teardown-on-green (keep the dddd… fixtures)
 #
 # Fixtures + identity (the registry, scripts/postman/README.md):
@@ -80,6 +88,11 @@ LOAD_CATALOG_ID="dddddddd-dddd-dddd-dddd-dddddddddddd"
 LOAD_TEAM_NAME="Load test team"
 LOAD_ROLE_CODE="load"
 
+# The multi-root fixture sub-range (RESOLVE-COALESCING T1): catalog ids
+# dddddddd-dddd-dddd-dddd-dd0000000001.., distinct from BOTH the load catalog (…-dddddddddddd)
+# and its categories (…-000000000001..) — 'dd0' is the range key every reset/teardown scopes to.
+MULTI_ROOT_ID_PREFIX="dddddddd-dddd-dddd-dddd-dd0"
+
 # Knobs.
 RATE="${RATE:-50}"
 DURATION="${DURATION:-120}"
@@ -89,6 +102,8 @@ FIXTURE_ROWS="${FIXTURE_ROWS:-1000}"
 LADDER="${LADDER:-10,25,50,100,150,200}"
 LADDER_DURATION="${LADDER_DURATION:-60}"
 PHASE="${PHASE:-60}"
+MULTI_ROOT_CATALOGS="${MULTI_ROOT_CATALOGS:-50}"
+MULTI_ROOT_RATE="${MULTI_ROOT_RATE:-5}"
 KEEP_FIXTURES="${KEEP_FIXTURES:-0}"
 COMPOSE_PROJECT="opa-abac-example"
 
@@ -103,14 +118,17 @@ note() { echo "==> $*"; }
 MODE="${1:-}"
 case "$MODE" in
   -h|--help|help|"") usage; [ -n "$MODE" ] || exit 1; exit 0 ;;
-  guarded|baseline|full|ceiling|fault-supplier-transient|fault-supplier-down|fault-opa) ;;
+  guarded|baseline|full|ceiling|multi-root|fault-supplier-transient|fault-supplier-down|fault-opa) ;;
   *) usage >&2; red "unknown mode '$MODE'." ;;
 esac
 
-for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS LADDER_DURATION PHASE; do
+for knob in RATE DURATION WARMUP REPS FIXTURE_ROWS LADDER_DURATION PHASE MULTI_ROOT_CATALOGS MULTI_ROOT_RATE; do
   [[ "${!knob}" =~ ^[0-9]+$ ]] || red "$knob must be a positive integer (got '${!knob}')."
 done
 [[ "$LADDER" =~ ^[0-9]+(,[0-9]+)*$ ]] || red "LADDER must be a comma-separated list of rates (got '$LADDER')."
+# One page must carry every multi-root row (perPage is capped at 100 by the API).
+[ "$MULTI_ROOT_CATALOGS" -ge 1 ] && [ "$MULTI_ROOT_CATALOGS" -le 100 ] \
+  || red "MULTI_ROOT_CATALOGS must be 1..100 (one full page; got '$MULTI_ROOT_CATALOGS')."
 
 # The rig must end guarded on EVERY exit path, in every mode. A saturation flood can take a
 # dependency down with it (observed: OPA OOM-killed at the list-collapse point) — restart a dead
@@ -310,6 +328,94 @@ DELETE FROM catalog WHERE id = '$LOAD_CATALOG_ID';
 SQL
 }
 
+# --- multi-root fixtures (RESOLVE-COALESCING T1) --------------------------------
+# M catalogs, EACH its own governing root: its own team + a `perf` membership with a plain
+# (un-tag-gated) catalog-READ role — every row on the page must actually resolve a role, and the
+# page's cut discriminates by MEMBERSHIP (B4: the sole access path), so perf's authorized count is
+# exactly M. Catalogs are bulk SQL (the seed_fixtures idiom); teams/memberships live in the
+# user-management service and go through its bootstrap API (the matrix idiom). Deterministic,
+# idempotent (wipe-first), count-asserted, canary-probed.
+seed_multi_root_fixtures() {
+  local m="$MULTI_ROOT_CATALOGS"
+  note "seeding $m multi-root catalogs (bulk SQL, ${MULTI_ROOT_ID_PREFIX}…) ..."
+  docker exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+-- Deterministic re-seed: wipe the multi-root range and repopulate.
+DELETE FROM catalog WHERE id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';
+INSERT INTO catalog (id, name, created_at, version, tags, path)
+SELECT
+  CAST('dddddddd-dddd-dddd-dddd-dd' || lpad(i::text, 10, '0') AS uuid),
+  'Multi-root catalog ' || i,
+  now(), 0, '{}'::jsonb,
+  CAST('catalog_dddddddddddddddddddddd' || lpad(i::text, 10, '0') AS ltree)
+FROM generate_series(1, $m) AS i;
+SQL
+  local count
+  count="$(docker exec -i "$PG_CONTAINER" psql -U catalog -d catalog -tAc \
+    "SELECT count(*) FROM catalog WHERE id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")"
+  [ "$count" = "$m" ] || red "post-seed count assert failed: $count multi-root catalogs (expected $m)."
+
+  # Self-reset the team side: the multi-root teams AND the single load-catalog team — perf's
+  # membership scope must be EXACTLY the M multi-root teams (a leftover load team from a
+  # KEEP_FIXTURES/red guarded run would put an extra row on the page: a wrong measurement subject).
+  docker exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog'
+  AND (target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%' OR target_id = '$LOAD_CATALOG_ID');
+SQL
+
+  note "bootstrapping $m teams + '$PERF_USER' memberships (role '$LOAD_ROLE_CODE', catalog READ, un-gated) ..."
+  local perf_uid team_id i cat_id
+  perf_uid="$(post_json "$USER_SERVICE/internal/bootstrap/users" \
+    "{\"subject\":\"$PERF_SUB\",\"displayName\":\"$PERF_USER\"}" | json_field userId)"
+  for i in $(seq 1 "$m"); do
+    cat_id="dddddddd-dddd-dddd-dddd-dd$(printf '%010d' "$i")"
+    team_id="$(post_json "$USER_SERVICE/internal/bootstrap/teams" \
+      "{\"name\":\"Multi-root team $i\",\"targetType\":\"catalog\",\"targetId\":\"$cat_id\"}" | json_field teamId)"
+    post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+      "{\"teamId\":\"$team_id\",\"code\":\"$LOAD_ROLE_CODE\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\"]}}" >/dev/null
+    post_json "$USER_SERVICE/internal/bootstrap/memberships" \
+      "{\"teamId\":\"$team_id\",\"userId\":\"$perf_uid\",\"roleCode\":\"$LOAD_ROLE_CODE\"}" >/dev/null
+  done
+
+  # Post-bootstrap count asserts (teams + memberships) — fire-and-forget posts must land red here,
+  # never as a short page inside the measurement window.
+  count="$(docker exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -tAc \
+    "SELECT count(*) FROM team WHERE target_type = 'catalog' AND target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")"
+  [ "$count" = "$m" ] || red "post-seed team count assert failed: $count multi-root teams (expected $m)."
+  count="$(docker exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -tAc \
+    "SELECT count(*) FROM team_membership ms JOIN team t ON ms.team_id = t.id
+      WHERE t.target_type = 'catalog' AND t.target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")"
+  [ "$count" = "$m" ] || red "post-seed membership count assert failed: $count perf memberships (expected $m)."
+  note "seeded: $m catalogs / $m teams / $m memberships, counts asserted."
+
+  # Canary probes, BEFORE any load: one single-GET (the token->resolve->decide chain) and one full
+  # list page (the multi-root cut: count must be exactly M — perf's whole membership scope).
+  local code list_count
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+    -H "Authorization: Bearer $PERF_TOKEN" \
+    "$GATEWAY/api/v1/catalogs/dddddddd-dddd-dddd-dddd-dd$(printf '%010d' 1)")"
+  [ "$code" = "200" ] || red "canary probe: GET a multi-root catalog as $PERF_USER got HTTP $code (want 200) —
+  the seeded ACL chain (token -> role resolve -> OPA decide) is broken; nothing will be measured."
+  list_count="$(curl -s --max-time 15 -H "Authorization: Bearer $PERF_TOKEN" \
+    "$GATEWAY/api/v1/catalogs?perPage=100" | json_field count || echo '<unparseable>')"
+  [ "$list_count" = "$m" ] || red "canary probe: the catalogs list answers count=$list_count for $PERF_USER (want exactly $m) —
+  the page is not the seeded multi-root cut (leftover fixtures? a foreign grant on perf?); wrong measurement subject."
+  note "canary probes: single-GET 200, list count=$m — the multi-root cut is live."
+}
+
+teardown_multi_root_fixtures() {
+  if [ "$KEEP_FIXTURES" = "1" ]; then
+    note "KEEP_FIXTURES=1 — keeping the multi-root dddd… fixtures."
+    return 0
+  fi
+  note "teardown: removing the multi-root dddd… fixtures (KEEP_FIXTURES=1 keeps them) ..."
+  docker exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM team WHERE target_type = 'catalog' AND target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';
+SQL
+  docker exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
+DELETE FROM catalog WHERE id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';
+SQL
+}
+
 # --- k6 orchestration (per scenario: discarded warm-up invocation, then REPS measured runs) -----
 # k6 thresholds are validity gates: a non-zero k6 exit aborts the run red (set -e) and nothing is
 # recorded — in full mode the EXIT trap below restores the guarded rig first.
@@ -317,9 +423,11 @@ k6_run() { # $1 scenario file, $2 duration (s), $3 summary-export path, [$4 rate
   # EXPECTED_COUNT = the emea third of the fixture set (rows with i%3==1 for i in 1..N = ceil(N/3)):
   # the residual's authorized count, asserted by the list/enrichment scenarios as a validity gate —
   # a page that stops discriminating is a wrong measurement subject, never a valid number.
+  # Multi-root mode overrides it (K6_EXPECTED_COUNT): there the cut is MEMBERSHIP-scoped — exactly
+  # the M multi-root catalogs.
   k6 run --quiet \
     -e RATE="${4:-$RATE}" -e DURATION="$2" -e LADDER_STAGE="${5:-0}" \
-    -e EXPECTED_COUNT="$(( (FIXTURE_ROWS + 2) / 3 ))" \
+    -e EXPECTED_COUNT="${K6_EXPECTED_COUNT:-$(( (FIXTURE_ROWS + 2) / 3 ))}" \
     -e GATEWAY="$GATEWAY" -e PERF_TOKEN="$PERF_TOKEN" -e LOAD_CATALOG_ID="$LOAD_CATALOG_ID" \
     --summary-export "$3" \
     "$SELF_DIR/scenarios/$1"
@@ -347,6 +455,7 @@ scenario_operation() { # the catalog server-span name Jaeger indexes the scenari
   case "$1" in
     gate-overhead) echo "GET /api/v1/catalogs/{catalogId}" ;;
     list-filter|enrichment) echo "GET /api/v1/catalogs/{catalogId}/categories" ;;
+    multi-root-list) echo "GET /api/v1/catalogs" ;;
     *) red "no Jaeger operation mapping for scenario '$1'" ;;
   esac
 }
@@ -612,6 +721,20 @@ case "$MODE" in
     seed_fixtures                # post-seed count assert = the fixture dependency gate before stage 1
     run_ceiling_ladder
     teardown_fixtures
+    ;;
+  multi-root)
+    # The mode pins its own rate: the pre-7.3 multi-root page costs M sequential resolves, so the
+    # standard RATE=50 would saturate the very path under measurement (the 7.2 knee discipline —
+    # steady numbers are taken below the knee).
+    RATE="$MULTI_ROOT_RATE"
+    K6_EXPECTED_COUNT="$MULTI_ROOT_CATALOGS"
+    preflight
+    assert_pod_state "true"      # guarded only — the scenario measures the library's resolve path
+    assert_gateway_posture
+    mint_perf_token
+    seed_multi_root_fixtures
+    run_scenario_pass "multi-root-list" "guarded"
+    teardown_multi_root_fixtures
     ;;
   baseline)
     preflight

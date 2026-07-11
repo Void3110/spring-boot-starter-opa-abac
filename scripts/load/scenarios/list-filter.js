@@ -9,9 +9,12 @@
 //   - steady (default): validity gates like gate-overhead — all-200, zero errors, zero dropped
 //     iterations. A violated gate exits non-zero and the runner records nothing.
 //   - LADDER_STAGE=1 (ceiling mode): saturation signals — errors, drops, slow p99 — are the DATA
-//     the knee function evaluates, so they must be recorded, not fatal. The one validity gate kept
-//     is auth_failures==0: a 401/403 means the rig/ACL chain is broken, and that must land RED,
-//     never masquerade as an instant knee.
+//     the knee function evaluates, so they must be recorded, not fatal. Since the gateway's OPA
+//     plugin carries a BOUNDED timeout (Slice 7.3), a saturation-adjacent OPA stall surfaces as a
+//     timeout-DENY (403) — so 401/403s are saturation DATA here too, feeding the knee's >1%-failed
+//     signal (auth_failures stays a recorded counter for attribution). The broken-ACL-chain guard
+//     is the seed-time canary probe, which lands red BEFORE any ladder stage; the one validity
+//     gate kept is wrong_count==0 (a non-discriminating page is a wrong measurement subject).
 import http from 'k6/http';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
@@ -44,9 +47,9 @@ export const options = {
   },
   thresholds: LADDER_STAGE
     ? {
-        // Ceiling stage: drops/errors/latency are knee signals, not validity failures —
-        // but auth failures and a non-discriminating residual are broken-rig signals: red.
-        auth_failures: ['count==0'],
+        // Ceiling stage: drops/errors/latency — and, with the bounded gateway OPA timeout,
+        // timeout-DENIES — are knee signals, not validity failures. The broken-chain guard is
+        // the seed canary; only a non-discriminating residual is red here.
         wrong_count: ['count==0'],
       }
     : {

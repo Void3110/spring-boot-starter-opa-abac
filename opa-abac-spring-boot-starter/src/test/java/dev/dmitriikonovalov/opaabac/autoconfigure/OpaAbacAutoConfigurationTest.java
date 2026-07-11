@@ -83,10 +83,11 @@ class OpaAbacAutoConfigurationTest {
                 });
     }
 
-    @Test // U32 — user @Bean OpaClient / RoleDefinitionSupplier → starter backs off. Resilience off here so
-    // the assertion sees the raw override (the B3 decorator otherwise wraps it — see userOpaClient_isWrapped).
+    @Test // U32 — user @Bean OpaClient / RoleDefinitionSupplier → starter backs off. Resilience AND the
+    // 7.3 resolve memo off here so the assertions see the raw overrides (the B3/ADR-0023 decorators
+    // otherwise wrap them — see userOpaClient_isWrapped / OpaResolveMemoAutoConfigurationTest).
     void userBeansWin() {
-        runner.withPropertyValues("opa.abac.resilience.enabled=false")
+        runner.withPropertyValues("opa.abac.resilience.enabled=false", "opa.abac.resolve-memo.enabled=false")
                 .withUserConfiguration(UserOverrides.class).run(context -> {
                     assertThat(context).hasSingleBean(OpaClient.class);
                     assertThat(context.getBean(OpaClient.class)).isInstanceOf(StubOpaClient.class);
@@ -129,9 +130,9 @@ class OpaAbacAutoConfigurationTest {
                 });
     }
 
-    @Test // default supplier is the no-op
+    @Test // default supplier is the no-op (memo off so the assertion sees the raw default — ADR 0023 wraps it)
     void defaultSupplier_isNoOp() {
-        runner.run(context ->
+        runner.withPropertyValues("opa.abac.resolve-memo.enabled=false").run(context ->
                 assertThat(context.getBean(RoleDefinitionSupplier.class)).isInstanceOf(NoOpRoleDefinitionSupplier.class));
     }
 
@@ -221,7 +222,8 @@ class OpaAbacAutoConfigurationTest {
 
     @Test // enabled + an ltree path source → the ltree resolver + the authorizer
     void hierarchyLtreeResolver_whenEnabledWithPathSource() {
-        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+        // resolve memo off so the assertion sees the SELECTED impl (the ADR-0023 decorator otherwise wraps it)
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true", "opa.abac.resolve-memo.enabled=false")
                 .withUserConfiguration(LtreeSourceConfig.class)
                 .run(context -> {
                     assertThat(context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class))
@@ -235,7 +237,8 @@ class OpaAbacAutoConfigurationTest {
     void hierarchyCteResolver_whenSelectedWithParentSource() {
         runner.withPropertyValues(
                         "opa.abac.hierarchy.enabled=true",
-                        "opa.abac.hierarchy.resolver=cte")
+                        "opa.abac.hierarchy.resolver=cte",
+                        "opa.abac.resolve-memo.enabled=false") // memo off: assert the selected impl
                 .withUserConfiguration(CteSourceConfig.class)
                 .run(context -> assertThat(
                         context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class))
@@ -252,7 +255,8 @@ class OpaAbacAutoConfigurationTest {
 
     @Test // an app-supplied AncestorResolver overrides the auto one
     void userAncestorResolverWins() {
-        runner.withPropertyValues("opa.abac.hierarchy.enabled=true")
+        // resolve memo off so isSameAs sees the raw override (the ADR-0023 decorator otherwise wraps it)
+        runner.withPropertyValues("opa.abac.hierarchy.enabled=true", "opa.abac.resolve-memo.enabled=false")
                 .withUserConfiguration(LtreeSourceConfig.class, UserResolverConfig.class)
                 .run(context -> assertThat(
                         context.getBean(dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver.class))

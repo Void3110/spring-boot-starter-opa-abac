@@ -28,6 +28,8 @@ cd scripts/load
 ./run-load.sh baseline         # the unguarded pass (rig must be ENABLE_OPA=0 — asserted, not trusted)
 ./run-load.sh full             # guarded -> redeploy baseline -> measure -> RESTORE guarded (the headline delta)
 ./run-load.sh ceiling          # the partial-eval list ladder (knee detection, early stop)
+./run-load.sh multi-root       # the multi-root catalogs-list scenario (7.3): M own-root rows/page
+
 ./run-load.sh fault-opa        # three-phase fault pass (docker pause on OPA)
 ./run-load.sh fault-supplier-transient   # three-phase fault pass (B3 stub, transient)
 ./run-load.sh fault-supplier-down        # three-phase fault pass (B3 stub, down)
@@ -45,6 +47,8 @@ cd scripts/load
 | `LADDER` | `10,25,50,100,150,200` | Ceiling-mode stages (req/s) |
 | `LADDER_DURATION` | `60` | Ceiling-mode per-stage window (s); ADR-pinned 60 for the official run |
 | `PHASE` | `60` | Fault-mode phase length (s); ADR-pinned 60 — shorter for smokes |
+| `MULTI_ROOT_CATALOGS` | `50` | Multi-root mode: the seeded catalog/team count M (1–100 — one page) |
+| `MULTI_ROOT_RATE` | `5` | Multi-root mode's arrival rate (req/s) — the mode ignores `RATE`: pre-7.3 the page costs M sequential resolves, so it must run below the knee |
 | `KEEP_FIXTURES` | `0` | `1` = skip the teardown-on-green (keep the `dddd…` fixtures) |
 
 ## Fixtures + identity (registry-reserved)
@@ -55,8 +59,15 @@ Both live in the fixture registry (`scripts/postman/README.md`) — the cross-ma
   `region=emea`) + `FIXTURE_ROWS` bulk-seeded categories, tags cycling `emea/apac/amer` so the
   partial-eval residual **discriminates**. Deterministic ids, post-seed count asserted,
   teardown-on-green.
+- **`dddd…-dd0…`** (multi-root mode, 7.3) — `MULTI_ROOT_CATALOGS` catalogs
+  (`dddddddd-dddd-dddd-dddd-dd0000000001` …), **each with its own team and a `perf` membership**
+  (an un-gated catalog-READ role) so every page row is its own governing root and actually
+  resolves a role. The list cut is membership-scoped: perf's authorized `count` is exactly M —
+  seed-time canary + count asserts enforce it (the mode also self-resets the single load-catalog
+  team, which would otherwise add a foreign row to the page). Same determinism/teardown rules.
 - **`perf`** (password `perf`) — the reserved load identity: one membership on the load team, a
-  tag-gated (`region=emea`, `ANY_OF`) read/write role. No matrix may bind or assert on her.
+  tag-gated (`region=emea`, `ANY_OF`) read/write role — plus, in multi-root mode, the M
+  multi-root team memberships. No matrix may bind or assert on her.
 
 ## Validity posture
 
@@ -79,14 +90,21 @@ The published baseline lives in the root [`PERFORMANCE.md`](../../PERFORMANCE.md
    `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`. The validity gates REFUSE a
    degraded rig (a prior saturation event leaves thrashed JVMs / open breakers / a bloated trace
    store) rather than record it — redeploy instead of retrying.
-3. `REPS=3 ./run-load.sh full`, then `ceiling`, then the three `fault-*` modes.
+3. `REPS=3 ./run-load.sh full`, then `RATE=5 DURATION=30 REPS=3 ./run-load.sh guarded` (the
+   below-the-knee steady numbers + attribution), then `ceiling`, then
+   `DURATION=30 REPS=3 ./run-load.sh multi-root`, then the three `fault-*` modes.
 4. Scenarios that exceed a measured ceiling get their steady numbers below the knee, explicitly
-   labeled (the official baseline used 5 req/s for list/enrichment — see PERFORMANCE.md §2/§3).
+   labeled (the official baseline uses 5 req/s for list/enrichment — see PERFORMANCE.md §2/§3).
+   A rig that has been through a saturation stage needs a **pod restart + fresh trace store**
+   before the next official window (thrashed JVMs / bloated Badger read as degraded-rig red).
 
 ## Offline tests
 
 `tests/test-offline.sh` runs the no-rig checks (script syntax; the analysis functions against the
 committed synthetic fixtures — `knee.py` over `tests/knee-cases/`). In ceiling-ladder stages,
 saturation signals (slow p99, errors, dropped iterations) are recorded **data** for the knee
-function; the one validity gate kept is `auth_failures == 0` — a 401/403 means a broken rig/ACL
-chain and lands red, never an instant fake knee.
+function — and since 7.3 that includes 401/403s: the gateway's OPA plugin carries a **bounded
+timeout**, so a saturation-adjacent OPA stall surfaces as a timeout-*deny* feeding the knee's
+`>1 % failed` signal. The broken-ACL-chain guard is the seed-time **canary probe** (red before any
+stage runs); the one k6 validity gate kept in ladder stages is `wrong_count == 0` (a page that
+stops discriminating is a wrong measurement subject).

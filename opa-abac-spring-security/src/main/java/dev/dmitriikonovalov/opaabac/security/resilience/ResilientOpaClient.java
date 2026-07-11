@@ -24,11 +24,18 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>{@code compile} retries iff {@link PartialResult#fromError()} — the <em>exact</em> failure signal,
  *       cleanly distinct from a real {@code denyAll()} ({@code fromError==false}, a genuine "no rows").</li>
- *   <li>{@code allow} retries on {@code false}, {@code allowAll} retries when <em>any</em> element is
- *       {@code false}. A genuine policy deny <em>also</em> retries — but the OPA gate is a local sidecar at
+ *   <li>{@code allow} retries on {@code false}. A genuine policy deny <em>also</em> retries — a single
+ *       boolean has no way to tell the sentinel from a real deny — but the OPA gate is a local sidecar at
  *       a 1-retry / ~50ms budget, an OPA decision is deterministic (a real deny stays {@code false}, never
- *       widens), so the cost is one extra fast hop on a deny while a transient blip recovers the real answer.
- *       Fail-closed is preserved in every case — resilience makes outages rarer, never wider.</li>
+ *       widens), so the cost is one extra fast hop on a deny while a transient blip recovers the real answer.</li>
+ *   <li>{@code allowAll} retries iff the block is <strong>all-{@code false}</strong> — the exact value the
+ *       delegate pads on a transport/parse failure — never on a <em>mixed</em> block: per-element verdicts
+ *       can only come from a real {@code 200}, so a mixed block is a real answer and retrying it would put
+ *       a retry + backoff on every honest affordance page that contains a single denied verb (measured in
+ *       Slice 7.3: it doubled the bulk-eval load and multiplied steady enrichment latency ~8×). A genuine
+ *       all-false page (rare — the enrichment advice omits those blocks anyway) pays one extra fast hop,
+ *       exactly like a genuine {@code allow} deny. Fail-closed is preserved in every case — resilience
+ *       makes outages rarer, never wider.</li>
  * </ul>
  *
  * <h2>The decorator OWNS the fail-closed values (breaker-open + exhausted-retry)</h2>
@@ -94,12 +101,15 @@ public final class ResilientOpaClient implements OpaClient {
         }
         int n = contexts.size();
         try {
-            // Retry while any element is the fail-closed sentinel (false) — the same recover-or-stay-denied
-            // logic as allow, batched. The delegate already fails the whole batch closed on a length mismatch.
+            // Retry iff the block is the fail-closed sentinel: ALL-false (what the delegate pads on a
+            // transport/parse failure) or null/short. A MIXED block is a real 200 answer — never retried
+            // (retrying it would tax every honest page carrying one denied verb; see the class javadoc).
             return guard.call(
                     () -> delegate.allowAll(contexts),
                     retryableError,
-                    decisions -> decisions == null || decisions.contains(Boolean.FALSE));
+                    decisions -> decisions == null
+                            || decisions.size() != n
+                            || !decisions.contains(Boolean.TRUE));
         } catch (CallNotPermittedException e) {
             log.warn("OPA bulk fail-closed: circuit breaker open (denying all {})", n);
             return allFalse(n);

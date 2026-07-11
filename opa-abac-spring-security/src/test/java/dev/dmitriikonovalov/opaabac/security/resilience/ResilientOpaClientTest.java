@@ -215,6 +215,56 @@ class ResilientOpaClientTest {
                 .isGreaterThanOrEqualTo(20);
     }
 
+    // --- 7.3: the allowAll retry sentinel is ALL-false, never a mixed block ----------------
+
+    @Test // a MIXED block is a real 200 answer — returned after EXACTLY ONE delegate call
+    void allowAll_mixedBlockIsNeverRetried() {
+        MixedThenAllTrueOpaClient mixed = new MixedThenAllTrueOpaClient(List.of(true, false, true));
+        ResilientOpaClient decorated = new ResilientOpaClient(mixed, guard(opaBudget()));
+
+        List<Boolean> verdicts = decorated.allowAll(List.of(ctx(), ctx(), ctx()));
+
+        assertThat(verdicts).containsExactly(true, false, true);
+        assertThat(mixed.calls).as("an honest denied verb must not tax the page with a retry").isEqualTo(1);
+    }
+
+    @Test // an ALL-false block IS the transport sentinel — retried, and a recovery returns the real answer
+    void allowAll_allFalseBlockRetriesAndRecovers() {
+        MixedThenAllTrueOpaClient sentinel = new MixedThenAllTrueOpaClient(List.of(false, false));
+        ResilientOpaClient decorated = new ResilientOpaClient(sentinel, guard(opaBudget()));
+
+        List<Boolean> verdicts = decorated.allowAll(List.of(ctx(), ctx()));
+
+        assertThat(verdicts).as("the retry recovered the real answer").containsExactly(true, true);
+        assertThat(sentinel.calls).isEqualTo(2);
+    }
+
+    /** First call answers the scripted block; every later call answers all-true (a recovery). */
+    private static final class MixedThenAllTrueOpaClient implements OpaClient {
+        private final List<Boolean> firstAnswer;
+        int calls = 0;
+
+        MixedThenAllTrueOpaClient(List<Boolean> firstAnswer) {
+            this.firstAnswer = firstAnswer;
+        }
+
+        @Override
+        public boolean allow(AbacContext context) {
+            return true;
+        }
+
+        @Override
+        public PartialResult compile(AbacContext context) {
+            return PartialResult.allowAll();
+        }
+
+        @Override
+        public List<Boolean> allowAll(List<AbacContext> contexts) {
+            calls++;
+            return calls == 1 ? firstAnswer : java.util.Collections.nCopies(contexts.size(), true);
+        }
+    }
+
     /** A delegate that counts invocations and can return the fail-closed sentinel OR throw a fault. */
     private static final class CountingOpaClient implements OpaClient {
         volatile boolean failClosed = false;
