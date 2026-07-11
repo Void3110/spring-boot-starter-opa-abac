@@ -184,6 +184,80 @@ has_required_tags if {
 }
 
 # ---------------------------------------------------------------------------
+# List filtering entrypoint (partial-evaluation friendly) — the category.rego block, ported when
+# products became taggable: the plain product list page lost its "rows have no policy variance"
+# justification, so the which-rows cut moves into SQL exactly as for categories.
+#
+# `filter` is the rule the app's Compile API call partially-evaluates with the RESOURCE declared
+# unknown (unknowns=["input.resource"]), so OPA returns the residual conditions a row must satisfy —
+# which become a JPA Specification over the `tags` JSONB column.
+#
+# TWO deliberate differences from `allow` (see category.rego for the full prose):
+#   1. ROLE-DEFINITION-ONLY — no subject-roles fallback; no role definition compiles to an
+#      UNSATISFIABLE residual -> DENY_ALL -> an EMPTY list, never the whole table (fail-closed).
+#   2. PARTIAL-EVAL-FRIENDLY tag match — `filter_tags_satisfied` uses the membership/equality pair
+#      below so the residual reduces to a CLEAN predicate (eq / member) the residual translator
+#      supports; the membership compiles to the `?` existence operator, matching BOTH a scalar and
+#      an array tag — so the list and a single-GET agree on which rows are visible.
+#
+# The permission-category expansion is INLINE (the PE-friendly idiom): OPA's partial evaluator does
+# not inline user functions over an unknown argument, so a permissions.effective_actions call would
+# leave un-foldable comprehensions in the residual and every list would degrade to the batch
+# fallback. The role + table are fully known at compile time, so the chain folds to the type-eq
+# tautology + the tag conditions. A role carrying a DENIAL degrades FAIL-CLOSED to the batch
+# recheck (the surviving `not filter_list_denied` is a negated type-eq → unsupported residual).
+# ---------------------------------------------------------------------------
+
+default filter := false
+
+filter if {
+	has_role_definition
+	some token in input.role_definition.permissions[input.resource.type]
+	"list" in data.permission_categories[token]
+	not filter_list_denied
+	filter_tags_satisfied
+}
+
+# The role explicitly withholds "list" for this type (deny-overrides at the list boundary).
+filter_list_denied if {
+	"list" in input.role_definition.denied_actions[input.resource.type]
+}
+
+# No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).
+filter_tags_satisfied if {
+	not has_required_tags
+}
+
+# A required key is satisfied for a SCALAR tag by equality, for an ARRAY tag by membership — two
+# bodies so BOTH cases hold concretely AND the residual is a clean DNF:
+#   `(attr == v)` -> jsonb_extract_path_text(...) = v   (scalar);
+#   `v in attr`   -> jsonb_exists(...) (the `?` op)      (array — also matches a scalar string).
+filter_key_satisfied(key, acceptable) if {
+	some v in acceptable
+	input.resource.attributes[key] == v
+}
+
+filter_key_satisfied(key, acceptable) if {
+	some v in acceptable
+	v in input.resource.attributes[key]
+}
+
+# ANY_OF: SOME required key is satisfied.
+filter_tags_satisfied if {
+	input.role_definition.match_mode == "ANY_OF"
+	some key, acceptable in input.role_definition.required_tags
+	filter_key_satisfied(key, acceptable)
+}
+
+# ALL_OF: every required key is satisfied.
+filter_tags_satisfied if {
+	input.role_definition.match_mode == "ALL_OF"
+	every key, acceptable in input.role_definition.required_tags {
+		filter_key_satisfied(key, acceptable)
+	}
+}
+
+# ---------------------------------------------------------------------------
 # Phase 5 batch primitive — the bulk decision entrypoint, extended to product for action enrichment
 # (Phase 6). `bulk` evaluates `allow` for each item in a list input ({"input": {"items": [<ctx>, …]}})
 # and returns a positional list of booleans — the same shared primitive the data-filtering allowlist

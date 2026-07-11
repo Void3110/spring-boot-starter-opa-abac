@@ -9,6 +9,8 @@ import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
+import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
+import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -76,6 +78,7 @@ class ActionEnrichmentListIT {
     @Autowired MockMvc mockMvc;
     @Autowired CatalogRepository catalogs;
     @MockitoSpyBean CategoryRepository categories; // a spy → I1 proves the advice never re-loaded a row
+    @MockitoSpyBean ProductRepository products;    // same proof for the product list (I3)
     @Autowired CatalogHierarchyService hierarchy;
 
     @BeforeEach
@@ -128,6 +131,40 @@ class ActionEnrichmentListIT {
                 .andExpect(jsonPath("$.items[?(@.name=='apac-cat')]._actions.view").value(true));
     }
 
+    // --- I3: the product list (taggable products — deep-review fix) --------------
+    // The plain page's manual per-row cache seeding is gone; the filtered path's survivors must
+    // write-through instead, or product lists silently lose `_actions`. Same two proofs as the
+    // category cells, on the product endpoint: no second SELECT, and per-row maps reflect each
+    // row's own tags — including the NEW assign-tags verb.
+
+    @Test // I3 — a product page enriches from the filter survivors: no re-load, per-row tag-true maps
+    void productListEnrichesFromFilterSurvivors() throws Exception {
+        var catalog = seedCatalog();
+        var cat = seedCategory(catalog.getId(), null, "prod-cat", Map.of());
+        seedProduct(cat.getId(), "emea-prod", Map.of("region", "emea"));
+        seedProduct(cat.getId(), "apac-prod", Map.of("region", "apac"));
+        // the coarse list gate + view always allowed; update/assign-tags allowed only for emea rows
+        ProgrammableOpaClient.perContextRule = ctx -> ctx.action().endsWith(":list")
+                || ctx.action().endsWith(":view")
+                || "emea".equals(ctx.resource().attributes().get("region"));
+        org.mockito.Mockito.clearInvocations(products);
+
+        mockMvc.perform(get("/api/v1/catalogs/{c}/categories/{cat}/products", catalog.getId(), cat.getId())
+                        .queryParam("perPage", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[?(@.name=='emea-prod')]._actions.view").value(true))
+                .andExpect(jsonPath("$.items[?(@.name=='apac-prod')]._actions.view").value(true))
+                .andExpect(jsonPath("$.items[?(@.name=='emea-prod')]._actions.update").value(true))
+                .andExpect(jsonPath("$.items[?(@.name=='apac-prod')]._actions.update").value(false))
+                .andExpect(jsonPath("$.items[?(@.name=='emea-prod')]._actions.['assign-tags']").value(true))
+                .andExpect(jsonPath("$.items[?(@.name=='apac-prod')]._actions.['assign-tags']").value(false));
+
+        // The advice reads each row from the write-through cache — never a re-load by id.
+        org.mockito.Mockito.verify(products, org.mockito.Mockito.never())
+                .findById(org.mockito.ArgumentMatchers.any());
+    }
+
     // --- seeding ----------------------------------------------------------------
 
     private CatalogEntity seedCatalog() {
@@ -143,6 +180,15 @@ class ActionEnrichmentListIT {
         }
         hierarchy.assignPath(entity);
         return categories.save(entity);
+    }
+
+    private ProductEntity seedProduct(UUID categoryId, String name, Map<String, Object> tags) {
+        var entity = new ProductEntity(UUID.randomUUID(), categoryId, name, null, "SKU-1", 100L, "USD");
+        if (!tags.isEmpty()) {
+            entity.setTags(ResourceTags.fromMap(tags));
+        }
+        hierarchy.assignPath(entity);
+        return products.save(entity);
     }
 
     // --- the test doubles ---------------------------------------------------------

@@ -179,23 +179,24 @@ two **owner-only-by-code** fences, keyed on the reserved `owner` code (unspoofab
 ## The TAG/WRITE boundary: the delta-dispatched second decision
 
 A static `@OpaPreAuthorize(<type>:update)` cannot express "TAG-without-WRITE relabels but never
-edits", so the **category update** handler dispatches on what the request actually changes, via
-the annotated `TagDecisionGate` bean (the manager seam + the 5.97 request cache reused — zero
-library change):
+edits", so every **update** handler whose request carries tags dispatches on what the request
+actually changes, via the annotated `TagDecisionGate` bean (the manager seam + the 5.97 request
+cache reused — zero library change):
 
-- content delta → the `category:update` decision;
-- tags delta → the `category:assign-tags` decision;
+- content delta → the `<type>:update` decision;
+- tags delta → the `<type>:assign-tags` decision;
 - both → both (update first); an **empty delta → `update`** (conservative — a no-op PUT by a
   TAG-only holder answers 403).
 
-Create keeps its static `category:create` annotation plus a conditional **type-level**
-`assign-tags` decision when the request carries tags. All decisions precede the version guard,
-the tag validation, and any mutation. The dispatch lives on the **category** handlers only —
-catalog/product requests carry no tags field, so their PUTs keep a static `<type>:update` (and,
-because the load necessarily precedes an in-handler dispatch, the category PUT's missing-id
-answer is the handler's **404**; the annotated GET keeps the 5.97 **403** pin). The accepted
-trade-off of that 404: the category PUT is an **id-existence oracle** for callers with no grant
-(missing id → 404, existing-but-denied → 403) — deliberate and bounded to this one endpoint;
+Create keeps its static `<type>:create` annotation plus a conditional **type-level**
+`assign-tags` decision when the request carries tags (categories and products; a catalog create
+takes no tags — its governing team doesn't exist yet). All decisions precede the version guard,
+the tag validation, and any mutation. The dispatch lives on **all three resource PUTs** —
+category (Phase 6.5), catalog (ADR 0022, taggable roots), product (taggable products) — and,
+because the load necessarily precedes an in-handler dispatch, each dispatched PUT's missing-id
+answer is the handler's **404**; the annotated GET keeps the 5.97 **403** pin. The accepted
+trade-off of that 404: a dispatched PUT is an **id-existence oracle** for callers with no grant
+(missing id → 404, existing-but-denied → 403) — deliberate and bounded to the dispatched PUTs;
 every statically annotated handler keeps the uniform 403.
 
 ## `define-tags`: enforcement closed (Phase 6.7)

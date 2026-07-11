@@ -8,9 +8,13 @@
 # sees NONE (the `filter` rule has no subject-roles fallback, so a missing role fails CLOSED to an empty
 # list, never the whole table). The decisive contrast is the row SET, not a single 200/403.
 #
+# Taggable products (ADR 0025): the SAME four-way contrast also runs against the product list
+# (GET .../categories/{id}/products) — three region-tagged products under an untagged holder
+# category, cut by product.rego's `filter` through the identical residual→SQL path.
+#
 # Prereq: the full rig is up WITH OIDC + OPA + the user-service:
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
-# Restart OPA after editing category.rego (--watch doesn't always reload).
+# Restart OPA after editing category.rego / product.rego (--watch doesn't always reload).
 #
 # How it wires the demo data at run time (ids/subjects are only known after tokens are minted and rows
 # created):
@@ -18,13 +22,15 @@
 #      realm user with NO team membership>);
 #   2. seed a fixed demo catalog row into the catalog DB (the team-target);
 #   3. via the user-service internal API, create a team for that catalog and bind: owner->a `curator`
-#      role (ungated category read+write — the allow-all subject; the system `owner` grants only `catalog`
-#      verbs, so it can't read categories), reader-emea->a role requiring region ANY_OF [emea],
-#      reader-apac->a role requiring region ANY_OF [apac]. The stranger is deliberately NOT bound;
+#      role (ungated category+product read+write — the allow-all subject; the system `owner` grants only
+#      `catalog` verbs, so it can't read categories), reader-emea->a role requiring region ANY_OF [emea],
+#      reader-apac->a role requiring region ANY_OF [apac] (both with category+product READ — the
+#      subject-side requiredTags gate BOTH types uniformly). The stranger is deliberately NOT bound;
 #   4. via the GATEWAY (curator token), create three Categories tagged region=emea / region=apac /
-#      region=amer;
-#   5. run newman: reader-emea sees only emea, reader-apac sees only apac (a DIFFERENT set), curator sees
-#      all three, stranger sees none.
+#      region=amer, plus an UNTAGGED "Products" category holding three products tagged region=emea /
+#      region=apac / region=amer (tag-on-create asks the type-level product:assign-tags — curator's TAG);
+#   5. run newman: per type, reader-emea sees only emea, reader-apac sees only apac (a DIFFERENT set),
+#      curator sees all rows, stranger is denied at the coarse gate.
 #
 # Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps the
 # runtime-captured ids in the collection variable scope.
@@ -95,6 +101,12 @@ create_category() {
     -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body" \
     | json_field id
 }
+create_product() {
+  local token="$1" category_id="$2" body="$3"
+  curl -s -X POST "$GATEWAY/api/v1/catalogs/$DEMO_CATALOG_ID/categories/$category_id/products" \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body" \
+    | json_field id
+}
 
 # --- mint tokens -------------------------------------------------------------
 echo "==> Minting owner/reader-emea/reader-apac/stranger tokens in-network ($NETWORK) ..."
@@ -137,11 +149,11 @@ TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Filte
 # permissions[category] — would see nothing under it. The demo's "allow-all" subject needs an UNGATED
 # `category` read (no requiredTags), so it gets a custom curator role with category read+write.
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"curator\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"curator\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"],\"product\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"emea-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"emea-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"],\"product\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"apac-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"apac\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"apac-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"],\"category\":[\"READ\"],\"product\":[\"READ\"]},\"requiredTags\":{\"region\":[\"apac\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"curator\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_EMEA_UID\",\"roleCode\":\"emea-reader\"}" >/dev/null
@@ -160,6 +172,22 @@ for pair in "emea:$EMEA_CATEGORY_ID" "apac:$APAC_CATEGORY_ID" "amer:$AMER_CATEGO
   [ -n "$id" ] && [ "$id" != "None" ] || { echo "ERROR: failed to create the '$name' Category. Is the owner write path working?" >&2; exit 1; }
 done
 
+# --- create three region-tagged Products via the gateway (ADR 0025) ----------
+# The holder category is UNTAGGED so the product rows alone drive each reader's cut; the tagged
+# creates exercise tag-on-create (the type-level product:assign-tags decision on top of create).
+echo "==> Creating an untagged holder Category + three region-tagged Products through the gateway ..."
+PRODUCTS_CATEGORY_ID="$(create_category "$OWNER_TOKEN" '{"name":"Products"}')"
+[ -n "$PRODUCTS_CATEGORY_ID" ] && [ "$PRODUCTS_CATEGORY_ID" != "None" ] || {
+  echo "ERROR: failed to create the holder Category for products." >&2; exit 1; }
+EMEA_PRODUCT_ID="$(create_product "$OWNER_TOKEN" "$PRODUCTS_CATEGORY_ID" '{"name":"EMEA widget","priceCents":1000,"currency":"USD","tags":{"region":["emea"]}}')"
+APAC_PRODUCT_ID="$(create_product "$OWNER_TOKEN" "$PRODUCTS_CATEGORY_ID" '{"name":"APAC widget","priceCents":1000,"currency":"USD","tags":{"region":["apac"]}}')"
+AMER_PRODUCT_ID="$(create_product "$OWNER_TOKEN" "$PRODUCTS_CATEGORY_ID" '{"name":"AMER widget","priceCents":1000,"currency":"USD","tags":{"region":["amer"]}}')"
+echo "  products: emea=$EMEA_PRODUCT_ID apac=$APAC_PRODUCT_ID amer=$AMER_PRODUCT_ID (category $PRODUCTS_CATEGORY_ID)"
+for pair in "emea:$EMEA_PRODUCT_ID" "apac:$APAC_PRODUCT_ID" "amer:$AMER_PRODUCT_ID"; do
+  name="${pair%%:*}"; id="${pair#*:}"
+  [ -n "$id" ] && [ "$id" != "None" ] || { echo "ERROR: failed to create the '$name' Product. Is tag-on-create working?" >&2; exit 1; }
+done
+
 # --- run newman --------------------------------------------------------------
 mkdir -p "$REPORT_DIR/$RUN_ID"
 echo "==> newman run $COLLECTION (data-filtering matrix through the gateway)"
@@ -170,6 +198,10 @@ newman run "$COLLECTION" \
   --env-var "emea_category_id=$EMEA_CATEGORY_ID" \
   --env-var "apac_category_id=$APAC_CATEGORY_ID" \
   --env-var "amer_category_id=$AMER_CATEGORY_ID" \
+  --env-var "products_category_id=$PRODUCTS_CATEGORY_ID" \
+  --env-var "emea_product_id=$EMEA_PRODUCT_ID" \
+  --env-var "apac_product_id=$APAC_PRODUCT_ID" \
+  --env-var "amer_product_id=$AMER_PRODUCT_ID" \
   --env-var "owner_token=$OWNER_TOKEN" \
   --env-var "reader_emea_token=$READER_EMEA_TOKEN" \
   --env-var "reader_apac_token=$READER_APAC_TOKEN" \

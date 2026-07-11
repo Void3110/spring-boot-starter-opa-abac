@@ -38,6 +38,7 @@ export interface Product {
   sku?: string
   priceCents?: number
   currency?: string
+  tags?: Tags
   _actions?: Actions
 }
 
@@ -200,7 +201,7 @@ export function createCategory(
 export function createProduct(
   catalogId: string,
   categoryId: string,
-  body: { name: string; priceCents: number; currency: string; description?: string },
+  body: { name: string; priceCents: number; currency: string; description?: string; tags?: Tags },
 ): Promise<Product> {
   return request<Product>(`/api/v1/catalogs/${catalogId}/categories/${categoryId}/products`, {
     method: 'POST',
@@ -237,11 +238,13 @@ export function deleteCategory(catalogId: string, id: string): Promise<void> {
   return request<void>(`/api/v1/catalogs/${catalogId}/categories/${id}`, { method: 'DELETE' })
 }
 
+// Products carry the same PUT-replace semantics as catalogs/categories now that they are taggable:
+// ABSENT tags mean "clear all tags" — echo the current tags back unless clearing is the intent.
 export function updateProduct(
   catalogId: string,
   categoryId: string,
   id: string,
-  patch: { name: string; description?: string; priceCents?: number; currency?: string },
+  patch: { name: string; description?: string; sku?: string; priceCents?: number; currency?: string; tags?: Tags },
 ): Promise<Product> {
   return request<Product>(`/api/v1/catalogs/${catalogId}/categories/${categoryId}/products/${id}`, {
     method: 'PUT',

@@ -485,6 +485,15 @@ function CategoryDetail({
   onUp: () => void
 }) {
   const prods = useAsync(() => listProducts(catalog.id, category.id), [catalog.id, category.id])
+  // Same dictionary resolution as CatalogDetail: a product's governing team is its catalog's, so
+  // the tag pickers here are driven by the catalog-resolved team dictionary.
+  const tagDefs = useAsync(async () => {
+    const teams = await lookupTeamByTarget('catalog', catalog.id)
+    const team = teams.items[0]
+    if (!team) return null
+    return listTeamTagDefinitions(team.id)
+  }, [catalog.id])
+  const [tagEditing, setTagEditing] = useState<string | null>(null)
   return (
     <div>
       <Breadcrumbs
@@ -501,15 +510,19 @@ function CategoryDetail({
           { key: 'name', placeholder: 'Product name', required: true },
           { key: 'price', placeholder: 'Price in USD (e.g. 19.99)', required: true },
         ]}
-        onCreate={async (v) => {
+        tagDefs={tagDefs.data?.items}
+        onCreate={async (v, tags) => {
           const priceCents = Math.round(Number(v.price) * 100)
           if (!Number.isFinite(priceCents) || priceCents < 0) {
             throw new Error('price must be a non-negative number like 19.99')
           }
+          // Tags ride the create only when set: tag-on-create asks the TYPE-LEVEL assign-tags
+          // decision on top of the create gate — an empty map shouldn't ask it.
           await createProduct(catalog.id, category.id, {
             name: v.name.trim(),
             priceCents,
             currency: 'USD',
+            tags: Object.keys(tags).length > 0 ? tags : undefined,
           })
           prods.reload()
         }}
@@ -530,22 +543,53 @@ function CategoryDetail({
                 </span>
               )}
             </div>
+            <TagLine tags={p.tags} />
             <div className="mt-3">
               <ActionButtons
                 actions={p._actions}
+                opens={{ 'assign-tags': () => setTagEditing(tagEditing === p.id ? null : p.id) }}
                 onAct={async (verb) => {
                   if (verb === 'update')
                     await updateProduct(catalog.id, category.id, p.id, {
                       name: p.name,
                       description: `edited @ ${new Date().toISOString()}`,
-                      // PUT is a full replace — echo the price fields so they aren't nulled.
+                      // PUT is a full replace — echo the sku/price fields AND the tags, or the
+                      // server reads their absence as "clear them" (the delta dispatch).
+                      sku: p.sku,
                       priceCents: p.priceCents,
                       currency: p.currency,
+                      tags: p.tags ?? {},
                     })
                   else if (verb === 'delete') await deleteProduct(catalog.id, category.id, p.id)
                   prods.reload()
                 }}
               />
+              {tagEditing === p.id && tagDefs.data && (
+                <TagEditor
+                  defs={tagDefs.data.items}
+                  initial={p.tags ?? {}}
+                  onClose={() => setTagEditing(null)}
+                  onSave={async (tags) => {
+                    // Content echoed unchanged — this PUT asks exactly the assign-tags decision.
+                    await updateProduct(catalog.id, category.id, p.id, {
+                      name: p.name,
+                      description: p.description ?? undefined,
+                      sku: p.sku,
+                      priceCents: p.priceCents,
+                      currency: p.currency,
+                      tags,
+                    })
+                    prods.reload()
+                  }}
+                />
+              )}
+              {tagEditing === p.id && !tagDefs.data && (
+                <p className="mt-2 text-xs text-[var(--color-deny)]">
+                  The tag dictionary isn't readable for this identity
+                  {tagDefs.error ? ` (${tagDefs.error})` : ''} — the editor needs it to offer
+                  legal values.
+                </p>
+              )}
             </div>
           </Card>
         ))}

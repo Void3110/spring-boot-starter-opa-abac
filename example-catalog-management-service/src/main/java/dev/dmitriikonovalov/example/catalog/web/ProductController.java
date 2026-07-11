@@ -1,6 +1,9 @@
 package dev.dmitriikonovalov.example.catalog.web;
 
 import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
+import dev.dmitriikonovalov.example.catalog.config.ProductListAuthorizer;
+import dev.dmitriikonovalov.example.catalog.config.TagAssignmentService;
+import dev.dmitriikonovalov.example.catalog.config.TagDecisionGate;
 import dev.dmitriikonovalov.example.catalog.domain.CategoryRepository;
 import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
@@ -12,6 +15,8 @@ import dev.dmitriikonovalov.example.catalog.openapi.model.ProductRequest;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.VersionGuard;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
@@ -25,17 +30,26 @@ public class ProductController implements ProductApi {
     private final ProductRepository products;
     private final ProductService productService;
     private final CategoryRepository categories;
+    private final TagAssignmentService tagAssignment;
+    private final ProductListAuthorizer productListAuthorizer;
     private final CatalogHierarchyService hierarchy;
     private final ObjectProvider<AbacResourceCache> resourceCache;
+    private final TagDecisionGate tagDecisionGate;
 
     public ProductController(ProductRepository products, ProductService productService,
-                             CategoryRepository categories, CatalogHierarchyService hierarchy,
-                             ObjectProvider<AbacResourceCache> resourceCache) {
+                             CategoryRepository categories, TagAssignmentService tagAssignment,
+                             ProductListAuthorizer productListAuthorizer,
+                             CatalogHierarchyService hierarchy,
+                             ObjectProvider<AbacResourceCache> resourceCache,
+                             TagDecisionGate tagDecisionGate) {
         this.products = products;
         this.productService = productService;
         this.categories = categories;
+        this.tagAssignment = tagAssignment;
+        this.productListAuthorizer = productListAuthorizer;
         this.hierarchy = hierarchy;
         this.resourceCache = resourceCache;
+        this.tagDecisionGate = tagDecisionGate;
     }
 
     @Override
@@ -44,16 +58,13 @@ public class ProductController implements ProductApi {
     public ResponseEntity<ProductPage> listProducts(
             UUID catalogId, UUID categoryId, Integer page, Integer perPage) {
         requireCategory(catalogId, categoryId);
-        // Deliberately a plain repository page, not a data-filter cut: products carry no tags, so
-        // rows have no policy variance — the type-level gate above IS the access decision.
-        var result = products.findByCategoryId(categoryId, PageDefaults.pageRequest(page, perPage));
-        // But that means nothing seeds the request-scoped cache on this path (the filtered lists seed
-        // it via their survivors), and the enrichment advice omits on a cache miss — so seed each row
-        // here or product lists never carry `_actions`.
-        AbacResourceCache cache = resourceCache.getIfAvailable();
-        if (cache != null) {
-            result.forEach(p -> cache.put(p.abacResourceType(), p.abacResourceId(), p));
-        }
+        // Products carry tags now, so rows HAVE policy variance — the pre-tags plain repository page
+        // would show a tag-gated role rows it may not read one-by-one. The which-rows cut happens in
+        // SQL (partial-eval residual AND-ed with the categoryId scope), exactly as for categories;
+        // the filtered path's survivors seed the request-scoped cache, so `_actions` enrichment keeps
+        // working without the manual per-row seeding the plain page needed.
+        var result = productListAuthorizer.readable(
+                catalogId, categoryId, PageDefaults.pageRequest(page, perPage));
         return ResponseEntity.ok(CatalogMapper.toProductPage(result));
     }
 
@@ -62,6 +73,11 @@ public class ProductController implements ProductApi {
             roleResourceType = "'catalog'", roleResourceId = "#catalogId")
     public ResponseEntity<Product> createProduct(UUID catalogId, UUID categoryId, ProductRequest request) {
         requireCategory(catalogId, categoryId);
+        // Tag-on-create (Phase 6.5): a request that CARRIES tags needs the TYPE-LEVEL assign-tags
+        // decision on top of the static create gate above (no instance exists yet to resolve).
+        if (request.getTags() != null && !request.getTags().isEmpty()) {
+            tagDecisionGate.requireProductAssignTagsForCreate(catalogId);
+        }
         var entity = new ProductEntity(
                 UUID.randomUUID(),
                 categoryId,
@@ -70,6 +86,11 @@ public class ProductController implements ProductApi {
                 request.getSku(),
                 request.getPriceCents(),
                 request.getCurrency());
+        // Validate + assign tags against the dictionary before persisting, addressed by the GOVERNING
+        // ROOT (the catalog — the team target), the remote call outside the create transaction —
+        // see createCategory for the full rationale (fail-closed: 422 illegal / 503 fetch-failure).
+        entity.setTags(tagAssignment.validateAndBuild(
+                "catalog", catalogId.toString(), request.getTags()));
         // Path derivation (category path || product_<id>) + INSERT in one transaction, the parent
         // category row locked — see CatalogHierarchyService.createWithPath.
         var saved = hierarchy.createWithPath(entity, products::save);
@@ -92,12 +113,46 @@ public class ProductController implements ProductApi {
         return ResponseEntity.ok(CatalogMapper.toDto(entity));
     }
 
+    /**
+     * <b>No static annotation</b> (Phase 6.5, pinned semantic #2 — extended to products now that
+     * their requests carry tags): authorization is the delta-aware dispatch below — a static
+     * {@code product:update} could never let a TAG-without-WRITE role relabel tags, nor stop it from
+     * editing content. Every decision still runs through the manager seam (the {@link TagDecisionGate}
+     * methods carry the annotations) and precedes any mutation.
+     */
     @Override
-    @OpaPreAuthorize(action = "product:update", resourceType = "'product'", resourceId = "#productId")
     public ResponseEntity<Product> updateProduct(UUID catalogId, UUID categoryId, UUID productId, ProductRequest request) {
-        // Scope the product to its category/catalog (404 if it doesn't belong) before mutating.
+        // Scope the product to its category/catalog (404 if it doesn't belong) before deciding.
         requireCategory(catalogId, categoryId);
-        requireProduct(categoryId, productId);
+        var current = requireProduct(categoryId, productId);
+        // The deltas decide which authorization question(s) to ask. Tags compare RAW request map vs
+        // the entity's current tags (null = empty; clearing tags IS a tags change) — raw-side compare
+        // can only over-ask (more authz = narrower), never under-ask. Content = any non-tag field.
+        boolean tagsDelta = !Objects.equals(
+                request.getTags() == null ? Map.of() : request.getTags(),
+                current.getTags().asMap());
+        boolean contentDelta = !Objects.equals(current.getName(), request.getName())
+                || !Objects.equals(current.getDescription(), request.getDescription())
+                || !Objects.equals(current.getSku(), request.getSku())
+                || !Objects.equals(current.getPriceCents(), request.getPriceCents())
+                || !Objects.equals(current.getCurrency(), request.getCurrency());
+        // Dispatch: content → update; tags → assign-tags; both → both (update first); an EMPTY delta
+        // → update (the conservative default — a no-op PUT by a TAG-only holder answers 403).
+        if (contentDelta || !tagsDelta) {
+            tagDecisionGate.requireProductUpdate(productId);
+        }
+        if (tagsDelta) {
+            tagDecisionGate.requireProductAssignTags(productId);
+        }
+        // Bind the deltas' basis to the gate's: the dispatched decisions resolved their own snapshot
+        // (5.97 write-through) — if it isn't the row the deltas were computed on, a racer won the
+        // window between our load and the gate, and the dispatch may have asked the wrong question.
+        guardGateSnapshot(current);
+        // Tag validation calls the tag-definition service (slow, fail-closed) — before, never inside,
+        // the locked transaction below (and AFTER authorization, so an unauthorized caller learns
+        // nothing from the 422 vocabulary). Addressed by the governing root (see createProduct).
+        var tags = tagAssignment.validateAndBuild(
+                "catalog", catalogId.toString(), request.getTags());
         // Version binding (Phase 5.97): the guard runs INSIDE mutate's locked transaction, against the
         // row it locked — the decision basis is checked under the same protection the write holds
         // (decide-under-protection). Drift → 409; the snapshot is never persisted.
@@ -111,6 +166,7 @@ public class ProductController implements ProductApi {
             entity.setSku(request.getSku());
             entity.setPriceCents(request.getPriceCents());
             entity.setCurrency(request.getCurrency());
+            entity.setTags(tags);
         });
         return ResponseEntity.ok(CatalogMapper.toDto(updated));
     }

@@ -624,6 +624,12 @@ components:
           type: string
           description: ISO 4217 currency code.
           example: USD
+        tags:
+          type: object
+          additionalProperties: true
+          description: >
+            Dictionary-validated tags on this product. Each value is a string (single-valued key) or
+            an array of strings (multi-valued key), per the tag definition.
         _actions:
           type: object
           additionalProperties:
@@ -655,6 +661,15 @@ components:
           type: string
           minLength: 3
           maxLength: 3
+        tags:
+          type: object
+          additionalProperties: true
+          description: >
+            Tags to assign, validated against the tag dictionary. Each value is a string (single-valued
+            key) or an array of strings (multi-valued key). An unknown key or illegal value is rejected
+            with 422; nothing is silently dropped. Accepted on CREATE and UPDATE alike — unlike a
+            catalog, a new product already has a governing team (its catalog's), so tag-on-create asks
+            the type-level assign-tags decision through it.
 
     ProblemDetail:
       type: object

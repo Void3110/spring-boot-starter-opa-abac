@@ -170,7 +170,7 @@ class ActionEnrichmentIT {
                 .andExpect(jsonPath("$._actions.delete").value(true));
     }
 
-    // --- I6: the verified verb sets (product excludes assign-tags; catalog INCLUDES it — ADR 0022) ---
+    // --- I6: the verified verb sets (catalog since ADR 0022, product since taggable products) ---
 
     @Test // I6 — a Catalog enriches with exactly [view,update,delete,assign-tags]: catalogs are
     // taggable since ADR 0022 (the update handler's delta dispatch carries catalog:assign-tags), so
@@ -187,8 +187,10 @@ class ActionEnrichmentIT {
                 .andExpect(jsonPath("$._actions.['assign-tags']").value(true));
     }
 
-    @Test // I6 — a Product enriches with exactly [view,update,delete] — NO assign-tags
-    void productVerbSetExcludesAssignTags() throws Exception {
+    @Test // I6 — a Product enriches with exactly [view,update,delete,assign-tags]: products are
+    // taggable now (the update handler's delta dispatch carries product:assign-tags), so the verb
+    // joined the enrichment set. Pre-taggable-products this cell pinned its EXCLUSION.
+    void productVerbSetIncludesAssignTags() throws Exception {
         var catalog = seedCatalog();
         var root = seedCategory(catalog.getId(), null, "root-cat", Map.of());
         var product = seedProduct(root.getId(), "widget");
@@ -198,7 +200,9 @@ class ActionEnrichmentIT {
                         catalog.getId(), root.getId(), product.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$._actions.view").value(true))
-                .andExpect(jsonPath("$._actions.assign-tags").doesNotExist());
+                .andExpect(jsonPath("$._actions.update").value(true))
+                .andExpect(jsonPath("$._actions.delete").value(true))
+                .andExpect(jsonPath("$._actions.['assign-tags']").value(true));
     }
 
     // --- I5: the codegen round-trip (the _actions wire key) ---------------------
