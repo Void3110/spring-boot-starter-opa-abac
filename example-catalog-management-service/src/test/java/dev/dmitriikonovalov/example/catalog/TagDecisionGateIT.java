@@ -351,7 +351,7 @@ class TagDecisionGateIT {
         mockMvc.perform(post("/api/v1/catalogs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"tagged-at-birth\",\"tags\":{\"region\":[\"emea\"]}}"))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errorCode").value("TAG_VALUE_ILLEGAL"));
 
         assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:create");

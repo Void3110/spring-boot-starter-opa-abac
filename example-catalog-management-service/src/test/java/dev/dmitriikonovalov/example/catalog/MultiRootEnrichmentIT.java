@@ -164,7 +164,7 @@ class MultiRootEnrichmentIT {
         JsonNode items = MAPPER.readTree(result.getResponse().getContentAsString()).get("items");
         int enriched = 0;
         for (JsonNode item : items) {
-            if (failing.toString().equals(item.get("id").asText())) {
+            if (failing.toString().equals(item.get("id").asString())) {
                 assertThat(item.has("_actions")).as("the failed row is omitted").isFalse();
             } else {
                 assertThat(item.has("_actions")).as("other rows stay enriched").isTrue();

@@ -61,7 +61,7 @@ class EffectiveRoleBatchResolveIT extends AbstractSecuredPostgresIT {
 
         JsonNode governedEntry = entryFor(body, governed);
         assertThat(governedEntry.get("role").isNull()).isFalse();
-        assertThat(governedEntry.get("role").get("code").asText()).isEqualTo("owner");
+        assertThat(governedEntry.get("role").get("code").asString()).isEqualTo("owner");
 
         JsonNode ungovernedEntry = entryFor(body, ungoverned);
         assertThat(ungovernedEntry.has("role")).as("no-role travels as an EXPLICIT null").isTrue();
@@ -121,7 +121,7 @@ class EffectiveRoleBatchResolveIT extends AbstractSecuredPostgresIT {
 
     private static JsonNode entryFor(JsonNode body, UUID resourceId) {
         for (JsonNode entry : body) {
-            if (resourceId.toString().equals(entry.get("resourceId").asText())) {
+            if (resourceId.toString().equals(entry.get("resourceId").asString())) {
                 return entry;
             }
         }

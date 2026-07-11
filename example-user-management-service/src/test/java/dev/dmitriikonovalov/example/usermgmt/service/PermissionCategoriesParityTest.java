@@ -29,7 +29,7 @@ class PermissionCategoriesParityTest {
         Map<String, List<String>> fromJson = new HashMap<>();
         table.properties().forEach(entry -> {
             List<String> actions = new ArrayList<>();
-            entry.getValue().forEach(a -> actions.add(a.asText()));
+            entry.getValue().forEach(a -> actions.add(a.asString()));
             fromJson.put(entry.getKey(), actions);
         });
 

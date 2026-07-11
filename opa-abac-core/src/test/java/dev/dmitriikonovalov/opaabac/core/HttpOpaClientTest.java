@@ -143,14 +143,14 @@ class HttpOpaClientTest {
         JsonNode root = MAPPER.readTree(captured.get());
         JsonNode input = root.get("input");
         assertThat(input).isNotNull();
-        assertThat(input.get("subject").get("id").asText()).isEqualTo("user-1");
-        assertThat(input.get("action").asText()).isEqualTo("product:read");
-        assertThat(input.get("resource").get("type").asText()).isEqualTo("product");
+        assertThat(input.get("subject").get("id").asString()).isEqualTo("user-1");
+        assertThat(input.get("action").asString()).isEqualTo("product:read");
+        assertThat(input.get("resource").get("type").asString()).isEqualTo("product");
         // serialized as snake_case "role_definition"
         JsonNode roleDef = input.get("role_definition");
         assertThat(roleDef).isNotNull();
-        assertThat(roleDef.get("code").asText()).isEqualTo("catalog-viewer");
-        assertThat(roleDef.get("permissions").get("product").get(0).asText()).isEqualTo("read");
+        assertThat(roleDef.get("code").asString()).isEqualTo("catalog-viewer");
+        assertThat(roleDef.get("permissions").get("product").get(0).asString()).isEqualTo("read");
         assertThat(input.get("environment")).isNotNull();
     }
 

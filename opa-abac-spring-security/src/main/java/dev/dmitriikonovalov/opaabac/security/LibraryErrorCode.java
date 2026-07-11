@@ -30,10 +30,10 @@ public enum LibraryErrorCode implements ApiErrorCode {
     STATE_CONFLICT(HttpStatus.CONFLICT, "State conflict"),
 
     /** A tag value is not permitted by the dictionary. */
-    TAG_VALUE_ILLEGAL(HttpStatus.UNPROCESSABLE_ENTITY, "Tag value not permitted by the dictionary"),
+    TAG_VALUE_ILLEGAL(HttpStatus.UNPROCESSABLE_CONTENT, "Tag value not permitted by the dictionary"),
 
     /** A role assignment would exceed the granter's own permissions (the subset rule). */
-    ROLE_SUBSET_VIOLATION(HttpStatus.UNPROCESSABLE_ENTITY, "Role assignment violates the subset rule");
+    ROLE_SUBSET_VIOLATION(HttpStatus.UNPROCESSABLE_CONTENT, "Role assignment violates the subset rule");
 
     private final HttpStatus status;
     private final String title;

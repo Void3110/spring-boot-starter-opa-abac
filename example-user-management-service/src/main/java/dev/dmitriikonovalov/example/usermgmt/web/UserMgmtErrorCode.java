@@ -38,13 +38,13 @@ public enum UserMgmtErrorCode implements ApiErrorCode {
     TAG_DEFINITION_IMMUTABLE(HttpStatus.CONFLICT, "Tag definition is immutable"),
 
     /** The submitted tag definition is structurally invalid (bad value type / cardinality / pattern). */
-    TAG_DEFINITION_INVALID(HttpStatus.UNPROCESSABLE_ENTITY, "Tag definition is invalid"),
+    TAG_DEFINITION_INVALID(HttpStatus.UNPROCESSABLE_CONTENT, "Tag definition is invalid"),
 
     /**
      * The submitted role definition violates the Phase-6.5 authoring contract (bad {@code roleLevel},
      * non-category token, category beyond the level ceiling, denial of a never-granted action).
      */
-    ROLE_DEFINITION_INVALID(HttpStatus.UNPROCESSABLE_ENTITY, "Role definition is invalid");
+    ROLE_DEFINITION_INVALID(HttpStatus.UNPROCESSABLE_CONTENT, "Role definition is invalid");
 
     private final HttpStatus status;
     private final String title;

@@ -35,13 +35,13 @@ class AbacContextResourceTest {
         assertThat(ancestors.isArray()).isTrue();
         assertThat(ancestors).hasSize(2);
         // root-first
-        assertThat(ancestors.get(0).get("type").asText()).isEqualTo("catalog");
-        assertThat(ancestors.get(0).get("id").asText()).isEqualTo("1");
-        assertThat(ancestors.get(1).get("type").asText()).isEqualTo("category");
-        assertThat(ancestors.get(1).get("id").asText()).isEqualTo("7");
+        assertThat(ancestors.get(0).get("type").asString()).isEqualTo("catalog");
+        assertThat(ancestors.get(0).get("id").asString()).isEqualTo("1");
+        assertThat(ancestors.get(1).get("type").asString()).isEqualTo("category");
+        assertThat(ancestors.get(1).get("id").asString()).isEqualTo("7");
         // leaf excluded — the leaf is the resource's own type/id, never repeated in the chain
         for (JsonNode anc : ancestors) {
-            assertThat(anc.get("id").asText()).isNotEqualTo("42");
+            assertThat(anc.get("id").asString()).isNotEqualTo("42");
         }
     }
 

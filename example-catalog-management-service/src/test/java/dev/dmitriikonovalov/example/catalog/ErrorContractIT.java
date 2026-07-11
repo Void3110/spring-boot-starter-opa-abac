@@ -70,7 +70,7 @@ class ErrorContractIT extends AbstractPostgresIT {
                         .content("{\"name\":\"Electronics\",\"description\":\"d\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
-        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
         org.assertj.core.api.Assertions.assertThat(result.getResponse().getHeader("Location"))
                 .isEqualTo("http://localhost/api/v1/catalogs/" + id);
     }

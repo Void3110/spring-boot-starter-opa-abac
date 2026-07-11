@@ -48,6 +48,6 @@ class InternalOwnershipIT extends AbstractPostgresIT {
                         .content(body))
                 .andExpect(status().isCreated())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
     }
 }

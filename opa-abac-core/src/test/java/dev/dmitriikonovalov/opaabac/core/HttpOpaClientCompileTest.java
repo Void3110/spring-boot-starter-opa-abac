@@ -358,12 +358,12 @@ class HttpOpaClientCompileTest {
 
         assertThat(capturedPath.get()).isEqualTo("/v1/compile");
         JsonNode root = MAPPER.readTree(captured.get());
-        assertThat(root.get("query").asText()).isEqualTo("data.catalog.category.filter == true");
-        assertThat(root.get("unknowns").get(0).asText()).isEqualTo("input.resource");
+        assertThat(root.get("query").asString()).isEqualTo("data.catalog.category.filter == true");
+        assertThat(root.get("unknowns").get(0).asString()).isEqualTo("input.resource");
         JsonNode input = root.get("input");
-        assertThat(input.get("subject").get("id").asText()).isEqualTo("user-1");
-        assertThat(input.get("action").asText()).isEqualTo("category:read");
-        assertThat(input.get("role_definition").get("code").asText()).isEqualTo("catalog-viewer");
+        assertThat(input.get("subject").get("id").asString()).isEqualTo("user-1");
+        assertThat(input.get("action").asString()).isEqualTo("category:read");
+        assertThat(input.get("role_definition").get("code").asString()).isEqualTo("catalog-viewer");
         // the resource is the unknown — it MUST be omitted from the compile input
         assertThat(input.has("resource")).isFalse();
     }

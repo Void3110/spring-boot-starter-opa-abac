@@ -76,7 +76,7 @@ class OwnershipGateIT extends AbstractSecuredPostgresIT {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(res.getBody()).isNotNull();
-        assertThat(res.getBody().get("errorCode").asText()).isEqualTo("ACCESS_DENIED");
+        assertThat(res.getBody().get("errorCode").asString()).isEqualTo("ACCESS_DENIED");
         // No team was bound — the squat did not persist.
         assertThat(teams.findByTargetTypeAndTargetId("catalog", someoneElsesCatalog)).isEmpty();
     }

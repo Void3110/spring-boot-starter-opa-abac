@@ -153,10 +153,10 @@ public class DiscoveryOwnershipResolver implements ResourceOwnershipResolver {
         }
         try {
             var node = objectMapper.readTree(body).get("createdBy");
-            if (node == null || node.isNull() || node.asText().isBlank()) {
+            if (node == null || node.isNull() || node.asString().isBlank()) {
                 return Optional.empty();
             }
-            return Optional.of(node.asText());
+            return Optional.of(node.asString());
         } catch (tools.jackson.core.JacksonException e) {
             log.warn("created-by body unparseable ({}) — not owner (fail-closed)",
                     e.getClass().getSimpleName());

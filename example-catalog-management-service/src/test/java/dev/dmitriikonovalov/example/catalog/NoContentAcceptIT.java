@@ -34,7 +34,7 @@ class NoContentAcceptIT extends AbstractPostgresIT {
                         .content(body))
                 .andExpect(status().isCreated())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
     }
 
     /** Deletes product → category → catalog, each with the given Accept (null = no Accept header). */

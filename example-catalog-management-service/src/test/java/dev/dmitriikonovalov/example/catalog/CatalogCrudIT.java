@@ -153,6 +153,6 @@ class CatalogCrudIT extends AbstractPostgresIT {
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("id").asText();
+        return node.get("id").asString();
     }
 }

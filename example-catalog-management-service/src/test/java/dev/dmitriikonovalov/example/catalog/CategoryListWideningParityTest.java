@@ -30,7 +30,7 @@ class CategoryListWideningParityTest {
 
         List<String> categoriesGrantingList = new ArrayList<>();
         table.properties().forEach(entry -> entry.getValue().forEach(action -> {
-            if ("list".equals(action.asText())) {
+            if ("list".equals(action.asString())) {
                 categoriesGrantingList.add(entry.getKey());
             }
         }));

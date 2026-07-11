@@ -50,8 +50,8 @@ class ProblemDetailContractTest {
         assertThat(LibraryErrorCode.VALIDATION_FAILED.status()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(LibraryErrorCode.RESOURCE_NOT_FOUND.status()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(LibraryErrorCode.STATE_CONFLICT.status()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(LibraryErrorCode.TAG_VALUE_ILLEGAL.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-        assertThat(LibraryErrorCode.ROLE_SUBSET_VIOLATION.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(LibraryErrorCode.TAG_VALUE_ILLEGAL.status()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(LibraryErrorCode.ROLE_SUBSET_VIOLATION.status()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
     // U3 — the helper builds a ProblemDetail from (status, code, detail, instance).
@@ -59,7 +59,7 @@ class ProblemDetailContractTest {
     void helperBuildsProblemDetailFromTheTuple() {
         OffsetDateTime before = OffsetDateTime.now().minusSeconds(1);
         ProblemDetail body = factory.body(
-                HttpStatus.UNPROCESSABLE_ENTITY,
+                HttpStatus.UNPROCESSABLE_CONTENT,
                 LibraryErrorCode.TAG_VALUE_ILLEGAL,
                 "Unknown tag key: reglon",
                 "/api/v1/catalogs/7b/categories");
