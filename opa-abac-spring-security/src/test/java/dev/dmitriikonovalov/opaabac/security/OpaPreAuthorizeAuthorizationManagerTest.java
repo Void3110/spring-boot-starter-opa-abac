@@ -102,7 +102,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         when(opaClient.allow(any())).thenReturn(true);
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("read", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision).isNotNull();
@@ -114,7 +114,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         when(opaClient.allow(any())).thenReturn(false);
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("read", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -125,7 +125,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         when(opaClient.allow(any())).thenThrow(new RuntimeException("transport blew up"));
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("read", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -135,7 +135,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     void unauthenticated_deny() throws Exception {
         SecurityContextHolder.clearContext();
 
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("read", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -143,7 +143,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
     @Test // U26 — unresolvable resource type (SpEL yields null) → deny
     void unresolvableResource_deny() throws Exception {
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("unresolvableType", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -157,7 +157,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         ArgumentCaptor<AbacContext> ctx = ArgumentCaptor.forClass(AbacContext.class);
-        manager.check(noopAuthSupplier,
+        manager.authorize(noopAuthSupplier,
                 invocationOf("createChild", new Class<?>[] {UUID.class}, new Object[] {catalogId}));
 
         // The role is resolved on the parent catalog (the override), NOT on (category, null).
@@ -171,7 +171,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     @Test // Slice B4 — a declared roleResource override that resolves to null/blank → deny (fail-closed),
     // never silently falling back to the (category, null) lookup.
     void roleResourceOverride_unresolvable_deny() throws Exception {
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("createChildBadOverride", new Class<?>[] {UUID.class},
                         new Object[] {UUID.randomUUID()}));
 
@@ -184,7 +184,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     // so "matched but no annotation" is a wiring inconsistency — an abstain (null) would let the
     // interceptor proceed unenforced.
     void unannotated_denies() throws Exception {
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("unannotated", new Class<?>[] {}, new Object[] {}));
 
         assertThat(decision).isNotNull();
@@ -194,7 +194,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     @Test // a DECLARED resourceId whose SpEL evaluates to null must deny — silently degrading to a
     // type-level (id-less) check would skip per-id deny rules and per-resource role scoping (widen).
     void declaredResourceIdEvaluatesNull_deny() throws Exception {
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {null}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -210,7 +210,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 .thenReturn(Optional.of(roleDef));
         when(opaClient.allow(any())).thenReturn(true);
 
-        manager.check(noopAuthSupplier,
+        manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
@@ -235,7 +235,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         when(roleDefinitionSupplier.lookup(eq("user-1"), eq("product"), eq(productId.toString())))
                 .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
 
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -251,7 +251,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 .thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        AuthorizationDecision decision = manager.check(noopAuthSupplier,
+        AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         assertThat(decision.isGranted()).isTrue();
@@ -266,7 +266,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         when(opaClient.allow(any())).thenReturn(true);
         SampleProduct product = new SampleProduct("p-42");
 
-        manager.check(noopAuthSupplier,
+        manager.authorize(noopAuthSupplier,
                 invocationOf("writeInstance", new Class<?>[] {SampleProduct.class}, new Object[] {product}));
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);

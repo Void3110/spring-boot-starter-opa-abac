@@ -142,7 +142,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        baseline.check(noopAuthSupplier,
+        baseline.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         String serialized = new ObjectMapper().writeValueAsString(capturedContext());
@@ -161,7 +161,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("list", new Class<?>[] {}, new Object[] {}));
 
         verify(resolver, never()).resolve(anyString(), anyString());
@@ -180,7 +180,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         verify(opaClient, times(1)).allow(any());
@@ -200,7 +200,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         verify(roleDefinitionSupplier, times(1)).lookup(any(), any(), any());
@@ -215,7 +215,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         verify(roleDefinitionSupplier, times(1)).lookup(any(), any(), any());
@@ -228,7 +228,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
     void resolverEmpty_deniesWithoutOpaCall() throws Exception {
         when(resolver.resolve("product", PRODUCT_ID.toString())).thenReturn(Optional.empty());
 
-        AuthorizationDecision decision = managerWithSupport().check(noopAuthSupplier,
+        AuthorizationDecision decision = managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -241,7 +241,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(resolver.resolve("product", PRODUCT_ID.toString()))
                 .thenThrow(new RuntimeException("repository unavailable"));
 
-        AuthorizationDecision decision = managerWithSupport().check(noopAuthSupplier,
+        AuthorizationDecision decision = managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         assertThat(decision.isGranted()).isFalse();
@@ -260,7 +260,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        AuthorizationDecision decision = managerWithSupport().check(noopAuthSupplier,
+        AuthorizationDecision decision = managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         assertThat(decision.isGranted()).isTrue(); // the failure narrowed, it did not deny
@@ -277,7 +277,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithoutChainSupplier().check(noopAuthSupplier,
+        managerWithoutChainSupplier().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         assertThat(capturedContext().resource().ancestors()).isEmpty();
@@ -294,12 +294,12 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         when(opaClient.allow(any())).thenReturn(false);
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
         assertThat(cache.puts).isZero(); // deny puts nothing
 
         when(opaClient.allow(any())).thenReturn(true);
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
         assertThat(cache.puts).isEqualTo(1);
         assertThat(cache.get("product", PRODUCT_ID.toString(), SampleProduct.class)).contains(instance);
@@ -311,7 +311,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeInstance", new Class<?>[] {SampleProduct.class}, new Object[] {product}));
 
         verify(resolver, never()).resolve(anyString(), anyString()); // caller already holds the instance
@@ -334,7 +334,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
-        managerWithSupport().check(noopAuthSupplier,
+        managerWithSupport().authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID}));
 
         verify(resolver).resolve("product", PRODUCT_ID.toString()); // resolved fresh despite the cache
