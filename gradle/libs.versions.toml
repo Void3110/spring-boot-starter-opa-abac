@@ -11,9 +11,11 @@ openapiGenerator = "7.11.0"
 # Library deps
 jackson = "2.18.2"
 slf4j = "2.0.16"
-# Resilience4j — version managed by the Spring Boot BOM; pinned here only for the version catalog ref.
-# The cross-service HTTP resilience seam (Slice B3) is backed by R4j on the Java 21 / Boot 3.4 line.
-resilience4j = "2.2.0"
+# Resilience4j — this catalog pin is authoritative (the library modules do not import the Boot BOM
+# for it). 2.4.0 removed the internal CircuitBreakerStateMachine(name, config, Clock) constructor
+# and 2.3.0+ exposes the Clock publicly via CircuitBreakerConfig.Builder.clock() — the CallGuard's
+# virtual-time seam is pure public API from this version on (ADR 0017 addendum, SB4-port T3).
+resilience4j = "2.4.0"
 # Keycloak admin client (the user-directory port's optional impl, ADR 0020 §8) — released independently
 # of the server; the 26.x client line is compatible with the 26.x server the rig runs (26.3.2).
 keycloak = "26.0.5"

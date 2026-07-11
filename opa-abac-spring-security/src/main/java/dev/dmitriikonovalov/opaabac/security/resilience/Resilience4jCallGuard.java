@@ -2,7 +2,6 @@ package dev.dmitriikonovalov.opaabac.security.resilience;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
-import io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine;
 import io.github.resilience4j.core.IntervalFunction;
 import java.time.Clock;
 import java.util.Objects;
@@ -34,7 +33,8 @@ import org.slf4j.LoggerFactory;
  * </ol>
  *
  * <h2>Deterministic timing (the injected seams)</h2>
- * The breaker is built with an injected {@link Clock} so its open-duration window advances at virtual time;
+ * The breaker is built with an injected {@link Clock} — public API since R4j 2.3.0 via
+ * {@code CircuitBreakerConfig.Builder#clock(Clock)} — so its open-duration window advances at virtual time;
  * backoff waiting goes through an injected {@code sleeper} ({@link LongConsumer} of millis) a test stubs to
  * a no-op (recording the requested wait) so retry/backoff/breaker tests never call {@code Thread.sleep} and
  * never assert against the wall clock (ADR 0017 §Proof). The {@link #Resilience4jCallGuard(String,
@@ -84,12 +84,13 @@ public final class Resilience4jCallGuard implements CallGuard {
                 .waitDurationInOpenState(config.openDuration())
                 .permittedNumberOfCallsInHalfOpenState(config.halfOpenProbes())
                 .automaticTransitionFromOpenToHalfOpenEnabled(false) // the next call probes; no timer thread
+                // The Clock seam is public API since R4j 2.3.0 (2.4.0 removed the internal constructor
+                // this guard previously used): the open-duration window advances at *virtual* time in
+                // tests — driving the clock forward then calling through the guard moves open → half-open
+                // without sleeping (ADR 0017 §7, "eliminated" addendum).
+                .clock(clock)
                 .build();
-        // The state machine's Clock-injecting constructor (the only seam R4j exposes for it) makes the
-        // open-duration window advance at *virtual* time in tests — driving the clock forward then calling
-        // through the guard moves open → half-open without sleeping. The `internal` coupling is contained
-        // to this one line; the CallGuard interface stays backend-agnostic (ADR 0017 §7).
-        return new CircuitBreakerStateMachine(name, cbConfig, clock);
+        return CircuitBreaker.of(name, cbConfig);
     }
 
     @Override
