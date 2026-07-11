@@ -179,6 +179,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   request boundary), and no partial batch ever yields partial roles. — **Phase 7.3**
   ([[RESOLVE-COALESCING]], ADRs [[0023-request-scoped-resolution-memoization|0023]] +
   [[0024-batch-role-resolution|0024]]) ✅
+- **F6** *As a developer adopting the starter in late 2026*, the 1.0 artifact targets the **current
+  Spring Boot line** — Boot 4.0.x on Java 25, compiled against it first-class (not a 3.x build that
+  happens to run) — with **behavior byte-identical** to the proven 3.4 implementation, so adopting it
+  doesn't mean betting on an EOL platform or re-verifying semantics. — **SB4 port (pre-publish)**
+  ([[SPRING-BOOT-4-PORT]], ADR [[0026-spring-boot-4-single-line-port|0026]])
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
