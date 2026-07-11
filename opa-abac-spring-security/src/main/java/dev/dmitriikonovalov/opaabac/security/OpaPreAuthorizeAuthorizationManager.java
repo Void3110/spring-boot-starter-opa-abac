@@ -93,7 +93,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      * {@link AuthorizationDecision} return so callers keep the narrower type.
      */
     @Override
-    public AuthorizationDecision authorize(Supplier<Authentication> authentication, MethodInvocation invocation) {
+    public AuthorizationDecision authorize(Supplier<? extends Authentication> authentication, MethodInvocation invocation) {
         try {
             OpaPreAuthorize annotation = findAnnotation(invocation);
             if (annotation == null) {
@@ -145,19 +145,6 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             log.warn("OPA pre-authorize denied (fail-closed): {}", e.getClass().getSimpleName());
             return DENY;
         }
-    }
-
-    /**
-     * Spring Security 6.x bridge: {@code check()} is still abstract on the 6.5 line, so an override
-     * must exist — it only forwards to {@link #authorize}. Deleted with the Security 7 bump (T4 of
-     * the SB4 port), where {@code authorize()} becomes the abstract entry point.
-     *
-     * @deprecated per the interface; {@link #authorize} is the entry point.
-     */
-    @Deprecated
-    @Override
-    public AuthorizationDecision check(Supplier<Authentication> authentication, MethodInvocation invocation) {
-        return authorize(authentication, invocation);
     }
 
     private static OpaPreAuthorize findAnnotation(MethodInvocation invocation) {

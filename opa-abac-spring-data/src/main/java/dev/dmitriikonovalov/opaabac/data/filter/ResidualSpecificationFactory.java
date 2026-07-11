@@ -18,7 +18,7 @@ import org.springframework.data.jpa.domain.Specification;
  *
  * <p>The mapping mirrors the three residual outcomes:
  * <ul>
- *   <li>{@link PartialResult.Decision#ALLOW_ALL} → no predicate ({@code Specification.where(null)}); the
+ *   <li>{@link PartialResult.Decision#ALLOW_ALL} → no predicate ({@code Specification.unrestricted()}); the
  *       caller's own scope filter still applies (the residual is <strong>AND-ed with</strong> it, never a
  *       replacement);</li>
  *   <li>{@link PartialResult.Decision#DENY_ALL} → an always-false predicate ({@code cb.disjunction()}),
@@ -65,8 +65,9 @@ public final class ResidualSpecificationFactory {
             return (root, query, cb) -> cb.disjunction();
         }
         if (residual.decision() == PartialResult.Decision.ALLOW_ALL) {
-            // No predicate — the caller's scope filter is the only constraint.
-            return Specification.where(null);
+            // No predicate — the caller's scope filter is the only constraint. (Data JPA 4's neutral
+            // idiom: where(null) became ambiguous once where() gained overloads.)
+            return Specification.unrestricted();
         }
         // CONDITIONAL — OR of conjunctions (DNF).
         List<Conjunction> clauses = residual.clauses();

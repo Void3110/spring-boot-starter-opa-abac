@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
@@ -115,7 +115,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                         .permissions(Map.of("catalog", List.of("READ", "GRANT")))),
                 String.class,
                 team.getId());
-        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(create.getBody()).contains("ROLE_DEFINITION_INVALID");
     }
 
@@ -183,7 +183,7 @@ class RoleDefinitionManagementIT extends AbstractSecuredPostgresIT {
                     AbacTestConfig.as(owner.getSubject(), cell.request()),
                     String.class,
                     team.getId());
-            assertThat(response.getStatusCode()).as(cell.name()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(response.getStatusCode()).as(cell.name()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
             assertThat(response.getBody()).as(cell.name()).contains("ROLE_DEFINITION_INVALID");
             assertThat(response.getHeaders().getContentType().toString())
                     .as(cell.name()).contains("problem+json");

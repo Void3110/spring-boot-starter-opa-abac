@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.example.usermgmt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.CreateTeamRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.User;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserRequest;
@@ -11,8 +11,9 @@ import dev.dmitriikonovalov.example.usermgmt.support.AbacTestConfig;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,6 +30,7 @@ import org.springframework.http.MediaType;
  * deny), so the inherited {@code AccessDeniedException} → {@code ACCESS_DENIED} mapping renders a problem
  * body.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ErrorContractIT extends AbstractPostgresIT {
 

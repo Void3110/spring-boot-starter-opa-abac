@@ -77,20 +77,8 @@ public class OpaMethodSecurityConfiguration {
         }
 
         @Override
-        public AuthorizationDecision authorize(Supplier<Authentication> authentication, MethodInvocation invocation) {
+        public AuthorizationDecision authorize(Supplier<? extends Authentication> authentication, MethodInvocation invocation) {
             return delegate.get().authorize(authentication, invocation);
-        }
-
-        /**
-         * Spring Security 6.x bridge: {@code check()} is still abstract on the 6.5 line — forwards
-         * to {@link #authorize}. Deleted with the Security 7 bump (T4 of the SB4 port).
-         *
-         * @deprecated per the interface; {@link #authorize} is the entry point.
-         */
-        @Deprecated
-        @Override
-        public AuthorizationDecision check(Supplier<Authentication> authentication, MethodInvocation invocation) {
-            return authorize(authentication, invocation);
         }
     }
 }

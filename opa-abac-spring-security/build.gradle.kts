@@ -15,7 +15,7 @@ dependencies {
     api(project(":opa-abac-core"))
 
     implementation("org.springframework.boot:spring-boot-starter-security")
-    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-webmvc")
 
     // Resilience4j backs the CallGuard seam (Slice B3 cross-service HTTP resilience). Exposed as `api`
     // so the OPA decorator's auto-config (starter) and the example app's resolve/tag wrappers can build
@@ -25,6 +25,8 @@ dependencies {
     api(libs.resilience4j.core)
 
     testImplementation("org.springframework.security:spring-security-test")
+    // Jackson-2 jsr310 for the ProblemDetail serialization pin (Boot 4 manages Jackson 3) — T5 removes it.
+    testImplementation(libs.jackson.datatype.jsr310)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.

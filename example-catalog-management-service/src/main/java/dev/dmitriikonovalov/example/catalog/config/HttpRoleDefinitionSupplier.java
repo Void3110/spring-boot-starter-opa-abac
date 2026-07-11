@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -176,7 +176,7 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
             }
             try {
                 return Optional.of(objectMapper.readValue(body, RoleDefinition.class));
-            } catch (com.fasterxml.jackson.core.JacksonException e) {
+            } catch (tools.jackson.core.JacksonException e) {
                 log.warn("Effective-role resolve 200 body was unparseable ({}) — role-source outage",
                         e.getClass().getSimpleName());
                 throw new RoleResolutionException("effective-role 200 body unparseable", e); // permanent
@@ -279,7 +279,7 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
             List<BatchEntry> entries;
             try {
                 entries = objectMapper.readValue(body, new TypeReference<List<BatchEntry>>() {});
-            } catch (com.fasterxml.jackson.core.JacksonException e) {
+            } catch (tools.jackson.core.JacksonException e) {
                 log.warn("Effective-roles batch 200 body was unparseable ({}) — role-source outage",
                         e.getClass().getSimpleName());
                 throw new RoleResolutionException("effective-roles 200 body unparseable", e); // permanent

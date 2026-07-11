@@ -15,7 +15,7 @@ import dev.dmitriikonovalov.example.usermgmt.support.AbacTestConfig;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
@@ -53,7 +53,17 @@ class PaginationEnvelopeIT extends AbstractSecuredPostgresIT {
         assertThat(list.getBody().getCount()).isGreaterThanOrEqualTo(1);
         assertThat(list.getBody().getPage()).isZero();
         assertThat(list.getBody().getPerPage()).isEqualTo(100);
-        assertThat(list.getBody().getItems()).anyMatch(u -> u.getId().equals(created.getId()));
+
+        // Presence via the exact-match ?subject filter: the plain list has no ordering contract, so
+        // "the new row is inside the first 100" only held while the shared container had <100
+        // accumulated users — an execution-order dependence, not an API property.
+        var found = rest.exchange(
+                "/api/v1/users?subject=" + created.getSubject(),
+                HttpMethod.GET,
+                AbacTestConfig.as("it-pagination-subject"),
+                UserPage.class);
+        assertThat(found.getBody()).isNotNull();
+        assertThat(found.getBody().getItems()).anyMatch(u -> u.getId().equals(created.getId()));
 
         // The defaults: no params → page=0, perPage=20.
         var defaults = rest.exchange(

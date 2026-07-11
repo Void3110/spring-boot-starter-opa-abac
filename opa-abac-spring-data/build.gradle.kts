@@ -29,6 +29,9 @@ dependencies {
     // The ResidualSpecificationFactory Testcontainers IT runs the generated Specification against a real
     // Postgres + JSONB (never H2 — the jsonb_* functions and the `?` operator are Postgres-specific).
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Boot 4 modularized the test slices: @DataJpaTest / @AutoConfigureTestDatabase / TestEntityManager
+    // live in technology-specific test artifacts now (aggregated by this starter).
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     testImplementation(platform(libs.testcontainers.bom))
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)

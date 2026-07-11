@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -265,7 +265,7 @@ class ControlPlaneVocabularyIT extends AbstractSecuredPostgresIT {
         // The renamed team:change-role verb authorized the senior at the policy gate (it holds CONTROL),
         // then the UNTOUCHED MembershipService cross-tier gate rejected the above-tier promotion —
         // proving the verb rename did not bypass the second (escalation) axis.
-        assertThat(promote.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(promote.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(promote.getBody()).contains("ROLE_SUBSET_VIOLATION");
         // unchanged: the member is still a member.
         assertThat(memberships.findByTeamIdAndUserId(team.getId(), member.getId()))

@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -91,7 +91,7 @@ class InternalBootstrapIT extends AbstractSecuredPostgresIT {
                 "permissions", Map.of("catalog", List.of("read")));
 
         var response = rest.postForEntity("/internal/bootstrap/custom-roles", flatToken, String.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(response.getBody()).contains("ROLE_DEFINITION_INVALID");
         assertThat(roles.findByTeamIdAndCode(team.getId(), "boot-stale")).isEmpty();
     }

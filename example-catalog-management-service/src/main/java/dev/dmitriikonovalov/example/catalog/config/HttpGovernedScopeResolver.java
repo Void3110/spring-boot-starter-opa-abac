@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.data.filter.GovernedScopeResolver;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -127,7 +127,7 @@ public class HttpGovernedScopeResolver implements GovernedScopeResolver {
                 ids.add(UUID.fromString(s)); // a non-UUID element → IllegalArgumentException → empty (below)
             }
             return ids;
-        } catch (com.fasterxml.jackson.core.JacksonException | IllegalArgumentException e) {
+        } catch (tools.jackson.core.JacksonException | IllegalArgumentException e) {
             log.warn("governed-targets body was unparseable ({}) — failing closed to empty scope",
                     e.getClass().getSimpleName());
             return List.of();

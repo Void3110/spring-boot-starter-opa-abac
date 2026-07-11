@@ -730,7 +730,12 @@ class OpaAbacAutoConfigurationTest {
         }
 
         @Override
-        public long delete(org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
+        public long delete(org.springframework.data.jpa.domain.DeleteSpecification<EnrichmentRow> spec) {
+            return 0;
+        }
+
+        @Override
+        public long update(org.springframework.data.jpa.domain.UpdateSpecification<EnrichmentRow> spec) {
             return 0;
         }
 

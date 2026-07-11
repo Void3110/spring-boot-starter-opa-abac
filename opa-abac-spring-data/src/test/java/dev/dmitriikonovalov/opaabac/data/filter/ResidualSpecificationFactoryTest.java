@@ -47,7 +47,7 @@ class ResidualSpecificationFactoryTest {
         when(root.get("tags")).thenReturn(tagsPath);
     }
 
-    @Test // U13 — ALLOW_ALL → no predicate contributed (Specification.where(null))
+    @Test // U13 — ALLOW_ALL → no predicate contributed (Specification.unrestricted())
     void allowAll_contributesNoPredicate() {
         Specification<Object> spec = factory.from(PartialResult.allowAll());
         assertThat(spec.toPredicate(root, query, cb)).isNull();

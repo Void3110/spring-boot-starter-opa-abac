@@ -28,7 +28,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -159,7 +159,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         for (String code : List.of(SystemRoles.SENIOR, SystemRoles.ADMINISTRATOR)) {
             User target = user("target-" + code);
             var add = addMemberAs(senior, team, target, code);
-            assertThat(add.getStatusCode()).as(code).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(add.getStatusCode()).as(code).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
             assertThat(add.getBody()).as(code).contains("ROLE_SUBSET_VIOLATION");
         }
         // The level gate fired first — OPA was never asked.
@@ -177,7 +177,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         grant(team, senior, SystemRoles.SENIOR_ID);
 
         var add = addMemberAs(senior, team, target, SystemRoles.MEMBER);
-        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(add.getBody()).contains("ROLE_SUBSET_VIOLATION");
         assertThat(memberships.findByTeamIdAndUserId(team.getId(), target.getId())).isEmpty();
     }
@@ -194,7 +194,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
             verdictSupplier = () -> failure;
             User target = user("target-" + failure);
             var add = addMemberAs(senior, team, target, SystemRoles.MEMBER);
-            assertThat(add.getStatusCode()).as(failure.name()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(add.getStatusCode()).as(failure.name()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
             assertThat(add.getBody()).as(failure.name()).contains("ROLE_SUBSET_VIOLATION");
             assertThat(memberships.findByTeamIdAndUserId(team.getId(), target.getId()))
                     .as(failure.name()).isEmpty();
@@ -211,7 +211,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         grant(team, senior, SystemRoles.SENIOR_ID);
 
         var add = addMemberAs(senior, team, target, SystemRoles.MEMBER);
-        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(add.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(add.getBody()).contains("ROLE_SUBSET_VIOLATION");
         assertThat(assignableCalls.get()).isEqualTo(1);
         assertThat(memberships.findByTeamIdAndUserId(team.getId(), target.getId())).isEmpty();
@@ -233,7 +233,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
         // peer admin (30) → 422 (strict <)
         User peer = user("peer");
         var mint = addMemberAs(admin, team, peer, SystemRoles.ADMINISTRATOR);
-        assertThat(mint.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(mint.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(mint.getBody()).contains("ROLE_SUBSET_VIOLATION");
 
         // assignable is never consulted on the admin path.
@@ -319,7 +319,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
                 String.class,
                 team.getId(),
                 admin.getId());
-        assertThat(demote.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(demote.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(demote.getBody()).contains("ROLE_SUBSET_VIOLATION");
         // The target gate fired before the candidate gates — OPA was never consulted.
         assertThat(assignableCalls.get()).isZero();
@@ -344,7 +344,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
                 String.class,
                 team.getId(),
                 admin.getId());
-        assertThat(remove.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(remove.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(remove.getBody()).contains("ROLE_SUBSET_VIOLATION");
         assertThat(memberships.findByTeamIdAndUserId(team.getId(), admin.getId())).isPresent();
     }
