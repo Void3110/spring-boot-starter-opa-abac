@@ -12,7 +12,7 @@ per-request call counts, and the shape of the curves — not the absolute millis
 
 **Two baselines live here:** the 7.2 originals (2026-07-08, pre-coalescing) and the **Slice 7.3
 re-measurement (2026-07-10)** after the resolve-coalescing work
-([RESOLVE-COALESCING](docs/to-do/planning/RESOLVE-COALESCING/RESOLVE-COALESCING.md); ADRs
+([RESOLVE-COALESCING](docs/to-do/implemented/RESOLVE-COALESCING/RESOLVE-COALESCING.md); ADRs
 [0023](docs/architecture/adr/0023-request-scoped-resolution-memoization.md) +
 [0024](docs/architecture/adr/0024-batch-role-resolution.md)). Where a 7.2 number is kept it is
 labeled; everything else is the 7.3 truth.
