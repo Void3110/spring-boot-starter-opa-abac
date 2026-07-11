@@ -711,6 +711,15 @@ class OpaAbacAutoConfigurationTest {
         }
 
         @Override
+        public org.springframework.data.domain.Page<EnrichmentRow> findAll(
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec,
+                org.springframework.data.jpa.domain.Specification<EnrichmentRow> countSpec,
+                org.springframework.data.domain.Pageable pageable) {
+            return new org.springframework.data.domain.PageImpl<>(
+                    java.util.List.of(new EnrichmentRow("r-1")), pageable, 1);
+        }
+
+        @Override
         public long count(org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec) {
             return 1;
         }
@@ -728,8 +737,8 @@ class OpaAbacAutoConfigurationTest {
         @Override
         public <S extends EnrichmentRow, R> R findBy(
                 org.springframework.data.jpa.domain.Specification<EnrichmentRow> spec,
-                java.util.function.Function<org.springframework.data.repository.query.FluentQuery
-                        .FetchableFluentQuery<S>, R> queryFunction) {
+                java.util.function.Function<? super org.springframework.data.jpa.repository
+                        .JpaSpecificationExecutor.SpecificationFluentQuery<S>, R> queryFunction) {
             throw new UnsupportedOperationException();
         }
     }

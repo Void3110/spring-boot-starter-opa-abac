@@ -39,7 +39,7 @@ F1–F9, grill-me 2026-07-11): [[00-DESIGN]]; packaging/Java-25/Jackson-3/R4j de
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Boot 3.4.13 → 3.5.x + the deprecation map | 📋 TODO |
+| T1 | Boot 3.4.13 → 3.5.x + the deprecation map | ✅ DONE |
 | T2 | Security 7 pre-migration: covariant `authorize()` (on 3.5) | 📋 TODO |
 | T3 | Resilience4j 2.4.0: delete the internal coupling | 📋 TODO |
 | T4 | THE BUMP: Boot 4.0.x + Gradle 9 + JDK 25 + renames + test churn | 📋 TODO |

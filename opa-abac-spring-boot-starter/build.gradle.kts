@@ -54,5 +54,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(libs.assertj.core)
 }

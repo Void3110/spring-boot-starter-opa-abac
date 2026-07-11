@@ -27,6 +27,8 @@ dependencies {
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(libs.assertj.core)
     // Real logging backend so the fail-closed tests can assert the DISTINCT WARN per error edge (I2b).
     testImplementation("ch.qos.logback:logback-classic")

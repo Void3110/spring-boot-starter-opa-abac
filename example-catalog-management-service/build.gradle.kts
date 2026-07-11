@@ -42,6 +42,8 @@ dependencies {
 
     // Integration tests run against real Postgres via Testcontainers.
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Explicit launcher (aligned via the Boot BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(platform(libs.testcontainers.bom))
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)
