@@ -45,7 +45,7 @@ coordinates — plus the `RELEASING.md` that drives the maintainer's actual (out
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Root publish wiring: vanniktech plugin + signing + sources/javadoc jars (library modules only) | ⬜ planned |
+| T1 | Root publish wiring: vanniktech plugin + signing + sources/javadoc jars (library modules only) | ✅ done |
 | T2 | Per-module POM identity (`POM_NAME`/`POM_DESCRIPTION`/`POM_ARTIFACT_ID`) for the 5 libraries | ⬜ planned |
 | T3 | New `opa-abac-bom` module (`java-platform`) + settings include | ⬜ planned |
 | T4 | Release version `1.0.0` + broad `.gitignore` hardening + `-Xdoclint:none` javadoc | ⬜ planned |
