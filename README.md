@@ -78,8 +78,10 @@ fixed), a full-history secret scan (clean), a dependency CVE sweep (clean), and 
 re-baseline are all done. What remains before the **1.0** tag is the Maven Central publishing setup.
 The technical plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
 
-> **Not yet published to Maven Central** — the API is settling for the 1.0 tag. The full picture
-> (architecture, ADRs, guides) is in [`docs/`](docs/README.md).
+> **Not yet published to Maven Central** — the API is settling for the 1.0 tag. The publish wiring is
+> in place (six signed coordinates under `dev.dmitriikonovalov`, incl. an `opa-abac-bom`); the manual
+> release steps are documented in [`RELEASING.md`](RELEASING.md). The full picture (architecture, ADRs,
+> guides) is in [`docs/`](docs/README.md).
 
 ## Adopting the starter (three things you must do)
 

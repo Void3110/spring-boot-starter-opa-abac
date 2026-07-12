@@ -49,7 +49,7 @@ coordinates — plus the `RELEASING.md` that drives the maintainer's actual (out
 | T2 | Per-module POM identity (`POM_NAME`/`POM_DESCRIPTION`/`POM_ARTIFACT_ID`) for the 5 libraries | ✅ done |
 | T3 | New `opa-abac-bom` module (`java-platform`) + settings include | ✅ done |
 | T4 | Release version `1.0.0` + broad `.gitignore` hardening + `-Xdoclint:none` javadoc | ✅ done |
-| T5 | `RELEASING.md` — the manual out-of-band release runbook | ⬜ planned |
+| T5 | `RELEASING.md` — the manual out-of-band release runbook | ✅ done |
 | T6 | Local dry-run verification (`publishToMavenLocal`) — the proof gate (6 signed, POM-complete coordinates; examples none) | ⬜ planned |
 
 ## The manual, out-of-band steps (the maintainer's — see [[00-DESIGN]] §1 / ADR 0027)
