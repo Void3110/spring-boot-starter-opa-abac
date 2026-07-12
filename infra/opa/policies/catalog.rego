@@ -53,10 +53,11 @@ verb := v if {
 
 # PRIMARY: role-definition-driven. Allow when the fine verb is in the role's EFFECTIVE actions
 # for this resource type (categories expanded minus denials) AND the resource's tags satisfy
-# the role's tag requirement.
+# the role's tag requirement AND the resource is not explicitly denied (deny-overrides).
 allow if {
 	verb in permissions.effective_actions(input.role_definition, input.resource.type)
 	tags_satisfied
+	not denied
 }
 
 # NARROW CREATE FALLBACK (Slice B4): the ONLY surviving realm-role fallback. catalog:create is
@@ -74,10 +75,23 @@ allow if {
 	verb == "create"
 	not has_role_definition
 	"catalog-editor" in input.subject.roles
+	not denied
 }
 
 has_role_definition if {
 	input.role_definition.permissions
+}
+
+# Deny-overrides (the final narrowing AND, ported from category.rego/product.rego): an explicit
+# operator deny wins over any grant. This is the ROOT type's half of the ADR-0010 §3 invariant —
+# single-GET and list must agree on "denied". The list side already honors it (the SQL residual
+# AND-s `notDenied()` unconditionally in AbacQueryService, incl. catalogs); this restores the Rego
+# side so a catalog flagged abac_deny=true is denied on view/update/delete too, not just hidden from
+# the list. `abac_deny` is an operator-set flag (not client-writable — the tag dictionary allowlist
+# rejects it), consistent with the mechanism category/product use. Leaf-scoped: it is a property of
+# THIS resource's own tags, never inherited down a subtree (see category.rego / AbacQueryService).
+denied if {
+	input.resource.attributes.abac_deny == true
 }
 
 # ---------------------------------------------------------------------------
