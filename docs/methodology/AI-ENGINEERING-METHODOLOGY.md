@@ -30,26 +30,27 @@ Two loops, at two timescales. The inner loop makes **one slice** correct; the ou
 slice easier** than the last. The two **accumulators** are what turn a pipeline into a loop — without them,
 every task starts cold and nothing compounds.
 
+> *Outer loop = across slices (weeks). Inner loop = per ticket (minutes–hours). The two accumulators are
+> the loop's memory — read at ①, written at ③④.*
+
 ```mermaid
 flowchart TB
-    subgraph OUTER["OUTER LOOP · across slices (weeks)"]
-        direction LR
-        P["① PLAN<br/>(grill-me)"] --> D["② DECOMPOSE<br/>(docs-only)"]
+    subgraph OUTER["OUTER LOOP"]
+        P["① PLAN · grill-me"] --> D["② DECOMPOSE · docs-only"]
         D --> I
-        I --> R["④ REVIEW<br/>(deep-review)"]
-        R --> S["SHIP<br/>(merge)"]
-        subgraph INNER["INNER LOOP · per ticket (minutes–hours)"]
-            I["③ IMPLEMENT · per ticket<br/>prime → build → test →<br/>★review+refactor → e2e → commit<br/><i>self-correct · fix-until-green</i>"]
+        I --> R["④ REVIEW · deep-review"]
+        R --> S["SHIP · merge"]
+        subgraph INNER["INNER LOOP · per ticket"]
+            I["③ IMPLEMENT<br/>prime → build → test → ★review+refactor → e2e → commit<br/><i>self-correct · fix-until-green</i>"]
         end
     end
 
-    subgraph ACC["TWO ACCUMULATORS · the loop's memory (read at ①, written at ③④)"]
-        direction LR
-        M["<b>Mulch</b><br/>procedural / experiential<br/>(ml prime · ml record)"]
-        V["<b>Vault</b><br/>declarative / decisional<br/>(ADRs · guides · STATUS)"]
+    subgraph ACC["ACCUMULATORS · the loop's memory"]
+        M["<b>Mulch</b> · procedural / experiential<br/>ml prime · ml record"]
+        V["<b>Vault</b> · declarative / decisional<br/>ADRs · guides · STATUS"]
     end
 
-    S -. "run retrospective<br/>feeds the NEXT ①" .-> ACC
+    S -. "run retrospective → feeds the NEXT ①" .-> ACC
     ACC -. "primed at planning" .-> P
 
     classDef phase fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b;
