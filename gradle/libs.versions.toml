@@ -6,6 +6,10 @@
 springBoot = "4.0.7"
 springDependencyManagement = "1.1.7"
 openapiGenerator = "7.14.0"
+# Central-Portal-native publishing (ADR 0027). Applied only to the five library modules + the BOM
+# via an explicit allow-list in the root build — never the example apps. 0.37.0 is the current
+# stable line; publishToMavenCentral() is argument-less (Portal host is the default).
+vanniktechMavenPublish = "0.37.0"
 
 # Library deps
 # Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
@@ -77,3 +81,4 @@ testcontainers-postgresql = { module = "org.testcontainers:postgresql" }
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
 spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
 openapi-generator = { id = "org.openapi.generator", version.ref = "openapiGenerator" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }

@@ -1,17 +1,21 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/build
 ---
 
 # MAVEN-CENTRAL-PUBLISHING — first Maven Central release (Phase 7, the 1.0 blocker)
 
-> **🚧 Planning (design settled 2026-07-13).** The library's **first Maven Central publish** — the
-> **sole remaining 1.0 blocker**. Design grilled to six pinned forks; rationale in
-> **[[0027-maven-central-release-engineering|ADR 0027]]**, the mechanism in [[00-DESIGN]]. This slice is
-> **build/release infrastructure only** — it changes no library source and does not touch the
-> `opa-abac-core` Spring-free boundary. Phase 7 of [[POC-ROADMAP]].
+> **✅ Implemented 2026-07-13 (T1–T6 on `feature/void3110/maven-central-publishing`).** The publish
+> wiring is in place and **proven by a full signed `publishToMavenLocal` dry-run**: 6 signed,
+> POM-complete coordinates under `dev.dmitriikonovalov` (5 libraries + the `opa-abac-bom` platform),
+> examples publish nothing. The namespace is **Verified** on the Central Portal (DNS-TXT). What remains
+> is the maintainer's out-of-band **live publish** (real GPG key + Central token + press Publish),
+> documented in [`RELEASING.md`](../../../../RELEASING.md). Rationale in
+> **[[0027-maven-central-release-engineering|ADR 0027]]**, the mechanism in [[00-DESIGN]]. Build/release
+> infrastructure only — no library source changed; the `opa-abac-core` Spring-free boundary is untouched.
+> Phase 7 of [[POC-ROADMAP]].
 
 ## Why this slice exists
 
@@ -45,12 +49,12 @@ coordinates — plus the `RELEASING.md` that drives the maintainer's actual (out
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Root publish wiring: vanniktech plugin + signing + sources/javadoc jars (library modules only) | ⬜ planned |
-| T2 | Per-module POM identity (`POM_NAME`/`POM_DESCRIPTION`/`POM_ARTIFACT_ID`) for the 5 libraries | ⬜ planned |
-| T3 | New `opa-abac-bom` module (`java-platform`) + settings include | ⬜ planned |
-| T4 | Release version `1.0.0` + broad `.gitignore` hardening + `-Xdoclint:none` javadoc | ⬜ planned |
-| T5 | `RELEASING.md` — the manual out-of-band release runbook | ⬜ planned |
-| T6 | Local dry-run verification (`publishToMavenLocal`) — the proof gate (6 signed, POM-complete coordinates; examples none) | ⬜ planned |
+| T1 | Root publish wiring: vanniktech plugin + signing + sources/javadoc jars (library modules only) | ✅ done |
+| T2 | Per-module POM identity (`POM_NAME`/`POM_DESCRIPTION`/`POM_ARTIFACT_ID`) for the 5 libraries | ✅ done |
+| T3 | New `opa-abac-bom` module (`java-platform`) + settings include | ✅ done |
+| T4 | Release version `1.0.0` + broad `.gitignore` hardening + `-Xdoclint:none` javadoc | ✅ done |
+| T5 | `RELEASING.md` — the manual out-of-band release runbook | ✅ done |
+| T6 | Local dry-run verification (`publishToMavenLocal`) — the proof gate (6 signed, POM-complete coordinates; examples none) | ✅ done |
 
 ## The manual, out-of-band steps (the maintainer's — see [[00-DESIGN]] §1 / ADR 0027)
 

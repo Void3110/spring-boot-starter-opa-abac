@@ -35,8 +35,10 @@ only for publish/release tasks, not for `build`/`test`. *(T1)*
 *(T1, T3 — repeat for `opa-abac-bom` once it exists: it has publish tasks; examples still have none.)*
 
 **U3 — javadoc jar builds on the un-linted surface.**
-`./gradlew :opa-abac-core:javadocJar` (and each library) → **SUCCESS**; no doclint error aborts the build.
-Proves `-Xdoclint:none` is wired. *(T4)*
+`./gradlew :opa-abac-core:plainJavadocJar` (and each library) → **SUCCESS**; no doclint error aborts the
+build. (The vanniktech `JavaLibrary(javadocJar = JavadocJar.Javadoc())` config names the task
+`plainJavadocJar`, not `javadocJar`; the raw `javadoc` task also succeeds, which is what proves doclint
+is off.) Proves `-Xdoclint:none` is wired. *(T4)*
 
 **U4 — `.gitignore` broad key globs match; no key file tracked.**
 - `git check-ignore secring.gpg signing.p12 my.keystore key.pem release.jks config.local` → each path echoed
