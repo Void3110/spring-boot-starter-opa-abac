@@ -64,6 +64,73 @@ test_editor_role_def_updates if {
 	}
 }
 
+# --- deny-overrides on the ROOT type (7.4 security review, catalog.rego High) ---
+# `abac_deny` on the resource vetoes any single-GET grant, matching category.rego/product.rego,
+# so single-GET agrees with the list side (which excludes the row via the SQL notDenied residual)
+# — the ADR-0010 §3 invariant on the root type. The baseline (no deny) allowing is the same
+# fixture minus the flag: test_editor_role_def_views / _updates above prove the grant fires.
+
+test_abac_deny_vetoes_view if {
+	not catalog.allow with input as {
+		"subject": {"id": "u1", "roles": []},
+		"action": "catalog:view",
+		"resource": {"type": "catalog", "id": "p1", "attributes": {"abac_deny": true}},
+		"role_definition": viewer_role_def,
+		"environment": {},
+	}
+}
+
+test_abac_deny_vetoes_update if {
+	not catalog.allow with input as {
+		"subject": {"id": "u2", "roles": []},
+		"action": "catalog:update",
+		"resource": {"type": "catalog", "id": "p1", "attributes": {"abac_deny": true}},
+		"role_definition": editor_role_def,
+		"environment": {},
+	}
+}
+
+# the dangerous direction: DELETE must also be vetoed by the operator flag.
+test_abac_deny_vetoes_delete if {
+	not catalog.allow with input as {
+		"subject": {"id": "u2", "roles": []},
+		"action": "catalog:delete",
+		"resource": {"type": "catalog", "id": "p1", "attributes": {"abac_deny": true}},
+		"role_definition": editor_role_def,
+		"environment": {},
+	}
+}
+
+# list↔single-GET agreement: with the SAME editor role, `catalog:view` on a plain catalog is
+# ALLOWED but on the abac_deny-flagged catalog is DENIED — the two paths now agree on "denied".
+test_abac_deny_view_agrees_with_list if {
+	catalog.allow with input as {
+		"subject": {"id": "u2", "roles": []},
+		"action": "catalog:view",
+		"resource": {"type": "catalog", "id": "plain"},
+		"role_definition": editor_role_def,
+		"environment": {},
+	}
+	not catalog.allow with input as {
+		"subject": {"id": "u2", "roles": []},
+		"action": "catalog:view",
+		"resource": {"type": "catalog", "id": "denied", "attributes": {"abac_deny": true}},
+		"role_definition": editor_role_def,
+		"environment": {},
+	}
+}
+
+# abac_deny=false / absent must NOT deny (the veto is strictly on the true flag, no over-denial).
+test_abac_deny_false_still_allows if {
+	catalog.allow with input as {
+		"subject": {"id": "u2", "roles": []},
+		"action": "catalog:view",
+		"resource": {"type": "catalog", "id": "p1", "attributes": {"abac_deny": false}},
+		"role_definition": editor_role_def,
+		"environment": {},
+	}
+}
+
 # --- P3: a stale flat token decides NOTHING (the clean cut's ∅-expansion floor) ---
 
 stale_flat_role := {
