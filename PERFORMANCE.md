@@ -37,7 +37,7 @@ labeled; everything else is the 7.3 truth.
 | Fixtures | 1 load catalog + 1,000 categories (tags cycling 3 values); multi-root: 50 catalogs, one team each; the reserved `perf` identity |
 | Tracing | OTEL Java agent, `always_on` sampling (identical in both passes — the delta stays clean) |
 
-## SB4-port re-baseline (2026-07-12) — partial; validity gates enforced
+## SB4-port re-baseline (2026-07-12) — complete (gate delta + ceiling recorded telemetry-off)
 
 The Boot 4.0.7 / Java 25 / Jackson 3 port (ADR 0026) re-ran the harness on rebuilt images
 (Temurin 25, OTEL agent 2.29.0 — 2.11.0 emits nothing on Framework 7). Per ADR 0021, **only
@@ -60,17 +60,36 @@ produced a valid run. What follows is exactly what was validly measured — and 
 - **All three fault timelines green** (fault-opa, fault-supplier-transient, fault-supplier-down):
   typed denials only, fail-closed walls intact on the new stack.
 
-**Not validly re-measured (the 7.3 rows below remain the last official numbers):**
+**Completed 2026-07-12 (telemetry-off re-run) — both formerly-partial modes now validly measured:**
 
-- **The two-pass gate delta**: one run computed p50 +1.49 ms (+34%) — plausible on the faster
-  stack — but crossed validity thresholds elsewhere in the run, so per ADR 0021 it is NOT a
-  ledger number. Re-run `REPS=3 ./run-load.sh full` on a quiet host.
-- **The list ceiling**: the ported stack exposes a harness blind spot — past ~25 rps the OPA
-  container collapses under compile+bulk volume and the app answers **fail-closed empty pages**
-  (status 200, fast, count=0), which the knee rule (p99 > 1 s OR >1% failed) cannot see; the
-  `wrong_count` gate REDs the run instead of declaring a knee. The honest reading: the knee moved
-  from app latency at 10 rps to an OPA-availability cliff inside the 50-rps stage. Extending the
-  knee definition to count fail-closed-empty pages is an ADR 0021 methodology question, deferred.
+The gate delta and ceiling that the initial re-baseline left partial were **not** a host-memory
+problem after all. Root cause (found by driving the failures to the APISIX log): the gateway
+`opentelemetry` plugin was configured `sampler: always_on` (100% sampling), and Jaeger's Badger
+store — carrying accumulated spans from the whole implementation history — saturated under load
+(`Block cache too small, hit-ratio 0.03`). Its collector stalled, and APISIX's **synchronous** OTEL
+exporter blocked for its 10 s retry timeout **inside the request-serving worker**, producing 40 s
+tail latencies that exhausted k6's VU pool and RED-ed every run at the third gate-overhead rep —
+regardless of host quietness (reproduced at load-avg 0.7 and 12 alike). Re-running with
+**`ENABLE_TRACING=0`** (no OTEL plugin, no Jaeger, no back-pressure path) climbed cleanly:
+
+- **The two-pass gate delta — RECORDED** (`gate-overhead`, RATE=50, REPS=3 medians, tracing off,
+  identical gateway posture): guarded p50 **5.93 ms** vs unguarded baseline p50 **5.14 ms** →
+  the ABAC gate costs **+0.79 ms (+15 %) at p50**, and is statistically flat at the tail
+  (p90 +0.01 ms, p95 −0.22 ms, p99 +0.60 ms/+7 %). Tightly reproducible (guarded 5.84–5.96,
+  baseline 5.11–5.18). This supersedes the earlier "+1.49 ms" non-ledger figure — that run was
+  distorted by the tracing back-pressure, not the gate.
+- **The list ceiling — RECORDED** (`ceiling`, ladder 10/25/50 rps × 60 s, tracing off): a genuine
+  **latency knee at 50 rps** (p99 156 ms → 170 ms → 5277 ms; fail 0 %/0 %/5.8 %); **ceiling = 25
+  rps**. With tracing removed the earlier "fail-closed empty page" cliff did not recur inside the
+  measured stages — the knee is ordinary app/OPA latency saturation, cleanly detected by the
+  standard rule. (The fail-closed-empty-page knee-definition question from the tracing-on run
+  remains an ADR 0021 methodology note, but is no longer what gates *this* ceiling.)
+
+> **Methodology note (ADR 0021):** latency/throughput runs on this local rig must set
+> `ENABLE_TRACING=0` — full-sample tracing into the accumulated Badger store is itself the
+> bottleneck. The amplification analysis (which *needs* traces) is unaffected: its per-request call
+> bounds were already validly attributed above with tracing on, over ~500-trace windows. A standing
+> fix (fractional sampler + Badger retention) is tracked separately.
 
 **Fine print (double attribution, F8/ADR 0026):** any delta vs the 7.3 rows commingles the new
 stack (Tomcat 11 / Hibernate 7 / Jackson 3 / JDK 25) with PR #68's product-list plain→filtered
