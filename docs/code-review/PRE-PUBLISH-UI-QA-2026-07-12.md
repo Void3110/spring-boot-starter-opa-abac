@@ -213,7 +213,20 @@ or authorization defect. Not a publish blocker on the security axis; DEF-1 is a 
 C2/C3 (subject-side tag-requirement row filtering: needs a tag-requirement-bearing role seeded; proven by
 `opa test` + ITs), G4 (transfer-ownership as non-owner: same owner-only fence class as G3).
 
-## DEF-1 — SPA double-provisioning race *(cosmetic, non-security; own fix branch)*
+## DEF-1 — SPA double-provisioning race *(cosmetic, non-security)* — ✅ FIXED
+
+> **Resolved 2026-07-12** (same session). Two-layer fix + live re-verification:
+> - `example-demo-ui/src/App.tsx` — a module-scope `provisioning` Map single-flights the provisioning
+>   effect per subject (the same once-only idiom the PKCE bootstrap uses), so a StrictMode double-invoke
+>   no longer fires two POSTs.
+> - `example-demo-ui/src/api.ts` — `ensureUser` now treats a **409 on create as success** (re-resolves
+>   the row), making the function race-correct on its own regardless of the caller.
+>
+> **Re-verified live** as a fresh unprovisioned user (`carol`): first login is clean — **no
+> "provisioning failed" banner**, and the network shows exactly `GET …/users?subject=… 200` then a
+> **single** `POST …/users 201` (no second POST, no 409). `tsc -b && vite build` green.
+
+The original finding (kept for the record):
 
 On the **first login of a not-yet-provisioned user**, the SPA fires **two** concurrent
 `POST /api/v1/users` self-provisioning calls: the first returns **201 Created**, the second **409 Conflict**.
