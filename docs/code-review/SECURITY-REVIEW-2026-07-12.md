@@ -8,12 +8,18 @@ tags:
 
 - **Date** 2026-07-12 · **Commit** `5a81fad` (post-SB4-port `main`) · **Scope** 7.4 pre-publish **delta** since the 7.0.5 baseline ([[PHASE-7-BASELINE-SECURITY-REVIEW]]), 8 angles (Rego corpus, control-plane privesc, tenant isolation, fail-closed edges, gateway/deploy config, demo-UI tokens, secrets, deps) · **Method** multi-agent fan-out → adversarial verify → cross-angle pass → synthesis, then reviewer independent re-verification of the High via `opa eval`. **Report-only** — fixes land on a separate follow-up branch.
 
-> **Live-probe caveat (read first).** The workflow ran **zero live rig probes** (`probed: 0`) — the OPA
-> container on this rig is currently loaded with an **unrelated policy bundle** (`paas/projects…`), not
-> this repo's `catalog/category/product` policies, so `data.catalog.*` returns undefined against it. The
-> one substantive finding (F1) is nevertheless **CONFIRMED**: it is a static-policy defect proven by
-> `opa eval` against the repo's own policy files (OPA 1.10.1), independently re-verified by the reviewer.
-> The rig-bundle mismatch is itself a **deploy-hygiene note** for the follow-up branch (see *Deferred*).
+> **Live-probe caveat (read first).** The workflow ran **zero live rig probes** (`probed: 0`). F1 is
+> nevertheless **CONFIRMED**: it is a static-policy defect proven by `opa eval` against the repo's own
+> policy files (OPA 1.10.1), independently re-verified by the reviewer.
+>
+> **Correction (2026-07-12, post-run):** the run's claim that "the rig's OPA is loaded with an unrelated
+> `paas/projects` bundle" was a **probe-targeting error, NOT a rig defect** — and is retracted. The host
+> has **two OPA servers from two runtimes** colliding on ports: the **docker starter OPA** publishes to
+> `localhost:28181` and correctly serves this repo's `catalog/category/product` bundle; a separate
+> **podman** OPA from an unrelated project (`opa-standalone`) publishes to `localhost:8181` and serves
+> the `paas/projects` corpus. The live probes queried `:8181` and hit the wrong server. The starter rig
+> was healthy throughout. **The correct starter-OPA probe port is `:28181`** (docker is dedicated to this
+> project; podman hosts the other stack). The F1 verdict is unaffected — it never depended on a live probe.
 
 ## Executive summary
 
@@ -93,15 +99,15 @@ opa test .   # 228/228
 > on `":"`, so the `action` must be `"catalog:view"`, not `"view"`. An early mis-shaped probe returned
 > a spurious `false` — flagged and corrected, not accepted.
 
-**Live-rig probe could NOT be run against this rig** and is deferred to the follow-up branch: the OPA
-container currently at `localhost:8181` is loaded with an **unrelated policy bundle** (a `paas/projects`
-corpus), not this repo's `catalog/category/product` policies — every `data.catalog.*` query there returns
-undefined. This is a rig/deploy-hygiene issue (the wrong bundle is mounted), independent of the finding;
-the finding is fully CONFIRMED by `opa eval` against the repo policies regardless. When the correct
-bundle is mounted, the end-to-end cell is: set `abac_deny=true` on a catalog row via DB `UPDATE ...
-jsonb_set` (the client tag path returns 422 — confirm it is rejected as non-allowlisted), then confirm
-`GET /catalogs` omits it (200, absent from page) BUT `GET /catalogs/{id}` returns 200 with the row and
-`DELETE /catalogs/{id}` succeeds.
+**Live-rig probe during the run hit the WRONG OPA** (see the corrected caveat at the top): the run
+queried `localhost:8181`, which is a **podman** OPA from an unrelated project serving a `paas/projects`
+corpus — not this repo's docker starter OPA, which publishes to **`localhost:28181`** and serves the
+`catalog/category/product` bundle correctly. So the live cell was never actually run against the starter;
+F1 stands entirely on the `opa eval` confirmation above. The end-to-end cell, to run against **`:28181`**
+(or through the gateway): set `abac_deny=true` on a catalog row via DB `UPDATE ... jsonb_set` (the client
+tag path returns 422 — confirm it is rejected as non-allowlisted), then confirm `GET /catalogs` omits it
+(200, absent from page). Pre-fix: `GET /catalogs/{id}` returns 200 and `DELETE /catalogs/{id}` succeeds
+(the fail-open). Post-fix (PR #71, now on `main`): both single-GET and DELETE must return **403**.
 
 ### Suggested FIX DIRECTION (not the fix)
 Port the `denied if input.resource.attributes.abac_deny == true` rule + a `not denied` conjunct on `allow` into `catalog.rego`, matching the sibling policies; add the missing `catalog_test.rego` `abac_deny` cells (currently zero) asserting single-GET/update/delete all deny a catalog tagged `abac_deny=true`, and list↔single-GET agreement.
@@ -158,10 +164,11 @@ Not covered in this delta pass; run before 1.0 publish:
 - Full CVE audit (this pass flagged one transitive to pin; a full sweep is deferred).
 - Signing / supply-chain (once `maven-publish` is wired — none today).
 - Zero-config fail-safety (behavior of a bare adopter with defaults).
-- **Live-rig re-probe of F1** once the rig's OPA is loaded with THIS repo's bundle (the container at
-  `localhost:8181` currently serves an unrelated `paas/projects` corpus — a deploy-hygiene fix, not a
-  finding). The e2e cell is spelled out under F1's "Live-rig probe" paragraph. The static defect is
-  already CONFIRMED by `opa eval`; the live re-probe is confirmatory, not gating.
+- **Live-rig re-probe of F1** against the **docker starter OPA on `localhost:28181`** (NOT `:8181`,
+  which is a podman OPA from an unrelated project — the run's original mis-target, now corrected above;
+  no deploy-hygiene fix is needed, just the right port). The e2e cell is under F1's "Live-rig probe"
+  paragraph. The static defect is already CONFIRMED by `opa eval`; the live re-probe is confirmatory,
+  not gating, and should now show single-GET/DELETE → 403 with the PR #71 fix on `main`.
 
 ## Follow-up branch — triage (severity-ordered)
 
