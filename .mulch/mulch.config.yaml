@@ -7,6 +7,9 @@ domains:
   api-design: {}
   code-review-process: {}
   autonomous-runs: {}
+  # Load-testing knowledge: the k6 harness (scripts/load), ADR-0021 methodology, rig-under-load
+  # behavior, measured numbers, and the environmental/observability gotchas that invalidate runs.
+  load-testing: {}
 governance:
   max_entries: 100
   warn_entries: 150
