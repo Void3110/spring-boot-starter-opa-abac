@@ -10,6 +10,22 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 [![CI](https://github.com/Void3110/spring-boot-starter-opa-abac/actions/workflows/ci.yml/badge.svg)](https://github.com/Void3110/spring-boot-starter-opa-abac/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+---
+
+> ### 🔍 Two things to look at here
+>
+> **1. The library** — production-grade ABAC authorization for Spring Boot on OPA, with the features
+> real apps need and existing libraries don't: hierarchical resources, batch evaluation, and
+> partial-evaluation data filtering. *(The rest of this README.)*
+>
+> **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
+> engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
+> `plan → decompose → autonomous-implement → review` — where each pass leaves artifacts (in **Mulch**
+> and this vault) that make the next one sharper. **21 feature slices, 27 ADRs, 830 unit/IT tests +
+> `opa test` 233/233 + a 14-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
+> security review** — all delivered this way, with the prompts and per-slice retrospectives kept
+> verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
+
 ## Status
 
 🚧 **Pre-publish** — every functional slice is shipped and proven end-to-end (unit + Testcontainers ITs
@@ -202,41 +218,75 @@ export DOCKER_HOST="unix://$(podman machine inspect podman-machine-default \
 
 GitHub Actions provides Docker out of the box, so CI runs these tests with no extra config.
 
-## How this repo is built — AI-assisted engineering
+## How this repo is built — AI-assisted engineering (the second deliverable)
 
 Beyond the library, this repo is a deliberate, **studyable case study in high-autonomy AI-assisted
-engineering**. Every slice is shipped through the same documented loop, and the prompts and outcomes are
-kept verbatim so the *method* — not just the result — is on display:
+engineering**. The headline is not "a workflow" — it's an **engineered loop**: every slice ships through
+the same documented cycle, and each pass leaves artifacts that make the *next* pass sharper. Two loops, at
+two timescales:
+
+- **Inner loop** (per ticket) — `prime → build → test → ★architecture-review+refactor → e2e → commit`.
+  Unit-green is not "done": it's the *trigger* to review-and-refactor **before** the heavier validation.
+  Self-correction is built into every ticket.
+- **Outer loop** (across slices) — a **run retrospective** is recorded after each slice (was it a clean
+  run or did it pause to ask — and what should planning have pre-resolved), and the *next* slice's planning
+  reads it. The loop literally learns: an oversized slice paused once → that became a **slice-sizing gate**
+  every later slice is checked against.
 
 ```
 ① PLAN          ② DECOMPOSE              ③ AUTONOMOUS IMPLEMENT       ④ REVIEW / SHIP
 chat + grill-me  design → ordered tickets  one agent runs the prompt,   /deep-review (multi-lens,
 → ADRs, design   + QA cases + a verbatim   ticket by ticket,            adversarial verify) →
                  autonomous prompt         checkpoint-gated,            PR → CI → merge →
-                                           fail-closed                  record the run retrospective
+                                           fail-closed                  record the run retrospective ──┐
+     ▲                                                                                                 │
+     └─────────────── the retrospective + the accumulators feed the NEXT slice's planning ◀────────────┘
 ```
+
+**What makes it a *loop*, not a pipeline, is two accumulators** — the memory that carries between passes:
+
+- **Mulch** — the *experiential* memory (`ml prime` before a task, `ml record` after a durable insight).
+  Its `autonomous-runs` domain is the outer loop's state store.
+- **This vault** (`docs/`) — the *decisional* memory: immutable ADRs, living guides, per-slice `STATUS`
+  notes, review notes, QA records. Phase ① reads it to know what's decided and what's still unpinned.
 
 Each slice's planning package (`00-DESIGN`, the ordered tickets, the **verbatim**
 `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`, and per-ticket `STATUS` notes) is preserved under
-[`docs/to-do/`](docs/to-do/) so a reader can see how the work was reasoned about, handed off, and verified.
+[`docs/to-do/`](docs/to-do/) so a reader can see exactly how the work was reasoned about, handed off, and
+verified — nothing is hidden behind "the AI did it."
+
+**What the method delivered** (all shipped through this loop):
+
+| | |
+|---|---|
+| **21** feature slices | each planned → decomposed → autonomously implemented → reviewed |
+| **27** ADRs | every structural fork pinned as an immutable decision record |
+| **830** unit/IT tests · `opa test` **233/233** · **14**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
+| **+0.79 ms** ABAC gate at p50 | measured on the real rig, statistically flat at the tail ([PERFORMANCE.md](PERFORMANCE.md)) |
+| **0 Critical** security review | pre-publish 8-angle review + secret scan + CVE sweep, findings fixed |
 
 **The tooling that powers each phase** (with upstream credits and the orchestration patterns each one
 instantiates):
 
 | Phase | Tooling |
 |-------|---------|
-| ① Plan | **grill-me** (fork-resolving interview) → immutable ADRs + a design |
-| ② Decompose | **decompose** (the skill) → the ordered tickets, QA cases, and the autonomous prompt |
+| ① Plan | **grill-me** (Matt Pocock — a fork-resolving interview) → immutable ADRs + a design |
+| ② Decompose | **decompose** (this repo's skill) → the ordered tickets, QA cases, and the verbatim autonomous prompt |
 | ③ Implement | one agent runs the prompt, checkpoint-gated, with an architecture-review gate before every validation |
-| ④ Review | **deep-review** — a multi-lens, adversarial workflow (fan-out → refute → synthesize) |
-| All phases | **Mulch** (a per-repo expertise store, primed before / recorded after) + **LSP** (`jdtls`) code intelligence |
+| ④ Review | **deep-review** — a multi-lens, adversarial workflow (fan-out → **refute** → synthesize); **security-review** for whole-surface passes |
+| Across passes | **Mulch** (Jaymin West — the expertise store, primed before / recorded after) + **the vault** (the decisional accumulator) |
 
-Two quality ideas run through it: **fail-closed is the load-bearing invariant** every slice is checked
-against, and an **autonomous-run retrospective** is recorded for each slice (was it a clean run or did it
-pause to ask — and what should planning have pre-resolved) so the *next* slice's planning gets sharper.
+The orchestration shapes (fan-out, adversarial-verify, completeness-critic, loop-until-dry) are
+**Anthropic's dynamic-workflows / "a harness for every task"** patterns, composed per phase.
 
-> The full method — the prompt template, the hard rules, the tooling stack with credits, and a portable
-> review-harness template — is documented in
+**Fail-closed is the load-bearing invariant** every slice is checked against — no error path ever widens
+access. And the loop is deliberately **human-gated**: the maintainer runs each phase and decides what
+merges (an auditable loop, not a runaway flywheel) — a feature, for a method meant to be trusted.
+
+> **The full method lives in [`docs/methodology/`](docs/methodology/README.md)** — the loop framing, the
+> 4-phase lifecycle, the three failure modes it counters, and the portable, vendor-neutral phase
+> [`templates/`](docs/methodology/templates/). The deep, canonical reference (the verbatim prompt skeleton
+> + the lessons baked into it) is
 > [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md).
 
 ## Requirements
@@ -263,7 +313,7 @@ The full architecture, decision records, and per-feature guides live in [`docs/`
 - **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
 - **Architecture & ADRs** — [`docs/architecture/`](docs/architecture/)
 - **Roadmap** — [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md)
-- **AI-assisted workflow** — [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) (the plan → implement → review method this repo is built with) + the portable [`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](docs/code-review/DEEP-REVIEW-TEMPLATE.md)
+- **AI-assisted methodology** — [`docs/methodology/`](docs/methodology/README.md) (the `plan → implement → review` loop this repo is built with, framed + indexed) + the deep reference [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) and the portable phase [`templates/`](docs/methodology/templates/)
 
 ## License
 

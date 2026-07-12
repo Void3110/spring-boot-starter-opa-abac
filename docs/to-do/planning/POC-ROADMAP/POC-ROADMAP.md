@@ -9,13 +9,15 @@ tags:
 
 # Proof-of-Concept Roadmap
 
-> **Status (2026-07-12):** Pre-publish. **All functional slices are shipped to `main`** (Phases 0–6.7
+> **Status (2026-07-13):** Pre-publish. **All functional slices are shipped to `main`** (Phases 0–6.7
 > + B2/B3/B4 + the 5.x API/hierarchy work + the whole Phase-7 gauntlet through the **Spring Boot 4 port**,
-> merged PR #70). **7.4 is essentially clear** — the delta security review (0 Critical; findings fixed),
+> merged PR #70). **7.4 is done** — the delta security review (0 Critical; findings fixed),
 > the full-history secret scan (clean), the dependency CVE sweep (clean), the zero-config fail-safety
-> audit (fail-closed), and the load-test re-baseline are all done; what's left before **1.0** is the
-> **Maven Central publishing setup** (signing/supply-chain), then **7.5** (publish). This note tracks how the features fit
-> together and the order we tackled them; each has its own folder under `to-do/implemented/`.
+> audit (fail-closed), the load-test re-baseline, **and the pre-publish UI QA** (A–I all PASS, one
+> cosmetic SPA defect found + fixed, PRs #78/#79) are all done. The **only** thing left before **1.0** is
+> the **Maven Central publishing setup** — now designed and planned as [[MAVEN-CENTRAL-PUBLISHING]]
+> ([[0027-maven-central-release-engineering|ADR 0027]]); then **7.5** (publish). This note tracks how the
+> features fit together and the order we tackled them; each has its own folder under `to-do/implemented/`.
 
 ## The thesis
 

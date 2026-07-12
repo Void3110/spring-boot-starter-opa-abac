@@ -22,9 +22,10 @@ process, checklist, and a portable template it references.
 
 - [`CODE-REVIEW-WORKFLOW.md`](CODE-REVIEW-WORKFLOW.md) — the phases a review goes through (this project).
 - [`CODE-REVIEW-CHECKLIST.md`](CODE-REVIEW-CHECKLIST.md) — per-finding checklist (this project).
-- [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) — the **vendor-neutral, adaptable** version of the
-  review harness, with project-specific parts marked as fill-in slots (for adopting this flow elsewhere;
-  credits the Anthropic dynamic-workflows patterns it builds on).
+- [`DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md) — the **vendor-neutral,
+  adaptable** version of the review harness, with project-specific parts marked as fill-in slots (for
+  adopting this flow elsewhere; credits the Anthropic dynamic-workflows patterns it builds on). *Moved to
+  [`../methodology/templates/`](../methodology/) — the consolidated methodology home.*
 
 ## Mulch-driven
 

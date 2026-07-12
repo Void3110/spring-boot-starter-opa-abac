@@ -551,7 +551,7 @@ knows that material rather than looking like bespoke ceremony.
 > **This section is seeded, not finished.** It captures the stack as used through the slices shipped so
 > far. Each future slice is expected to *refine* it — most concretely, to generalize the `deep-review`
 > skill from its still-somewhat-project-specific form toward the portable template in
-> [`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). Treat the
+> [`docs/methodology/templates/DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). Treat the
 > entries below as living.
 
 ### The stack at a glance
@@ -561,8 +561,8 @@ knows that material rather than looking like bespoke ceremony.
 | **Mulch** (`ml`) | A CLI expertise store — durable team knowledge (patterns, decisions, failures) recorded per project in `.mulch/`, primed back into the agent before a task. | All phases (prime before, record after) | **Jaymin West** — [`@os-eco/mulch-cli`](https://github.com/jayminwest/mulch) (MIT). Installed globally, store is per-repo. | *Externalized memory* — the durable counter to **goal drift**: invariants live in a store the agent re-reads, not in a degrading context window. |
 | **LSP code intelligence** (`jdtls`) | Eclipse JDT language server, exposed as the agent's `LSP` tool: real Java symbol resolution — `goToDefinition`, `findReferences`, `goToImplementation`, `documentSymbol`/`workspaceSymbol`, call hierarchy. *Symbol-accurate*, not text-grep. | All phases (precise navigation: scope a change in ①/②, trace blast-radius in ④) | **Anthropic** — the `jdtls-lsp` Claude Code plugin (+ `pyright-lsp` for Python). | *Ground-truth structural index* — answers "who calls this / what implements this" from the compiler's model, where ripgrep can only guess. The Java-native code intelligence layer. |
 | **grill-me** | A skill that interviews the maintainer one question at a time, walking each branch of the design tree and recommending an answer, until every fork is resolved. | ① Planning | **Matt Pocock** — [`mattpocock/skills`](https://github.com/mattpocock/skills) (`productivity/grill-me`). | *Evaluator-driven elicitation* — front-loads decisions into ADRs **before** the autonomous run, so the run has fewer reasons to stop (the planning-time form of "stop and ask"). |
-| **decompose** (formerly `slice-planner`) | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. Portable form: [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md). | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
-| **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ④ Review / ship | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
+| **decompose** (formerly `slice-planner`) | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. Portable form: [`DECOMPOSE-SKILL-TEMPLATE.md`](../methodology/templates/DECOMPOSE-SKILL-TEMPLATE.md). | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
+| **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ④ Review / ship | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
 | **Claude Code dynamic workflows** | The runtime that executes a JS orchestration script of many subagents in the background; the deep-review skill's heavy path (2B) *is* such a workflow. | ④ (the heavy review path) | **Anthropic** — [official docs](https://code.claude.com/docs/en/workflows) + the "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)" blog. | The substrate the patterns run on — see the [vault distillation](#related) of the feature. |
 
 ### Why these three, mapped to the three failure modes
@@ -645,20 +645,20 @@ Two of the four tools are **upstream** (others' work we adopt); two are **this r
 **Ours (this repo's local skills, gitignored in `.claude/skills/`):**
 - **decompose** (formerly `slice-planner`) — the phase-② automation that instantiates §3–§4 of this
   guide; the guide stays the single source of truth, the skill is its checklist + scaffolding. Portable
-  form: [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md).
+  form: [`DECOMPOSE-SKILL-TEMPLATE.md`](../methodology/templates/DECOMPOSE-SKILL-TEMPLATE.md).
 - **deep-review** — the phase-④ review harness; its portable form is
-  [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md). Built by composing the Anthropic
+  [`DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). Built by composing the Anthropic
   patterns above, tuned to this repo's invariants.
 - **security-review** — the *whole-surface* counterpart to deep-review: not diff-scoped but a fan-out over
   the real attack surface, adversarially verified and **live-probed against the running rig**, written as
   a dated report (report-only; fixes are a follow-up branch). Portable form:
-  [`SECURITY-REVIEW-SKILL-TEMPLATE.md`](../code-review/SECURITY-REVIEW-SKILL-TEMPLATE.md).
+  [`SECURITY-REVIEW-SKILL-TEMPLATE.md`](../methodology/templates/SECURITY-REVIEW-SKILL-TEMPLATE.md).
 - **autonomous-implement** (template only, for now) — the phase-③ runner discipline as a skill wrapper,
   for repos that outgrow pasting the bare §4 prompt. Portable form:
-  [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md).
+  [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](../methodology/templates/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md).
 
 A reader who wants to adopt the *review* half of this flow in their own project should start from
-[`docs/code-review/DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) — a vendor-neutral
+[`docs/methodology/templates/DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md) — a vendor-neutral
 version with the project-specific parts marked as fill-in slots.
 
 ### Where each prompt sits on the maturity model
@@ -703,9 +703,9 @@ automate; revising the skeleton is a human, ADR-worthy decision.)
 **Phase ④ Review / ship:**
 - `docs/code-review/CODE-REVIEW-WORKFLOW.md` — the `/deep-review` process that runs after the
   autonomous run, before push/PR/merge.
-- `docs/code-review/DEEP-REVIEW-TEMPLATE.md` — the vendor-neutral, adaptable version of the review
+- `docs/methodology/templates/DEEP-REVIEW-TEMPLATE.md` — the vendor-neutral, adaptable version of the review
   harness (for adopting this flow in another project).
-- `docs/code-review/SECURITY-REVIEW-SKILL-TEMPLATE.md` — the vendor-neutral whole-surface *security*
+- `docs/methodology/templates/SECURITY-REVIEW-SKILL-TEMPLATE.md` — the vendor-neutral whole-surface *security*
   review harness (fan-out → adversarial verify → live probe → cross-angle → dated report); the
   pre-publish / post-slice counterpart to the diff-scoped deep-review.
 

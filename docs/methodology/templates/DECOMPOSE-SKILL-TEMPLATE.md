@@ -9,8 +9,8 @@ tags:
 # DECOMPOSE skill — instantiation template (phase ②)
 
 The portable form of the `/decompose` skill (formerly `slice-planner`) — the phase-②
-automation of [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](AUTONOMOUS-IMPLEMENTATION-FLOW.md).
-Companion to [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md), and the same
+automation of [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md).
+Companion to [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md), and the same
 model: **the method lives in the flow guide; each repo gets a thin, honest instantiation** —
 a local `.claude/skills/decompose/` skill plus a documented conventions delta. Two
 instantiations exist as of this writing (this repo, and a private multi-repo corporate
@@ -124,6 +124,6 @@ effort: high
 
 ## Related
 
-- [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](AUTONOMOUS-IMPLEMENTATION-FLOW.md) — the canonical method (§2 planning, §3 decomposition, §4 prompt template, §6 slots, §7.0 wording)
+- [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) — the canonical method (§2 planning, §3 decomposition, §4 prompt template, §6 slots, §7.0 wording)
 - [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md) — the phase-③ runner counterpart
-- [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) — the phase-④ counterpart, same instantiation model
+- [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) — the phase-④ counterpart, same instantiation model

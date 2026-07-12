@@ -9,9 +9,9 @@ tags:
 # AUTONOMOUS-IMPLEMENT skill — instantiation template (phase ③)
 
 The portable form of a `/autonomous-implement` skill — the **runner discipline** around the
-phase-③ loop of [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](AUTONOMOUS-IMPLEMENTATION-FLOW.md).
+phase-③ loop of [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md).
 Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase ②) and
-[`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) (phase ④).
+[`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) (phase ④).
 
 > **Do you need this at all?** This repo runs phase ③ by **pasting the prepared
 > `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` into a fresh session** — the prompt is self-contained
@@ -116,6 +116,6 @@ effort: high
 
 ## Related
 
-- [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](AUTONOMOUS-IMPLEMENTATION-FLOW.md) — §4 (the prompt this skill runs), §5 (the invariant skeleton), §7 (lessons), §7.0 (wording rules)
+- [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) — §4 (the prompt this skill runs), §5 (the invariant skeleton), §7 (lessons), §7.0 (wording rules)
 - [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) — produces the package this skill executes
-- [`DEEP-REVIEW-TEMPLATE.md`](../code-review/DEEP-REVIEW-TEMPLATE.md) — the review authority the ★gate's heavy path reuses
+- [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) — the review authority the ★gate's heavy path reuses

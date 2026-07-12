@@ -264,8 +264,16 @@ set, and `Page.getTotalElements()` is the **exact, subject-relative authorized t
 ## What this slice does NOT do
 
 Action enrichment (Phase 6) · coarse permission categories (Phase 6.5) · ReBAC-in-Rego / mid-tree per-node
-grants (Phase 8) · a non-Postgres `JsonPathDialect` · partial-eval result caching · widening a list that does
-not already use this partial-eval path (e.g. the product list's plain scoped query — a separate adoption).
+grants (Phase 8) · a non-Postgres `JsonPathDialect` · partial-eval result caching.
+
+> **Coverage note (updated for taggable products, ADR [[adr/0025-taggable-products|0025]]).** As of the
+> Product-Tags slice, the **product list has adopted this partial-eval path** — it is no longer a plain
+> scoped query. `ProductController.listProducts` delegates to `ProductListAuthorizer`, which applies the
+> same residual-AND-`categoryId`-scope cut this guide describes for categories (the residual from
+> `product.rego`'s `filter` entrypoint AND-ed with the path scope, fail-closed to an empty page), plus the
+> 5.5-B hierarchy widening (an inheritable Catalog grant may widen the leaf list via `subtreeSpec`,
+> resolved on the governing catalog and degrading fail-closed to the tag-only filter + batch recheck).
+> All three list types — catalog, category, product — now run the same cut.
 
 ## Related
 

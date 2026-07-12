@@ -184,6 +184,49 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   happens to run) — with **behavior byte-identical** to the proven 3.4 implementation, so adopting it
   doesn't mean betting on an EOL platform or re-verifying semantics. — **SB4 port (pre-publish)**
   ([[SPRING-BOOT-4-PORT]], ADR [[0026-spring-boot-4-single-line-port|0026]])
+- **F7** *As a developer adopting the starter*, I can pull it straight from **Maven Central** —
+  `implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter:1.0.0")` (or pin everything through
+  `platform("dev.dmitriikonovalov:opa-abac-bom:1.0.0")`) — a signed, POM-complete `1.0.0` with sources +
+  javadoc, no building-from-source and no snapshot repo. The optional Keycloak directory module is its own
+  fetchable coordinate; the demo apps are **not** published. — **Phase 7 (publish)**
+  ([[MAVEN-CENTRAL-PUBLISHING]], ADR [[0027-maven-central-release-engineering|0027]])
+
+### Epic I — "The demo UI is honest about what I can do" (the SPA experience)
+
+> The `example-demo-ui` SPA is the human-facing lens over the same enforced decisions — a teaching
+> surface where the authorization *cut* is **visible**, not just a green test. These stories capture the
+> UX flows the pre-publish UI QA (2026-07-13) exercised end-to-end through the gateway. They are
+> **SPA-experience** stories: the enforcement they ride on is already proven by epics A–H; what's new is
+> that a *person* sees it. Verified live in `docs/code-review/PRE-PUBLISH-UI-QA-2026-07-12.md`.
+
+- **I1** *As any visitor*, the SPA shows nothing until I sign in — a Keycloak Authorization-Code + PKCE
+  login, no anonymous catalog data — and "Switch identity" fully clears the session so the next persona's
+  reach applies cleanly. — **Phase 7 (demo SPA)** ✅ (A1/A2/A4 in the UI QA)
+- **I2** *As a member vs a stranger*, I see the tenant-isolation cut with my own eyes: a member sees the
+  catalog; an identity with no team membership sees an **empty** list **and** is denied a direct deep-link
+  to the catalog (no shell, no children) — membership is the sole access path. — **Phase 7 (demo SPA)** ✅
+  (B2/B3; rides [[TENANT-ISOLATION]] / ADR [[0018-team-scoped-resource-isolation|0018]])
+- **I3** *As a viewer vs an editor vs an owner*, the buttons I see mirror my grant — the `_actions` map
+  drives the controls: a viewer's write/tag/delete affordances are **absent/disabled**, an editor's are
+  live, an owner also sees the control-plane (add-member / change-role / define-roles). — **Phase 7 (demo
+  SPA)** ✅ (D1–D4; rides Epic E action enrichment)
+- **I4** *As a viewer*, a control the client predicts I can't use shows **amber** (a client-side
+  prediction from `_actions`) — and if I force the action anyway, the **server** still denies it and the
+  failure surfaces distinctly in **red**: the amber affordance never *replaces* enforcement (a forced
+  create still returns `403 ACCESS_DENIED`). — **Phase 7 (demo SPA)** ✅ (E1–E3 in the UI QA — the
+  amber-vs-red predicted-deny UX; affordance ≠ enforcement)
+- **I5** *As an editor*, I create a category/product and assign dictionary-legal tags **in the same step**
+  (tag-on-create), the dictionary-driven tag editor offers only legal keys/values on **all three** taggable
+  types (catalog, category, product), and an out-of-dictionary value is rejected `422 TAG_VALUE_ILLEGAL`
+  with a readable message — I can never set the operator-only `abac_deny` key from the client. — **Phase 7
+  (demo SPA)** ✅ (F1–F3/I2 in the UI QA; rides Epic C + [[0025-taggable-products|ADR 0025]])
+- **I6** *As an owner*, I close the self-service loop from the UI: I search the **identity directory** for
+  someone who has never logged in, provision-and-grant them a role in one flow, and after they re-login
+  they now see the catalog that was empty before — membership, established through self-service. A custom
+  non-owner role attempting the same control-plane action is denied honestly (`403`). — **Phase 7 (demo
+  SPA)** ✅ (G1/G2/G3 in the UI QA; rides [[USER-DIRECTORY-PORT]] / ADR
+  [[0020-user-directory-port|0020]] + the control-plane vocabulary, ADR
+  [[0015-control-plane-vocabulary-categorization|0015]])
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
