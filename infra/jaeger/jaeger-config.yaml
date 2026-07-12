@@ -36,7 +36,13 @@ extensions:
             keys: /badger/keys
             values: /badger/values
           ttl:
-            spans: 168h   # 7-day retention
+            # 24h retention (was 168h/7d). At always_on sampling a multi-week run accreted a ~13 GB
+            # Badger store whose block cache thrashed (hit-ratio 0.03) under load — its collector
+            # stalled and APISIX's *synchronous* OTEL exporter blocked in the request worker, adding
+            # multi-second tails that invalidated load runs. A day of local debug traces is plenty;
+            # the volume is disposable (traces are never source-of-truth). Latency/throughput load
+            # runs MUST use ENABLE_TRACING=0 regardless (see scripts/load/run-load.sh header).
+            spans: 24h
 
 receivers:
   otlp:

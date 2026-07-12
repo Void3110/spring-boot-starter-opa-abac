@@ -11,6 +11,16 @@
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 # and k6 on the host: brew install k6
 #
+# TRACING vs latency runs — READ THIS. For latency/throughput modes (full/guarded/baseline/ceiling)
+# bring the rig up with ENABLE_TRACING=0. At always_on sampling the gateway opentelemetry plugin
+# exports one span PER REQUEST *synchronously* through APISIX's request worker; if Jaeger's Badger
+# store is slow (it accretes to multi-GB and thrashes under load), that export blocks for its retry
+# timeout INSIDE the worker, adding multi-second tail latencies that exhaust k6's VU pool and RED an
+# otherwise-valid run — reproducibly, regardless of host load. Only the amplification analysis (§6)
+# needs traces; its per-request call bounds are attributed in a dedicated tracing-ON pass over a
+# ~500-trace window, separate from the latency numbers. TL;DR: ENABLE_TRACING=0 for latency, ON only
+# when you specifically want the amplification attribution.
+#
 # First use: the `perf` realm user ships in infra/keycloak/realm-export.json — a realm-export
 # change only imports on container CREATE, so recreate Keycloak once:
 #   docker compose -p opa-abac-example -f infra/compose.keycloak.yaml up -d --force-recreate keycloak
