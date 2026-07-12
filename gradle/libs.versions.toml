@@ -20,6 +20,15 @@ resilience4j = "2.4.0"
 # Keycloak admin client (the user-directory port's optional impl, ADR 0020 §8) — released independently
 # of the server; the 26.x client line is compatible with the 26.x server the rig runs (26.3.2).
 keycloak = "26.0.5"
+# commons-io CONSTRAINT (not a direct dependency): keycloak-admin-client 26.x drags commons-io 2.11.0
+# transitively via resteasy-multipart-provider → apache-mime4j. 2.0–2.13.x are vulnerable to
+# CVE-2024-47554 (XmlStreamReader uncontrolled CPU consumption / DoS, CWE-400, CVSS 4.3), fixed in 2.14.0.
+# The Spring Boot 4 BOM does not manage commons-io, so nothing overrides the vulnerable 2.11.0 without
+# this pin. The vulnerable XML path is NOT reachable via KeycloakUserDirectory (JSON-only, fail-closed),
+# and this module is compileOnly on the published starter (absent from its runtimeClasspath) — so the
+# pin is defence-in-depth for adopters who enable the module, not a live-exploit fix. See the 7.4
+# security review (docs/code-review/SECURITY-REVIEW-2026-07-12.md, F2).
+commonsIo = "2.19.0"
 
 # Example-app deps (managed by the Spring BOM where possible; pinned here when not)
 # springdoc 3.x is the Boot-4 line (2.x targets Boot 3).
@@ -46,6 +55,8 @@ slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
 resilience4j-core = { module = "io.github.resilience4j:resilience4j-core", version.ref = "resilience4j" }
 keycloak-admin-client = { module = "org.keycloak:keycloak-admin-client", version.ref = "keycloak" }
+# Constraint target only (see the commonsIo version comment): forced onto the transitive commons-io.
+commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
 
 # --- Example app (codegen support deps the spring generator references) ---
 springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdocOpenApi" }
