@@ -13,7 +13,7 @@ tags:
 **Context tags:** Boot 4 / Framework 7 / Security 7 / Hibernate 7 / Jackson 3, single-line packaging, Java 25 bytecode, wire-format parity, `authorize()`, R4j internal-pin elimination
 
 > The packaging and platform decisions behind the Spring Boot 3.4 → 4.0 port — settled by grill-me
-> over the research pass (`docs/to-do/planning/SPRING-BOOT-4-PORT/RESEARCH.md`). The port itself is
+> over the research pass (`docs/to-do/implemented/SPRING-BOOT-4-PORT/RESEARCH.md`). The port itself is
 > deliberately mechanical (byte-identical behavior); this ADR records the four decisions that were
 > genuinely forks, so they aren't re-litigated at implementation or at 1.0.
 

@@ -18,7 +18,7 @@ tags:
 > by ADRs [[0023-request-scoped-resolution-memoization|0023]] and [[0024-batch-role-resolution|0024]];
 > the design is [[00-DESIGN]]; the work list is [[01-DECOMPOSITION]] (T1–T6), QA in
 > [[10-QA-TEST-CASES]], the run prompt in [[AUTONOMOUS-IMPLEMENTATION-PROMPT]]. Runs **before** the
-> Spring Boot 4 port (`docs/to-do/planning/SPRING-BOOT-4-PORT/RESEARCH.md`) — semantic change on the
+> Spring Boot 4 port (`docs/to-do/implemented/SPRING-BOOT-4-PORT/RESEARCH.md`) — semantic change on the
 > proven 3.4 rig; the port re-baselines perf once, after both.
 
 ## Tickets

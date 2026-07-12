@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/implemented
   - type/index
   - area/architecture
   - area/spring
@@ -8,7 +8,10 @@ tags:
 
 # SPRING-BOOT-4-PORT — target Boot 4 first-class (the publish line)
 
-> **Status: Planning — decomposed, ready for the autonomous run.** The Spring Boot 3.4 → 4.0 port:
+> **Status: ✅ SHIPPED (2026-07-12, the autonomous run T1–T7, zero pauses; deep-review approved with
+> zero findings — [SPRING-BOOT-4-PORT-REVIEW](../../../code-review/SPRING-BOOT-4-PORT-REVIEW.md);
+> merged to `main` as PR #70, squash `0ddeea3`; the last 3.4 commit is tagged `pre-sb4-port`).**
+> The Spring Boot 3.4 → 4.0 port:
 > the whole 3.x line is out of OSS support, and a library publishing its 1.0 in late 2026 must target
 > the current line — Boot 4.0 (Framework 7 / Security 7 / Jakarta EE 11 / Hibernate 7 / Jackson 3) on
 > **Java 25 / Gradle 9.x**, as a **single-line artifact** (no dual 3.5/4.0). Deliberately mechanical:
