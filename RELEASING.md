@@ -69,53 +69,90 @@ gpg --full-generate-key          # choose RSA 4096; set a passphrase; note the l
 gpg --list-secret-keys --keyid-format=long    # copy the 16-hex key id
 ```
 
-Publish the **public** half to a keyserver so Central can verify the signatures:
+Publish the **public** half to the keyservers Central checks, so it can verify the signatures:
 
 ```bash
-gpg --keyserver keyserver.ubuntu.com --send-keys <YOUR_LONG_KEY_ID>
-# (keys.openpgp.org is a common second mirror)
+# Upload via HTTP — more reliable than `gpg --send-keys`, which can fail with
+# "keyserver send failed: Invalid argument" on some GnuPG 2.x builds.
+gpg --armor --export <YOUR_LONG_KEY_ID> > /tmp/pub.asc
+curl --data-urlencode "keytext@/tmp/pub.asc" https://keyserver.ubuntu.com/pks/add
+
+# keys.openpgp.org (Central's preferred server) needs a JSON upload + EMAIL VERIFICATION
+# before it serves the UID — upload, then click the link it emails you:
+curl -X POST https://keys.openpgp.org/vks/v1/upload \
+     -H 'Content-Type: application/json' \
+     -d "{\"keytext\": $(python3 -c 'import json,sys; print(json.dumps(open("/tmp/pub.asc").read()))')}"
+# → open the verification email to void…@… and click the link, so the email UID is published.
 ```
 
-Export the **private** key in ASCII-armored form for the in-memory signing property:
+**Confirm the key is actually queryable before you publish** — Central rejects with *"Could not find a
+public key by the key fingerprint"* if it isn't. Both of these must return the key:
 
 ```bash
-gpg --armor --export-secret-keys <YOUR_LONG_KEY_ID> > /tmp/signing-key.asc   # delete after step 2c
+FPR=<YOUR_FULL_40-HEX_FINGERPRINT>   # gpg --fingerprint shows it
+curl -s "https://keyserver.ubuntu.com/pks/lookup?op=index&search=0x$FPR&options=mr" | grep pub
+curl -s "https://keys.openpgp.org/pks/lookup?op=index&search=0x$FPR&options=mr"      | grep pub
 ```
+
+Keyserver indexing can lag a minute or two after upload — poll until both `op=index` queries resolve.
 
 ### 2b. Get a Central Portal user token
 
 Central Portal → **Account → Generate User Token**. This yields a **username/password pair** (a token,
-*not* your login) used by the publish task.
+*not* your login) used by the publish task. The password is shown **once** — copy it immediately.
 
-### 2c. Put it all in `~/.gradle/gradle.properties` (never the repo)
+### 2c. Put it in `~/.gradle/gradle.properties` (never the repo)
 
 ```properties
 # ~/.gradle/gradle.properties  — user-home only, NEVER committed
 mavenCentralUsername=<central-portal-token-username>
 mavenCentralPassword=<central-portal-token-password>
 
-# In-memory GPG signing. The key is the ASCII-armored private key with real newlines
-# replaced by \n on a single line, OR use the gnupg-agent variant (below).
-signingInMemoryKey=<paste the contents of /tmp/signing-key.asc, newlines as \n>
-signingInMemoryKeyId=<last 8 hex of the key id>          # optional; required only for subkeys
-signingInMemoryKeyPassword=<your gpg passphrase>
+# GPG signing via the gpg BINARY (see the critical note below — required, not optional).
+signing.gnupg.keyName=<YOUR_LONG_KEY_ID>
+signing.gnupg.passphrase=<your gpg passphrase>
+signing.gnupg.executable=/opt/homebrew/bin/gpg     # absolute path; Gradle otherwise looks for `gpg2`
 ```
 
-> Alternatively, to sign via the local gpg agent instead of an in-memory key, drop the three
-> `signingInMemory*` lines and set `signing.gnupg.keyName=<KEY_ID>` (+ `signing.gnupg.passphrase`),
-> which uses `gpg` on your `PATH`. Either path signs every publication.
+> **⚠️ CRITICAL — you MUST sign with the gpg binary, not the vanniktech in-memory key.** The plugin's
+> default `signingInMemoryKey` path (Bouncy Castle) produces v4 signatures that carry only the 64-bit
+> *issuer key ID* (subpacket 16) and **omit the issuer-fingerprint subpacket (33)**. Central's validator
+> resolves keys by **full fingerprint**, so those signatures fail with *"Could not find a public key by
+> the key fingerprint"* even when the key is correctly on the keyservers. The local `gpg` binary emits
+> subpkt 33, so signing via it is what Central accepts. Because the repo's `build.gradle.kts` uses
+> vanniktech's `signAllPublications()` (in-memory by default), force the gpg command at **invocation
+> time** with an init script (no repo change) — see §4. Verify a produced signature has it:
+> `gpg --list-packets ~/.m2/…/opa-abac-core-1.0.0.pom.asc | grep 'issuer fpr'`.
 
-Then **delete `/tmp/signing-key.asc`** — it has served its purpose.
+> Enable loopback pinentry so gpg can take the passphrase from the property non-interactively:
+> `echo allow-loopback-pinentry >> ~/.gnupg/gpg-agent.conf && gpgconf --reload gpg-agent`.
 
 ---
 
 ## 3. Dry-run locally (prove the artifacts before you publish)
 
-Verify the full six-coordinate signed set builds **into your local Maven repo**, without touching Central:
+First, create the init script that forces gpg-command signing (per the §2c critical note). Save it as
+`/tmp/use-gpg-cmd.init.gradle.kts`:
+
+```kotlin
+// Force Gradle's signing plugin to sign via the gpg binary (emits issuer-fingerprint subpkt 33
+// that Central requires). Invocation-time only — no repo change.
+allprojects {
+    plugins.withId("signing") {
+        extensions.configure<SigningExtension>("signing") { useGpgCmd() }
+    }
+}
+```
+
+Then verify the full six-coordinate signed set builds **into your local Maven repo**, without touching Central:
 
 ```bash
-./gradlew clean build                 # green baseline
-./gradlew publishToMavenLocal         # signs + writes to ~/.m2/repository/dev/dmitriikonovalov/…
+./gradlew clean build                                              # green baseline
+./gradlew publishToMavenLocal -I /tmp/use-gpg-cmd.init.gradle.kts  # signs → ~/.m2/repository/dev/dmitriikonovalov/…
+
+# CONFIRM the signature carries the issuer fingerprint (subpkt 33) — the thing Central checks:
+gpg --list-packets ~/.m2/repository/dev/dmitriikonovalov/opa-abac-core/1.0.0/opa-abac-core-1.0.0.pom.asc \
+  | grep 'issuer fpr'    # must print: hashed subpkt 33 … (issuer fpr v4 <YOUR_FINGERPRINT>)
 ```
 
 Inspect `~/.m2/repository/dev/dmitriikonovalov/`:
@@ -139,15 +176,18 @@ partial artifact. That is the intended fail-closed behavior.
 
 ## 4. Publish to Maven Central
 
-With the namespace **Verified** (§1) and credentials in place (§2):
+With the namespace **Verified** (§1), the key on both keyservers (§2a), and credentials in place (§2):
 
 ```bash
-./gradlew publishAndReleaseToMavenCentral
+./gradlew publishAndReleaseToMavenCentral -I /tmp/use-gpg-cmd.init.gradle.kts --no-configuration-cache
 ```
 
-This uploads all six signed coordinates to the Central Portal and (because the wiring uses the
-automatic-release path) triggers validation and release. Watch the **Deployments** tab on the Portal;
-if it lands in a **Validated / pending** state instead, press **Publish** there to finalize.
+The `-I` init script is **required** (gpg-command signing — see §2c); without it the deployment fails
+validation with *"Could not find a public key by the key fingerprint."* This uploads all six signed
+coordinates to the Central Portal and (because the wiring uses the automatic-release path) triggers
+validation and release — a successful run ends with **"Deployment is being published to Maven Central."**
+Watch the **Deployments** tab on the Portal; a failed deployment leaves a droppable FAILED entry and
+releases nothing (safe to retry).
 
 Within ~10–30&nbsp;min the coordinates appear on `https://central.sonatype.com`; searchability on
 `https://search.maven.org` / `mvnrepository.com` can take a few hours longer.
