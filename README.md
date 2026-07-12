@@ -124,24 +124,22 @@ demonstrations and are **not** published.
 
 ### The architecture (running today via `deploy.sh`)
 
-```
-                     ┌──────────┐   OIDC    ┌──────────┐
-   browser / client  │  APISIX  │──────────▶│ Keycloak │
-        ──────────▶  │ (gateway)│           └──────────┘
-                     │          │  opa check  ┌──────────┐
-                     │          │────────────▶│   OPA    │
-                     └────┬─────┘             └──────────┘
-                          │ proxied request (JWT)        ▲ traces
-                          ▼                              │
-              ┌───────────────────────────┐        ┌─────────┐
-              │ catalog-management-service │        │ Jaeger  │
-              │  (ABAC checks via starter) │        └─────────┘
-                          │         ╲
-                          ▼          ╲ effective role / tags
-                     ┌──────────┐   ┌─────────────────────────┐
-                     │ Postgres │   │ user-management-service │
-                     └──────────┘   │  (roles + tag dictionary)│
-                                    └─────────────────────────┘
+```mermaid
+flowchart TD
+    Client["browser / client"] --> APISIX["APISIX<br/>(gateway)"]
+    APISIX -- "OIDC" --> Keycloak["Keycloak"]
+    APISIX -- "opa check" --> OPA["OPA"]
+    APISIX -- "proxied request (JWT)" --> Catalog["catalog-management-service<br/>(ABAC checks via starter)"]
+    Catalog --> Postgres["Postgres"]
+    Catalog -- "effective role / tags" --> UserSvc["user-management-service<br/>(roles + tag dictionary)"]
+    Catalog -. "traces" .-> Jaeger["Jaeger"]
+
+    classDef gw fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b;
+    classDef svc fill:#ecfdf5,stroke:#059669,color:#064e3b;
+    classDef infra fill:#f1f5f9,stroke:#475569,color:#0f172a;
+    class APISIX gw;
+    class Catalog,UserSvc svc;
+    class Keycloak,OPA,Postgres,Jaeger infra;
 ```
 
 The `user-management-service` (teams, role definitions, a dynamic tag dictionary) supplies the

@@ -30,21 +30,39 @@ Two loops, at two timescales. The inner loop makes **one slice** correct; the ou
 slice easier** than the last. The two **accumulators** are what turn a pipeline into a loop — without them,
 every task starts cold and nothing compounds.
 
-```
-                       ┌──────────────────────  OUTER LOOP  (across slices, weeks) ──────────────────────┐
-                       │                                                                                  │
-                       │   ┌─────────── INNER LOOP (per ticket, minutes–hours) ───────────┐               │
-   ┌────────┐   ┌──────┴─────┐   ┌───────────────────────────────────────────────┐   ┌────┴─────┐   ┌────┴────┐
-   │ ① PLAN │──▶│ ② DECOMPOSE│──▶│ ③ IMPLEMENT: per ticket                        │──▶│ ④ REVIEW │──▶│  SHIP   │
-   │(grill- │   │ (docs-only)│   │  prime→build→test→★review+refactor→e2e→commit  │   │(deep-rev)│   │ (merge) │
-   │  me)   │   │            │   │  └──── self-correct, fix-until-green ────┘      │   │          │   │         │
-   └───┬────┘   └────────────┘   └───────────────────────────────────────────────┘   └────┬─────┘   └────┬────┘
-       │                                                                                   │              │
-       │           ┌───────────────────────────────────────────────────────────────┐      │              │
-       └───────────┤  TWO ACCUMULATORS (the loop's memory — read at ①, written at ③④) │◀─────┴──────────────┘
-                   │  • Mulch  — procedural/experiential memory (ml prime / ml record) │  run retrospective
-                   │  • Vault  — declarative/decisional memory (ADRs, guides, STATUS)  │  feeds the NEXT ①
-                   └───────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    P["① PLAN<br/>(grill-me)"] --> D["② DECOMPOSE<br/>(docs-only)"]
+    D --> I
+    I --> R["④ REVIEW<br/>(deep-review)"]
+    R --> S["SHIP<br/>(merge)"]
+
+    subgraph OUTER["OUTER LOOP — across slices (weeks)"]
+        direction LR
+        P
+        D
+        subgraph INNER["INNER LOOP — per ticket (minutes–hours)"]
+            I["③ IMPLEMENT · per ticket<br/>prime → build → test → ★review+refactor → e2e → commit<br/><i>self-correct · fix-until-green</i>"]
+        end
+        R
+        S
+    end
+
+    subgraph ACC["TWO ACCUMULATORS — the loop's memory (read at ①, written at ③④)"]
+        direction TB
+        M["<b>Mulch</b> — procedural / experiential<br/>(ml prime · ml record)"]
+        V["<b>Vault</b> — declarative / decisional<br/>(ADRs · guides · STATUS)"]
+    end
+
+    S -. "run retrospective<br/>feeds the NEXT ①" .-> ACC
+    ACC -. "primed at planning" .-> P
+
+    classDef phase fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b;
+    classDef inner fill:#ecfdf5,stroke:#059669,color:#064e3b;
+    classDef acc fill:#fef3c7,stroke:#b45309,color:#7c2d12;
+    class P,D,R,S phase;
+    class I inner;
+    class M,V acc;
 ```
 
 - **Inner loop** (per ticket, §4): `prime → build → test → ★review+refactor → e2e → commit`. The **★ gate
