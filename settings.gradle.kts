@@ -7,6 +7,11 @@ include(
     "opa-abac-spring-data",
     "opa-abac-keycloak-directory",
     "opa-abac-spring-boot-starter",
+    // The BOM (java-platform) — the 6th published coordinate. Lets adopters do
+    // implementation(platform("dev.dmitriikonovalov:opa-abac-bom:<v>")) and reference the
+    // modules version-free. It applies the publish plugin in its own build (POM-only artifact),
+    // NOT via the root jar-module allow-list.
+    "opa-abac-bom",
 )
 
 // --- Example applications (NOT published) ---

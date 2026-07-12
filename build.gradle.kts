@@ -69,7 +69,12 @@ configure(subprojects.filter { it.name in publishableJarModules }) {
     }
 }
 
-subprojects {
+// The BOM is a `java-platform` — it has no source, no toolchain, and no tests, and `java-platform`
+// cannot coexist with `java`. So the shared `java` config below applies to every subproject EXCEPT
+// the BOM (which configures its own `java-platform` + publish wiring in its module build).
+val bomModules = setOf("opa-abac-bom")
+
+configure(subprojects.filter { it.name !in bomModules }) {
     apply(plugin = "java")
 
     repositories {
@@ -98,5 +103,12 @@ subprojects {
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
             showStandardStreams = false
         }
+    }
+}
+
+// The BOM still needs a repository for resolving the plugin marker; give it just that.
+configure(subprojects.filter { it.name in bomModules }) {
+    repositories {
+        mavenCentral()
     }
 }
