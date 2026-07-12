@@ -45,7 +45,7 @@ flowchart TB
         end
     end
 
-    subgraph ACC["ACCUMULATORS · the loop's memory"]
+    subgraph ACC["ACCUMULATORS"]
         M["<b>Mulch</b> · procedural / experiential<br/>ml prime · ml record"]
         V["<b>Vault</b> · declarative / decisional<br/>ADRs · guides · STATUS"]
     end
