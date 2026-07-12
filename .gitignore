@@ -26,10 +26,23 @@ bin/
 .DS_Store
 Thumbs.db
 
-# Secrets — never commit
+# Secrets — never commit.
+# Signing / release key material must NEVER be committed — the real GPG key + passphrase + Central
+# token live only in ~/.gradle/gradle.properties (see RELEASING.md). These broad globs are the
+# fail-closed net: they are in place BEFORE any key is generated, so a stray keystore/keyfile in the
+# tree is ignored by default rather than accidentally staged.
 *.asc
+*.gpg
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pem
 signing.properties
 local.properties
+# Generic local-override files (also covers CLAUDE.local.md, kept explicitly below for clarity).
+*.local
 
 # Env / local overrides (committed templates use *.example)
 .env
