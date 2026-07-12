@@ -449,12 +449,26 @@ export function deleteRoleDefinition(teamId: string, code: string): Promise<void
  * Ensure the signed-in identity has a User profile row. Memberships (and team creation) key on the
  * user-service's own uuid, so a first-time identity must be provisioned before it can own anything.
  * Idempotent: one exact `?subject=` lookup (non-truncating — no page-walk), create only on a miss.
+ *
+ * Race-safe: the resolve-then-create is check-then-act, so two concurrent callers can both miss the
+ * lookup and both POST — the first wins (201), the second loses the unique-subject constraint (409).
+ * A 409 here means "already provisioned by the other in-flight call", i.e. success — re-resolve the
+ * row rather than surfacing it as a failure. (App.tsx also single-flights the provisioning effect;
+ * this makes the function correct on its own regardless of the caller.)
  */
 export async function ensureUser(subject: string, displayName: string): Promise<User> {
   const existing = await findUserBySubject(subject)
   if (existing) return existing
-  return request<User>(`/api/v1/users`, {
-    method: 'POST',
-    body: JSON.stringify({ subject, displayName }),
-  })
+  try {
+    return await request<User>(`/api/v1/users`, {
+      method: 'POST',
+      body: JSON.stringify({ subject, displayName }),
+    })
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      const now = await findUserBySubject(subject)
+      if (now) return now
+    }
+    throw e
+  }
 }

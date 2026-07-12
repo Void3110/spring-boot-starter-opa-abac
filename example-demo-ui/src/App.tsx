@@ -50,6 +50,11 @@ type AuthState =
 // once at module scope; the effect awaits the shared promise.
 let bootstrap: Promise<AuthUser | null> | null = null
 
+// Same once-only concern for profile provisioning: a StrictMode-doubled effect (or two quick
+// re-renders) would otherwise POST /users twice — 201 then a spurious 409. Keyed by subject so a
+// persona switch provisions independently; each entry clears when its promise settles.
+const provisioning = new Map<string, Promise<unknown>>()
+
 export function App() {
   const [auth, setAuth] = useState<AuthState>({ phase: 'loading' })
 
@@ -135,10 +140,20 @@ function Console({ user }: { user: AuthUser }) {
   // catalog's team) key on that row, and a first-time identity doesn't have one yet. A failure
   // must stay visible — team creation hard-requires the row, so a swallowed failure would turn
   // every later "create catalog" step 2 into an unexplained 400.
+  //
+  // Single-flight per subject: React 19 StrictMode double-invokes effects in dev, which would fire
+  // two concurrent ensureUser POSTs (201 then a 409 for the second) and flash a spurious "provisioning
+  // failed" banner though provisioning succeeded. Share one in-flight promise per subject — the same
+  // once-only idiom the PKCE bootstrap uses above. (ensureUser also treats a 409 as success on its own.)
   const [profileError, setProfileError] = useState<string | null>(null)
   const provision = useCallback(() => {
     setProfileError(null)
-    ensureUser(mySubject, username).catch((e) => setProfileError(errText(e)))
+    let pending = provisioning.get(mySubject)
+    if (!pending) {
+      pending = ensureUser(mySubject, username).finally(() => provisioning.delete(mySubject))
+      provisioning.set(mySubject, pending)
+    }
+    pending.catch((e) => setProfileError(errText(e)))
   }, [mySubject, username])
   useEffect(provision, [provision])
 
