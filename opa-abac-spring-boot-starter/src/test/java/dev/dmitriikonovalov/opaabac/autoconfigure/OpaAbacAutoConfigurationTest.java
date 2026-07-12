@@ -15,15 +15,20 @@ import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorizeAuthorizationManager;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 /** {@link ApplicationContextRunner} slice tests for the starter — QA cases U30–U34. */
+@ExtendWith(OutputCaptureExtension.class)
 class OpaAbacAutoConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
@@ -109,6 +114,28 @@ class OpaAbacAutoConfigurationTest {
                     assertThat(context).doesNotHaveBean(OpaPreAuthorizeAuthorizationManager.class);
                 });
     }
+
+    @Test // F1 — @OpaPreAuthorize registered but no @EnableMethodSecurity → loud startup WARN (gates silently off)
+    void warnsWhenMethodSecurityNotEnabled(CapturedOutput output) {
+        runner.withPropertyValues("opa.abac.enabled=true").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(output).contains("@OpaPreAuthorize support is registered but Spring method security is NOT enabled");
+        });
+    }
+
+    @Test // F1 — @EnableMethodSecurity present → the marker bean exists → NO warning
+    void quietWhenMethodSecurityEnabled(CapturedOutput output) {
+        runner.withPropertyValues("opa.abac.enabled=true")
+                .withUserConfiguration(MethodSecurityEnabled.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(output).doesNotContain("@OpaPreAuthorize support is registered but Spring method security is NOT enabled");
+                });
+    }
+
+    @EnableMethodSecurity
+    @Configuration(proxyBeanMethods = false)
+    static class MethodSecurityEnabled {}
 
     @Test // U34 — property binding
     void propertiesBind() {
