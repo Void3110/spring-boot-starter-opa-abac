@@ -25,7 +25,7 @@ is project-tuned and lives in `.claude/skills/`, **gitignored** — so this doc 
 > blog). This template is an application of them to code review, not an invention of them. The
 > per-project knowledge store referenced throughout is **Mulch** ([Jaymin West](https://github.com/jayminwest/mulch));
 > the planning-time elicitation it pairs with is **grill-me** ([Matt Pocock](https://github.com/mattpocock/skills)).
-> See [`../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 for
+> See [`../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 for
 > how the three fit together.
 
 ---
@@ -232,7 +232,7 @@ Record hits or "siblings clean" in the review note.
 
 Keep a **failure → likely-cause** table for *your* rig (the gotchas that read like bugs but aren't —
 stale caches, image reuse, token issuance, environment-not-code). The project's lives in
-[`CODE-REVIEW-WORKFLOW.md`](CODE-REVIEW-WORKFLOW.md) / the e2e guide; mirror that here per project.
+[`CODE-REVIEW-WORKFLOW.md`](../../code-review/CODE-REVIEW-WORKFLOW.md) / the e2e guide; mirror that here per project.
 
 ---
 
@@ -294,9 +294,9 @@ The phases are negotiable; **these are not** — they're what make the harness b
 - **Prime before, record after.** The store is what compounds review quality across changes.
 
 ## Related
-- [`../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 — the
+- [`../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 — the
   full tooling stack (Mulch / grill-me / deep-review / dynamic workflows) and upstream credits.
-- [`CODE-REVIEW-WORKFLOW.md`](CODE-REVIEW-WORKFLOW.md) — this project's concrete (non-templated) review lifecycle.
-- [`CODE-REVIEW-CHECKLIST.md`](CODE-REVIEW-CHECKLIST.md) — this project's per-finding checklist.
+- [`CODE-REVIEW-WORKFLOW.md`](../../code-review/CODE-REVIEW-WORKFLOW.md) — this project's concrete (non-templated) review lifecycle.
+- [`CODE-REVIEW-CHECKLIST.md`](../../code-review/CODE-REVIEW-CHECKLIST.md) — this project's per-finding checklist.
 - Anthropic dynamic workflows — [docs](https://code.claude.com/docs/en/workflows) ·
   [harness blog](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code).

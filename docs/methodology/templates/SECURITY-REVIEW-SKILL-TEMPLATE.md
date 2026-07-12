@@ -36,7 +36,7 @@ project-tuned and lives in `.claude/skills/`, **gitignored** — so this doc is 
 > "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)"
 > blog). This template applies them to a security audit; it does not invent them. The per-project
 > knowledge store is **Mulch** ([Jaymin West](https://github.com/jayminwest/mulch)). See
-> [`../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 for how
+> [`../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 for how
 > the pieces fit.
 
 ---
@@ -218,10 +218,10 @@ and what make it a *different* skill from `deep-review`:
 
 - [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) — the diff-scoped review counterpart, same
   instantiation model; this skill covers the whole surface and adds live probes.
-- [`../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 — the
+- [`../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) §8 — the
   full tooling stack (Mulch / grill-me / deep-review / dynamic workflows) and upstream credits.
-- [`../guides/DECOMPOSE-SKILL-TEMPLATE.md`](../guides/DECOMPOSE-SKILL-TEMPLATE.md) ·
-  [`../guides/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](../guides/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md) —
+- [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) ·
+  [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md) —
   the phase-② / phase-③ template siblings.
 - `CODE-REVIEW-WORKFLOW.md` · `CODE-REVIEW-CHECKLIST.md` — this project's concrete (non-templated) review
   lifecycle + per-finding checklist.
