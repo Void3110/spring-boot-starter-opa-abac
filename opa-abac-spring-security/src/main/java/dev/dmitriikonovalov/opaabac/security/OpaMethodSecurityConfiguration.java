@@ -2,9 +2,13 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import java.util.function.Supplier;
 import org.aopalliance.intercept.MethodInvocation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.aop.Pointcut;
 import org.springframework.aop.support.annotation.AnnotationMatchingPointcut;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Role;
@@ -39,8 +43,58 @@ import org.springframework.util.function.SingletonSupplier;
 @Configuration(proxyBeanMethods = false)
 public class OpaMethodSecurityConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(OpaMethodSecurityConfiguration.class);
+
     /** Run just ahead of {@code @PreAuthorize} (whose interceptor order is 200). */
     static final int INTERCEPTOR_ORDER = 190;
+
+    /**
+     * The marker {@code @Configuration} Spring Security registers <em>only</em> when
+     * {@code @EnableMethodSecurity} is present (imported by its {@code MethodSecuritySelector}). Its
+     * presence is our reliable "method security is on" probe — checking for the interceptor bean type
+     * would be circular, since this starter registers one of that type regardless.
+     */
+    private static final String METHOD_SECURITY_MARKER =
+            "org.springframework.security.config.annotation.method.configuration."
+                    + "PrePostMethodSecurityConfiguration";
+
+    /**
+     * Fail-LOUD-not-open guard for the single silent misconfiguration this starter cannot prevent by
+     * construction: the {@code @OpaPreAuthorize} advisor is registered here, but the annotations do
+     * nothing unless the application enables Spring method security. A starter must not call
+     * {@code @EnableMethodSecurity} itself (that is the app's decision — interceptor ordering, the
+     * pre/post modes, its other method-security). So if an adopter annotates methods with
+     * {@code @OpaPreAuthorize} but forgets {@code @EnableMethodSecurity}, the ABAC method gates are
+     * silently NOT enforced — no error, no log. This bean converts that silent no-op into a loud
+     * startup WARNING (it never fails the context: coarse access is still governed by the app's
+     * {@code SecurityFilterChain}, and a hard failure would be surprising for an app that deliberately
+     * uses only the request-level {@code OpaAuthorizationManager}). See the 7.4 zero-config audit (F1).
+     */
+    @Bean
+    SmartInitializingSingleton opaMethodSecurityEnablementCheck(ApplicationContext context) {
+        return () -> {
+            boolean methodSecurityEnabled = isBeanTypePresent(context, METHOD_SECURITY_MARKER);
+            if (!methodSecurityEnabled) {
+                log.warn("@OpaPreAuthorize support is registered but Spring method security is NOT enabled "
+                        + "(no @EnableMethodSecurity on the application). Every @OpaPreAuthorize method gate "
+                        + "is therefore SILENTLY IGNORED — the fine-grained ABAC decision does not run. Add "
+                        + "@EnableMethodSecurity to a @Configuration class to activate the gates. (If you use "
+                        + "only the request-level OpaAuthorizationManager and not method security, this "
+                        + "warning is expected and can be ignored.)");
+            }
+        };
+    }
+
+    private static boolean isBeanTypePresent(ApplicationContext context, String className) {
+        try {
+            Class<?> type = Class.forName(className, false, context.getClassLoader());
+            return context.getBeanNamesForType(type, false, false).length > 0;
+        } catch (ClassNotFoundException absent) {
+            // Spring Security's method-security config type isn't even on the classpath -> method
+            // security cannot be enabled -> the warning applies.
+            return false;
+        }
+    }
 
     @Bean
     @Role(org.springframework.beans.factory.config.BeanDefinition.ROLE_INFRASTRUCTURE)

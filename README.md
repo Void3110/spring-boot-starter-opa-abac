@@ -57,11 +57,34 @@ publishing setup — no new features.
 **Now on Spring Boot 4:** the whole line targets **Boot 4.0 / Framework 7 / Security 7 / Hibernate 7 /
 Jackson 3** on **Java 25 / Gradle 9**, as a single artifact line (see [ADR 0026](docs/architecture/adr/0026-spring-boot-4-single-line-port.md)).
 
-**Next:** the pre-publish delta security review, then the 1.0 publish to Maven Central. The technical
-plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
+**Next:** the pre-publish gauntlet is essentially clear — security review (0 Critical; the findings
+fixed), a full-history secret scan (clean), a dependency CVE sweep (clean), and the load-test
+re-baseline are all done. What remains before the **1.0** tag is the Maven Central publishing setup.
+The technical plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
 
 > **Not yet published to Maven Central** — the API is settling for the 1.0 tag. The full picture
 > (architecture, ADRs, guides) is in [`docs/`](docs/README.md).
+
+## Adopting the starter (three things you must do)
+
+The starter exposes beans and stays out of your app's security wiring — so a bare dependency does
+**nothing on its own** (fail-closed by design: no `SecurityFilterChain` is registered, and every
+request is anonymous until you opt in). To actually enforce ABAC, your application must:
+
+1. **Declare a `SecurityFilterChain` and install the `AbacFilter`.** The starter never registers a
+   chain (that is the app's call); add the auto-configured `AbacFilter` bean to yours so the subject is
+   extracted per request.
+2. **Add `@EnableMethodSecurity`** to a `@Configuration` class. `@OpaPreAuthorize` is a method-security
+   annotation — **without `@EnableMethodSecurity` every `@OpaPreAuthorize` gate is silently ignored**
+   (Spring cannot let a library enable this for you). The starter logs a loud startup **WARNING** if it
+   detects the annotations are wired but method security is off, so a misconfiguration can't hide.
+3. **Set `opa.abac.subject.trust-forwarded-jwt=true`** — but **only** when the app sits behind a
+   signature-validating gateway. The default JWT extractor does not verify signatures itself; until you
+   acknowledge the gateway-trust posture it stays disabled (every request anonymous, all checks deny),
+   with a startup warning explaining why. Alternatively, provide your own `AbacSubjectExtractor` bean.
+
+See [`docs/guides/ABAC-AUTHORIZATION.md`](docs/guides/ABAC-AUTHORIZATION.md) for the full wiring and the
+[example services](example-catalog-management-service/) for a working `SecurityConfig`.
 
 ## This is a monorepo
 
@@ -227,10 +250,12 @@ pause to ask — and what should planning have pre-resolved) so the *next* slice
 ## Performance
 
 What does the authorization layer cost? Measured on the real rig by the committed k6 harness
-([`scripts/load/`](scripts/load/)): the per-request gate delta (p50 **+2.7 ms** on the reference
-laptop), the partial-eval list ceiling, the attributed per-request cross-service call counts, and
-fail-closed behavior under dependency outages — see **[PERFORMANCE.md](PERFORMANCE.md)** (numbers,
-methodology, findings, and the one-command rerun).
+([`scripts/load/`](scripts/load/)): on the post-SB4-port stack the full ABAC gate (subject
+extraction → role resolve → OPA decision) adds **≈ +0.8 ms at p50** over an identical-gateway
+baseline and is statistically flat at the tail — sub-millisecond per request. Plus the partial-eval
+list ceiling, the attributed per-request cross-service call counts, and fail-closed behavior under
+dependency outages — see **[PERFORMANCE.md](PERFORMANCE.md)** (numbers, methodology, findings, and
+the one-command rerun).
 
 ## Documentation
 
