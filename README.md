@@ -12,10 +12,12 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 
 ## Status
 
-🚧 **Active development** — the library is taking shape slice by slice, each one layered onto the
-runnable example and proven end-to-end (unit + Testcontainers ITs + `opa test` + a newman gateway matrix).
+🚧 **Pre-publish** — every functional slice is shipped and proven end-to-end (unit + Testcontainers ITs
++ `opa test` + a newman gateway matrix), and the codebase now targets **Spring Boot 4.0 on Java 25**.
+The remaining work before the **1.0** tag is a pre-publish security review and the Maven Central
+publishing setup — no new features.
 
-**Shipped so far:**
+**Shipped:**
 
 - **Domain-model foundation** — a secured-entity base (UUID id, audit, optimistic-lock `@Version`,
   JSONB resource tags) + a safe locked-write `mutate()` path.
@@ -23,8 +25,11 @@ runnable example and proven end-to-end (unit + Testcontainers ITs + `opa test` +
   extraction, and a **role-definition-driven** `@OpaPreAuthorize` enforcement path.
 - **Team-based authorization** — an example `user-management-service` resolving a caller's effective role
   from real team membership (role ≠ grant, owner-on-create, the subset/no-self-escalation rule, transfer).
+- **Coarse permission categories + safe delegation** — `READ`/`WRITE`/`TAG`/`GRANT`/`CONTROL` categories
+  expand to fine actions (deny-overridable), bounded by a five-tier `role_level` ceiling and a senior-tier
+  subset rule; a categorized control plane for the `team:*` verbs. See [`docs/guides/PERMISSION-MODEL.md`](docs/guides/PERMISSION-MODEL.md).
 - **Dynamic tag dictionary** — runtime-editable tag keys + tag-based grants matched in Rego (`some in` /
-  `every`, ANY_OF / ALL_OF).
+  `every`, ANY_OF / ALL_OF); tags are first-class on catalogs, categories, **and** products.
 - **Partial-evaluation data filtering** — OPA's Compile API → a JPA `Specification` over JSONB, so a list
   endpoint returns only the rows a subject may see (filtered in SQL, fail-closed to an empty page).
 - **N-level hierarchical authorization** — a grant on a Catalog governs a Category/Product nested under it,
@@ -33,14 +38,29 @@ runnable example and proven end-to-end (unit + Testcontainers ITs + `opa test` +
 - **Hierarchy-aware list filtering** — an inheritable ancestor grant *widens a list* in SQL
   (`scope AND (tagResidual OR subtreeSpec) AND notDenied`), composed so the widening can never escape the
   caller's scope and a leaf deny still overrides it.
-- **RFC-7807 error contract** — every error is `application/problem+json` with a typed, library-owned
-  `errorCode` vocabulary (app-extensible), plus `Location` on creates — asserted end-to-end by the
-  newman matrices.
+- **Attribute-rich pre-authorization** — an opt-in resolver + request-scoped cache decides the gate on a
+  resource's *real* attributes and ancestors, with version-guarded mutations (`409` on drift).
+- **Multi-tenant isolation + self-service** — team membership is the sole access path to the hierarchy,
+  with a real cross-service ownership check so team-create can't squat another user's catalog.
+- **Action-affordance metadata** — a response advice attaches an `_actions` map (which actions the caller
+  may perform) via one batch OPA round-trip, so a UI renders exactly the buttons the user can use.
+- **User directory** — a `UserDirectory` search SPI with an optional Keycloak-admin adapter (least-privilege
+  `view-users` client), fail-closed to empty when absent.
+- **RFC-7807 error contract + pagination envelope** — every error is `application/problem+json` with a
+  typed, library-owned `errorCode` vocabulary (app-extensible), plus `Location` on creates; every list is
+  a `{count, page, perPage, items}` envelope with an exact subject-relative count, composed with the
+  partial-eval filter — all asserted end-to-end by the newman matrices.
+- **Cross-service HTTP resilience** — a backend-agnostic `CallGuard` (Resilience4j) with per-edge
+  retry/backoff/circuit-break that makes outages rarer **without** ever re-opening the fail-closed
+  outage→deny contract.
 
-**Next:** the pagination envelope (5.95), then an action-affordance map (Phase 6). The technical
+**Now on Spring Boot 4:** the whole line targets **Boot 4.0 / Framework 7 / Security 7 / Hibernate 7 /
+Jackson 3** on **Java 25 / Gradle 9**, as a single artifact line (see [ADR 0026](docs/architecture/adr/0026-spring-boot-4-single-line-port.md)).
+
+**Next:** the pre-publish delta security review, then the 1.0 publish to Maven Central. The technical
 plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
 
-> **Not yet published to Maven Central** — the API is still moving as slices land. The full picture
+> **Not yet published to Maven Central** — the API is settling for the 1.0 tag. The full picture
 > (architecture, ADRs, guides) is in [`docs/`](docs/README.md).
 
 ## This is a monorepo
