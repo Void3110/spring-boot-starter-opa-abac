@@ -2,7 +2,7 @@ package dev.dmitriikonovalov.example.usermgmt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
@@ -76,7 +76,7 @@ class OwnershipGateIT extends AbstractSecuredPostgresIT {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(res.getBody()).isNotNull();
-        assertThat(res.getBody().get("errorCode").asText()).isEqualTo("ACCESS_DENIED");
+        assertThat(res.getBody().get("errorCode").asString()).isEqualTo("ACCESS_DENIED");
         // No team was bound — the squat did not persist.
         assertThat(teams.findByTargetTypeAndTargetId("catalog", someoneElsesCatalog)).isEmpty();
     }

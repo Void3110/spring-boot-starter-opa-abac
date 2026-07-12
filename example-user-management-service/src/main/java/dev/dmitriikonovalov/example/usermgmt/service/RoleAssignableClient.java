@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.example.usermgmt.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
 import dev.dmitriikonovalov.opaabac.autoconfigure.OpaAbacProperties;
 import java.time.Duration;
@@ -8,7 +8,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
-import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
+import org.springframework.boot.http.client.HttpClientSettings;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -36,7 +36,7 @@ public class RoleAssignableClient {
         this.restClient = RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .requestFactory(ClientHttpRequestFactoryBuilder.detect()
-                        .build(ClientHttpRequestFactorySettings.defaults()
+                        .build(HttpClientSettings.defaults()
                                 .withConnectTimeout(Duration.ofSeconds(2))
                                 .withReadTimeout(Duration.ofSeconds(2))))
                 .build();

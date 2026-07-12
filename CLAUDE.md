@@ -33,7 +33,9 @@ framework inside a proprietary platform; that experience informs the design, but
 
 ## Build / test / run
 
-Java 21 · Spring Boot 3.4 · Gradle 8.12 (wrapper) · vanilla `org.openapi.generator`.
+Java 25 · Spring Boot 4.0 · Gradle 9.x (wrapper) · vanilla `org.openapi.generator`. (The SB4 port,
+ADR 0026 — no `JAVA_HOME` override needed on a default-JDK-25 machine; the wrapper's toolchain
+resolution finds Temurin/Corretto 25 itself.)
 
 ```bash
 ./gradlew build        # all library modules + example app + OpenAPI codegen + integration tests

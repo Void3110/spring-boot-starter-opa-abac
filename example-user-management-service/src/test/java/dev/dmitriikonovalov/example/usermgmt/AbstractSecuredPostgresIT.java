@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.usermgmt;
 
 import dev.dmitriikonovalov.example.usermgmt.support.AbacTestConfig;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -14,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * mirroring {@code team.rego}) so the genuine role-resolution + policy logic runs against a real
  * Postgres without an OPA container. Tests switch the acting identity with {@code AbacTestConfig.actAs}.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @Import(AbacTestConfig.class)

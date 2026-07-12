@@ -5,8 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.example.catalog.config.CatalogHierarchyService;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -164,7 +164,7 @@ class MultiRootEnrichmentIT {
         JsonNode items = MAPPER.readTree(result.getResponse().getContentAsString()).get("items");
         int enriched = 0;
         for (JsonNode item : items) {
-            if (failing.toString().equals(item.get("id").asText())) {
+            if (failing.toString().equals(item.get("id").asString())) {
                 assertThat(item.has("_actions")).as("the failed row is omitted").isFalse();
             } else {
                 assertThat(item.has("_actions")).as("other rows stay enriched").isTrue();

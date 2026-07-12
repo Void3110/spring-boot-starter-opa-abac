@@ -3,8 +3,8 @@ package dev.dmitriikonovalov.opaabac.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,13 +35,13 @@ class AbacContextResourceTest {
         assertThat(ancestors.isArray()).isTrue();
         assertThat(ancestors).hasSize(2);
         // root-first
-        assertThat(ancestors.get(0).get("type").asText()).isEqualTo("catalog");
-        assertThat(ancestors.get(0).get("id").asText()).isEqualTo("1");
-        assertThat(ancestors.get(1).get("type").asText()).isEqualTo("category");
-        assertThat(ancestors.get(1).get("id").asText()).isEqualTo("7");
+        assertThat(ancestors.get(0).get("type").asString()).isEqualTo("catalog");
+        assertThat(ancestors.get(0).get("id").asString()).isEqualTo("1");
+        assertThat(ancestors.get(1).get("type").asString()).isEqualTo("category");
+        assertThat(ancestors.get(1).get("id").asString()).isEqualTo("7");
         // leaf excluded — the leaf is the resource's own type/id, never repeated in the chain
         for (JsonNode anc : ancestors) {
-            assertThat(anc.get("id").asText()).isNotEqualTo("42");
+            assertThat(anc.get("id").asString()).isNotEqualTo("42");
         }
     }
 
@@ -59,8 +59,7 @@ class AbacContextResourceTest {
         // identical wire shape regardless of which constructor produced the empty chain
         assertThat(explicitEmptyJson).isEqualTo(legacyJson);
         // the exact prior field set — only type/id/attributes
-        assertThat(MAPPER.readTree(legacyJson).fieldNames())
-                .toIterable()
+        assertThat(MAPPER.readTree(legacyJson).propertyNames())
                 .containsExactlyInAnyOrder("type", "id", "attributes");
     }
 

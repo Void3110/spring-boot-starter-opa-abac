@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -90,8 +90,8 @@ class HttpOpaClientAllowAllTest {
         assertThat(capturedPath.get()).isEqualTo("/v1/data/catalog/category/bulk");
         JsonNode input = MAPPER.readTree(captured.get()).get("input");
         assertThat(input.get("items")).hasSize(3);
-        assertThat(input.get("items").get(0).get("resource").get("id").asText()).isEqualTo("a");
-        assertThat(input.get("items").get(1).get("resource").get("id").asText()).isEqualTo("b");
+        assertThat(input.get("items").get(0).get("resource").get("id").asString()).isEqualTo("a");
+        assertThat(input.get("items").get(1).get("resource").get("id").asString()).isEqualTo("b");
     }
 
     @Test // U11 — fail-closed on HTTP 500 → all-false of length N

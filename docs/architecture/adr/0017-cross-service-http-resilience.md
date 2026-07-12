@@ -163,6 +163,13 @@ With the seam, that future backend is a **one-impl swap** (a `NativeCallGuard` b
 not a three-edge rewrite. The injectable clock is *also* what makes the resilience tests deterministic
 (§Proof). The seam's design is therefore a **pinned, known requirement**, not speculative future-proofing.
 
+> **Addendum (2026-07-12, SB4-port T3).** On R4j 2.2.0 the Clock injection required the
+> `internal.CircuitBreakerStateMachine(name, config, clock)` constructor — an accepted, contained
+> internal coupling (one construction line in `Resilience4jCallGuard`). **Eliminated as of R4j
+> 2.4.0**: upstream removed that constructor and the seam is now pure public API —
+> `CircuitBreakerConfig.Builder.clock(Clock)` (public since 2.3.0) plus `CircuitBreaker.of(name,
+> config)`. Same virtual-time testability; no `internal.*` import remains.
+
 ### 8. Keep both versions — design the seam now, **don't build the second line in B3**
 
 The intended end state keeps **two baselines indefinitely** — Java 21 / Spring Boot 3.x (R4j-backed) *and*

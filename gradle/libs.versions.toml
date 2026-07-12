@@ -1,38 +1,45 @@
 [versions]
 # Build plugins
-# 3.4.13 (latest 3.4.x patch) resolves Spring Framework 6.2.15 and Tomcat 10.1.50 via the BOM —
-# clearing the 2025 advisories the 3.4.3 pin trailed (CVE-2025-22233 / -41234 on Framework, fixed
-# 6.2.7/6.2.8; CVE-2025-31650 / -31651 on Tomcat, fixed 10.1.40). Flagged by the 7.0.5 baseline
-# security review (findings 3 & 4); a resolved-dependency CVE scan is the 7.4 follow-up.
-springBoot = "3.4.13"
+# 4.0.7 (latest 4.0.x patch at port time) — the single-line Boot 4 target (ADR 0026): Framework 7 /
+# Security 7 / Jakarta EE 11 / Hibernate 7 / Jackson 3, on the Java 25 toolchain and Gradle 9.x
+# wrapper. The resolved-dependency CVE scan is the 7.4 follow-up, run on this post-port tree.
+springBoot = "4.0.7"
 springDependencyManagement = "1.1.7"
-openapiGenerator = "7.11.0"
+openapiGenerator = "7.14.0"
 
 # Library deps
-jackson = "2.18.2"
+# Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
+# com.fasterxml 2.x artifact line (Jackson 3 reads them; databind brings them transitively).
+jackson = "3.1.4"
 slf4j = "2.0.16"
-# Resilience4j — version managed by the Spring Boot BOM; pinned here only for the version catalog ref.
-# The cross-service HTTP resilience seam (Slice B3) is backed by R4j on the Java 21 / Boot 3.4 line.
-resilience4j = "2.2.0"
+# Resilience4j — this catalog pin is authoritative (the library modules do not import the Boot BOM
+# for it). 2.4.0 removed the internal CircuitBreakerStateMachine(name, config, Clock) constructor
+# and 2.3.0+ exposes the Clock publicly via CircuitBreakerConfig.Builder.clock() — the CallGuard's
+# virtual-time seam is pure public API from this version on (ADR 0017 addendum, SB4-port T3).
+resilience4j = "2.4.0"
 # Keycloak admin client (the user-directory port's optional impl, ADR 0020 §8) — released independently
 # of the server; the 26.x client line is compatible with the 26.x server the rig runs (26.3.2).
 keycloak = "26.0.5"
 
 # Example-app deps (managed by the Spring BOM where possible; pinned here when not)
-springdocOpenApi = "2.8.4"
+# springdoc 3.x is the Boot-4 line (2.x targets Boot 3).
+springdocOpenApi = "3.0.3"
 swaggerAnnotations = "2.2.28"
 jakartaValidation = "3.1.0"
 jakartaAnnotation = "3.0.0"
 
 # Testing
-junit = "5.11.4"
+# junit aligned with the Boot BOM's managed version (3.5.16 → Jupiter 5.12.2 / platform 1.12.2);
+# an older junit-bom pin here leaves junit-platform-launcher unaligned with the engine and the
+# test executor dies at discovery ("OutputDirectoryProvider not available").
+junit = "5.12.2"
 mockito = "5.14.2"
 assertj = "3.27.0"
 testcontainers = "1.20.4"
 
 [libraries]
 # --- Library modules ---
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 # Resilience4j (Slice B3): the circuit-breaker + core (IntervalFunction) modules back the CallGuard impl.
 # Versions are overridden by the Spring Boot BOM where the consuming module imports it.

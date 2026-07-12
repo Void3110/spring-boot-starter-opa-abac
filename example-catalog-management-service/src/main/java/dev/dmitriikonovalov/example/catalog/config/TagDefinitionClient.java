@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.security.resilience.CallGuard;
 import dev.dmitriikonovalov.opaabac.security.resilience.CallNotPermittedException;
 import dev.dmitriikonovalov.opaabac.security.resilience.RetryableClassification;
@@ -131,7 +131,7 @@ public class TagDefinitionClient {
         if (status == 200 && response.body() != null && !response.body().isBlank()) {
             try {
                 return objectMapper.readValue(response.body(), LIST_OF_DEFINITIONS);
-            } catch (com.fasterxml.jackson.core.JacksonException e) {
+            } catch (tools.jackson.core.JacksonException e) {
                 log.warn("Tag-definitions fetch returned a malformed 200 body — rejecting the write");
                 throw new TagDefinitionFetchException("Could not fetch tag definitions (malformed body)");
             }

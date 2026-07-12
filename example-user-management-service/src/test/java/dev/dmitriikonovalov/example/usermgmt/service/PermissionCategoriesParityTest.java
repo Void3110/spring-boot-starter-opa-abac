@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.example.usermgmt.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +29,7 @@ class PermissionCategoriesParityTest {
         Map<String, List<String>> fromJson = new HashMap<>();
         table.properties().forEach(entry -> {
             List<String> actions = new ArrayList<>();
-            entry.getValue().forEach(a -> actions.add(a.asText()));
+            entry.getValue().forEach(a -> actions.add(a.asString()));
             fromJson.put(entry.getKey(), actions);
         });
 

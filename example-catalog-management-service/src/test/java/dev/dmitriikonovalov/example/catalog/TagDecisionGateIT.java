@@ -32,7 +32,7 @@ import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -351,7 +351,7 @@ class TagDecisionGateIT {
         mockMvc.perform(post("/api/v1/catalogs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"tagged-at-birth\",\"tags\":{\"region\":[\"emea\"]}}"))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errorCode").value("TAG_VALUE_ILLEGAL"));
 
         assertThat(ActionAwareOpaClient.askedActions).containsExactly("catalog:create");
@@ -557,7 +557,7 @@ class TagDecisionGateIT {
         @Bean
         @Primary
         TagDefinitionClient dispatchTagDefinitionClient() {
-            return new TagDefinitionClient(new com.fasterxml.jackson.databind.ObjectMapper(),
+            return new TagDefinitionClient(new tools.jackson.databind.ObjectMapper(),
                     "http://unused", 100) {
                 @Override
                 public List<TagDefinitionView> fetchApplicable(String resourceType, String resourceId) {

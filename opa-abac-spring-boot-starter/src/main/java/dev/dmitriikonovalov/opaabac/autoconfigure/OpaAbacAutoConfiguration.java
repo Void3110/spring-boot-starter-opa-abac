@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
@@ -75,9 +75,11 @@ public class OpaAbacAutoConfiguration {
         // switch would break every policy match. Fail-closed turns that into an outage, not a breach,
         // but the contract belongs to the starter, not to whoever last touched the app's mapper.
         // (No ObjectMapper bean is registered either — Boot's Jackson auto-config stays untouched.)
+        // Jackson 3: a bare JsonMapper keeps the Jackson-2 wire bytes for this contract — parity is
+        // asserted by the core HttpServer-stub request-body pins (SB4 port, W1), not assumed.
         OpaClientConfig config = new OpaClientConfig(
                 properties.getBaseUrl(), properties.getTimeout(), properties.getDecisionField());
-        return new HttpOpaClient(new ObjectMapper(), policyPathResolver, config);
+        return new HttpOpaClient(JsonMapper.builder().build(), policyPathResolver, config);
     }
 
     /**

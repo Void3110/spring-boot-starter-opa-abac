@@ -15,7 +15,7 @@ dependencies {
     api(project(":opa-abac-core"))
 
     implementation("org.springframework.boot:spring-boot-starter-security")
-    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-webmvc")
 
     // Resilience4j backs the CallGuard seam (Slice B3 cross-service HTTP resilience). Exposed as `api`
     // so the OPA decorator's auto-config (starter) and the example app's resolve/tag wrappers can build
@@ -27,6 +27,8 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(libs.mockito.core)
     testImplementation(libs.assertj.core)
 }

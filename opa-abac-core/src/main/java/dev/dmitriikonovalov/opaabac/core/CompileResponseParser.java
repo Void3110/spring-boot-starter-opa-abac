@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.opaabac.core;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import dev.dmitriikonovalov.opaabac.core.Condition.Operator;
 import java.util.ArrayList;
 import java.util.List;
@@ -153,7 +153,7 @@ final class CompileResponseParser {
 
     /** The operator var name from the terms[0] ref ({@code [{var: "eq"}]} or {@code [{var:"internal"},{string:"member_2"}]}). */
     private static String operatorName(JsonNode opTerm) {
-        if (opTerm == null || !"ref".equals(opTerm.path("type").asText())) {
+        if (opTerm == null || !"ref".equals(opTerm.path("type").asString())) {
             return null;
         }
         JsonNode value = opTerm.get("value");
@@ -162,12 +162,12 @@ final class CompileResponseParser {
         }
         StringBuilder name = new StringBuilder();
         for (JsonNode part : value) {
-            String t = part.path("type").asText();
+            String t = part.path("type").asString();
             if ("var".equals(t) || "string".equals(t)) {
                 if (name.length() > 0) {
                     name.append('.');
                 }
-                name.append(part.path("value").asText());
+                name.append(part.path("value").asString());
             } else {
                 return null;
             }
@@ -202,30 +202,30 @@ final class CompileResponseParser {
      * {@code resource} (e.g. {@code "attributes.region"}, {@code "type"}, {@code "id"}); else null.
      */
     private static String resourceRefPath(JsonNode term) {
-        if (term == null || !"ref".equals(term.path("type").asText())) {
+        if (term == null || !"ref".equals(term.path("type").asString())) {
             return null;
         }
         JsonNode value = term.get("value");
         if (value == null || !value.isArray() || value.size() < 3) {
             return null;
         }
-        if (!"var".equals(value.get(0).path("type").asText())
-                || !"input".equals(value.get(0).path("value").asText())) {
+        if (!"var".equals(value.get(0).path("type").asString())
+                || !"input".equals(value.get(0).path("value").asString())) {
             return null;
         }
-        if (!"resource".equals(value.get(1).path("value").asText())) {
+        if (!"resource".equals(value.get(1).path("value").asString())) {
             return null;
         }
         StringBuilder path = new StringBuilder();
         for (int i = 2; i < value.size(); i++) {
             JsonNode part = value.get(i);
-            if (!"string".equals(part.path("type").asText())) {
+            if (!"string".equals(part.path("type").asString())) {
                 return null; // a dynamic/var key (not a literal path) is not SQL-expressible
             }
             if (path.length() > 0) {
                 path.append('.');
             }
-            path.append(part.path("value").asText());
+            path.append(part.path("value").asString());
         }
         return path.length() == 0 ? null : path.toString();
     }
@@ -245,8 +245,8 @@ final class CompileResponseParser {
         if (literal == null) {
             return null;
         }
-        return switch (literal.path("type").asText()) {
-            case "string" -> literal.path("value").asText();
+        return switch (literal.path("type").asString()) {
+            case "string" -> literal.path("value").asString();
             case "number" -> literal.path("value").isIntegralNumber()
                     ? (Object) literal.path("value").asLong()
                     : (Object) literal.path("value").asDouble();
@@ -260,7 +260,7 @@ final class CompileResponseParser {
         if (literal == null) {
             return null;
         }
-        String type = literal.path("type").asText();
+        String type = literal.path("type").asString();
         if (!"set".equals(type) && !"array".equals(type)) {
             return null;
         }

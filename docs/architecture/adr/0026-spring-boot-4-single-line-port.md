@@ -68,6 +68,24 @@ the Data JPA 4 neutral idiom; Hibernate 7 is proven by the existing Testcontaine
 double attribution (the new stack and PR #68's product-list plain→filtered change are commingled by
 design).
 
+## Implementation addendum (2026-07-12, the port run)
+
+The pins shipped as decided; two reality notes from implementation:
+
+- **Zero default-flips needed restoring.** The three wire-parity pins (W1 exact input shape incl.
+  ancestors-absent-when-empty, W2 claims tolerance, W3 a hardcoded Jackson-2.18 jsonb literal) all
+  pass against a **bare** `JsonMapper.builder().build()` — no Jackson-3 serialization default
+  touches these contracts, so the mappers carry no restore flags (the rule held; its set is empty).
+- **Hibernate ORM 7.2 does not support Jackson 3.** Its JSON `FormatMapper` (mandatory at boot once
+  any `@JdbcTypeCode(JSON)` attribute exists) probes only `com.fasterxml.jackson.databind` — which
+  is why Boot 4's BOM still manages the jackson-2 line. Jackson 2 therefore remains **solely as
+  Hibernate's internal JSON engine**: `runtimeOnly` on `opa-abac-spring-data`, zero
+  `com.fasterxml` databind/core types in any source. Dropped when Hibernate gains Jackson 3
+  support. The "hard swap" claim stands for every line of our code.
+
+Resolved pins at port time: Boot **4.0.7**, Gradle **9.6.1**, Jackson **3.1.4** (annotations 2.21
+transitive), R4j **2.4.0**, springdoc **3.0.3**, openapi-generator **7.14.0**, Temurin 25 images.
+
 ## Consequences
 
 - **1.0 ships against Boot 4 / Java 25 only.** Consumers on Boot 3.x/Java 21 use nothing — there is

@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.example.usermgmt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.CreateTeamRequest;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.User;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.UserRequest;
@@ -11,8 +11,9 @@ import dev.dmitriikonovalov.example.usermgmt.support.AbacTestConfig;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,6 +30,7 @@ import org.springframework.http.MediaType;
  * deny), so the inherited {@code AccessDeniedException} → {@code ACCESS_DENIED} mapping renders a problem
  * body.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ErrorContractIT extends AbstractPostgresIT {
 
@@ -48,10 +50,10 @@ class ErrorContractIT extends AbstractPostgresIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertProblem(response.getHeaders().getContentType());
         JsonNode body = MAPPER.readTree(response.getBody());
-        assertThat(body.get("errorCode").asText()).isEqualTo("RESOURCE_NOT_FOUND");
+        assertThat(body.get("errorCode").asString()).isEqualTo("RESOURCE_NOT_FOUND");
         assertThat(body.get("status").asInt()).isEqualTo(404);
         assertThat(body.has("message")).isFalse(); // clean replacement
-        assertThat(body.get("type").asText()).isEqualTo("/problems/resource-not-found");
+        assertThat(body.get("type").asString()).isEqualTo("/problems/resource-not-found");
     }
 
     // I4b — a malformed create body (blank required subject) → 400 problem+json VALIDATION_FAILED.
@@ -64,7 +66,7 @@ class ErrorContractIT extends AbstractPostgresIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertProblem(response.getHeaders().getContentType());
         JsonNode body = MAPPER.readTree(response.getBody());
-        assertThat(body.get("errorCode").asText()).isEqualTo("VALIDATION_FAILED");
+        assertThat(body.get("errorCode").asString()).isEqualTo("VALIDATION_FAILED");
         assertThat(body.has("message")).isFalse();
     }
 
@@ -85,7 +87,7 @@ class ErrorContractIT extends AbstractPostgresIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertProblem(response.getHeaders().getContentType());
         JsonNode body = MAPPER.readTree(response.getBody());
-        assertThat(body.get("errorCode").asText()).isEqualTo("TEAM_TARGET_EXISTS");
+        assertThat(body.get("errorCode").asString()).isEqualTo("TEAM_TARGET_EXISTS");
         assertThat(body.get("status").asInt()).isEqualTo(409);
     }
 
@@ -129,7 +131,7 @@ class ErrorContractIT extends AbstractPostgresIT {
         assertThat(del.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertProblem(del.getHeaders().getContentType());
         JsonNode body = MAPPER.readTree(del.getBody());
-        assertThat(body.get("errorCode").asText()).isEqualTo("STATE_CONFLICT");
+        assertThat(body.get("errorCode").asString()).isEqualTo("STATE_CONFLICT");
         assertThat(body.get("status").asInt()).isEqualTo(409);
     }
 
@@ -144,7 +146,7 @@ class ErrorContractIT extends AbstractPostgresIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertProblem(response.getHeaders().getContentType());
         JsonNode body = MAPPER.readTree(response.getBody());
-        assertThat(body.get("errorCode").asText()).isEqualTo("ACCESS_DENIED");
+        assertThat(body.get("errorCode").asString()).isEqualTo("ACCESS_DENIED");
         assertThat(body.get("status").asInt()).isEqualTo(403);
     }
 

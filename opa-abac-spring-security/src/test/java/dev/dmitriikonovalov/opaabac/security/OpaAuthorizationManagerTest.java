@@ -49,7 +49,7 @@ class OpaAuthorizationManagerTest {
         when(opaClient.allow(any())).thenReturn(true);
 
         AuthorizationDecision decision =
-                manager().check(authenticated(), requestContext("GET", "/api/v1/products/42"));
+                manager().authorize(authenticated(), requestContext("GET", "/api/v1/products/42"));
 
         assertThat(decision.isGranted()).isTrue();
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
@@ -61,7 +61,7 @@ class OpaAuthorizationManagerTest {
     @Test
     void unauthenticated_deny() {
         AuthorizationDecision decision =
-                manager().check(() -> null, requestContext("GET", "/api/v1/products"));
+                manager().authorize(() -> null, requestContext("GET", "/api/v1/products"));
         assertThat(decision.isGranted()).isFalse();
     }
 
@@ -71,7 +71,7 @@ class OpaAuthorizationManagerTest {
         when(opaClient.allow(any())).thenThrow(new RuntimeException("boom"));
 
         AuthorizationDecision decision =
-                manager().check(authenticated(), requestContext("POST", "/api/v1/products"));
+                manager().authorize(authenticated(), requestContext("POST", "/api/v1/products"));
         assertThat(decision.isGranted()).isFalse();
     }
 
@@ -82,7 +82,7 @@ class OpaAuthorizationManagerTest {
                 .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
 
         AuthorizationDecision decision =
-                manager().check(authenticated(), requestContext("POST", "/api/v1/products"));
+                manager().authorize(authenticated(), requestContext("POST", "/api/v1/products"));
 
         assertThat(decision.isGranted()).isFalse();
         Mockito.verify(opaClient, Mockito.never()).allow(any());
@@ -94,7 +94,7 @@ class OpaAuthorizationManagerTest {
         when(opaClient.allow(any())).thenReturn(true);
 
         AuthorizationDecision decision =
-                manager().check(authenticated(), requestContext("GET", "/api/v1/products"));
+                manager().authorize(authenticated(), requestContext("GET", "/api/v1/products"));
 
         assertThat(decision.isGranted()).isTrue();
         Mockito.verify(opaClient).allow(any());

@@ -26,9 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.domain.EntityScan;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -123,7 +123,7 @@ class ByoEntityFilterIT {
                 AbacQueryService.PartialEvalSettings.defaults());
 
         List<ByoTaggedEntity> rows =
-                service.findAuthorized(repository, Specification.where(null), queryContext());
+                service.findAuthorized(repository, Specification.unrestricted(), queryContext());
 
         // The emea residual matches two rows; the abac_deny row must drop (site 2 through custom_tags).
         assertThat(rows.stream().map(ByoTaggedEntity::getId)).containsExactly(emea);

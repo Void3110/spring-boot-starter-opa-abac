@@ -18,8 +18,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -101,9 +101,9 @@ class PaginationListIT {
     @Test // I1 — two subjects, same data, same paged call → different counts, disjoint contents
     void twoSubjects_sameData_differentCounts() {
         Page<FilterTestEntity> pageA = service(compileStub(residual("emea")))
-                .findAuthorized(repository, Specification.where(null), ctx(), null, firstHundred());
+                .findAuthorized(repository, Specification.unrestricted(), ctx(), null, firstHundred());
         Page<FilterTestEntity> pageB = service(compileStub(residual("apac")))
-                .findAuthorized(repository, Specification.where(null), ctx(), null, firstHundred());
+                .findAuthorized(repository, Specification.unrestricted(), ctx(), null, firstHundred());
 
         assertThat(pageA.getTotalElements()).isEqualTo(5);
         assertThat(pageB.getTotalElements()).isEqualTo(3);
@@ -119,14 +119,14 @@ class PaginationListIT {
     void stabilityWalk_perPage2_visitsAuthorizedSetExactlyOnce() {
         AbacQueryService svc = service(compileStub(residual("emea")));
         List<UUID> singlePage =
-                ids(svc.findAuthorized(repository, Specification.where(null), ctx(), null, firstHundred()));
+                ids(svc.findAuthorized(repository, Specification.unrestricted(), ctx(), null, firstHundred()));
 
         List<UUID> walked = new ArrayList<>();
         Page<FilterTestEntity> page;
         int pageIndex = 0;
         do {
             page = svc.findAuthorized(
-                    repository, Specification.where(null), ctx(), null,
+                    repository, Specification.unrestricted(), ctx(), null,
                     PageRequest.of(pageIndex, 2, DEFAULT_ORDER));
             assertThat(page.getTotalElements()).isEqualTo(5); // the count is stable across pages
             walked.addAll(ids(page));
@@ -148,9 +148,9 @@ class PaginationListIT {
         for (int pageIndex = 0; pageIndex < 3; pageIndex++) {
             PageRequest window = PageRequest.of(pageIndex, 2, DEFAULT_ORDER);
             Page<FilterTestEntity> expected =
-                    pureSql.findAuthorized(repository, Specification.where(null), ctx(), null, window);
+                    pureSql.findAuthorized(repository, Specification.unrestricted(), ctx(), null, window);
             Page<FilterTestEntity> actual =
-                    fallback.findAuthorized(repository, Specification.where(null), ctx(), null, window);
+                    fallback.findAuthorized(repository, Specification.unrestricted(), ctx(), null, window);
 
             assertThat(ids(actual)).containsExactlyElementsOf(ids(expected)); // slice AND order match
             assertThat(actual.getTotalElements()).isEqualTo(expected.getTotalElements()).isEqualTo(5);
@@ -160,10 +160,10 @@ class PaginationListIT {
     @Test // I4 — past-the-end: a page beyond the last → empty content, the exact count intact (both paths)
     void pastTheEnd_emptyContent_exactCount() {
         Page<FilterTestEntity> pureSql = service(compileStub(residual("emea")))
-                .findAuthorized(repository, Specification.where(null), ctx(), null,
+                .findAuthorized(repository, Specification.unrestricted(), ctx(), null,
                         PageRequest.of(10, 2, DEFAULT_ORDER));
         Page<FilterTestEntity> fallback = service(batchStub("emea"))
-                .findAuthorized(repository, Specification.where(null), ctx(), null,
+                .findAuthorized(repository, Specification.unrestricted(), ctx(), null,
                         PageRequest.of(10, 2, DEFAULT_ORDER));
 
         assertThat(pureSql.getContent()).isEmpty();

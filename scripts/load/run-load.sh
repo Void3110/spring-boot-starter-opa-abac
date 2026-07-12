@@ -493,6 +493,11 @@ run_ceiling_ladder() {
   : > "$RUN_DIR/ceiling-stages.txt"
   for rate in "${stages[@]}"; do
     note "[ceiling] stage: $rate req/s for ${LADDER_DURATION}s ..."
+    # Re-mint per stage: a full 6x60s ladder outlives one access token (~5 min realm lifespan).
+    # Pre-SB4 the knee always stopped the ladder inside stage 1, so a single mint sufficed; the
+    # Boot-4 list path climbs long enough that stale-token 401s would RED an otherwise valid run
+    # (auth failure is red, never knee data — the ladder-stage validity split).
+    mint_perf_token
     k6_run "list-filter.js" "$LADDER_DURATION" "$RUN_DIR/list-filter-stage-$rate.summary.json" "$rate" 1
     line="$(python3 "$SELF_DIR/knee.py" "$RUN_DIR/list-filter-stage-$rate.summary.json")" \
       || red "stage $rate: knee.py could not evaluate the summary — invalid run, nothing recorded."

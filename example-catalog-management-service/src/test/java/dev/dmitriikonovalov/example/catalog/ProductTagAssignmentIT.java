@@ -7,8 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionClient;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionFetchException;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionView;
@@ -16,7 +16,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -69,7 +69,7 @@ class ProductTagAssignmentIT extends AbstractPostgresIT {
                 .andExpect(jsonPath("$.tags.region", org.hamcrest.Matchers.containsInAnyOrder("emea", "amer")))
                 .andReturn();
         // Re-read to prove it persisted.
-        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
         mockMvc.perform(get(url + "/{p}", id))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tags.sensitivity").value("internal"));
@@ -83,7 +83,7 @@ class ProductTagAssignmentIT extends AbstractPostgresIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"priceCents\":100,\"currency\":\"USD\","
                                 + "\"tags\":{\"nope\":\"x\"}}"))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.errorCode").value("TAG_VALUE_ILLEGAL"))
                 .andExpect(jsonPath("$.status").value(422));
@@ -95,7 +95,7 @@ class ProductTagAssignmentIT extends AbstractPostgresIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"priceCents\":100,\"currency\":\"USD\","
                                 + "\"tags\":{\"sensitivity\":\"secret\"}}"))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
     }
 
     @Test
@@ -104,7 +104,7 @@ class ProductTagAssignmentIT extends AbstractPostgresIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"P\",\"priceCents\":100,\"currency\":\"USD\","
                                 + "\"tags\":{\"sensitivity\":[\"public\",\"internal\"]}}"))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
     }
 
     // --- definitions-fetch failure → 503, nothing stored --------------------------
@@ -147,7 +147,7 @@ class ProductTagAssignmentIT extends AbstractPostgresIT {
                         .content(body))
                 .andExpect(status().isCreated())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
     }
 
     @TestConfiguration

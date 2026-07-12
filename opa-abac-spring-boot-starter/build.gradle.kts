@@ -30,7 +30,7 @@ dependencies {
     // scopes so the starter is truly modular is a tracked follow-up decision (see
     // docs/code-review/FULL-REPO-REVIEW-2026-06-10.md), not something to half-change here.
     compileOnly("org.springframework.boot:spring-boot-starter-security")
-    compileOnly("org.springframework.boot:spring-boot-starter-web")
+    compileOnly("org.springframework.boot:spring-boot-starter-webmvc")
 
     // Resilience4j (Slice B3): the OPA resilience decorator is auto-configured @ConditionalOnClass R4j, the
     // standard "optional integration" pattern (ADR 0017 §6). R4j is NOT declared here — it arrives
@@ -51,8 +51,10 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(project(":opa-abac-keycloak-directory"))
     testImplementation("org.springframework.boot:spring-boot-starter-security")
-    testImplementation("org.springframework.boot:spring-boot-starter-web")
+    testImplementation("org.springframework.boot:spring-boot-starter-webmvc")
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(libs.assertj.core)
 }

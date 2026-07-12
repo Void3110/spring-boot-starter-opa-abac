@@ -52,8 +52,8 @@ public final class OpaAuthorizationManager implements AuthorizationManager<Reque
     }
 
     @Override
-    public AuthorizationDecision check(
-            Supplier<Authentication> authentication, RequestAuthorizationContext context) {
+    public AuthorizationDecision authorize(
+            Supplier<? extends Authentication> authentication, RequestAuthorizationContext context) {
         try {
             Authentication auth = authentication.get();
             if (!(auth instanceof AbacAuthentication abac) || !abac.isAuthenticated()) {

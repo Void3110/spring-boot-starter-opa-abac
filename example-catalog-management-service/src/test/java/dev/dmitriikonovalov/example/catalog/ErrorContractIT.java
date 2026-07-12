@@ -6,12 +6,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.util.UUID;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -70,7 +70,7 @@ class ErrorContractIT extends AbstractPostgresIT {
                         .content("{\"name\":\"Electronics\",\"description\":\"d\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
-        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+        String id = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asString();
         org.assertj.core.api.Assertions.assertThat(result.getResponse().getHeader("Location"))
                 .isEqualTo("http://localhost/api/v1/catalogs/" + id);
     }

@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.example.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +30,7 @@ class CategoryListWideningParityTest {
 
         List<String> categoriesGrantingList = new ArrayList<>();
         table.properties().forEach(entry -> entry.getValue().forEach(action -> {
-            if ("list".equals(action.asText())) {
+            if ("list".equals(action.asString())) {
                 categoriesGrantingList.add(entry.getKey());
             }
         }));

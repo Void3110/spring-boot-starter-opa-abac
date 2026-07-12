@@ -285,7 +285,7 @@ public class AbacQueryService {
             Specification<T> scope, PartialResult residual, Specification<T> subtreeSpec) {
         Specification<T> tagResidual = specificationFactory.from(residual);
         Specification<T> widened =
-                subtreeSpec == null ? tagResidual : Specification.where(tagResidual).or(subtreeSpec);
+                subtreeSpec == null ? tagResidual : tagResidual.or(subtreeSpec);
         return scopeOnly(scope).and(widened).and(notDenied());
     }
 
@@ -405,7 +405,8 @@ public class AbacQueryService {
     }
 
     private static <T> Specification<T> scopeOnly(Specification<T> scope) {
-        return scope == null ? Specification.where(null) : scope;
+        // Data JPA 4's neutral idiom: where(null) became ambiguous once where() gained overloads.
+        return scope == null ? Specification.unrestricted() : scope;
     }
 
     /** Settings the query service honors — the starter binds its {@code partialEval} properties onto this. */

@@ -18,15 +18,25 @@ dependencies {
     // (jakarta.persistence, JpaRepository, AbacDataObject), so consumers inherit JPA on their compile
     // classpath. Jackson (used by ResourceTagsConverter) comes transitively via this starter.
     api("org.springframework.boot:spring-boot-starter-data-jpa")
+    // Hibernate 7.2's JSON FormatMapper (required at boot once any @JdbcTypeCode(JSON) attribute
+    // exists) only detects Jackson 2 — it does not support tools.jackson yet, which is why Boot 4's
+    // BOM still manages the jackson-2 line. Runtime-only: no com.fasterxml databind type appears in
+    // any source; drop this when Hibernate ORM gains Jackson 3 support.
+    runtimeOnly("com.fasterxml.jackson.core:jackson-databind")
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(libs.assertj.core)
     testImplementation(libs.mockito.core)
 
     // The ResidualSpecificationFactory Testcontainers IT runs the generated Specification against a real
     // Postgres + JSONB (never H2 — the jsonb_* functions and the `?` operator are Postgres-specific).
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Boot 4 modularized the test slices: @DataJpaTest / @AutoConfigureTestDatabase / TestEntityManager
+    // live in technology-specific test artifacts now (aggregated by this starter).
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     testImplementation(platform(libs.testcontainers.bom))
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)

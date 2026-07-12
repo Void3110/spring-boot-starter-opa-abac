@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
@@ -62,6 +62,18 @@ class JwtClaimsSubjectExtractorTest {
         assertThat(subject.get().id()).isEqualTo("user-1");
         assertThat(subject.get().roles()).containsExactly("catalog-viewer", "catalog-editor");
         assertThat(subject.get().attributes()).containsEntry("username", "alice");
+    }
+
+    @Test // W2 (SB4 port) — unknown claims are IGNORED, pinned as a decision: the extractor reads a
+    // JsonNode tree (no data-binding), so Jackson 3's FAIL_ON_UNKNOWN_PROPERTIES default-flip cannot
+    // change tolerance — this test keeps that a contract, not an accident of the parse style.
+    void unknownClaims_ignored() {
+        String payload = "{\"sub\":\"user-1\",\"iss\":\"https://idp.example\",\"azp\":\"spa\","
+                + "\"custom_deep\":{\"a\":[1,2,{\"b\":true}]},\"exp\":" + future() + "}";
+        Optional<AbacContext.Subject> subject = extract(payload);
+        assertThat(subject).isPresent();
+        assertThat(subject.get().id()).isEqualTo("user-1");
+        assertThat(subject.get().roles()).isEmpty();
     }
 
     @Test // U12 — missing sub

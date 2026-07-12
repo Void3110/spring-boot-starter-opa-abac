@@ -2,11 +2,9 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.OffsetDateTime;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,11 +24,9 @@ class ProblemDetailContractTest {
 
     private final ProblemDetailFactory factory = new ProblemDetailFactory();
 
-    // A JsonMapper mirroring Spring Boot's defaults for the members we assert (java.time as ISO-8601).
-    private final ObjectMapper objectMapper = JsonMapper.builder()
-            .addModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-            .build();
+    // A JsonMapper mirroring Spring Boot's defaults for the members we assert — Jackson 3 writes
+    // java.time as ISO-8601 out of the box (no JavaTimeModule, no WRITE_DATES_AS_TIMESTAMPS flip).
+    private final ObjectMapper objectMapper = JsonMapper.builder().build();
 
     // U1 — every LibraryErrorCode exposes code()/problemType()/title().
     @Test
@@ -54,8 +50,8 @@ class ProblemDetailContractTest {
         assertThat(LibraryErrorCode.VALIDATION_FAILED.status()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(LibraryErrorCode.RESOURCE_NOT_FOUND.status()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(LibraryErrorCode.STATE_CONFLICT.status()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(LibraryErrorCode.TAG_VALUE_ILLEGAL.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-        assertThat(LibraryErrorCode.ROLE_SUBSET_VIOLATION.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(LibraryErrorCode.TAG_VALUE_ILLEGAL.status()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(LibraryErrorCode.ROLE_SUBSET_VIOLATION.status()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
     // U3 — the helper builds a ProblemDetail from (status, code, detail, instance).
@@ -63,7 +59,7 @@ class ProblemDetailContractTest {
     void helperBuildsProblemDetailFromTheTuple() {
         OffsetDateTime before = OffsetDateTime.now().minusSeconds(1);
         ProblemDetail body = factory.body(
-                HttpStatus.UNPROCESSABLE_ENTITY,
+                HttpStatus.UNPROCESSABLE_CONTENT,
                 LibraryErrorCode.TAG_VALUE_ILLEGAL,
                 "Unknown tag key: reglon",
                 "/api/v1/catalogs/7b/categories");
@@ -90,8 +86,7 @@ class ProblemDetailContractTest {
                 .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
 
         String json = objectMapper.writeValueAsString(response.getBody());
-        assertThat(objectMapper.readTree(json).fieldNames())
-                .toIterable()
+        assertThat(objectMapper.readTree(json).propertyNames())
                 .containsExactlyInAnyOrder(
                         "type", "title", "status", "detail", "instance", "errorCode", "timestamp");
         assertThat(json).doesNotContain("\"message\"");

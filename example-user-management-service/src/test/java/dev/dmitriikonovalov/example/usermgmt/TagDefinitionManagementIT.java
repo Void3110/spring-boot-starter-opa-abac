@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
@@ -231,7 +231,7 @@ class TagDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 AbacTestConfig.as(owner.getSubject(), enumReq("tier", List.of())),
                 String.class,
                 team.getId());
-        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
     @Test
@@ -246,7 +246,7 @@ class TagDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 AbacTestConfig.as(owner.getSubject(), enumReq("Tier WithSpaces", List.of("gold"))),
                 String.class,
                 team.getId());
-        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(create.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
     // --- bonus: duplicate team key → 409 --------------------------------------

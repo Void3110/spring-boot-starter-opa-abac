@@ -88,11 +88,12 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     }
 
     /**
-     * Spring Security 6.4 entry point. (Spring Security 7.0 renames this to {@code authorize(...)}; the
-     * body is unchanged — keep this method until the baseline moves to 7.0.)
+     * The decision entry point — {@code authorize(...)} since Spring Security 6.4 (the interceptor
+     * dispatches here; Security 7 makes it the abstract method). Overridden with the covariant
+     * {@link AuthorizationDecision} return so callers keep the narrower type.
      */
     @Override
-    public AuthorizationDecision check(Supplier<Authentication> authentication, MethodInvocation invocation) {
+    public AuthorizationDecision authorize(Supplier<? extends Authentication> authentication, MethodInvocation invocation) {
         try {
             OpaPreAuthorize annotation = findAnnotation(invocation);
             if (annotation == null) {

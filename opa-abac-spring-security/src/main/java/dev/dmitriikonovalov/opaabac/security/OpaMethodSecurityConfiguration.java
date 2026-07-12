@@ -77,8 +77,8 @@ public class OpaMethodSecurityConfiguration {
         }
 
         @Override
-        public AuthorizationDecision check(Supplier<Authentication> authentication, MethodInvocation invocation) {
-            return delegate.get().check(authentication, invocation);
+        public AuthorizationDecision authorize(Supplier<? extends Authentication> authentication, MethodInvocation invocation) {
+            return delegate.get().authorize(authentication, invocation);
         }
     }
 }

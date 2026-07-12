@@ -39,13 +39,13 @@ F1–F9, grill-me 2026-07-11): [[00-DESIGN]]; packaging/Java-25/Jackson-3/R4j de
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Boot 3.4.13 → 3.5.x + the deprecation map | 📋 TODO |
-| T2 | Security 7 pre-migration: covariant `authorize()` (on 3.5) | 📋 TODO |
-| T3 | Resilience4j 2.4.0: delete the internal coupling | 📋 TODO |
-| T4 | THE BUMP: Boot 4.0.x + Gradle 9 + JDK 25 + renames + test churn | 📋 TODO |
-| T5 | Core Jackson 3 + the three wire-format parity pins | 📋 TODO |
-| T6 | Data JPA 4 idiom + deprecation zero-out | 📋 TODO |
-| T7 | Rig rebuild + e2e fleet + PERFORMANCE.md re-baseline + docs sweep | 📋 TODO |
+| T1 | Boot 3.4.13 → 3.5.x + the deprecation map | ✅ DONE |
+| T2 | Security 7 pre-migration: covariant `authorize()` (on 3.5) | ✅ DONE |
+| T3 | Resilience4j 2.4.0: delete the internal coupling | ✅ DONE |
+| T4 | THE BUMP: Boot 4.0.x + Gradle 9 + JDK 25 + renames + test churn | ✅ DONE |
+| T5 | Core Jackson 3 + the three wire-format parity pins | ✅ DONE |
+| T6 | Data JPA 4 idiom + deprecation zero-out | ✅ DONE |
+| T7 | Rig rebuild + e2e fleet + PERFORMANCE.md re-baseline + docs sweep | ✅ DONE (perf partial by validity) |
 
 Critical path: **T1 → (T2 ∥ T3) → T4 → (T5 ∥ T6) → T7**; T1–T3 are independently landable (still a
 3.5 repo with two deprecation classes retired). T4 is the flagged build-breaker commit *by design*.

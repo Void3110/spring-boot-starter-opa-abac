@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -143,15 +143,40 @@ class HttpOpaClientTest {
         JsonNode root = MAPPER.readTree(captured.get());
         JsonNode input = root.get("input");
         assertThat(input).isNotNull();
-        assertThat(input.get("subject").get("id").asText()).isEqualTo("user-1");
-        assertThat(input.get("action").asText()).isEqualTo("product:read");
-        assertThat(input.get("resource").get("type").asText()).isEqualTo("product");
+        assertThat(input.get("subject").get("id").asString()).isEqualTo("user-1");
+        assertThat(input.get("action").asString()).isEqualTo("product:read");
+        assertThat(input.get("resource").get("type").asString()).isEqualTo("product");
         // serialized as snake_case "role_definition"
         JsonNode roleDef = input.get("role_definition");
         assertThat(roleDef).isNotNull();
-        assertThat(roleDef.get("code").asText()).isEqualTo("catalog-viewer");
-        assertThat(roleDef.get("permissions").get("product").get(0).asText()).isEqualTo("read");
+        assertThat(roleDef.get("code").asString()).isEqualTo("catalog-viewer");
+        assertThat(roleDef.get("permissions").get("product").get(0).asString()).isEqualTo("read");
         assertThat(input.get("environment")).isNotNull();
+    }
+
+    @Test // W1 (SB4 port) — the EXACT property sets of the OPA input: no field appears or vanishes
+    // on Jackson 3 (a serialization default-flip would show up here as an extra/missing property).
+    // Also pins absent-vs-null for the NON_EMPTY ancestors: an empty chain stays ABSENT, so a rego
+    // `input.resource.ancestors` stays undefined — a defined-but-empty value would flip policy
+    // semantics (F4's fail-closed edge).
+    void requestBody_exactShape_noFieldAppearsOrVanishes() throws IOException {
+        AtomicReference<byte[]> captured = new AtomicReference<>();
+        String base = startServer(ex -> {
+            captured.set(ex.getRequestBody().readAllBytes());
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+
+        clientFor(base, "catalog").allow(sampleContext());
+
+        JsonNode input = MAPPER.readTree(captured.get()).get("input");
+        assertThat(input.propertyNames()).containsExactlyInAnyOrder(
+                "subject", "action", "resource", "role_definition", "environment");
+        assertThat(input.get("subject").propertyNames())
+                .containsExactlyInAnyOrder("id", "roles", "attributes");
+        assertThat(input.get("resource").propertyNames())
+                .containsExactlyInAnyOrder("type", "id", "attributes"); // ancestors: absent when empty
+        assertThat(input.get("role_definition").propertyNames())
+                .containsExactlyInAnyOrder("code", "attributes", "permissions");
     }
 
     @Test // U7b — role_definition omitted when null

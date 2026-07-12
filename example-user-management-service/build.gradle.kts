@@ -30,7 +30,9 @@ dependencies {
     // The app declares its own security chain (the starter intentionally does not).
     implementation("org.springframework.boot:spring-boot-starter-security")
 
-    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    // Boot 4 modularization: ClientHttpRequestFactoryBuilder/HttpClientSettings live in their own artifact.
+    implementation("org.springframework.boot:spring-boot-http-client")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
@@ -39,6 +41,9 @@ dependencies {
 
     // Schema management
     implementation("org.liquibase:liquibase-core")
+    // Boot 4 split the auto-configurations into per-technology artifacts: liquibase-core alone no
+    // longer triggers migrations — the LiquibaseAutoConfiguration lives here now.
+    runtimeOnly("org.springframework.boot:spring-boot-liquibase")
     runtimeOnly("org.postgresql:postgresql")
 
     // API docs / Swagger UI
@@ -51,6 +56,13 @@ dependencies {
 
     // Integration tests run against real Postgres via Testcontainers.
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Boot 4 modularized the test slices: TestRestTemplate moved to spring-boot-resttestclient.
+    testImplementation("org.springframework.boot:spring-boot-resttestclient")
+    // ...and TestRestTemplate wraps RestTemplate: RestTemplateBuilder lives in spring-boot-restclient
+    // (optional in resttestclient), without which the test auto-configuration fails introspection.
+    testImplementation("org.springframework.boot:spring-boot-restclient")
+    // Explicit launcher (aligned via the Boot BOM) — Gradle 9 drops auto-loading.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation(platform(libs.testcontainers.bom))
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)

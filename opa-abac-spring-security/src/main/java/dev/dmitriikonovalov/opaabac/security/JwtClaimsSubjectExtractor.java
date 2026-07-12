@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
@@ -107,7 +107,7 @@ public final class JwtClaimsSubjectExtractor implements AbacSubjectExtractor {
     /** Read a (possibly dotted) claim path as text. */
     private static String textAt(JsonNode root, String path) {
         JsonNode node = at(root, path);
-        return (node != null && node.isValueNode()) ? node.asText() : null;
+        return (node != null && node.isValueNode()) ? node.asString() : null;
     }
 
     /** Read a (possibly dotted) claim path as a list of strings; missing → empty list. */
@@ -117,7 +117,7 @@ public final class JwtClaimsSubjectExtractor implements AbacSubjectExtractor {
         if (node != null && node.isArray()) {
             node.forEach(element -> {
                 if (element.isValueNode()) {
-                    values.add(element.asText());
+                    values.add(element.asString());
                 }
             });
         }

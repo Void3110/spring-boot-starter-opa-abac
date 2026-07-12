@@ -3,7 +3,7 @@ package dev.dmitriikonovalov.example.usermgmt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionEntity;
 import dev.dmitriikonovalov.example.usermgmt.domain.RoleDefinitionRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.SystemRoles;
@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -129,7 +129,7 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
         var json = rest.getForEntity(url(member, "catalog", target), JsonNode.class).getBody();
         assertThat(json).isNotNull();
         assertThat(json.has("denied_actions")).isTrue();
-        assertThat(json.get("denied_actions").get("catalog").get(0).asText()).isEqualTo("delete");
+        assertThat(json.get("denied_actions").get("catalog").get(0).asString()).isEqualTo("delete");
     }
 
     @Test // I3 — a denial-free role serializes WITHOUT the denied_actions field (NON_EMPTY)
@@ -171,7 +171,7 @@ class EffectiveRoleResolveIT extends AbstractSecuredPostgresIT {
         var json = rest.getForEntity(url(member, "catalog", target), JsonNode.class).getBody();
         assertThat(json).isNotNull();
         assertThat(json.has("required_tags")).isTrue();
-        assertThat(json.get("match_mode").asText()).isEqualTo("ALL_OF");
+        assertThat(json.get("match_mode").asString()).isEqualTo("ALL_OF");
     }
 
     @Test // RD3 — an UNKNOWN stored match_mode narrows to ALL_OF (fail-closed), never widens to ANY_OF

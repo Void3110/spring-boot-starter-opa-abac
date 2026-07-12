@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
@@ -190,7 +190,7 @@ class MembershipManagementIT extends AbstractSecuredPostgresIT {
                 team.getId(),
                 target.getId());
         // Authorized to manage (admin), but the level gate rejects (mechanism: missing role_level).
-        assertThat(change.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(change.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(change.getBody()).contains("ROLE_SUBSET_VIOLATION");
         // The target's membership row is unchanged.
         assertThat(memberships.findByTeamIdAndUserId(team.getId(), target.getId()))
