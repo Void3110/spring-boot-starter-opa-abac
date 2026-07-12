@@ -184,6 +184,12 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   happens to run) — with **behavior byte-identical** to the proven 3.4 implementation, so adopting it
   doesn't mean betting on an EOL platform or re-verifying semantics. — **SB4 port (pre-publish)**
   ([[SPRING-BOOT-4-PORT]], ADR [[0026-spring-boot-4-single-line-port|0026]])
+- **F7** *As a developer adopting the starter*, I can pull it straight from **Maven Central** —
+  `implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter:1.0.0")` (or pin everything through
+  `platform("dev.dmitriikonovalov:opa-abac-bom:1.0.0")`) — a signed, POM-complete `1.0.0` with sources +
+  javadoc, no building-from-source and no snapshot repo. The optional Keycloak directory module is its own
+  fetchable coordinate; the demo apps are **not** published. — **Phase 7 (publish)**
+  ([[MAVEN-CENTRAL-PUBLISHING]], ADR [[0027-maven-central-release-engineering|0027]])
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
