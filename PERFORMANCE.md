@@ -37,6 +37,50 @@ labeled; everything else is the 7.3 truth.
 | Fixtures | 1 load catalog + 1,000 categories (tags cycling 3 values); multi-root: 50 catalogs, one team each; the reserved `perf` identity |
 | Tracing | OTEL Java agent, `always_on` sampling (identical in both passes — the delta stays clean) |
 
+## SB4-port re-baseline (2026-07-12) — partial; validity gates enforced
+
+The Boot 4.0.7 / Java 25 / Jackson 3 port (ADR 0026) re-ran the harness on rebuilt images
+(Temurin 25, OTEL agent 2.29.0 — 2.11.0 emits nothing on Framework 7). Per ADR 0021, **only
+runs that passed every validity gate are recorded**; the late-night measurement window suffered
+host memory starvation (contradictory stage results within the hour), so several modes never
+produced a valid run. What follows is exactly what was validly measured — and what was not.
+
+**Valid and recorded:**
+
+- **Per-request call attribution — every pinned bound HOLDS on the ported stack** (the ADR
+  0023/0024 efficiency contract is byte-identical): gate-overhead resolve **1**/decide **1**;
+  list-filter resolve **1**/batch-eval **2**/compile **1**; enrichment resolve **1**/batch-eval
+  **2**; multi-root resolve **2** (the 7.3 two-lifecycle-points bound). 281–284 traces attributed
+  per scenario (multi-root 282), REPS=3, floors met.
+- **Steady guarded latency** (RATE=5, DURATION=30, REPS=3): list p99 ≈ 33–37 ms — consistent with
+  the 7.3 ledger's steady posture.
+- **Ladder stages 10 and 25 rps passed cleanly twice** (p99 177/217 ms — the 7.3 knee was AT
+  10 rps; the ported list path is materially faster at the low stages). See the caveat below on
+  why the ladder still has no official knee row.
+- **All three fault timelines green** (fault-opa, fault-supplier-transient, fault-supplier-down):
+  typed denials only, fail-closed walls intact on the new stack.
+
+**Not validly re-measured (the 7.3 rows below remain the last official numbers):**
+
+- **The two-pass gate delta**: one run computed p50 +1.49 ms (+34%) — plausible on the faster
+  stack — but crossed validity thresholds elsewhere in the run, so per ADR 0021 it is NOT a
+  ledger number. Re-run `REPS=3 ./run-load.sh full` on a quiet host.
+- **The list ceiling**: the ported stack exposes a harness blind spot — past ~25 rps the OPA
+  container collapses under compile+bulk volume and the app answers **fail-closed empty pages**
+  (status 200, fast, count=0), which the knee rule (p99 > 1 s OR >1% failed) cannot see; the
+  `wrong_count` gate REDs the run instead of declaring a knee. The honest reading: the knee moved
+  from app latency at 10 rps to an OPA-availability cliff inside the 50-rps stage. Extending the
+  knee definition to count fail-closed-empty pages is an ADR 0021 methodology question, deferred.
+
+**Fine print (double attribution, F8/ADR 0026):** any delta vs the 7.3 rows commingles the new
+stack (Tomcat 11 / Hibernate 7 / Jackson 3 / JDK 25) with PR #68's product-list plain→filtered
+change, whose own re-baseline was deferred to this one by design. Not separably attributable.
+
+**Harness changes in this run:** the ceiling ladder now re-mints the perf token per stage (a full
+6×60 s ladder outlives one ~5-minute access token; pre-port the knee always stopped the ladder in
+stage 1, masking it). Environment vs the table below: App = Java 25 · Spring Boot 4.0; OTEL agent
+2.29.0. Everything else unchanged.
+
 ## 1. The headline: what the gate costs per request
 
 Two passes of the **same single id'd `GET /api/v1/catalogs/{id}`** through the **byte-identical

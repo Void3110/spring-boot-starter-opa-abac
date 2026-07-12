@@ -198,8 +198,8 @@ pause to ask — and what should planning have pre-resolved) so the *next* slice
 
 ## Requirements
 
-- Java 21+
-- Spring Boot 3.4+
+- Java 25+
+- Spring Boot 4.0+
 - A container runtime — Docker or podman (for the example infrastructure and the integration tests)
 - **Open Policy Agent (OPA) 1.x** — the decision engine the library calls; the local rig runs it for you
 - **PostgreSQL** — the example uses Postgres-specific features (JSONB tags, `ltree` materialized paths)

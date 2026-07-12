@@ -5,7 +5,7 @@
 # ENABLE_USER_SERVICE=1. Not published.
 
 # --- Stage 1: build -----------------------------------------------------------
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 
 # Copy the whole repo so the multi-module Gradle build can resolve the library modules.
@@ -16,7 +16,7 @@ COPY . .
 RUN ./gradlew :example-user-management-service:bootJar -x test -x check --no-daemon
 
 # --- Stage 2: runtime ---------------------------------------------------------
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
 
 # curl for the compose healthcheck (hits /actuator/health).

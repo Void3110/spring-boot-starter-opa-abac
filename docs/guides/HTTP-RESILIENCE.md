@@ -204,14 +204,15 @@ demonstrates the real feature with the *same* R4j, the *same* knobs across all t
   recovers (E1: the protected request **succeeds**) or stays down (E2: it **still denies**, 403 — B2's wall
   un-breached, no realm-fallback widening). The contrast is the slice's reason to exist.
 
-## Forward note — the Boot-4 native backend
+## Forward note — the native-resilience backend (updated at the SB4 port)
 
-The `CallGuard` seam is the boundary for a future second backend: Spring Framework 7 / Spring Boot 4 ship
-native resilience (`@Retryable`, `@ConcurrencyLimit`, `RetryTemplate`, `@EnableResilientMethods`, zero
-external deps). Because two baselines are intended (Java 21 / Boot 3 R4j · Java 25-26 / Boot 4 native), that
-backend is a `NativeCallGuard` behind the same seam — a one-impl swap, decided **with Boot 4 in hand** (a
-later slice). B3 ships only the Java-21 / Boot-3.4 R4j impl. The **load-testing rig** + empirical
-budget/breaker-threshold tuning is deferred to Phase 7.
+The `CallGuard` seam remains the boundary for a possible second backend: Spring Framework 7 ships
+native resilience (`@Retryable`, `@ConcurrencyLimit`, `RetryTemplate`, `@EnableResilientMethods`,
+zero external deps). **The SB4 port (ADR 0026) settled the packaging question the other way** — a
+single Boot-4/Java-25 line, no dual 3.x/4.x baseline — and kept R4j: SF7's resilience core has
+**no circuit breaker**, so the R4j-backed impl (on R4j 2.4.0, pure public API since T3) stays
+necessary regardless. A `NativeCallGuard` remains backlog behind the same seam if SF7 ever grows
+one. The load-testing rig shipped in Phase 7.2 (`scripts/load/`, ADR 0021).
 
 ## Related
 
