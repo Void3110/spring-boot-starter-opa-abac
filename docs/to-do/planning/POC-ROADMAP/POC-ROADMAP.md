@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/abac
   - area/opa
@@ -9,14 +9,15 @@ tags:
 
 # Proof-of-Concept Roadmap
 
-> **Status (2026-07-13):** Pre-publish. **All functional slices are shipped to `main`** (Phases 0–6.7
-> + B2/B3/B4 + the 5.x API/hierarchy work + the whole Phase-7 gauntlet through the **Spring Boot 4 port**,
-> merged PR #70). **7.4 is done** — the delta security review (0 Critical; findings fixed),
-> the full-history secret scan (clean), the dependency CVE sweep (clean), the zero-config fail-safety
-> audit (fail-closed), the load-test re-baseline, **and the pre-publish UI QA** (A–I all PASS, one
-> cosmetic SPA defect found + fixed, PRs #78/#79) are all done. The **only** thing left before **1.0** is
-> the **Maven Central publishing setup** — now designed and planned as [[MAVEN-CENTRAL-PUBLISHING]]
-> ([[0027-maven-central-release-engineering|ADR 0027]]); then **7.5** (publish). This note tracks how the
+> **Status (2026-07-13): 🎉 1.0.0 SHIPPED — published to Maven Central.** Every phase is done. All
+> functional slices (Phases 0–6.7 + B2/B3/B4 + the 5.x API/hierarchy work + the **Spring Boot 4 port**,
+> PR #70), the full **7.4** pre-publish gauntlet (delta security review 0-Critical, full-history secret
+> scan clean, dependency CVE sweep clean, zero-config fail-safety, load-test re-baseline, and the
+> browser-driven **UI QA** — A–I all PASS, one cosmetic SPA defect found + fixed, PRs #78/#79), **and**
+> the **Maven Central publishing setup** ([[MAVEN-CENTRAL-PUBLISHING]] /
+> [[0027-maven-central-release-engineering|ADR 0027]], T1–T6, PR #84) are shipped. **7.5 — publish — is
+> DONE:** `dev.dmitriikonovalov:opa-abac-*:1.0.0` (+ the `opa-abac-bom` platform) is live on Central,
+> tagged `v1.0.0`; `main` is now `1.1.0-SNAPSHOT` (PR #85). This note is the historical record of how the
 > features fit together and the order we tackled them; each has its own folder under `to-do/implemented/`.
 
 ## The thesis
@@ -204,10 +205,17 @@ commits, only demo fixtures), the **dependency CVE sweep** (CLEAN — 0 on the p
 **zero-config fail-safety audit** (fail-closed by construction; the one footgun — `@OpaPreAuthorize`
 silently off without `@EnableMethodSecurity` — now caught by a startup WARN + a README quickstart), and
 the **load-test re-baseline** (gate +0.79 ms/+15 % p50, ceiling 25 rps, telemetry-off; the earlier RC=99
-aborts root-caused to OTEL/Badger back-pressure, not the app). **What's left before 1.0: the Maven
-Central publishing setup** (signing / supply-chain — no `maven-publish` wired yet) — then **7.5
-publish**, held until 1.0. The route box and phase table below are the historical record; this block is the
-current picture.
+aborts root-caused to OTEL/Badger back-pressure, not the app).
+
+**Shipped (2026-07-13) — 1.0.0 published to Maven Central.** The pre-publish **UI QA** (agent-driven
+browser walk of the demo SPA, A–I all PASS; DEF-1 cosmetic SPA race found + fixed, PRs #78/#79), then the
+**Maven Central publishing setup** (T1–T6, PR #84 — vanniktech on the 5-library allow-list + an
+`opa-abac-bom` `java-platform`, signed dry-run proving 6 coordinates, examples-none; `/deep-review` clean)
+and the **release** itself: namespace `dev.dmitriikonovalov` DNS-TXT-verified, key on the keyservers,
+`publishAndReleaseToMavenCentral` → all six coordinates live, tagged `v1.0.0`; `main` bumped to
+`1.1.0-SNAPSHOT` + `RELEASING.md` corrected with the gpg-cmd/subpkt-33 signing lesson (PR #85). **1.0 is
+done — nothing remains before it.** The route box and phase table below are the historical record; this
+block is the current picture.
 
 > **Route to publish (settled 2026-06-13; B3 inserted 2026-06-15; Phase 7 grew into a gauntlet).**
 > The correctness/availability slices before Phase 7 were **B2 fix-slice → Phase 6.7 → Phase 6 → B3

@@ -28,10 +28,20 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 
 ## Status
 
-🚧 **Pre-publish** — every functional slice is shipped and proven end-to-end (unit + Testcontainers ITs
-+ `opa test` + a newman gateway matrix), and the codebase now targets **Spring Boot 4.0 on Java 25**.
-The remaining work before the **1.0** tag is a pre-publish security review and the Maven Central
-publishing setup — no new features.
+✅ **1.0.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
+(unit + Testcontainers ITs + `opa test` + a newman gateway matrix + a browser-driven UI QA of the demo
+SPA), the codebase targets **Spring Boot 4.0 on Java 25**, and the library is resolvable under
+`dev.dmitriikonovalov`.
+
+```kotlin
+// build.gradle.kts — pull in the whole line via the BOM, then reference modules version-free
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.0.0"))
+implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
+```
+
+Six coordinates publish: `opa-abac-{core, spring-security, spring-data, keycloak-directory,
+spring-boot-starter}` + the `opa-abac-bom` platform. The two `example-*` services are demos and are
+**not** published.
 
 **Shipped:**
 
@@ -73,15 +83,13 @@ publishing setup — no new features.
 **Now on Spring Boot 4:** the whole line targets **Boot 4.0 / Framework 7 / Security 7 / Hibernate 7 /
 Jackson 3** on **Java 25 / Gradle 9**, as a single artifact line (see [ADR 0026](docs/architecture/adr/0026-spring-boot-4-single-line-port.md)).
 
-**Next:** the pre-publish gauntlet is essentially clear — security review (0 Critical; the findings
-fixed), a full-history secret scan (clean), a dependency CVE sweep (clean), and the load-test
-re-baseline are all done. What remains before the **1.0** tag is the Maven Central publishing setup.
-The technical plan lives in [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md).
-
-> **Not yet published to Maven Central** — the API is settling for the 1.0 tag. The publish wiring is
-> in place (six signed coordinates under `dev.dmitriikonovalov`, incl. an `opa-abac-bom`); the manual
-> release steps are documented in [`RELEASING.md`](RELEASING.md). The full picture (architecture, ADRs,
-> guides) is in [`docs/`](docs/README.md).
+**How it got here:** the full pre-publish gauntlet is done — a security review (0 Critical; findings
+fixed), a full-history secret scan (clean), a dependency CVE sweep (clean), a load-test re-baseline, a
+browser-driven UI QA of the demo SPA (see below), and finally the Maven Central publishing setup — each
+delivered as its own reviewed slice. The technical plan lives in
+[`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md); the release runbook
+is [`RELEASING.md`](RELEASING.md); the full picture (architecture, ADRs, guides) is in
+[`docs/`](docs/README.md).
 
 ## Adopting the starter (three things you must do)
 
@@ -288,6 +296,34 @@ merges (an auditable loop, not a runaway flywheel) — a feature, for a method m
 > [`templates/`](docs/methodology/templates/). The deep, canonical reference (the verbatim prompt skeleton
 > + the lessons baked into it) is
 > [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md).
+
+## Verified in a real browser — the authorization cut, seen end to end
+
+Automated tests prove the cut at the unit, IT, `opa test`, and gateway layers. As the **last pre-publish
+gate**, the whole thing was also driven **through a real browser** against the live rig — an agent piloting
+the demo SPA (an in-app Chromium) across **five personas**, so the authorization boundary is observably
+real to a human, not just green in CI. Full record + screenshots-of-record:
+[`docs/code-review/PRE-PUBLISH-UI-QA-2026-07-12.md`](docs/code-review/PRE-PUBLISH-UI-QA-2026-07-12.md).
+
+Nine case groups (**A–I**), **all PASS** — each verified as a *difference between personas*, never "a 200":
+
+| Group | What was proven live |
+|---|---|
+| **A** Auth / session | Keycloak PKCE login; identity chip + realm roles; switch-persona clears the session (no silent SSO) |
+| **B** Tenant isolation *(the headline)* | member sees the catalog · **outsider's list is empty** (`{count:0}`) · outsider **deep-link → 403** `problem+json` — membership is the sole access path |
+| **C** Hierarchy + pagination | drill catalog → category → product; list is a `{count, page, perPage, items}` envelope with a **subject-relative** count |
+| **D** Action affordances | the `_actions` map drives the UI — owner sees full controls, viewer read-only, editor write-but-no-management: **buttons mirror enforcement** |
+| **E** Predicted-deny UX | **amber** = the client's optimistic prediction, **red** = the server's real verdict — amber is never treated as enforcement |
+| **F** Write / tag / dictionary | `201` create · tag-on-create · the runtime tag-dictionary editor on **all three** taggable types · an illegal tag value → `422` |
+| **G** Control plane + directory | live user-directory search · the **self-service grant loop closed** (grant → re-login → catalog now visible) · a custom role stays management-incapable |
+| **H** Error contract | every denial is RFC-7807 `application/problem+json` with a typed `errorCode` |
+| **I** Regression | Boot-4 images: console clean; a client cannot set the operator-only `abac_deny` |
+
+The pass surfaced **one** defect — **DEF-1**, a React-StrictMode double-provisioning race that flashed a
+spurious "provisioning failed" banner on first login (dev-mode, cosmetic, **no** security/authorization
+impact). It was fixed the same day (a single-flight guard + treating a `409`-on-create as success) and
+re-verified live with a fresh user. That's the point of the browser gate: it catches the experience-level
+warts the assertion suites structurally can't see.
 
 ## Requirements
 
