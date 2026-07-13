@@ -71,5 +71,43 @@ services:
       retries: 12
       start_period: 40s
 
+  # Second user-service instance — HA parity with the two catalog pods. SHARES usermgmt-postgres
+  # with usermgmt (same DB, same rows), so the two instances genuinely contend on the same
+  # membership/role rows: concurrent mutations serialize through the JPA @Version / mutate()
+  # locked-write path, exactly as a real 2-replica deployment would. Distinct hostname/port; every
+  # other env is identical to usermgmt-1 (same OPA, same directory config, same ownership seam).
+  # deploy.sh republishes the APISIX usermgmt-pool to round-robin over both host ports (28090+28092).
+  usermgmt-2:
+    image: opa-abac-usermgmt:local
+    container_name: usermgmt-2
+    hostname: usermgmt-2
+    depends_on:
+      usermgmt-postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8080"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://opa-abac-usermgmt-postgres:5432/usermgmt"
+      SPRING_DATASOURCE_USERNAME: "usermgmt"
+      SPRING_DATASOURCE_PASSWORD: "usermgmt"
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+      OPA_ABAC_ENABLED: "true"
+      OPA_ABAC_BASE_URL: "http://opa:8181"
+      OPA_ABAC_POLICY_PREFIX: ""
+      ABAC_OWNERSHIP_ENABLED: "true"
+      ABAC_OWNERSHIP_SERVICES_CATALOG: "http://catalog-1:8080"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_ENABLED: "${DIRECTORY_ENABLED:-false}"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_SERVER_URL: "http://keycloak:8888"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_REALM: "catalog-demo"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_CLIENT_ID: "catalog-directory"
+      OPA_ABAC_DIRECTORY_KEYCLOAK_CLIENT_SECRET: "catalog-directory-secret"
+    ports:
+      - "28092:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
 volumes:
   usermgmtpgdata:

@@ -177,13 +177,22 @@ fi
 #
 # Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — only wired when the usermgmt pod is up.
 if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
-  # The usermgmt pod publishes on host port 28090 (deploy.sh wait_usermgmt_healthy).
-  USERMGMT_NODE="${USERMGMT_NODE:-host.docker.internal:28090}"
+  # The two usermgmt pods publish on host ports 28090 + 28092 (deploy.sh wait_usermgmt_healthy waits
+  # for both). Round-robin over both = HA parity with the catalog pool; both share one Postgres, so
+  # concurrent membership/role mutations across the pods serialize on the shared @Version/locked-write
+  # path. Override the node set with USERMGMT_NODES (comma-separated host:port) for a single-pod rig.
+  USERMGMT_NODES="${USERMGMT_NODES:-host.docker.internal:28090,host.docker.internal:28092}"
+  UM_NODES_JSON=""
+  IFS=',' read -ra _um_nodes <<< "$USERMGMT_NODES"
+  for _n in "${_um_nodes[@]}"; do
+    [ -n "$UM_NODES_JSON" ] && UM_NODES_JSON="$UM_NODES_JSON,"
+    UM_NODES_JSON="$UM_NODES_JSON\"$_n\":1"
+  done
   curl -sf -o /dev/null -X PUT \
     -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
     "$APISIX_ADMIN/apisix/admin/upstreams/usermgmt-pool" \
-    -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{\"$USERMGMT_NODE\":1}}"
-  echo "  upstream 'usermgmt-pool' -> $USERMGMT_NODE"
+    -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{$UM_NODES_JSON}}"
+  echo "  upstream 'usermgmt-pool' -> round-robin over: $USERMGMT_NODES"
 
   # The user-mgmt routes' plugin set: openid-connect (the same bearer validation as the catalog route)
   # + tracing + cors-when-SPA. NOT the catalog `opa` gateway plugin (the user-service authorizes itself).
