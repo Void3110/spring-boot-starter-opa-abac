@@ -113,9 +113,25 @@ Off by default. `ENABLE_USER_SERVICE=1 ./deploy.sh up` adds the `user-management
 effective role from **real team membership** instead of the static demo supplier — the Phase-4
 app-resolved path.
 
+**Two pods (HA parity with catalog).** The user-service runs as **two instances** — `usermgmt` (:28090)
+and `usermgmt-2` (:28092) — **sharing one Postgres** (`usermgmt-postgres`). The gateway `usermgmt-pool`
+round-robins the public self-service API (`/api/v1/teams*`, `/api/v1/users*`) across both, so concurrent
+membership/role mutations that land on *different* pods contend on the *same* rows and serialize through
+the JPA `@Version` / `mutate()` locked-write path — exactly as a real 2-replica deployment would. The
+`X-Upstream-Addr` response header shows which pod served each request. (The catalog's internal
+`/internal/effective-role` read is pinned to `usermgmt-1`; both pods read the same DB, so the answer is
+identical — the concurrency-critical *writes* are the ones spread across both.) Override the pool with
+`USERMGMT_NODES=host.docker.internal:28090` for a single-pod rig.
+
+> **Cross-pod concurrency, verified (2026-07-13):** 24 concurrent role-changes on one membership across
+> both pods → all `200`, final state a single clean role (no torn/lost update, no 5xx); 20 concurrent
+> add/remove of one user → only legitimate `201/409/204/404` (the shared-DB unique constraint + idempotent
+> delete), exactly **1** final row (no double-apply). The HA topology serializes correctly.
+
 ```bash
 ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
-# user-mgmt at http://localhost:28090 (its own DB on :5434); resolve API at /internal/effective-role.
+# user-mgmt: 2 pods http://localhost:28090 + http://localhost:28092 (shared DB :5434, gateway round-robins both);
+# resolve API at /internal/effective-role.
 
 # The team-based allow/deny matrix (mints in-network tokens, bootstraps the team data, asserts):
 cd scripts/postman && ./run-team-matrix.sh

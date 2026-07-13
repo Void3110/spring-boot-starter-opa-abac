@@ -155,6 +155,11 @@ HEADER
         role_source_env="      CATALOG_ROLE_SOURCE: \"http\"
       CATALOG_USER_SERVICE_BASE_URL: \"http://resolve-stub:8080\""
       elif [ "$ENABLE_USER_SERVICE" = "1" ]; then
+        # The catalog's internal /internal/effective-role READ is pinned to one pod (usermgmt-1) — a
+        # single in-network base URL, and both pods read the same Postgres so the answer is identical.
+        # The concurrency-critical WRITES (public /api/v1/teams*, /api/v1/users* membership/role
+        # mutations) go through the gateway usermgmt-pool, which round-robins BOTH pods onto the shared
+        # DB — that is where cross-pod @Version/locked-write contention is exercised.
         role_source_env="      CATALOG_ROLE_SOURCE: \"http\"
       CATALOG_USER_SERVICE_BASE_URL: \"http://usermgmt:8080\""
       fi
@@ -235,15 +240,21 @@ build_usermgmt_image() {
 usermgmt_image_exists() { docker image inspect "$USERMGMT_IMAGE" >/dev/null 2>&1; }
 
 wait_usermgmt_healthy() {
-  echo "==> Waiting for the user-management service to become healthy..."
-  local deadline=$(( SECONDS + 180 ))
+  echo "==> Waiting for the user-management service pods to become healthy..."
+  # Two pods (HA parity with catalog): 28090 (usermgmt) + 28092 (usermgmt-2). Both must report UP.
+  local deadline=$(( SECONDS + 240 ))
+  local ports=(28090 28092)
   while (( SECONDS < deadline )); do
-    if curl -sf "http://localhost:28090/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
-      echo "   user-management service healthy."; return 0
+    local up=0
+    for p in "${ports[@]}"; do
+      curl -sf "http://localhost:$p/actuator/health" 2>/dev/null | grep -q '"status":"UP"' && up=$(( up + 1 ))
+    done
+    if (( up == ${#ports[@]} )); then
+      echo "   user-management service healthy (${up}/${#ports[@]} pods: ${ports[*]})."; return 0
     fi
     sleep 3
   done
-  echo "   WARN: the user-management service did not become healthy in time." >&2
+  echo "   WARN: not all user-management pods became healthy in time (${up:-0}/${#ports[@]})." >&2
   return 1
 }
 
@@ -365,7 +376,7 @@ case "$CMD" in
     [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
     [ "$ENABLE_SPA" = "1" ] && echo "    SPA auth:  gateway in bearer-only mode (validates Authorization: Bearer; no redirect login) + CORS for http://localhost:3000  [public client: catalog-spa]"
-    [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: http://localhost:28090  (resolve API at /internal/effective-role; catalog uses role-source=http)"
+    [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: 2 pods http://localhost:28090 + http://localhost:28092  (gateway usermgmt-pool round-robins both; resolve API at /internal/effective-role; catalog role-source=http)"
     [ "$ENABLE_DIRECTORY" = "1" ] && echo "    directory: identity search active on the user-service (Keycloak admin via catalog-directory, view-users only)"
     [ "$ENABLE_RESILIENCE_STUB" = "1" ] && echo "    resolve-stub: http://localhost:28091  (B3 fault injector; catalog role-source=http -> resolve-stub:8080; mode=${STUB_MODE:-transient})"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
