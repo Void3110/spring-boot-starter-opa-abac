@@ -2,7 +2,6 @@ package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -72,7 +71,7 @@ class HierarchicalAuthorizerTest {
     @Test // I10 + U5 + U6 — a Catalog grant authorizes a deep Product: role on the ROOT, ancestors carried
     void catalogGrantAuthorizesDeepProduct() {
         AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF, CATEGORY_REF));
-        when(supplier.lookup(eq("user-1"), eq("catalog"), eq(CATALOG)))
+        when(supplier.lookup("user-1", "catalog", CATALOG))
                 .thenReturn(Optional.of(catalogViewer()));
         when(opaClient.allow(any())).thenReturn(true);
 
@@ -99,7 +98,7 @@ class HierarchicalAuthorizerTest {
         AncestorResolver failing = TestAncestorResolvers.ancestorsThrowing(
                 () -> new AncestorResolutionException("broken chain"));
         // role now resolves on the LEAF (product), since the chain collapsed to empty
-        when(supplier.lookup(eq("user-1"), eq("product"), eq(PRODUCT)))
+        when(supplier.lookup("user-1", "product", PRODUCT))
                 .thenReturn(Optional.of(new RoleDefinition("p", Map.of(), Map.of("product", List.of("read")))));
         when(opaClient.allow(any())).thenReturn(true);
 
@@ -117,7 +116,7 @@ class HierarchicalAuthorizerTest {
     void resolverFailureWithoutDirectGrantDenies() {
         AncestorResolver failing = TestAncestorResolvers.ancestorsThrowing(
                 () -> new AncestorResolutionException("broken"));
-        when(supplier.lookup(eq("user-1"), eq("product"), eq(PRODUCT)))
+        when(supplier.lookup("user-1", "product", PRODUCT))
                 .thenReturn(Optional.of(new RoleDefinition("p", Map.of(), Map.of())));
         when(opaClient.allow(any())).thenReturn(false); // no direct grant in the policy
 
@@ -143,7 +142,7 @@ class HierarchicalAuthorizerTest {
     @Test // I13 — opt-in OFF (resolver returns empty, e.g. no inheritable config) → direct-only on the leaf
     void optInOffMeansDirectOnly() {
         AncestorResolver empty = TestAncestorResolvers.ancestors(List.of()); // no ancestors surfaced
-        when(supplier.lookup(eq("user-1"), eq("product"), eq(PRODUCT)))
+        when(supplier.lookup("user-1", "product", PRODUCT))
                 .thenReturn(Optional.of(new RoleDefinition("p", Map.of(), Map.of("product", List.of("read")))));
         when(opaClient.allow(any())).thenReturn(true);
 
@@ -158,7 +157,7 @@ class HierarchicalAuthorizerTest {
     // No fallback in this seam (outage and no-role both deny here); a separate axis from a chain collapse.
     void roleSourceOutageDenies_neverCallsOpa() {
         AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF, CATEGORY_REF));
-        when(supplier.lookup(eq("user-1"), eq("catalog"), eq(CATALOG)))
+        when(supplier.lookup("user-1", "catalog", CATALOG))
                 .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
 
         assertThat(authorizer(resolver).isAllowed(subject(), "read", product())).isFalse();

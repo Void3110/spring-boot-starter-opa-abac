@@ -103,7 +103,7 @@ public class HttpGovernedScopeResolver implements GovernedScopeResolver {
             log.warn("governed-targets fetch failed ({}) — failing closed to empty scope",
                     e.getClass().getSimpleName());
             return List.of();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt(); // restore the interrupt flag before failing closed
             log.warn("governed-targets fetch interrupted — failing closed to empty scope");
             return List.of();

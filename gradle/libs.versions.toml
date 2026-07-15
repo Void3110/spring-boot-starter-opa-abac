@@ -10,6 +10,9 @@ openapiGenerator = "7.14.0"
 # via an explicit allow-list in the root build — never the example apps. 0.37.0 is the current
 # stable line; publishToMavenCentral() is argument-less (Portal host is the default).
 vanniktechMavenPublish = "0.37.0"
+# SonarQube scanner for the LOCAL pre-push gate (.sonar-local/ — this public repo has no hosted
+# Sonar). 7.x is Gradle-9-ready; the 6.x line calls the removed Convention API and breaks on Gradle 9.
+sonarqube = "7.3.1.8318"
 
 # Library deps
 # Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
@@ -82,3 +85,4 @@ spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
 spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
 openapi-generator = { id = "org.openapi.generator", version.ref = "openapiGenerator" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
+sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }

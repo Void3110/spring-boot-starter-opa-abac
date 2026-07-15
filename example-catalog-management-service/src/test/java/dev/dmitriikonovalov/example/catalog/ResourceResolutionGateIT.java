@@ -1,6 +1,9 @@
 package dev.dmitriikonovalov.example.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -166,8 +169,8 @@ class ResourceResolutionGateIT {
                 .andExpect(jsonPath("$.tags.region").value("emea"));
 
         // exactly one load — the resolver's; the handler took the cache path, never the repository
-        org.mockito.Mockito.verify(categories, org.mockito.Mockito.times(1)).findById(emea.getId());
-        org.mockito.Mockito.verify(categories, org.mockito.Mockito.never())
+        verify(categories, times(1)).findById(emea.getId());
+        verify(categories, never())
                 .findByIdAndCatalogId(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 

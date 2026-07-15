@@ -36,7 +36,7 @@ class ResilientOpaClientTest {
     private volatile int statusToReturn = 503; // a transient failure by default
 
     private final MutableClock clock = MutableClock.startingAtEpoch();
-    private final java.util.function.LongConsumer advancingSleeper = millis -> clock.advanceMillis(millis);
+    private final java.util.function.LongConsumer advancingSleeper = clock::advanceMillis;
 
     @BeforeEach
     void startStub() throws IOException {
@@ -162,7 +162,7 @@ class ResilientOpaClientTest {
         for (int i = 0; i < 3; i++) {
             try {
                 decorated.allow(ctx());
-            } catch (RuntimeException expected) {
+            } catch (RuntimeException _) {
                 // the guard re-throws the exhausted fault (maxRetries=0) — ResilientOpaClient.allow does not
                 // catch a generic RuntimeException, only CallNotPermittedException, so it propagates here
             }

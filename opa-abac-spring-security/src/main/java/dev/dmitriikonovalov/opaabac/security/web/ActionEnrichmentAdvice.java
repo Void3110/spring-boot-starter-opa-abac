@@ -198,7 +198,7 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
         Map<ResolveTarget, Optional<RoleDefinition>> roles;
         try {
             roles = roleDefinitionSupplier.lookupAll(subject.id(), roots);
-        } catch (RoleResolutionException ex) {
+        } catch (RoleResolutionException _) {
             // Whole-batch outage (B2's tri-state, batched): every root's answer is unknown → omit the
             // whole group, response body intact (never fall back, never widen, never block).
             log.warn("Action enrichment omitted for the group: role resolution outage (batch of {})",
@@ -362,7 +362,7 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
                     return list;
                 }
             }
-        } catch (ReflectiveOperationException ignored) {
+        } catch (ReflectiveOperationException _) {
             // not a paged envelope
         }
         return null;

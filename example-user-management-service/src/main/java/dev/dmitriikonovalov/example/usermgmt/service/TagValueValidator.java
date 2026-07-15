@@ -110,7 +110,7 @@ public class TagValueValidator {
                     return Result.invalid("Tag '" + definition.getKey() + "' value '" + value
                             + "' does not match the required pattern");
                 }
-            } catch (PatternSyntaxException ex) {
+            } catch (PatternSyntaxException _) {
                 // A malformed stored pattern must not silently pass the value — fail closed.
                 return Result.invalid(
                         "Tag '" + definition.getKey() + "' has an invalid value pattern");

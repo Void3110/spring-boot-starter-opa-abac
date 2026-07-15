@@ -97,12 +97,12 @@ public class TagDefinitionClient {
             // TagDefinitionFetchException from the body → non-retryable → the guard re-throws at once.
             return tagGuard.call(
                     () -> exchangeAndParse(request),
-                    t -> t instanceof TransientTagException,
+                    TransientTagException.class::isInstance,
                     result -> false);
         } catch (TransientTagException e) {
             // An exhausted transient outage (5xx/timeout/refused retried to the budget) → 503.
             throw new TagDefinitionFetchException(e.getMessage());
-        } catch (CallNotPermittedException e) {
+        } catch (CallNotPermittedException _) {
             log.warn("Tag-definitions fetch fail-closed: tag circuit breaker open (rejecting the write)");
             throw new TagDefinitionFetchException("Could not fetch tag definitions (breaker open)");
         }
@@ -121,7 +121,7 @@ public class TagDefinitionClient {
             log.warn("Tag-definitions fetch failed ({}), retrying/rejecting the write (fail-closed)",
                     e.getClass().getSimpleName());
             throw new TransientTagException("Could not fetch tag definitions", e); // transient
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             log.warn("Tag-definitions fetch interrupted, rejecting the write (fail-closed)");
             throw new TagDefinitionFetchException("Could not fetch tag definitions (interrupted)"); // permanent
@@ -131,7 +131,7 @@ public class TagDefinitionClient {
         if (status == 200 && response.body() != null && !response.body().isBlank()) {
             try {
                 return objectMapper.readValue(response.body(), LIST_OF_DEFINITIONS);
-            } catch (tools.jackson.core.JacksonException e) {
+            } catch (tools.jackson.core.JacksonException _) {
                 log.warn("Tag-definitions fetch returned a malformed 200 body — rejecting the write");
                 throw new TagDefinitionFetchException("Could not fetch tag definitions (malformed body)");
             }

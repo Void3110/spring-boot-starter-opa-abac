@@ -241,7 +241,7 @@ class HttpOpaClientCompileTest {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             respond(ex, 200, "{\"result\":{\"queries\":[[]]}}");

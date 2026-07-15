@@ -65,6 +65,9 @@ CLAUDE.local.md
 # Mulch session (keep the expertise store, ignore the ephemeral session dir)
 .mulch/.session/
 
+# Local SonarQube analysis token (minted per machine by .sonar-local/bootstrap.sh)
+.sonar-local/token
+
 # Python bytecode (e.g. scripts/postman helpers)
 __pycache__/
 *.pyc

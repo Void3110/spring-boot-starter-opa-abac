@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.catalog;
 
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -120,7 +122,7 @@ class ActionEnrichmentIT {
                 .andExpect(jsonPath("$._actions.view").value(true));
 
         // exactly one load by id — the gate's resolver; the advice took the cache path, never re-loaded
-        org.mockito.Mockito.verify(categories, org.mockito.Mockito.times(1)).findById(emea.getId());
+        verify(categories, times(1)).findById(emea.getId());
     }
 
     @Test // I3 — a full-access subject → every category verb true

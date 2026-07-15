@@ -107,7 +107,7 @@ class MemoizingRoleDefinitionSupplierTest {
         bindRequest();
         delegate.answer("u1", "catalog", "c-1", () -> Optional.of(ROLE_A));
         delegate.answer("u2", "catalog", "c-1", () -> Optional.of(ROLE_B));
-        delegate.answer("u1", "category", "c-1", () -> Optional.empty());
+        delegate.answer("u1", "category", "c-1", Optional::empty);
 
         assertThat(memo.lookup("u1", "catalog", "c-1")).contains(ROLE_A);
         assertThat(memo.lookup("u2", "catalog", "c-1")).contains(ROLE_B);

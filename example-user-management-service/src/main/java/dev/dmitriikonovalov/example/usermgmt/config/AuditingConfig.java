@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.example.usermgmt.config;
 
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.context.annotation.Bean;
@@ -40,7 +41,7 @@ public class AuditingConfig {
         if (authentication instanceof AbacAuthentication abac && abac.isAuthenticated()) {
             try {
                 return Optional.of(UUID.fromString(abac.getSubject().id()));
-            } catch (IllegalArgumentException e) {
+            } catch (IllegalArgumentException _) {
                 return Optional.empty(); // subject id is not a UUID — don't guess
             }
         }
@@ -49,6 +50,6 @@ public class AuditingConfig {
 
     @Bean
     DateTimeProvider auditingDateTimeProvider() {
-        return () -> Optional.of(OffsetDateTime.now());
+        return () -> Optional.of(OffsetDateTime.now(ZoneOffset.UTC));
     }
 }

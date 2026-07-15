@@ -153,7 +153,7 @@ class AbstractHierarchicalEntityIT {
     }
 
     @Test // I6 — inserting a child derives the correct path from its parent
-    void insertDerivesPathFromParent() throws SQLException {
+    void insertDerivesPathFromParent() {
         String productPath = readPath(productId).orElseThrow();
         assertThat(productPath)
                 .startsWith("catalog_" + hex(catalogId))
@@ -166,7 +166,7 @@ class AbstractHierarchicalEntityIT {
     }
 
     @Test // I7 — re-parent rewrites the whole moved subtree; the resolver returns the NEW chain
-    void reparentRewritesSubtreeAndResolverSeesNewChain() throws SQLException {
+    void reparentRewritesSubtreeAndResolverSeesNewChain() {
         String oldCategoryPath = readPath(categoryId).orElseThrow();
         int categoryVersionBefore = readVersion(categoryId);
         int productVersionBefore = readVersion(productId);
@@ -190,7 +190,7 @@ class AbstractHierarchicalEntityIT {
     }
 
     @Test // I8a — pre-flight: a missing new-parent path throws BEFORE any row is touched
-    void reparentMissingParentPathThrowsBeforeAnyWrite() throws SQLException {
+    void reparentMissingParentPathThrowsBeforeAnyWrite() {
         String categoryPathBefore = readPath(categoryId).orElseThrow();
         String productPathBefore = readPath(productId).orElseThrow();
 
@@ -204,7 +204,7 @@ class AbstractHierarchicalEntityIT {
     }
 
     @Test // I8 — atomicity: a UNIQUE(path) violation MID-rewrite rolls the WHOLE subtree UPDATE back
-    void reparentIsAtomic_midRewriteFailureLeavesTreeUnchanged() throws SQLException {
+    void reparentIsAtomic_midRewriteFailureLeavesTreeUnchanged() {
         String categoryPathBefore = readPath(categoryId).orElseThrow();
         String productPathBefore = readPath(productId).orElseThrow();
 
@@ -232,7 +232,7 @@ class AbstractHierarchicalEntityIT {
     }
 
     @Test // I9 — re-parenting under one's own descendant is rejected (cycle guard)
-    void reparentUnderOwnDescendantRejected() throws SQLException {
+    void reparentUnderOwnDescendantRejected() {
         String catalogPath = readPath(catalogId).orElseThrow();
         assertThatThrownBy(() -> tx.executeWithoutResult(status -> newMaintainer().reparent(
                         "node", catalogPath, Optional.of(new ParentRef("product", productId.toString())))))

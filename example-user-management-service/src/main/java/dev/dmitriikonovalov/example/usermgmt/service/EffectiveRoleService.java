@@ -185,7 +185,7 @@ public class EffectiveRoleService {
         }
         try {
             return TagMatchMode.valueOf(matchMode);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             log.warn("Unknown stored match_mode '{}' — narrowing to ALL_OF (fail-closed)", matchMode);
             return TagMatchMode.ALL_OF;
         }

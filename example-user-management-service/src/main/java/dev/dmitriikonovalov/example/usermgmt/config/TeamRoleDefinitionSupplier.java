@@ -63,7 +63,7 @@ public class TeamRoleDefinitionSupplier implements RoleDefinitionSupplier {
     private static UUID parseUuid(String value) {
         try {
             return UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return null;
         }
     }

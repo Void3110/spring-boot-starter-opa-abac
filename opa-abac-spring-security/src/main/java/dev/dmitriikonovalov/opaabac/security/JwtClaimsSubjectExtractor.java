@@ -65,7 +65,7 @@ public final class JwtClaimsSubjectExtractor implements AbacSubjectExtractor {
                 return Optional.empty();
             }
             return Optional.of(payload);
-        } catch (Exception e) {
+        } catch (Exception _) {
             // malformed base64 / non-JSON payload → not a usable token
             return Optional.empty();
         }

@@ -28,7 +28,7 @@ class AncestorResolverTest {
     private static String path(ParentRef... refs) {
         StringBuilder sb = new StringBuilder();
         for (ParentRef ref : refs) {
-            if (sb.length() > 0) {
+            if (!sb.isEmpty()) {
                 sb.append('.');
             }
             sb.append(HierarchyLabels.label(ref));

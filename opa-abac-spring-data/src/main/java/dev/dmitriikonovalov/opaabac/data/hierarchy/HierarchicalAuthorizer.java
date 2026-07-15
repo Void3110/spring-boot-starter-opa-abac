@@ -77,7 +77,7 @@ public class HierarchicalAuthorizer {
         List<ParentRef> ancestors;
         try {
             ancestors = ancestorResolver.ancestorsOf(leafType, leafId);
-        } catch (AncestorResolutionException e) {
+        } catch (AncestorResolutionException _) {
             ancestors = List.of();
         }
 
@@ -109,7 +109,7 @@ public class HierarchicalAuthorizer {
 
         try {
             return opaClient.allow(context);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             return false; // fail-closed: any OPA-side error denies
         }
     }

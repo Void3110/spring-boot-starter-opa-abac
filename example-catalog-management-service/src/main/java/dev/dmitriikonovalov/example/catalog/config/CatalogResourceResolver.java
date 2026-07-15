@@ -39,7 +39,7 @@ public class CatalogResourceResolver implements AbacResourceResolver {
         UUID id;
         try {
             id = UUID.fromString(resourceId);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Optional.empty();
         }
         return switch (resourceType) {

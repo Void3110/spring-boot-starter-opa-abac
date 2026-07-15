@@ -124,7 +124,7 @@ public class InternalResolveController {
             String id = raw.substring(colon + 1);
             try {
                 return new ParsedTarget(type, UUID.fromString(id));
-            } catch (IllegalArgumentException e) {
+            } catch (IllegalArgumentException _) {
                 throw new ResponseStatusException(
                         org.springframework.http.HttpStatus.BAD_REQUEST,
                         "malformed target id (want a UUID): " + raw);

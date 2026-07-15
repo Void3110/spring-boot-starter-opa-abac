@@ -113,7 +113,7 @@ public class LtreeAncestorResolver implements AncestorResolver {
             rootPath = pathSource.pathOf(rootType, rootId)
                     .filter(p -> !p.isBlank())
                     .orElse(null);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             // A SQL/data-access error must fail closed (empty widening), never the whole table.
             rootPath = null;
         }

@@ -55,7 +55,7 @@ public interface ApiErrorCode {
             if (word.isEmpty()) {
                 continue;
             }
-            if (sb.length() > 0) {
+            if (!sb.isEmpty()) {
                 sb.append(' ');
             }
             sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));

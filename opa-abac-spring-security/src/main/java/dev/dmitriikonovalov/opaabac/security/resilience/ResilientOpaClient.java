@@ -74,7 +74,7 @@ public final class ResilientOpaClient implements OpaClient {
             // Retry while the delegate reports the fail-closed sentinel (false). A genuine deny retries too
             // (1 fast sidecar hop, deterministic → still false); a transient blip recovers the real answer.
             return guard.call(() -> delegate.allow(context), retryableError, denied -> denied == Boolean.FALSE);
-        } catch (CallNotPermittedException e) {
+        } catch (CallNotPermittedException _) {
             // Breaker open: the delegate was never called. Synthesize the same fail-closed value by hand.
             log.warn("OPA allow fail-closed: circuit breaker open (denying)");
             return false;
@@ -86,7 +86,7 @@ public final class ResilientOpaClient implements OpaClient {
         try {
             // The clean case: fromError is the exact failure flag, distinct from a real denyAll()/conditional.
             return guard.call(() -> delegate.compile(context), retryableError, PartialResult::fromError);
-        } catch (CallNotPermittedException e) {
+        } catch (CallNotPermittedException _) {
             // Breaker open: error() (fromError=true), NEVER denyAll()/allowAll() — a denyAll() (fromError
             // false) would let a 5.5-B hierarchy subtreeSpec widening survive an OPA outage (the landmine).
             log.warn("OPA compile fail-closed: circuit breaker open (deny-all, fromError)");
@@ -110,7 +110,7 @@ public final class ResilientOpaClient implements OpaClient {
                     decisions -> decisions == null
                             || decisions.size() != n
                             || !decisions.contains(Boolean.TRUE));
-        } catch (CallNotPermittedException e) {
+        } catch (CallNotPermittedException _) {
             log.warn("OPA bulk fail-closed: circuit breaker open (denying all {})", n);
             return allFalse(n);
         }

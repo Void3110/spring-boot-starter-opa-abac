@@ -3,6 +3,8 @@ package dev.dmitriikonovalov.opaabac.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
@@ -15,7 +17,6 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
@@ -53,7 +54,7 @@ class OpaAuthorizationManagerTest {
 
         assertThat(decision.isGranted()).isTrue();
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        Mockito.verify(opaClient).allow(captor.capture());
+        verify(opaClient).allow(captor.capture());
         assertThat(captor.getValue().action()).isEqualTo("get");
         assertThat(captor.getValue().resource().type()).isEqualTo("product"); // longest-prefix wins
     }
@@ -85,7 +86,7 @@ class OpaAuthorizationManagerTest {
                 manager().authorize(authenticated(), requestContext("POST", "/api/v1/products"));
 
         assertThat(decision.isGranted()).isFalse();
-        Mockito.verify(opaClient, Mockito.never()).allow(any());
+        verify(opaClient, never()).allow(any());
     }
 
     @Test // B2 U4 sibling — authoritative no-role (Optional.empty()) → OPA still called (fallback decides).
@@ -97,6 +98,6 @@ class OpaAuthorizationManagerTest {
                 manager().authorize(authenticated(), requestContext("GET", "/api/v1/products"));
 
         assertThat(decision.isGranted()).isTrue();
-        Mockito.verify(opaClient).allow(any());
+        verify(opaClient).allow(any());
     }
 }

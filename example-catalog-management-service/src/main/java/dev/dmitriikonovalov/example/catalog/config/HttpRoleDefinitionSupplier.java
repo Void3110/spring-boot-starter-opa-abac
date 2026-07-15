@@ -128,7 +128,7 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
             // escapes the body, so the predicate is just the TransientResolveException check.
             return resolveGuard.call(
                     () -> exchangeAndClassify(request),
-                    t -> t instanceof TransientResolveException,
+                    TransientResolveException.class::isInstance,
                     result -> false);
         } catch (TransientResolveException e) {
             // An exhausted transient outage (5xx/timeout/refused retried to the budget) — B2's outcome.
@@ -243,7 +243,7 @@ public class HttpRoleDefinitionSupplier implements RoleDefinitionSupplier {
             // One guarded call for the WHOLE batch — the guard's retry unit is the exchange.
             return resolveGuard.call(
                     () -> exchangeAndClassifyBatch(request, targets),
-                    t -> t instanceof TransientResolveException,
+                    TransientResolveException.class::isInstance,
                     result -> false);
         } catch (TransientResolveException e) {
             throw new RoleResolutionException(e.getMessage(), e.getCause());

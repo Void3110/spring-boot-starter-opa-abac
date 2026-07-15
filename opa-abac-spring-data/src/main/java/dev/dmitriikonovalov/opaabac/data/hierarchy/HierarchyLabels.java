@@ -83,7 +83,7 @@ public final class HierarchyLabels {
     private static UUID tryParseUuid(String value) {
         try {
             return UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return null;
         }
     }

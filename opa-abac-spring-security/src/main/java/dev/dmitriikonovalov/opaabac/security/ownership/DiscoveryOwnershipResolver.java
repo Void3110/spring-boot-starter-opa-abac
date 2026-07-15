@@ -138,7 +138,7 @@ public class DiscoveryOwnershipResolver implements ResourceOwnershipResolver {
             log.warn("created-by read failed ({}) for type '{}' — not owner (fail-closed)",
                     e.getClass().getSimpleName(), resourceType);
             return Optional.empty();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt(); // restore the flag before failing closed
             log.warn("created-by read interrupted for type '{}' — not owner (fail-closed)", resourceType);
             return Optional.empty();

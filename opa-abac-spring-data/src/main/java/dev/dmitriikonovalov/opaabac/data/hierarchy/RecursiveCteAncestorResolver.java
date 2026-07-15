@@ -134,7 +134,7 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
         List<String> descendantIds;
         try {
             descendantIds = collectSubtreeIds(rootType, rootId);
-        } catch (AncestorResolutionException e) {
+        } catch (AncestorResolutionException _) {
             // A depth breach / cycle / SQL error must fail closed (empty widening), never the whole table.
             return alwaysFalse();
         }
@@ -156,7 +156,7 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
     private static Object asIdValue(String id) {
         try {
             return java.util.UUID.fromString(id);
-        } catch (IllegalArgumentException notAUuid) {
+        } catch (IllegalArgumentException _) {
             return id;
         }
     }

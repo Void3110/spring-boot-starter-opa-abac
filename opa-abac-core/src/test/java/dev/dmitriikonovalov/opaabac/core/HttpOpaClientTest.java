@@ -8,7 +8,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -98,7 +97,7 @@ class HttpOpaClientTest {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000); // longer than the 500ms request timeout
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             respond(ex, 200, "{\"result\":{\"allow\":true}}");
@@ -257,6 +256,22 @@ class HttpOpaClientTest {
         });
 
         assertThat(clientFor(base, "").allow(contextWithType(""))).isFalse();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test // U9d — a pathological, very long resolved path must fail closed, never overflow the stack.
+    // The former (…/…)* regex recursed per segment and threw a StackOverflowError at a few thousand
+    // segments; that Error escaped the catch(Exception) fail-closed handler and propagated uncaught.
+    // The linear scan denies cleanly with no HTTP call.
+    void failClosed_onPathologicallyLongResolvedPath() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+
+        String longType = "a" + "/a".repeat(20_000); // ~40k chars, thousands of segments
+        assertThat(clientFor(base, "catalog").allow(contextWithType(longType))).isFalse();
         assertThat(hits.get()).isZero();
     }
 

@@ -41,9 +41,9 @@ public class TeamResourceResolver implements AbacResourceResolver {
         UUID id;
         try {
             id = UUID.fromString(resourceId);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Optional.empty();
         }
-        return teams.findById(id).map(team -> (AbacResource) team);
+        return teams.findById(id).map(AbacResource.class::cast);
     }
 }

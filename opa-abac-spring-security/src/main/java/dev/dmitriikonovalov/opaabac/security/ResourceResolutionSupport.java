@@ -15,34 +15,17 @@ import java.util.Objects;
  * kill-switch is on); the manager itself only ever sees this composition — handing it {@code null}
  * support keeps the pre-resolution, reference-based behavior byte-identical.
  */
-public final class ResourceResolutionSupport {
-
-    private final AbacResourceResolver resolver;
-    private final AncestorChainSupplier ancestorChainSupplier;
-    private final AbacResourceCache cache;
+public record ResourceResolutionSupport(
+        AbacResourceResolver resolver, AncestorChainSupplier ancestorChainSupplier, AbacResourceCache cache) {
 
     /**
      * @param resolver              the app's instance resolver; required
      * @param ancestorChainSupplier the ancestor chain source, or {@code null} for flat resources
+     *                              (the accessor may then return {@code null} — the chain is empty)
      * @param cache                 the request-scoped cache the manager populates on allow; required
      */
-    public ResourceResolutionSupport(
-            AbacResourceResolver resolver, AncestorChainSupplier ancestorChainSupplier, AbacResourceCache cache) {
-        this.resolver = Objects.requireNonNull(resolver, "resolver");
-        this.ancestorChainSupplier = ancestorChainSupplier;
-        this.cache = Objects.requireNonNull(cache, "cache");
-    }
-
-    public AbacResourceResolver resolver() {
-        return resolver;
-    }
-
-    /** May be {@code null} — no hierarchy configured; the chain is then always empty. */
-    public AncestorChainSupplier ancestorChainSupplier() {
-        return ancestorChainSupplier;
-    }
-
-    public AbacResourceCache cache() {
-        return cache;
+    public ResourceResolutionSupport {
+        Objects.requireNonNull(resolver, "resolver");
+        Objects.requireNonNull(cache, "cache");
     }
 }

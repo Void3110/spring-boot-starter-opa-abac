@@ -60,8 +60,14 @@ public abstract class AbstractHierarchicalEntity extends AbstractSecuredEntity {
      * resolver build on. A root resource returns {@link Optional#empty()}. Each concrete hierarchical
      * entity implements this (e.g. a Product returns its Category; a nested Category returns its parent
      * Category; a root Category returns its Catalog).
+     *
+     * <p>Deliberately re-abstracted: {@link dev.dmitriikonovalov.opaabac.core.AbacResource#abacParent()}
+     * defaults to {@link Optional#empty()} (the flat-resource default). A hierarchical entity that
+     * silently inherited that default would be mis-treated as a root, so every subclass is forced to
+     * declare its parent hop. Removing this re-declaration changes behavior — hence not redundant.
      */
     @Override
+    @SuppressWarnings("java:S3038") // re-abstracting a defaulted interface method is intentional here
     public abstract Optional<ParentRef> abacParent();
 
     /** The current materialized path, or {@code null} before it has been assigned. */

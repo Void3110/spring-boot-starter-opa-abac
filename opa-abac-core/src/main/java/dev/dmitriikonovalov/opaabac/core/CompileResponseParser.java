@@ -35,6 +35,10 @@ import java.util.List;
  */
 final class CompileResponseParser {
 
+    // OPA AST term field/type names, named once so the parser reads against the wire shape.
+    private static final String FIELD_VALUE = "value";
+    private static final String TYPE_STRING = "string";
+
     /** The known resource type for the query; an {@code eq} on {@code input.resource.type} against it is a tautology. */
     private final String resourceType;
 
@@ -156,18 +160,18 @@ final class CompileResponseParser {
         if (opTerm == null || !"ref".equals(opTerm.path("type").asString())) {
             return null;
         }
-        JsonNode value = opTerm.get("value");
+        JsonNode value = opTerm.get(FIELD_VALUE);
         if (value == null || !value.isArray() || value.isEmpty()) {
             return null;
         }
         StringBuilder name = new StringBuilder();
         for (JsonNode part : value) {
             String t = part.path("type").asString();
-            if ("var".equals(t) || "string".equals(t)) {
-                if (name.length() > 0) {
+            if ("var".equals(t) || TYPE_STRING.equals(t)) {
+                if (!name.isEmpty()) {
                     name.append('.');
                 }
-                name.append(part.path("value").asString());
+                name.append(part.path(FIELD_VALUE).asString());
             } else {
                 return null;
             }
@@ -192,7 +196,12 @@ final class CompileResponseParser {
         return switch (op) {
             case "eq", "equal" -> negated ? Operator.NEQ : Operator.EQ;
             case "neq" -> negated ? Operator.EQ : Operator.NEQ;
-            case "internal.member_2" -> negated ? null : (refIsLeft ? Operator.IN : Operator.CONTAINS);
+            case "internal.member_2" -> {
+                if (negated) {
+                    yield null; // a negated membership is not representable in the closed operator set
+                }
+                yield refIsLeft ? Operator.IN : Operator.CONTAINS;
+            }
             default -> null;
         };
     }
@@ -205,29 +214,29 @@ final class CompileResponseParser {
         if (term == null || !"ref".equals(term.path("type").asString())) {
             return null;
         }
-        JsonNode value = term.get("value");
+        JsonNode value = term.get(FIELD_VALUE);
         if (value == null || !value.isArray() || value.size() < 3) {
             return null;
         }
         if (!"var".equals(value.get(0).path("type").asString())
-                || !"input".equals(value.get(0).path("value").asString())) {
+                || !"input".equals(value.get(0).path(FIELD_VALUE).asString())) {
             return null;
         }
-        if (!"resource".equals(value.get(1).path("value").asString())) {
+        if (!"resource".equals(value.get(1).path(FIELD_VALUE).asString())) {
             return null;
         }
         StringBuilder path = new StringBuilder();
         for (int i = 2; i < value.size(); i++) {
             JsonNode part = value.get(i);
-            if (!"string".equals(part.path("type").asString())) {
+            if (!TYPE_STRING.equals(part.path("type").asString())) {
                 return null; // a dynamic/var key (not a literal path) is not SQL-expressible
             }
-            if (path.length() > 0) {
+            if (!path.isEmpty()) {
                 path.append('.');
             }
-            path.append(part.path("value").asString());
+            path.append(part.path(FIELD_VALUE).asString());
         }
-        return path.length() == 0 ? null : path.toString();
+        return path.isEmpty() ? null : path.toString();
     }
 
     /**
@@ -246,11 +255,11 @@ final class CompileResponseParser {
             return null;
         }
         return switch (literal.path("type").asString()) {
-            case "string" -> literal.path("value").asString();
-            case "number" -> literal.path("value").isIntegralNumber()
-                    ? (Object) literal.path("value").asLong()
-                    : (Object) literal.path("value").asDouble();
-            case "boolean" -> literal.path("value").asBoolean();
+            case TYPE_STRING -> literal.path(FIELD_VALUE).asString();
+            case "number" -> literal.path(FIELD_VALUE).isIntegralNumber()
+                    ? (Object) literal.path(FIELD_VALUE).asLong()
+                    : (Object) literal.path(FIELD_VALUE).asDouble();
+            case "boolean" -> literal.path(FIELD_VALUE).asBoolean();
             default -> null;
         };
     }
@@ -264,7 +273,7 @@ final class CompileResponseParser {
         if (!"set".equals(type) && !"array".equals(type)) {
             return null;
         }
-        JsonNode value = literal.get("value");
+        JsonNode value = literal.get(FIELD_VALUE);
         if (value == null || !value.isArray()) {
             return null;
         }

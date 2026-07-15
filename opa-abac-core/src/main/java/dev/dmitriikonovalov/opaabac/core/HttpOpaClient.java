@@ -39,12 +39,13 @@ public final class HttpOpaClient implements OpaClient {
 
     /**
      * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
-     * query string) — only {@code [A-Za-z0-9_-]} segments are accepted, whatever the
-     * {@link PolicyPathResolver} implementation returned. {@code .}/{@code ..} segments, dots, or URL
-     * metacharacters in a resource type could otherwise address a different OPA document or splice
-     * into the compile query.
+     * query string) — only {@code [A-Za-z0-9_-]} segments joined by single {@code /} are accepted,
+     * whatever the {@link PolicyPathResolver} implementation returned. {@code .}/{@code ..} segments,
+     * dots, or URL metacharacters in a resource type could otherwise address a different OPA document
+     * or splice into the compile query. See {@link #isSafePath(String)} for why the check is a linear
+     * scan and not a regex.
      */
-    private static final Pattern SAFE_PATH = Pattern.compile("[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*");
+    private static final int MAX_PATH_LENGTH = 512;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -99,7 +100,7 @@ public final class HttpOpaClient implements OpaClient {
                 return false;
             }
             return readDecision(response.body(), path);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             // Fail-closed AND interrupt-correct: deny, but restore the flag so the container's
             // shutdown/cancellation signal survives this call.
             Thread.currentThread().interrupt();
@@ -163,7 +164,7 @@ public final class HttpOpaClient implements OpaClient {
             String resourceType = context.resource() == null ? null : context.resource().type();
             JsonNode root = objectMapper.readTree(response.body());
             return new CompileResponseParser(resourceType).parse(root);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             log.warn("OPA compile denied (fail-closed): interrupted for path '{}'", path);
             return PartialResult.error();
@@ -218,7 +219,7 @@ public final class HttpOpaClient implements OpaClient {
                 return allFalse(n);
             }
             return readBulkDecisions(response.body(), n, path);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             log.warn("OPA bulk denied (fail-closed): interrupted for path '{}'", path);
             return allFalse(n);
@@ -235,10 +236,45 @@ public final class HttpOpaClient implements OpaClient {
 
     /** Throws on an unsafe/empty path; the caller's fail-closed catch turns that into a deny. */
     private static String requireSafePath(String path) {
-        if (path == null || !SAFE_PATH.matcher(path).matches()) {
+        if (!isSafePath(path)) {
             throw new IllegalArgumentException("unsafe OPA policy path '" + path + "'");
         }
         return path;
+    }
+
+    /**
+     * Accept a policy path of {@code [A-Za-z0-9_-]} segments joined by single {@code /}, with no
+     * leading/trailing/empty segment — the same grammar an anchored
+     * {@code [A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*} regex would accept.
+     *
+     * <p>Deliberately a single linear scan, not a {@link Pattern}: that regex's {@code (…/…)*} group
+     * compiles to a recursive match in {@code java.util.regex}, so a long resolver-derived path
+     * (thousands of segments) overflows the stack with a {@link StackOverflowError}. That is an
+     * {@link Error}, not an {@link Exception}, so it would escape the {@code catch (Exception)}
+     * fail-closed handlers in {@link #allow}/{@link #compile}/{@link #allowAll} and propagate uncaught
+     * — turning a clean deny into an unhandled failure. This scan runs in constant stack and O(n) time,
+     * and the length cap bounds n regardless.
+     */
+    private static boolean isSafePath(String path) {
+        if (path == null || path.isEmpty() || path.length() > MAX_PATH_LENGTH) {
+            return false;
+        }
+        boolean prevWasSlash = true; // treat start-of-string like a slash: forbids a leading '/'
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '/') {
+                if (prevWasSlash) {
+                    return false; // leading slash or an empty segment ("a//b")
+                }
+                prevWasSlash = true;
+            } else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+                prevWasSlash = false;
+            } else {
+                return false; // any other character
+            }
+        }
+        return !prevWasSlash; // a trailing '/' leaves prevWasSlash true
     }
 
     private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {

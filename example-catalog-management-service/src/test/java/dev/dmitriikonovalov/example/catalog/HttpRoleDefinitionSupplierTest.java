@@ -137,7 +137,7 @@ class HttpRoleDefinitionSupplierTest {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000);
-            } catch (InterruptedException ie) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             respond(ex, 204, "");

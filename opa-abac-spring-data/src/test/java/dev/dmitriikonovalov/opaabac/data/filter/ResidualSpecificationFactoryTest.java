@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -81,7 +82,7 @@ class ResidualSpecificationFactoryTest {
         Expression<String> extract = mock(Expression.class);
         when(cb.function(eq("jsonb_extract_path_text"), eq(String.class), any(), any())).thenReturn(extract);
         Predicate eqPred = mock(Predicate.class);
-        when(cb.equal(eq(extract), eq("emea"))).thenReturn(eqPred);
+        when(cb.equal(extract, "emea")).thenReturn(eqPred);
         // CONDITIONAL needs at least the and()/or() combinators stubbed; return the inner predicate.
         when(cb.and(any(Predicate[].class))).thenReturn(eqPred);
         when(cb.or(any(Predicate[].class))).thenReturn(eqPred);
@@ -168,7 +169,7 @@ class ResidualSpecificationFactoryTest {
 
         assertThat(result).isSameAs(orPred);
         // two AND-groups combined by one OR
-        verify(cb, org.mockito.Mockito.times(2)).and(any(Predicate[].class));
+        verify(cb, times(2)).and(any(Predicate[].class));
         verify(cb).or(any(Predicate[].class));
     }
 

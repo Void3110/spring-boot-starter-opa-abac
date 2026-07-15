@@ -51,9 +51,8 @@ public abstract class AbstractSecuredEntity extends AbstractAuditableEntity
         this.tags = tags == null ? ResourceTags.empty() : tags;
     }
 
-    /** Each concrete entity declares its ABAC resource type, e.g. {@code "catalog"}/{@code "product"}. */
-    @Override
-    public abstract String abacResourceType();
+    // abacResourceType() is abstract in AbacResource (no default) — each concrete entity declares its
+    // type, e.g. "catalog"/"product". Not re-declared here: that would only duplicate the interface.
 
     @Override
     public String abacResourceId() {
