@@ -99,7 +99,7 @@ class CatalogListAuthorizerTest {
         UUID governed = UUID.randomUUID();
         when(resolverProvider.getIfAvailable()).thenReturn(governedScopeResolver);
         when(governedScopeResolver.governedIds("sub-1", "catalog")).thenReturn(List.of(governed));
-        when(supplier.lookup(eq("sub-1"), eq("catalog"), eq(governed.toString())))
+        when(supplier.lookup("sub-1", "catalog", governed.toString()))
                 .thenThrow(new RoleResolutionException("source unavailable"));
 
         Page<CatalogEntity> page = authorizer.readable(pageable);

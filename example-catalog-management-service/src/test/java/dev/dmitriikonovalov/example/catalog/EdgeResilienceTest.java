@@ -43,7 +43,7 @@ class EdgeResilienceTest {
     private final AtomicInteger requests = new AtomicInteger();
 
     private final MutableClock clock = MutableClock.startingAtEpoch();
-    private final java.util.function.LongConsumer advancingSleeper = millis -> clock.advanceMillis(millis);
+    private final java.util.function.LongConsumer advancingSleeper = clock::advanceMillis;
 
     @AfterEach
     void tearDown() {

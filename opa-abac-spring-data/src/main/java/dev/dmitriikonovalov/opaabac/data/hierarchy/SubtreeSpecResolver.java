@@ -121,7 +121,7 @@ public class SubtreeSpecResolver {
 
             // Granted → widen by the whole governing-root subtree. (subtreeOf is itself fail-closed.)
             return Optional.of(ancestorResolver.subtreeOf(governingRoot.type(), governingRoot.id()));
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             // Any resolution failure → no widening (never wider). subtreeOf already swallows; this guards the
             // role lookup / inheritance read. B2: a role-source outage (RoleResolutionException) is one such
             // failure and collapses here to no widening — fail-closed, by this same catch (pinned by a test).

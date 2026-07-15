@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.catalog;
 
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -104,7 +106,7 @@ class ActionEnrichmentListIT {
                 .andExpect(jsonPath("$.items[1]._actions.view").value(true));
 
         // The advice reads each row from the write-through cache — it never re-loads a single row by id.
-        org.mockito.Mockito.verify(categories, org.mockito.Mockito.never())
+        verify(categories, never())
                 .findById(org.mockito.ArgumentMatchers.any());
     }
 
@@ -161,7 +163,7 @@ class ActionEnrichmentListIT {
                 .andExpect(jsonPath("$.items[?(@.name=='apac-prod')]._actions.['assign-tags']").value(false));
 
         // The advice reads each row from the write-through cache — never a re-load by id.
-        org.mockito.Mockito.verify(products, org.mockito.Mockito.never())
+        verify(products, never())
                 .findById(org.mockito.ArgumentMatchers.any());
     }
 

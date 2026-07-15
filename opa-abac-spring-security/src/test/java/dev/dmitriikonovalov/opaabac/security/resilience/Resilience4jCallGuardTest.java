@@ -82,7 +82,7 @@ class Resilience4jCallGuardTest {
     @Test // a retryable result (e.g. a 5xx response) is retried then returned unchanged on exhaustion
     void retryableResult_exhaustsBudgetThenReturnsLastValue() {
         AtomicInteger attempts = new AtomicInteger();
-        Predicate<Integer> fiveXx = status -> RetryableClassification.retryableStatus(status);
+        Predicate<Integer> fiveXx = RetryableClassification::retryableStatus;
 
         Integer result = guard("opa", resolveBudget()).call(() -> {
             attempts.incrementAndGet();
@@ -96,7 +96,7 @@ class Resilience4jCallGuardTest {
     @Test // a body that recovers within budget returns the recovered value
     void recoversWithinBudget_returnsSuccess() {
         AtomicInteger attempts = new AtomicInteger();
-        Predicate<Integer> fiveXx = status -> RetryableClassification.retryableStatus(status);
+        Predicate<Integer> fiveXx = RetryableClassification::retryableStatus;
 
         Integer result = guard("resolve", resolveBudget()).call(() -> {
             int n = attempts.incrementAndGet();

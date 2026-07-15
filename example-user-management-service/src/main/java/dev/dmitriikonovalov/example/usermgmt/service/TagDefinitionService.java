@@ -205,7 +205,7 @@ public class TagDefinitionService {
             if (valuePattern != null && !valuePattern.isBlank()) {
                 try {
                     Pattern.compile(valuePattern);
-                } catch (PatternSyntaxException ex) {
+                } catch (PatternSyntaxException _) {
                     throw new InvalidTagDefinitionException("valuePattern is not a valid regex");
                 }
             }

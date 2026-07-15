@@ -106,7 +106,7 @@ public class TagAssignmentService {
                     throw new IllegalTagAssignmentException("Tag '" + def.key() + "' value '" + value
                             + "' does not match the required pattern");
                 }
-            } catch (PatternSyntaxException ex) {
+            } catch (PatternSyntaxException _) {
                 // A malformed stored pattern must not silently pass the value — fail closed.
                 throw new IllegalTagAssignmentException(
                         "Tag '" + def.key() + "' has an invalid value pattern");

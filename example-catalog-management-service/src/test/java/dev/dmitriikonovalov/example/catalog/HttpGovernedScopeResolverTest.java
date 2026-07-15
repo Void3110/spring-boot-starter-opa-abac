@@ -170,7 +170,7 @@ class HttpGovernedScopeResolverTest {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000); // past the 500ms request timeout
-            } catch (InterruptedException ie) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             respond(ex, 200, "[]");

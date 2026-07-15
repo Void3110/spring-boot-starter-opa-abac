@@ -78,8 +78,8 @@ final class MemoizingAncestorResolver implements AncestorResolver {
 
     @SuppressWarnings("unchecked")
     private static List<ParentRef> replay(Object outcome) {
-        if (outcome instanceof Collapse collapse) {
-            throw collapse.cause();
+        if (outcome instanceof Collapse(AncestorResolutionException cause)) {
+            throw cause;
         }
         return (List<ParentRef>) outcome;
     }
@@ -101,7 +101,7 @@ final class MemoizingAncestorResolver implements AncestorResolver {
             Map<MemoKey, Object> fresh = new ConcurrentHashMap<>();
             request.setAttribute(ATTRIBUTE, fresh, RequestAttributes.SCOPE_REQUEST);
             return fresh;
-        } catch (RuntimeException bookkeepingFailure) {
+        } catch (RuntimeException _) {
             return null; // lose the reuse, never the decision
         }
     }

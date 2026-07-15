@@ -114,7 +114,7 @@ public final class ResourceTags {
     }
 
     private static Map<String, Object> deepCopy(Map<String, Object> source) {
-        Map<String, Object> copy = new LinkedHashMap<>(source.size());
+        Map<String, Object> copy = LinkedHashMap.newLinkedHashMap(source.size());
         for (Map.Entry<String, Object> entry : source.entrySet()) {
             copy.put(entry.getKey(), copyValue(entry.getValue()));
         }

@@ -2,9 +2,10 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
@@ -161,9 +162,9 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("createChild", new Class<?>[] {UUID.class}, new Object[] {catalogId}));
 
         // The role is resolved on the parent catalog (the override), NOT on (category, null).
-        org.mockito.Mockito.verify(roleDefinitionSupplier).lookup("user-1", "catalog", catalogId.toString());
+        verify(roleDefinitionSupplier).lookup("user-1", "catalog", catalogId.toString());
         // But the decided resource (the queried policy) is still `category`.
-        org.mockito.Mockito.verify(opaClient).allow(ctx.capture());
+        verify(opaClient).allow(ctx.capture());
         assertThat(ctx.getValue().resource().type()).isEqualTo("category");
         assertThat(ctx.getValue().action()).isEqualTo("category:create");
     }
@@ -177,7 +178,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
         assertThat(decision.isGranted()).isFalse();
         // OPA is never asked when the override can't resolve.
-        org.mockito.Mockito.verify(opaClient, org.mockito.Mockito.never()).allow(any());
+        verify(opaClient, never()).allow(any());
     }
 
     @Test // unannotated method → DENY, not abstain. The manager is bound to an @OpaPreAuthorize pointcut,
@@ -198,7 +199,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {null}));
 
         assertThat(decision.isGranted()).isFalse();
-        org.mockito.Mockito.verify(opaClient, org.mockito.Mockito.never()).allow(any());
+        verify(opaClient, never()).allow(any());
     }
 
     @Test // U27 + U28 — RoleDefinitionSupplier consulted; AbacContext carries action + resource + role_definition
@@ -206,7 +207,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         UUID productId = UUID.randomUUID();
         RoleDefinition roleDef = new RoleDefinition(
                 "catalog-editor", Map.of("role_level", 20), Map.of("product", List.of("read", "write")));
-        when(roleDefinitionSupplier.lookup(eq("user-1"), eq("product"), eq(productId.toString())))
+        when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString()))
                 .thenReturn(Optional.of(roleDef));
         when(opaClient.allow(any())).thenReturn(true);
 
@@ -214,7 +215,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        org.mockito.Mockito.verify(opaClient).allow(captor.capture());
+        verify(opaClient).allow(captor.capture());
         AbacContext sent = captor.getValue();
         assertThat(sent.action()).isEqualTo("product:write");
         assertThat(sent.resource().type()).isEqualTo("product");
@@ -223,7 +224,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         assertThat(sent.roleDefinition().code()).isEqualTo("catalog-editor");
         assertThat(sent.roleDefinition().permissions().get("product")).contains("write");
         // and the supplier was consulted with the right coordinates
-        org.mockito.Mockito.verify(roleDefinitionSupplier).lookup("user-1", "product", productId.toString());
+        verify(roleDefinitionSupplier).lookup("user-1", "product", productId.toString());
     }
 
     // --- B2: role-source outage vs authoritative no-role ---------------------
@@ -232,14 +233,14 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     // (no empty-role context is built, so the policy's realm fallback is never fed an outage input).
     void roleSourceOutage_failClosedDeny_neverCallsOpa() throws Exception {
         UUID productId = UUID.randomUUID();
-        when(roleDefinitionSupplier.lookup(eq("user-1"), eq("product"), eq(productId.toString())))
+        when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString()))
                 .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
 
         AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         assertThat(decision.isGranted()).isFalse();
-        org.mockito.Mockito.verify(opaClient, org.mockito.Mockito.never()).allow(any());
+        verify(opaClient, never()).allow(any());
     }
 
     @Test // B2 U3 — the SIBLING (designed path unbroken): supplier returns Optional.empty() (authoritative
@@ -247,7 +248,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     // fallback decides downstream). Proves B2 narrowed only the outage path, not the empty path.
     void authoritativeNoRole_buildsEmptyContext_andCallsOpa() throws Exception {
         UUID productId = UUID.randomUUID();
-        when(roleDefinitionSupplier.lookup(eq("user-1"), eq("product"), eq(productId.toString())))
+        when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString()))
                 .thenReturn(Optional.empty());
         when(opaClient.allow(any())).thenReturn(true);
 
@@ -256,7 +257,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
         assertThat(decision.isGranted()).isTrue();
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        org.mockito.Mockito.verify(opaClient).allow(captor.capture());
+        verify(opaClient).allow(captor.capture());
         assertThat(captor.getValue().roleDefinition()).isNull(); // no role_definition → fallback eligible
     }
 
@@ -270,7 +271,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("writeInstance", new Class<?>[] {SampleProduct.class}, new Object[] {product}));
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        org.mockito.Mockito.verify(opaClient).allow(captor.capture());
+        verify(opaClient).allow(captor.capture());
         AbacContext.Resource resource = captor.getValue().resource();
         assertThat(resource.type()).isEqualTo("product");
         assertThat(resource.id()).isEqualTo("p-42");

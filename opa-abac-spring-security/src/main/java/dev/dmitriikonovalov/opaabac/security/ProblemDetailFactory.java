@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,7 +40,7 @@ public final class ProblemDetailFactory {
                 detail,
                 instance,
                 code.code(),
-                OffsetDateTime.now());
+                OffsetDateTime.now(ZoneOffset.UTC));
     }
 
     /**

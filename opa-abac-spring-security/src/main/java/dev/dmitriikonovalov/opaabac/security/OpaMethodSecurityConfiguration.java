@@ -89,7 +89,7 @@ public class OpaMethodSecurityConfiguration {
         try {
             Class<?> type = Class.forName(className, false, context.getClassLoader());
             return context.getBeanNamesForType(type, false, false).length > 0;
-        } catch (ClassNotFoundException absent) {
+        } catch (ClassNotFoundException _) {
             // Spring Security's method-security config type isn't even on the classpath -> method
             // security cannot be enabled -> the warning applies.
             return false;

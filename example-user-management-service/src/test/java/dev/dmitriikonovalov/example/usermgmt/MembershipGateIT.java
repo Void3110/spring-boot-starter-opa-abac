@@ -64,7 +64,7 @@ class MembershipGateIT extends AbstractSecuredPostgresIT {
                 // client must already have failed closed; the late "true" must change nothing.
                 try {
                     Thread.sleep(2500);
-                } catch (InterruptedException e) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                 }
             }

@@ -160,8 +160,8 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
 
     @SuppressWarnings("unchecked")
     private static Optional<RoleDefinition> replay(Object outcome) {
-        if (outcome instanceof Outage outage) {
-            throw outage.cause();
+        if (outcome instanceof Outage(RoleResolutionException cause)) {
+            throw cause;
         }
         return (Optional<RoleDefinition>) outcome;
     }
@@ -178,12 +178,12 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
             }
             Object existing = request.getAttribute(ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
             if (existing instanceof Map<?, ?> map) {
-                return (Map<MemoKey, Object>) uncheckedMap(map);
+                return uncheckedMap(map);
             }
             Map<MemoKey, Object> fresh = new ConcurrentHashMap<>();
             request.setAttribute(ATTRIBUTE, fresh, RequestAttributes.SCOPE_REQUEST);
             return fresh;
-        } catch (RuntimeException bookkeepingFailure) {
+        } catch (RuntimeException _) {
             return null; // lose the reuse, never the decision
         }
     }

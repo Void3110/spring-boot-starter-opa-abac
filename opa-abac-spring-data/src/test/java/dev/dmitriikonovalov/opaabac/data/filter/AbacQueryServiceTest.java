@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,7 +77,7 @@ class AbacQueryServiceTest {
 
     @Test // U21 — DENY_ALL → an always-false spec → empty list
     void denyAll_returnsEmpty() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of());
 
         OpaClient client = stub(PartialResult.denyAll(), null, false);
@@ -86,9 +89,9 @@ class AbacQueryServiceTest {
 
     @Test // U22 — CONDITIONAL → scope.and(authzSpec) passed to findAll; no batch
     void conditional_andsScopeWithAuthzSpec() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a")));
-        OpaClient client = Mockito.spy(stub(
+        OpaClient client = spy(stub(
                 new PartialResult(
                         PartialResult.Decision.CONDITIONAL,
                         List.of(new Conjunction(List.of(new Condition("tags.region", Condition.Operator.EQ, "emea"))))),
@@ -107,7 +110,7 @@ class AbacQueryServiceTest {
 
     @Test // U23 — allowlist fallback ON + not-fully-SQL residual → allowAll over survivors, false rows dropped
     void allowlistFallback_dropsFalseRows() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class)))
                 .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c")));
         // residual flagged not-fully-SQL; batch says keep a and c, drop b
@@ -121,9 +124,9 @@ class AbacQueryServiceTest {
 
     @Test // U23 — allowlist fallback OFF + not-fully-SQL residual → DENY (empty), allowAll NOT invoked
     void allowlistFallbackOff_deniesWithoutBatch() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of());
-        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true), false));
+        OpaClient client = spy(stub(PartialResult.unsupported(), List.of(true), false));
 
         List<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, false))
                 .findAuthorized(repo, (r, q, cb) -> null, context());
@@ -134,9 +137,9 @@ class AbacQueryServiceTest {
 
     @Test // U24 — partialEval.enabled=false → coarse path: one allow() check, no compile()
     void killSwitch_usesCoarsePath() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a")));
-        OpaClient client = Mockito.spy(stub(PartialResult.allowAll(), null, true)); // allow() → true
+        OpaClient client = spy(stub(PartialResult.allowAll(), null, true)); // allow() → true
 
         List<Row> result = service(client, new AbacQueryService.PartialEvalSettings(false, true))
                 .findAuthorized(repo, (r, q, cb) -> null, context());
@@ -148,8 +151,8 @@ class AbacQueryServiceTest {
 
     @Test // U24 — kill-switch + coarse allow() denies → empty list (still fail-closed)
     void killSwitch_coarseDeny_returnsEmpty() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
-        OpaClient client = Mockito.spy(stub(PartialResult.allowAll(), null, false)); // allow() → false
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        OpaClient client = spy(stub(PartialResult.allowAll(), null, false)); // allow() → false
 
         List<Row> result = service(client, new AbacQueryService.PartialEvalSettings(false, true))
                 .findAuthorized(repo, (r, q, cb) -> null, context());
@@ -183,7 +186,7 @@ class AbacQueryServiceTest {
     void fourArg_withSubtreeSpec_composesAndDoesNotBatch() {
         AtomicReference<Specification<Row>> passed = new AtomicReference<>();
         JpaSpecificationExecutor<Row> repo = repoCapturing(passed, List.of(new Row("a")));
-        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        OpaClient client = spy(stub(conditionalEmea(), null, false));
         Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
 
         service(client, AbacQueryService.PartialEvalSettings.defaults())
@@ -214,8 +217,8 @@ class AbacQueryServiceTest {
     // closed: no repo query at all. The subtree widening mirrors the policy's inherited-grant clause and
     // must never outlive the policy engine it mirrors.
     void errorResidual_withSubtree_failsWholeListClosed() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
-        OpaClient client = Mockito.spy(stub(PartialResult.error(), null, false));
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        OpaClient client = spy(stub(PartialResult.error(), null, false));
         Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
 
         List<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
@@ -229,8 +232,8 @@ class AbacQueryServiceTest {
     @Test // an ERROR DENY_ALL with the allowlist fallback ON → still empty, no batch: an outage is not
     // an "unsupported residual" and must not trigger the candidate fetch + re-check path either
     void errorResidual_allowlistOn_noBatchNoRows() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
-        OpaClient client = Mockito.spy(stub(PartialResult.error(), List.of(true), false));
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        OpaClient client = spy(stub(PartialResult.error(), List.of(true), false));
 
         List<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, true))
                 .findAuthorized(repo, (r, q, cb) -> null, context());
@@ -242,10 +245,10 @@ class AbacQueryServiceTest {
 
     @Test // U11 — batch path: each per-row AbacContext carries the row's ANCESTOR chain (4-arg Resource)
     void batchPath_perRowContextCarriesAncestors() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class)))
                 .thenReturn(List.of(new HierRow("a"), new HierRow("b")));
-        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true, true), false));
+        OpaClient client = spy(stub(PartialResult.unsupported(), List.of(true, true), false));
 
         AncestorResolver resolver = ancestorsReturning(List.of(new ParentRef("catalog", "C")));
         hierService(client, new AbacQueryService.PartialEvalSettings(true, true), resolver)
@@ -261,9 +264,9 @@ class AbacQueryServiceTest {
 
     @Test // U12 — batch path: a candidate whose ancestor resolution throws → EMPTY ancestors (direct-only)
     void batchPath_resolverFailure_emptyAncestors() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of(new HierRow("a")));
-        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true), false));
+        OpaClient client = spy(stub(PartialResult.unsupported(), List.of(true), false));
 
         AncestorResolver failing = throwingResolver();
         hierService(client, new AbacQueryService.PartialEvalSettings(true, true), failing)
@@ -276,7 +279,7 @@ class AbacQueryServiceTest {
 
     @Test // U11/U12 — short/all-false batch decision still drops rows (fail-closed), hierarchy-aware
     void batchPath_shortDecisionList_dropsRows() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class)))
                 .thenReturn(List.of(new HierRow("a"), new HierRow("b")));
         // the client returns a SHORT list (error shape) → both rows dropped
@@ -294,11 +297,11 @@ class AbacQueryServiceTest {
 
     @Test // U1 — pure-SQL path: the combined spec + the given pageable reach the repo; the Page returns as-is
     void paged_pureSql_passesCombinedSpecAndPageable() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         Pageable pageable = PageRequest.of(0, 2, DEFAULT_ORDER);
         Page<Row> repoPage = new PageImpl<>(List.of(new Row("a"), new Row("b")), pageable, 7);
         when(repo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(repoPage);
-        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        OpaClient client = spy(stub(conditionalEmea(), null, false));
 
         Page<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
                 .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
@@ -316,11 +319,11 @@ class AbacQueryServiceTest {
 
     @Test // U2 — paged with a subtreeSpec → the widened composition reaches the repo, still no batch
     void paged_withSubtreeSpec_composesAndDoesNotBatch() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
         when(repo.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(new Row("a")), pageable, 1));
-        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        OpaClient client = spy(stub(conditionalEmea(), null, false));
         Specification<Row> subtree = (r, q, cb) -> cb.equal(r.get("catalogId"), "C");
 
         Page<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
@@ -333,8 +336,8 @@ class AbacQueryServiceTest {
 
     @Test // U3 — the guard: an unsorted PageRequest and Pageable.unpaged() both throw BEFORE any OPA/repo call
     void paged_unsortedPageable_throwsBeforeAnyCall() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
-        OpaClient client = Mockito.spy(stub(conditionalEmea(), null, false));
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        OpaClient client = spy(stub(conditionalEmea(), null, false));
         AbacQueryService svc = service(client, AbacQueryService.PartialEvalSettings.defaults());
 
         assertThatThrownBy(() -> svc.findAuthorized(
@@ -355,7 +358,7 @@ class AbacQueryServiceTest {
     @Test // U4 — fallback path: candidates fetched WITH the pageable's sort; survivors sliced in order;
     // totalElements == the filtered size (4), not the candidate count (5)
     void paged_fallback_slicesFilteredSurvivorsInOrder() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class), any(Sort.class)))
                 .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c"), new Row("d"), new Row("e")));
         // batch drops b: survivors a, c, d, e
@@ -373,17 +376,17 @@ class AbacQueryServiceTest {
         assertThat(page1.getTotalElements()).isEqualTo(4);
         // the candidate fetch carried the pageable's sort — path-independent order, never unsorted
         ArgumentCaptor<Sort> sort = ArgumentCaptor.forClass(Sort.class);
-        verify(repo, Mockito.times(2)).findAll(any(Specification.class), sort.capture());
+        verify(repo, times(2)).findAll(any(Specification.class), sort.capture());
         assertThat(sort.getAllValues()).allSatisfy(s -> assertThat(s).isEqualTo(DEFAULT_ORDER));
     }
 
     @Test // U4 — fallback OFF + not-fully-SQL residual, paged → no batch; the always-false spec pages empty
     void paged_fallbackOff_deniesWithoutBatch() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
         when(repo.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), pageable, 0));
-        OpaClient client = Mockito.spy(stub(PartialResult.unsupported(), List.of(true), false));
+        OpaClient client = spy(stub(PartialResult.unsupported(), List.of(true), false));
 
         Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, false))
                 .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
@@ -395,7 +398,7 @@ class AbacQueryServiceTest {
 
     @Test // U5 — fallback past-the-end: a window beyond the survivors → empty content, exact total
     void paged_fallback_pastTheEnd_keepsExactCount() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class), any(Sort.class)))
                 .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c"), new Row("d"), new Row("e")));
         OpaClient client = stub(PartialResult.unsupported(), List.of(true, false, true, true, true), false);
@@ -409,8 +412,8 @@ class AbacQueryServiceTest {
 
     @Test // U6 — kill-switch, coarse deny → empty page, count 0, no repo call
     void paged_killSwitch_denyEmptiesPageWithoutRepo() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
-        OpaClient client = Mockito.spy(stub(PartialResult.allowAll(), null, false)); // allow() → false
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        OpaClient client = spy(stub(PartialResult.allowAll(), null, false)); // allow() → false
 
         Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(false, true))
                 .findAuthorized(repo, (r, q, cb) -> null, context(), null, PageRequest.of(0, 20, DEFAULT_ORDER));
@@ -423,11 +426,11 @@ class AbacQueryServiceTest {
 
     @Test // U6 — kill-switch, coarse allow → scope.and(notDenied) paged; the deny stays AND-ed even degraded
     void paged_killSwitch_allowPagesScopeAndNotDenied() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
         when(repo.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(new Row("a")), pageable, 1));
-        OpaClient client = Mockito.spy(stub(PartialResult.allowAll(), null, true)); // allow() → true
+        OpaClient client = spy(stub(PartialResult.allowAll(), null, true)); // allow() → true
 
         Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(false, true))
                 .findAuthorized(repo, (r, q, cb) -> null, context(), null, pageable);
@@ -441,8 +444,8 @@ class AbacQueryServiceTest {
     @Test // U7 — fromError, paged (allowlist ON) → empty page, count 0, NO repo call, NO batch:
     // a failed compile empties the page INCLUDING the count, and an outage never triggers the fallback
     void paged_fromError_emptiesPageAndCountWithoutRepo() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
-        OpaClient client = Mockito.spy(stub(PartialResult.error(), List.of(true), false));
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        OpaClient client = spy(stub(PartialResult.error(), List.of(true), false));
 
         Page<Row> result = service(client, new AbacQueryService.PartialEvalSettings(true, true))
                 .findAuthorized(repo, (r, q, cb) -> null, context(), null, PageRequest.of(0, 20, DEFAULT_ORDER));
@@ -458,7 +461,7 @@ class AbacQueryServiceTest {
     @Test // U10 — pure-SQL path: every survivor written to the cache keyed (type,id), same instances
     void writeThrough_pureSqlPath_cachesSurvivors() {
         RecordingCache cache = new RecordingCache();
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a"), new Row("b")));
 
         List<Row> result = serviceWithCache(stub(conditionalEmea(), null, false), cache)
@@ -471,7 +474,7 @@ class AbacQueryServiceTest {
     @Test // U10 — allowlist-batch path: only the survivors (true rows) are cached; denied rows never written
     void writeThrough_allowlistPath_cachesOnlySurvivors() {
         RecordingCache cache = new RecordingCache();
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class)))
                 .thenReturn(List.of(new Row("a"), new Row("b"), new Row("c")));
         // not-fully-SQL residual + allowlist ON → batchFilter; decisions keep a and c, drop b.
@@ -489,7 +492,7 @@ class AbacQueryServiceTest {
     @Test // U10 — kill-switch path: the coarse-allow survivors are cached
     void writeThrough_killSwitchPath_cachesSurvivors() {
         RecordingCache cache = new RecordingCache();
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a")));
         OpaClient client = stub(PartialResult.allowAll(), null, true); // allow() = true
 
@@ -504,7 +507,7 @@ class AbacQueryServiceTest {
     void writeThrough_pagedPureSqlPath_cachesPageContent() {
         RecordingCache cache = new RecordingCache();
         Pageable pageable = PageRequest.of(0, 20, DEFAULT_ORDER);
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(new Row("a"), new Row("b")), pageable, 2));
 
@@ -517,7 +520,7 @@ class AbacQueryServiceTest {
 
     @Test // U10 — cache ABSENT → no write, no NPE, return value byte-identical
     void writeThrough_cacheAbsent_noWriteNoNpe() {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a"), new Row("b")));
 
         List<Row> result = service(stub(conditionalEmea(), null, false), AbacQueryService.PartialEvalSettings.defaults())
@@ -529,7 +532,7 @@ class AbacQueryServiceTest {
     @Test // U10 — fromError path: nothing returned, nothing cached
     void writeThrough_fromError_cachesNothing() {
         RecordingCache cache = new RecordingCache();
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
 
         List<Row> result = serviceWithCache(stub(PartialResult.error(), null, false), cache)
                 .findAuthorized(repo, (r, q, cb) -> null, context());
@@ -585,7 +588,7 @@ class AbacQueryServiceTest {
 
     private static JpaSpecificationExecutor<Row> repoCapturing(
             AtomicReference<Specification<Row>> captured, List<Row> result) {
-        JpaSpecificationExecutor<Row> repo = Mockito.mock(JpaSpecificationExecutor.class);
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
         when(repo.findAll(any(Specification.class))).thenAnswer(inv -> {
             captured.set(inv.getArgument(0));
             return result;

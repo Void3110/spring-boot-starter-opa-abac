@@ -399,7 +399,7 @@ public class AbacQueryService {
         }
         try {
             return ancestorResolver.ancestorsOf(row.abacResourceType(), row.abacResourceId());
-        } catch (AncestorResolutionException e) {
+        } catch (AncestorResolutionException _) {
             return List.of(); // fail-closed: decide this row on its direct grant only
         }
     }
