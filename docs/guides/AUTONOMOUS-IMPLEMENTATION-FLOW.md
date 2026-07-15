@@ -718,9 +718,9 @@ Per-gate domains (rather than one merged `quality-gates`) keep priming targeted:
 output you want Sonar's FP corpus, not every gate's.
 
 The local Sonar gate is deliberately **unpinned from any external server**: the version and profile are
-ours to advance (the stack pins an image for reproducibility, currently 26.3.0-community, and owns a
+ours to advance (the stack pins an image for reproducibility, currently 26.7.0-community, and owns a
 copy of its built-in profile). Upgrading the analyzer, tightening the profile, and triaging the
-adoption-time baseline are tracked in [[QUALITY-GATE-SONAR-BASELINE]].
+baseline are tracked in [[QUALITY-GATE-SONAR-BASELINE]].
 
 ---
 

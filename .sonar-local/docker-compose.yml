@@ -1,7 +1,7 @@
 # Local SonarQube for pre-push analysis — the repo's static-analysis quality gate.
 #
 # This public project has no hosted SonarQube; this pinned local stack IS the Sonar gate.
-# Version pinned (26.3.0.120487-community) so the analyzer + the "Sonar way" Java rules are
+# Version pinned (26.7.0.124771-community) so the analyzer + the "Sonar way" Java rules are
 # reproducible across machines and over time — reproducibility is the ONLY reason for the pin;
 # the project answers to no external server, so bumping to a newer community build is fine
 # (it re-baselines the findings; see docs/to-do/planning/QUALITY-GATE-SONAR-BASELINE/).
@@ -18,7 +18,7 @@ name: opa-abac-sonar-local
 
 services:
   sonarqube:
-    image: sonarqube:26.3.0.120487-community
+    image: sonarqube:26.7.0.124771-community
     container_name: opa-abac-sonarqube-local
     depends_on:
       db:

@@ -1,54 +1,63 @@
 ---
 tags:
-  - status/planned
+  - status/in-progress
   - type/research
   - area/build
 ---
 
 # QUALITY-GATE-SONAR-BASELINE — version, profile & baseline triage
 
-> Investigation to-do for the local Sonar quality gate ([`.sonar-local/`](../../../../.sonar-local/README.md),
-> adopted 2026-07-15 on `feature/void3110/sonar-local-gate`). Not yet a slice — this note scopes the
-> investigation; if the triage turns out to be more than a few focused batches, run it through
-> `/decompose` like any other slice. Method context: [[AUTONOMOUS-IMPLEMENTATION-FLOW]] §9
-> (quality gates), Mulch domain `quality-gate-sonar`.
+> Investigation for the local Sonar quality gate ([`.sonar-local/`](../../../../.sonar-local/README.md),
+> adopted 2026-07-15 on `feature/void3110/sonar-local-gate`). **Largely executed 2026-07-15** — §1
+> (version) and §2 (triage) are done; §3 (profile) and §4 (coverage) remain, plus the §3a S6474
+> maintainer decision. Method context: [[AUTONOMOUS-IMPLEMENTATION-FLOW]] §9 (quality gates), Mulch
+> domain `quality-gate-sonar` (holds the FP catalog + the S5998 lesson).
 
-## Why now
+## Executed 2026-07-15 (summary)
 
-The gate went live **findings-only, changed-files-scoped**, pinned to `26.3.0.120487-community` with
-an owned copy of the built-in `Sonar way` Java profile. That was the fastest correct adoption, and it
-deliberately deferred three decisions — each below. The adoption-time **full-tree baseline is 399
-standing findings** (`./.sonar-local/sonar-local.sh --no-scan --all`): top rules `S8445 ×116`,
-`S5778 ×67`, `S7467 ×42` (largely test-code rules), then `S1192`/`S5853`/`S5838`/`S125`/`S2160`/
-`S6068`/`S1186` at ~10 each. The changed-files default keeps these from blocking tickets, but they
-are invisible debt until triaged.
+The gate went live pinned to `26.3.0.120487`; this session **bumped it to `26.7.0.124771-community`**
+(§1) and **triaged the whole baseline** (§2). Multi-agent triage (per-rule adjudicate → adversarial
+verify → synthesize) over 43 rule-classes: **17 fix, 25 by-design-FP** (recorded to
+`quality-gate-sonar`), the rest mixed. The adversarial-verify pass caught **S5998** — a first-pass FP
+that was a *real* fail-closed escape: `HttpOpaClient.SAFE_PATH`'s recursive regex stack-overflows on a
+long path, and the `StackOverflowError` (an `Error`) escaped the `catch(Exception)` deny handler →
+uncaught 500. Fixed with a linear scan + length cap + regression test. Full-tree baseline
+**355 → 1** (the lone survivor is §3a's S6474, left open by decision); the changed-files gate is CLEAN;
+`./gradlew build` green. FP instances are marked false-positive in the local Sonar DB **and** their
+classes recorded in Mulch (belt-and-suspenders: the marks die with `down -v`, the Mulch records don't).
 
-## 1. Pick the analyzer version (do this FIRST — it re-baselines everything)
+## Why the ordering mattered
 
-The 26.3.0 pin is **reproducibility-only**; this project answers to no external Sonar server.
-Newer community builds exist (latest observed on Docker Hub 2026-07: **`26.7.0.124771-community`**).
-A newer analyzer adds/retires rules, so the version decision must precede the triage — otherwise the
-triage is against a rule set we're about to replace.
+Version-first (§1 before §2) was load-bearing: 26.7.0's `Sonar way` grew 542→555 rules and **S8445
+(×116 on 26.3.0) was renumbered to S8924 (×71)** — triaging on the old analyzer would have adjudicated
+a rule that no longer exists.
 
-- [ ] Bump `.sonar-local/docker-compose.yml` to the chosen tag; `down -v` + re-bootstrap (the
-      bootstrap re-copies the *new* built-in `Sonar way` into `OPA-ABAC Local Java`).
-- [ ] Re-run `--all`; record the new baseline count + rule histogram in `quality-gate-sonar`.
-- [ ] Decide the upgrade cadence (e.g. re-evaluate each planning phase; a bump is cheap but
-      re-baselines).
+## 1. Pick the analyzer version — ✅ DONE (26.7.0.124771-community)
 
-## 2. Triage the baseline (the bulk of the work)
+The pin is **reproducibility-only**; this project answers to no external Sonar server. A newer
+analyzer adds/retires rules, so the version decision precedes the triage.
 
-Mirror of the IDP SONAR-SMELL-BACKLOG method: batch **by rule**, not by file — one rule class per
-batch keeps each diff reviewable and the fix pattern consistent.
+- [x] Bumped `.sonar-local/docker-compose.yml` to `26.7.0.124771-community`; `down -v` + re-bootstrap
+      (re-copied the new built-in `Sonar way`, now **555** Java rules, into `OPA-ABAC Local Java`).
+- [x] Re-ran `--all`; recorded the new baseline (355; histogram + the S8445→S8924 renumber) in
+      `quality-gate-sonar`.
+- [ ] **Cadence still open**: re-evaluate the pin each planning phase (a bump is cheap but re-baselines;
+      26.8+ will land). Not yet a fixed policy.
 
-- [ ] For each rule (descending count): decide **fix** vs **by-design FP**.
-      - Fixes: mechanical batches on a branch, `/deep-review` before merge (test-code rules like
-        S5778/S8445 may allow bulk fixes; S1192/S3776-style smells need per-site judgment).
-      - FPs: record each *class* (rule + why it's by-design here) in **`quality-gate-sonar`**, then
-        mark the instances (won't-fix in the Sonar UI, or leave OPEN and rely on the Mulch record —
-        decide which; won't-fix survives re-scans but lives in the container DB, the Mulch record
-        survives `down -v`).
-- [ ] End state: `--all` is either CLEAN or every remaining finding maps to a recorded FP class.
+## 2. Triage the baseline — ✅ DONE (355 → 1)
+
+Batched **by rule**, adjudicated with a multi-agent workflow (per-rule reader → adversarial-verify
+skeptic on every gate-critical + every FP-on-a-bug/vuln → synthesis).
+
+- [x] Every rule decided fix vs by-design-FP (mixed where sites split). **17 fix rules applied**
+      (2 gate-critical: S5998 fail-closed SOE escape, S5841 vacuous test assertion; ~15 mechanical incl.
+      the deferred-then-done S8924). **25 FP classes** recorded to `quality-gate-sonar` as a single
+      catalog record + the S5998 lesson as a `failure` record.
+- [x] FP instances **both** marked false-positive in the local Sonar DB (via admin API) **and** recorded
+      as classes in Mulch — the marks die with `down -v`, the Mulch records survive, so a re-bootstrap
+      re-judges from the catalog rather than re-flagging.
+- [x] End state: `--all` = **1 finding (S6474, open by §3a decision)**; changed-files gate CLEAN;
+      `./gradlew build` green.
 
 ## 3. Tighten the profile (optional, after triage)
 
@@ -57,6 +66,23 @@ beyond `Sonar way` (the built-in profile is deliberately conservative). If the p
 export it (`api/qualityprofiles/backup`) and **commit the XML** to `.sonar-local/` so the divergence
 is version-controlled (until then, the pinned image's built-in is the reproducible baseline — no XML
 needed).
+
+## 3a. Open maintainer decision — Gradle dependency verification (from S6474)
+
+The triage surfaced **S6474** (a real inbound supply-chain gap for a *published* security library):
+the repo secures **outbound** artifacts (GPG-signed Maven Central publications) but pulls **inbound**
+deps + Gradle plugins with no checksum/signature gate. Two legs:
+
+- **Done this session (pure win, zero maintenance):** pinned the Gradle distribution itself —
+  `distributionSha256Sum` added to `gradle/wrapper/gradle-wrapper.properties` (the highest-leverage
+  single control; the wrapper now refuses a tampered distribution).
+- **Deferred to the maintainer (real maintenance load):** the full
+  `gradle/verification-metadata.xml` (`./gradlew --write-verification-metadata sha256 help`). It must
+  be **regenerated on every dependency/plugin bump** and can trip on platform-specific/native artifacts
+  (Testcontainers). For a solo portfolio repo the residual (mavenCentral-only + TLS + signed-artifact)
+  is bounded; the choice is *adopt full metadata* vs *record an explicit accepted-risk note*. **Not
+  auto-committed** — this is a scope call. Until decided, S6474 stays a recorded finding, not a silent
+  suppression.
 
 ## 4. Coverage condition (separate decision, needs build work)
 

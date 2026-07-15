@@ -6,9 +6,9 @@
 # Idempotent: safe to re-run. Writes the analysis token to .sonar-local/token (gitignored).
 #
 # Everything is PROJECT-SCOPED (api/qualityprofiles/add_project + api/qualitygates/select),
-# so this bootstrap can also target an already-running compatible 26.3.0 instance
-# (SONAR_LOCAL_URL=... SONAR_LOCAL_ADMIN_PW=... ./.sonar-local/bootstrap.sh) without
-# fighting other projects over the instance defaults.
+# so this bootstrap can also target an already-running instance on the same analyzer version as
+# the compose pin (SONAR_LOCAL_URL=... SONAR_LOCAL_ADMIN_PW=... ./.sonar-local/bootstrap.sh)
+# without fighting other projects over the instance defaults.
 #
 # Prereq: docker compose -f .sonar-local/docker-compose.yml up -d   (and the server UP)
 set -euo pipefail
@@ -68,7 +68,7 @@ else
 fi
 
 # --- 3. an owned Java profile: copy of the built-in "Sonar way" ---------------
-# The pinned 26.3.0 analyzer's built-in "Sonar way" is the rule baseline; the copy is a
+# The pinned analyzer's built-in "Sonar way" is the rule baseline; the copy is a
 # non-built-in profile we OWN and can tighten later (back it up to XML once it diverges).
 PROFILE_EXISTS=$(curl -sf "${AUTH[@]}" \
   "$SONAR_URL/api/qualityprofiles/search?language=java" \

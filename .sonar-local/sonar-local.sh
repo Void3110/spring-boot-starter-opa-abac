@@ -3,7 +3,7 @@
 # pre-push static-analysis gate: catch S112/S1192/S125/... BEFORE committing/pushing, at the
 # ★ architecture-review gate or during /deep-review Phase 4.
 #
-# The "OPA-ABAC Local Java" profile is an owned copy of the pinned 26.3.0 analyzer's built-in
+# The "OPA-ABAC Local Java" profile is an owned copy of the pinned analyzer's built-in
 # "Sonar way" rules. This public project has no hosted Sonar — this local scan IS the rule
 # gate (no coverage condition yet; the gate owns RULE findings).
 #
