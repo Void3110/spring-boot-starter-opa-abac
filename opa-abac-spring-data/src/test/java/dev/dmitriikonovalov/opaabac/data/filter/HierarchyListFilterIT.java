@@ -158,9 +158,14 @@ class HierarchyListFilterIT {
     @Test // I6 — notDenied narrowing: cat-deny (abac_deny=true) excluded even from the widened set (MANDATORY)
     void denyOverrides_excludesDeniedRowFromWidenedList() {
         List<UUID> inheritRows = listCategories(SUBJ_INHERIT, catalogC);
+        // Prove the widened set is genuinely populated FIRST — otherwise doesNotContain(catDeny) passes
+        // vacuously and a fail-closed→empty regression in the partial-eval filter would go undetected.
+        assertThat(inheritRows).contains(catEmea, catApac);
         assertThat(inheritRows).doesNotContain(catDeny);
         // and the region subject (whose residual region=emea WOULD match cat-deny's region) also excludes it
-        assertThat(listCategories(SUBJ_REGION, catalogC)).doesNotContain(catDeny);
+        List<UUID> regionRows = listCategories(SUBJ_REGION, catalogC);
+        assertThat(regionRows).contains(catEmea);
+        assertThat(regionRows).doesNotContain(catDeny);
     }
 
     @Test // I7 — AND-with-scope no-leak: widening for C cannot surface a row under a FOREIGN catalog D scope
