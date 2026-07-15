@@ -14,6 +14,11 @@ forking away from a reproducible baseline. The quality gate is findings-only for
 (`new_bugs` / `new_vulnerabilities` / `new_code_smells` all 0); a coverage floor is a possible
 later tightening.
 
+The pin exists **only for reproducibility** — this project answers to no external Sonar server, so
+the version and profile are free to advance (newer community builds exist; a bump re-baselines the
+findings). The upgrade evaluation + baseline triage are tracked in
+`docs/to-do/planning/QUALITY-GATE-SONAR-BASELINE/`.
+
 ## One-time setup
 
 ```bash
@@ -38,8 +43,8 @@ analysis token to `.sonar-local/token` (gitignored). Web UI: <http://localhost:1
 The scan runs `./gradlew testClasses sonar` itself (Sonar reads bytecode; no test execution).
 **Default scope is CHANGED files** (the pre-push signal: "did *my* change add a smell?").
 `--all` is for an occasional baseline audit — it shows the full tree, including any standing
-by-design false-positives (recorded in the Mulch **`sonar`** domain — `ml prime sonar` before
-judging a finding; do not re-fix a documented FP).
+by-design false-positives (recorded in the Mulch **`quality-gate-sonar`** domain —
+`ml prime quality-gate-sonar` before judging a finding; do not re-fix a documented FP).
 
 ## Stop / reset
 

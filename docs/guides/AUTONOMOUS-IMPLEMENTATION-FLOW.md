@@ -307,7 +307,7 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
    - **Static-analysis gate — the local Sonar scan is CLEAN on the changed files.** For a ticket that
      touches `.java`, run `./.sonar-local/sonar-local.sh` (the pinned local SonarQube,
      `.sonar-local/README.md`; bring the stack up once per run). Expected: `CLEAN — 0 open findings`
-     on the changed files. `ml prime sonar` before judging a non-clean result — standing by-design
+     on the changed files. `ml prime quality-gate-sonar` before judging a non-clean result — standing by-design
      false-positives are recorded there, and a documented FP is not re-fixed; a real finding is fixed
      in this ticket's commit.
    - **Apply** the refactoring the review surfaces, then **re-run the unit tests** to confirm green.
@@ -690,6 +690,37 @@ is why "keep the skeleton word-for-word; record learnings to Mulch" is a hard ru
 preference: it *is* the Expertise/Workflow separation, mapped onto our two-store setup. (A true L7
 meta-cognitive step — a prompt that rewrites *other* prompts in the system — we deliberately don't
 automate; revising the skeleton is a human, ADR-worthy decision.)
+
+---
+
+## 9. Quality gates (what must be green, where)
+
+The loop enforces a **ladder of gates**, each at the cheapest point that can catch its defect class.
+Two families: **mechanical** gates are deterministic and scripted (a command either passes or prints
+findings); **judgment** gates are review passes (lenses, adversarial verification) that mechanical
+checks can't replace. Every mechanical gate that produces *judgeable* findings gets a Mulch domain in
+the **`quality-gate-`** family, holding its standing by-design false-positives and baseline context —
+prime it *before* judging that gate's output, so a documented FP is never re-fixed.
+
+| Gate | Kind | Scope | When | Green means |
+|------|------|-------|------|-------------|
+| Compile + unit tests (`./gradlew :module:test`) | mechanical | ticket | per-ticket step 4 | fix-until-green |
+| **★ architecture review + refactor** | judgment | ticket | step 5, *before* IT/e2e | lenses applied; findings refactored + re-tested; STATUS note written |
+| **Local Sonar** (`./.sonar-local/sonar-local.sh`) | mechanical | changed `.java` files | inside step 5 / `/deep-review` validate | `CLEAN — 0 open findings` on changed files (FPs: `ml prime quality-gate-sonar`) |
+| Integration / e2e (Testcontainers IT · `opa test` · newman matrix) | mechanical | ticket / slice | step 6 / `/deep-review` validate | green, fix-until-green |
+| **`/deep-review`** | judgment | the slice diff | phase ④, every slice | verdict + fixes committed, review note written |
+| **`/security-review`** | judgment | whole surface | release / risky-slice cadence | dated report; fixes land as a follow-up slice |
+
+Naming convention for the domain family: one domain per gate (`quality-gate-sonar` today; a
+coverage-floor gate would add `quality-gate-coverage`). `ml prime` accepts several domains in one call
+(`ml prime quality-gate-sonar quality-gate-coverage`) but does **not** expand globs — enumerate them.
+Per-gate domains (rather than one merged `quality-gates`) keep priming targeted: when judging Sonar
+output you want Sonar's FP corpus, not every gate's.
+
+The local Sonar gate is deliberately **unpinned from any external server**: the version and profile are
+ours to advance (the stack pins an image for reproducibility, currently 26.3.0-community, and owns a
+copy of its built-in profile). Upgrading the analyzer, tightening the profile, and triaging the
+adoption-time baseline are tracked in [[QUALITY-GATE-SONAR-BASELINE]].
 
 ---
 

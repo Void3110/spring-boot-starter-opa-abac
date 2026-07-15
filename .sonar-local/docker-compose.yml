@@ -2,8 +2,10 @@
 #
 # This public project has no hosted SonarQube; this pinned local stack IS the Sonar gate.
 # Version pinned (26.3.0.120487-community) so the analyzer + the "Sonar way" Java rules are
-# reproducible across machines and over time. Community Edition scans the working tree
-# (no branch/PR analysis — irrelevant locally).
+# reproducible across machines and over time — reproducibility is the ONLY reason for the pin;
+# the project answers to no external server, so bumping to a newer community build is fine
+# (it re-baselines the findings; see docs/to-do/planning/QUALITY-GATE-SONAR-BASELINE/).
+# Community Edition scans the working tree (no branch/PR analysis — irrelevant locally).
 #
 # Start:  docker compose -f .sonar-local/docker-compose.yml up -d
 # Seed:   ./.sonar-local/bootstrap.sh        (first run only — seeds profile + gate, mints a token)
