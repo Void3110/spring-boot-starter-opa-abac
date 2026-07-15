@@ -20,6 +20,10 @@ plugins {
     // EXPLICIT library allow-list — never a blanket subprojects{} (that would publish the example
     // apps, with their demo fixtures, to Central: the fail-closed edge of this slice).
     alias(libs.plugins.maven.publish) apply false
+    // SonarQube analysis (registers the root `sonar` task) for the LOCAL pre-push gate — driven by
+    // .sonar-local/sonar-local.sh; host/token/projectKey are passed on that command line, so a bare
+    // `./gradlew sonar` without them is not a supported entry point.
+    alias(libs.plugins.sonarqube)
 }
 
 allprojects {
@@ -110,5 +114,16 @@ configure(subprojects.filter { it.name !in bomModules }) {
 configure(subprojects.filter { it.name in bomModules }) {
     repositories {
         mavenCentral()
+    }
+}
+
+// --- SonarQube (the local pre-push gate; see .sonar-local/README.md) --------------------------
+// Analysis covers every JVM module (libraries + example apps); the BOM has no source and
+// contributes nothing. Generated code (OpenAPI codegen, annotation-processor output) lives under
+// build/ and is excluded — findings should only ever point at hand-written code.
+sonar {
+    properties {
+        property("sonar.exclusions", "**/build/**,**/bin/**")
+        property("sonar.coverage.exclusions", "**/build/**,**/bin/**")
     }
 }

@@ -304,6 +304,12 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
    - **«Module-layer separation — which logic lives in which module; no layer reaches across».**
    - **«Pattern-reuse check — the named shipped patterns this must match, not reinvent».**
    - **SOLID / decomposition** — cohesive (SRP), depends on interfaces (DIP); anything to split/simplify?
+   - **Static-analysis gate — the local Sonar scan is CLEAN on the changed files.** For a ticket that
+     touches `.java`, run `./.sonar-local/sonar-local.sh` (the pinned local SonarQube,
+     `.sonar-local/README.md`; bring the stack up once per run). Expected: `CLEAN — 0 open findings`
+     on the changed files. `ml prime sonar` before judging a non-clean result — standing by-design
+     false-positives are recorded there, and a documented FP is not re-fixed; a real finding is fixed
+     in this ticket's commit.
    - **Apply** the refactoring the review surfaces, then **re-run the unit tests** to confirm green.
    - Write a short note of what the review found + what you refactored into `STATUS-0N.md`. If it found
      nothing substantive, say so explicitly — **do not invent churn.**
@@ -339,6 +345,8 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   `scripts/postman/` suite», and Mulch — all on this branch.
 - Stand up / tear down / reseed the local rig («`./profile.sh`, `./deploy.sh`, `ENABLE_OIDC=1 …`»);
   reset fixtures; rebuild images; restart OPA; drop/recreate the **local** schema if needed.
+- Bring up the local Sonar stack for the ★gate's static-analysis check
+  (`docker compose -f .sonar-local/docker-compose.yml up -d && ./.sonar-local/bootstrap.sh`).
 - Fix any issue your own validation reveals (compile, unit, IT, e2e, refactor). Iterate until green.
 - Commit per ticket on this branch.
 
@@ -399,8 +407,10 @@ them; only the bracketed content varies per slice.
    re-test → *then* the heavier validation. Always with a fail-closed check, a **security check**, a
    **concurrency/idempotency check** (the decide-under-protection invariant, not just lock mechanics),
    a **wiring check** (every new seam has a consumer + a non-happy-path test), a boundary/additivity
-   check, a pattern-reuse check, SOLID, "apply real refactoring, not ritual churn," and a written
-   `STATUS-0N.md` note. *(Security + concurrency/idempotency elevated 2026-06-12 — see §7.)*
+   check, a pattern-reuse check, SOLID, a **static-analysis gate** (the local Sonar scan CLEAN on the
+   changed files — `.sonar-local/README.md`; added 2026-07-15), "apply real refactoring, not ritual
+   churn," and a written `STATUS-0N.md` note. *(Security + concurrency/idempotency elevated
+   2026-06-12 — see §7.)*
 7. **Permissions / autonomy granted** — the explicit list of things to do *without asking* (edit code,
    stand up the rig, fix-until-green, commit per ticket).
 8. **Hard rules** — report-at-checkpoints; the review gate is mandatory and ordered; fix-until-green

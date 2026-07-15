@@ -45,6 +45,18 @@ resolution finds Temurin/Corretto 25 itself.)
 ./profile.sh down      # stop infra
 ```
 
+### Static-analysis gate (local SonarQube)
+
+The repo's Sonar gate is a **pinned local stack** (`.sonar-local/` — no hosted Sonar). Any diff
+touching `.java` must scan `CLEAN` on the changed files before push: the `/deep-review` validate
+phase and the autonomous ★review both run it. Standing by-design false-positives live in the
+Mulch `sonar` domain — prime it before judging findings.
+
+```bash
+docker compose -f .sonar-local/docker-compose.yml up -d && ./.sonar-local/bootstrap.sh  # once per machine
+./.sonar-local/sonar-local.sh          # findings on files changed vs origin/main
+```
+
 ### The user-directory module + rig flag
 
 `opa-abac-keycloak-directory` is an **optional** library module (the `UserDirectory` port's
@@ -121,6 +133,7 @@ Project expertise lives in `.mulch/`. Before a non-trivial task: `ml prime <doma
 | `opa-abac` | The cross-cutting technical store — patterns/failures/decisions about the library + rig. |
 | `rego-policy` · `spring-security-integration` · `spring-data-filtering` · `api-design` | Surface-specific technical expertise; prime the one matching the change. |
 | `code-review-process` | How reviews are run (the `/deep-review` process meta). |
+| `sonar` | The local-Sonar gate: standing by-design false-positives + baseline context (prime before judging findings). |
 | **`autonomous-runs`** | **Per-slice record of how the autonomous *run itself* went** — see below. |
 
 ### `autonomous-runs` — the run-retrospective domain (feeds planning)

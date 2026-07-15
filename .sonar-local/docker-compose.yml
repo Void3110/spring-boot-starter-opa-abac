@@ -1,0 +1,70 @@
+# Local SonarQube for pre-push analysis — the repo's static-analysis quality gate.
+#
+# This public project has no hosted SonarQube; this pinned local stack IS the Sonar gate.
+# Version pinned (26.3.0.120487-community) so the analyzer + the "Sonar way" Java rules are
+# reproducible across machines and over time. Community Edition scans the working tree
+# (no branch/PR analysis — irrelevant locally).
+#
+# Start:  docker compose -f .sonar-local/docker-compose.yml up -d
+# Seed:   ./.sonar-local/bootstrap.sh        (first run only — seeds profile + gate, mints a token)
+# Stop:   docker compose -f .sonar-local/docker-compose.yml down       (keeps data)
+# Reset:  docker compose -f .sonar-local/docker-compose.yml down -v    (wipes data — re-bootstrap needed)
+
+# Pinned project name: without it compose derives the name from this directory's basename
+# (".sonar-local"), which would collide volumes with any OTHER repo using the same layout.
+name: opa-abac-sonar-local
+
+services:
+  sonarqube:
+    image: sonarqube:26.3.0.120487-community
+    container_name: opa-abac-sonarqube-local
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # Host 19244 (a distinctive high port — 9000/9001 collide with common dev tools) ->
+      # container 9000. Everything local uses http://localhost:19244; override with
+      # SONAR_LOCAL_URL to point the scripts at another running 26.3.0 instance instead.
+      - "19244:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      # Local single-user instance — telemetry off.
+      SONAR_TELEMETRY_ENABLE: "false"
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_extensions:/opt/sonarqube/extensions
+      - sonar_logs:/opt/sonarqube/logs
+    healthcheck:
+      # The API is up once /api/system/status returns "UP" (SonarQube boots in ~1-2 min).
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  db:
+    image: postgres:16-alpine
+    container_name: opa-abac-sonarqube-db
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonar_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sonar_data:
+  sonar_extensions:
+  sonar_logs:
+  sonar_db:
