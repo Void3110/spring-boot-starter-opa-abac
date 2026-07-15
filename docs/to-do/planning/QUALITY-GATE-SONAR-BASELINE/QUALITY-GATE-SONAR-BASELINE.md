@@ -56,8 +56,8 @@ skeptic on every gate-critical + every FP-on-a-bug/vuln → synthesis).
 - [x] FP instances **both** marked false-positive in the local Sonar DB (via admin API) **and** recorded
       as classes in Mulch — the marks die with `down -v`, the Mulch records survive, so a re-bootstrap
       re-judges from the catalog rather than re-flagging.
-- [x] End state: `--all` = **1 finding (S6474, open by §3a decision)**; changed-files gate CLEAN;
-      `./gradlew build` green.
+- [x] End state: `--all` = **CLEAN** (the last finding, S6474, is now won't-fix per the §3a
+      accepted-risk decision); changed-files gate CLEAN; `./gradlew build` green.
 
 ## 3. Tighten the profile (optional, after triage)
 
@@ -67,22 +67,30 @@ export it (`api/qualityprofiles/backup`) and **commit the XML** to `.sonar-local
 is version-controlled (until then, the pinned image's built-in is the reproducible baseline — no XML
 needed).
 
-## 3a. Open maintainer decision — Gradle dependency verification (from S6474)
+## 3a. S6474 Gradle dependency verification — ✅ DECIDED (accepted-risk, 2026-07-15)
 
-The triage surfaced **S6474** (a real inbound supply-chain gap for a *published* security library):
-the repo secures **outbound** artifacts (GPG-signed Maven Central publications) but pulls **inbound**
-deps + Gradle plugins with no checksum/signature gate. Two legs:
+The triage surfaced **S6474** (an inbound supply-chain gap for a *published* security library): the repo
+secures **outbound** artifacts (GPG-signed Maven Central publications) but pulls **inbound** deps +
+Gradle plugins with no checksum/signature gate. Two legs, both now resolved:
 
-- **Done this session (pure win, zero maintenance):** pinned the Gradle distribution itself —
-  `distributionSha256Sum` added to `gradle/wrapper/gradle-wrapper.properties` (the highest-leverage
-  single control; the wrapper now refuses a tampered distribution).
-- **Deferred to the maintainer (real maintenance load):** the full
-  `gradle/verification-metadata.xml` (`./gradlew --write-verification-metadata sha256 help`). It must
-  be **regenerated on every dependency/plugin bump** and can trip on platform-specific/native artifacts
-  (Testcontainers). For a solo portfolio repo the residual (mavenCentral-only + TLS + signed-artifact)
-  is bounded; the choice is *adopt full metadata* vs *record an explicit accepted-risk note*. **Not
-  auto-committed** — this is a scope call. Until decided, S6474 stays a recorded finding, not a silent
-  suppression.
+- **Distribution pin — DONE (pure win, zero maintenance):** `distributionSha256Sum` added to
+  `gradle/wrapper/gradle-wrapper.properties` (merged in PR #88). The wrapper now refuses a tampered
+  Gradle distribution — the single highest-leverage integrity control.
+- **Full `verification-metadata.xml` — NOT ADOPTED (accepted-risk decision):** rejected for this repo
+  after weighing cost vs. gain:
+  - **Cost is real and recurring.** ~201 resolved runtime deps + 22 catalog plugins; the graph includes
+    **`net.java.dev.jna` (per-OS native artifacts)** and Testcontainers, and **CI runs `ubuntu-latest`
+    while dev is macOS-aarch64** — so the metadata would need multi-classifier entries and would break
+    one environment's build whenever a classifier is missing, and must be regenerated on every
+    dependency/plugin bump.
+  - **Residual risk is bounded.** Inbound resolution is `mavenCentral()` + the Gradle plugin portal over
+    **TLS**, artifacts are **signed**, and the **Gradle distribution is now SHA-pinned**. For a
+    single-maintainer public portfolio repo (no privileged deploy target, no secret exfil surface in the
+    build), that posture is defensible; full per-artifact verification is enterprise-CI hygiene whose
+    marginal gain here doesn't cover its maintenance + cross-platform-CI-break cost.
+  - **Recorded, not silently suppressed.** The S6474 instance is marked won't-fix in the local Sonar DB
+    with this rationale, and the decision is captured in Mulch (`quality-gate-sonar`). Re-evaluate if the
+    repo ever gains a privileged CI deploy step or a second maintainer.
 
 ## 4. Coverage condition (separate decision, needs build work)
 
