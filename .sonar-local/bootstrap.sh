@@ -95,18 +95,29 @@ curl -sf "${AUTH[@]}" -X POST "$SONAR_URL/api/qualityprofiles/add_project" \
   && log "'$PROFILE_NAME' bound to $PROJECT_KEY" || log "WARN: could not bind profile (may already be)"
 
 # --- 4. the quality gate: zero NEW bugs/vulns/smells --------------------------
-# Local intent = "my change adds no findings". (No coverage condition yet — the local gate
-# owns RULE findings; a coverage floor is a possible later tightening.)
-if ! curl -sf "${AUTH[@]}" "$SONAR_URL/api/qualitygates/show?name=$(printf %s "$GATE_NAME" | $PY -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")" >/dev/null 2>&1; then
+# Local intent = "my change adds no findings" — a FINDINGS-ONLY gate. The scan runs `testClasses`
+# (no test execution, no jacoco), so 0% coverage is imported; a `new_coverage` condition could never
+# pass. (A coverage floor is a possible later tightening — it would need jacoco wired first.)
+GATE_ENC=$(printf %s "$GATE_NAME" | $PY -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")
+if ! curl -sf "${AUTH[@]}" "$SONAR_URL/api/qualitygates/show?name=$GATE_ENC" >/dev/null 2>&1; then
   log "creating quality gate '$GATE_NAME'..."
   curl -sf "${AUTH[@]}" -X POST "$SONAR_URL/api/qualitygates/create" \
     --data-urlencode "name=$GATE_NAME" >/dev/null || true
+  # 26.x seeds a new gate with the built-in "Sonar way" conditions (coverage/duplication/hotspots).
+  # Strip EVERY inherited condition first, then add exactly the three findings conditions — otherwise
+  # the imported new_coverage>=80 condition fails forever on this coverage-less findings-only gate.
+  curl -sf "${AUTH[@]}" "$SONAR_URL/api/qualitygates/show?name=$GATE_ENC" \
+    | $PY -c "import sys,json; [print(c['id']) for c in json.load(sys.stdin).get('conditions',[])]" 2>/dev/null \
+    | while read -r cid; do
+        [ -n "$cid" ] && curl -sf "${AUTH[@]}" -X POST "$SONAR_URL/api/qualitygates/delete_condition" \
+          --data-urlencode "id=$cid" >/dev/null 2>&1 || true
+      done
   for m in new_bugs new_vulnerabilities new_code_smells; do
     curl -sf "${AUTH[@]}" -X POST "$SONAR_URL/api/qualitygates/create_condition" \
       --data-urlencode "gateName=$GATE_NAME" \
       --data-urlencode "metric=$m" --data-urlencode "op=GT" --data-urlencode "error=0" >/dev/null || true
   done
-  log "gate created (new_bugs/new_vulnerabilities/new_code_smells all must be 0)"
+  log "gate created (findings-only: new_bugs/new_vulnerabilities/new_code_smells all must be 0)"
 else
   log "gate '$GATE_NAME' already exists"
 fi
