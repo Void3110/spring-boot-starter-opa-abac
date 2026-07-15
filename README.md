@@ -28,14 +28,14 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 
 ## Status
 
-✅ **1.0.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
-(unit + Testcontainers ITs + `opa test` + a newman gateway matrix + a browser-driven UI QA of the demo
-SPA), the codebase targets **Spring Boot 4.0 on Java 25**, and the library is resolvable under
-`dev.dmitriikonovalov`.
+✅ **1.1.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
+(unit + Testcontainers ITs + `opa test` + a newman gateway matrix + a static-analysis quality gate + a
+browser-driven UI QA of the demo SPA), the codebase targets **Spring Boot 4.0 on Java 25**, and the
+library is resolvable under `dev.dmitriikonovalov`.
 
 ```kotlin
 // build.gradle.kts — pull in the whole line via the BOM, then reference modules version-free
-implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.0.0"))
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.1.0"))
 implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
 ```
 
@@ -90,6 +90,17 @@ delivered as its own reviewed slice. The technical plan lives in
 [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md); the release runbook
 is [`RELEASING.md`](RELEASING.md); the full picture (architecture, ADRs, guides) is in
 [`docs/`](docs/README.md).
+
+**1.1.0 (2026-07-15):** a **static-analysis quality gate** was adopted (a pinned local SonarQube running
+the built-in `Sonar way` rules — the repo's own gate; see [`.sonar-local/`](.sonar-local/README.md)) and
+the whole codebase triaged against it: baseline **355 findings → 0** (the mechanical smells fixed, the
+by-design false-positives recorded, one supply-chain finding accepted with the Gradle distribution now
+SHA-pinned). The one *behavioural* fix is a **fail-closed hardening** in `opa-abac-core`: the OPA client's
+policy-path validation used a recursive regex that could throw `StackOverflowError` on a pathological path
+— an `Error`, not an `Exception`, so it would have *escaped* the `catch (Exception)` deny handlers and
+propagated uncaught instead of denying. It's now a linear, constant-stack scan (grammar-identical, length-
+capped, regression-tested). The release passed a deep review (zero findings) and a browser smoke test that
+re-confirmed the authorization cut is untouched end to end.
 
 ## Adopting the starter (three things you must do)
 
@@ -226,6 +237,21 @@ export DOCKER_HOST="unix://$(podman machine inspect podman-machine-default \
 
 GitHub Actions provides Docker out of the box, so CI runs these tests with no extra config.
 
+### Static-analysis quality gate
+
+This public repo has no hosted SonarQube, so a **pinned local SonarQube** *is* the static-analysis gate
+([`.sonar-local/`](.sonar-local/README.md)) — the built-in `Sonar way` Java rules on a reproducible
+analyzer pin, findings-only. It reports on the files changed vs `main`, so a contributor sees a clean
+signal before pushing:
+
+```bash
+docker compose -f .sonar-local/docker-compose.yml up -d && ./.sonar-local/bootstrap.sh  # once per machine
+./.sonar-local/sonar-local.sh          # findings on files changed vs main → expect CLEAN
+```
+
+The full tree is at **0 open findings**; standing by-design false-positives are recorded, so a non-clean
+result on a change is a real signal, not noise.
+
 ## How this repo is built — AI-assisted engineering (the second deliverable)
 
 Beyond the library, this repo is a deliberate, **studyable case study in high-autonomy AI-assisted
@@ -324,6 +350,12 @@ spurious "provisioning failed" banner on first login (dev-mode, cosmetic, **no**
 impact). It was fixed the same day (a single-flight guard + treating a `409`-on-create as success) and
 re-verified live with a fresh user. That's the point of the browser gate: it catches the experience-level
 warts the assertion suites structurally can't see.
+
+For **1.1.0** the browser gate ran again as a **delta** pass, focused on the paths the release touched
+(the fail-closed OPA-client path-validation rewrite): allow paths round-trip, deny paths deny (outsider's
+empty list + a single-GET deep-link `403`), and `_actions` differ per identity on the *same* resource —
+**all PASS, zero defects**, confirming the fix is transparent to the observable cut. Record:
+[`docs/code-review/PRE-PUBLISH-UI-QA-2026-07-15.md`](docs/code-review/PRE-PUBLISH-UI-QA-2026-07-15.md).
 
 ## Requirements
 
