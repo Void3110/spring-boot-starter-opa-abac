@@ -8,7 +8,7 @@ domains:
   code-review-process: {}
   autonomous-runs: {}
   load-testing: {}
-  sonar: {}
+  quality-gate-sonar: {}
 governance:
   max_entries: 100
   warn_entries: 150
