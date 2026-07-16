@@ -128,13 +128,30 @@ Project expertise lives in `.mulch/`. Before a non-trivial task: `ml prime <doma
 
 ### Domains
 
-| Domain | Holds |
-|--------|-------|
-| `opa-abac` | The cross-cutting technical store — patterns/failures/decisions about the library + rig. |
-| `rego-policy` · `spring-security-integration` · `spring-data-filtering` · `api-design` | Surface-specific technical expertise; prime the one matching the change. |
-| `code-review-process` | How reviews are run (the `/deep-review` process meta). |
-| `quality-gate-sonar` | The local-Sonar gate: standing by-design false-positives + baseline context (prime before judging findings). `quality-gate-` prefixes the per-gate domain family (a coverage gate would be `quality-gate-coverage`); `ml prime` takes several at once but does **not** glob. |
-| **`autonomous-runs`** | **Per-slice record of how the autonomous *run itself* went** — see below. |
+Fourteen domains, split by **recall moment** — prime the row matching your task, not a catch-all.
+`ml prime` takes several names at once but does **not** glob, so rows that list **two** domains mean
+*prime both* (they're genuinely co-recalled). **Match on the task, not the name.** (The former single
+`opa-abac` catch-all was decomposed 2026-07-16 — see the vault note
+`01-Learning/Tools-Ecosystem/2026-07-16-opa-abac-Mulch-Domain-Decomposition.md`. If you `ml prime
+opa-abac` and it errors, it's gone — use this table.)
+
+| When the task is… | `ml prime` |
+|-------------------|------------|
+| writing/editing a **`.rego` rule** — allow/filter/bulk entrypoints, tag-match quantifiers, partial-eval-friendly rule shapes, deny-overrides, per-type sibling-drift | `rego-policy` |
+| the **role / permission / team data model** — memberships, role≠grant, permission categories + expansion, control-plane verbs, escalation/subset gates, tag dictionary, ownership/squat, membership-as-sole-access, the supervisor read-all thread | `opa-abac-authz-model` `spring-security-integration` |
+| the **Spring authz mechanism & wiring** — @OpaPreAuthorize/OpaAuthorizationManager, JWT→AbacContext extraction, auto-config @Conditional/BPP ordering, AbacResourceResolver SPI, the fail-closed spine, RoleDefinitionSupplier / resilience (CallGuard/breaker/retry) | `spring-security-integration` |
+| **list-filtering, partial-eval→JPA, hierarchy, persistence base** — Compile-API DNF residual → Specification over tags JSONB, ltree/GiST/re-parent, ancestor-walk SPI, @Version/TOCTOU, mutate()/pessimistic-lock | `spring-data-filtering` |
+| the **REST/API contract** — RFC-7807 problem+json, error-code vocab, pagination envelopes, OpenAPI codegen, 204-only endpoint pitfalls | `api-design` |
+| running/debugging the **local Docker rig** — APISIX/etcd/Keycloak/OPA/Jaeger compose, podman-vs-Docker, image-rebuild staleness, deploy.sh ordering/exit-codes, Liquibase/realm-import | `opa-abac-rig-deploy-ops` |
+| authoring/debugging a **newman e2e matrix** — dual-token allow/deny matrices, fixture-id/subject registry, asserts-the-cut, envelope-shape migrations | `opa-abac-e2e-suite` |
+| a **load run** — k6/ADR-0021 host-run two-pass, ceiling ladders, knee/validity gates, Jaeger-attributed amplification, quiescent-host RC=99 | `load-testing` |
+| **publishing a release** — Maven Central (vanniktech per-module allow-list, BOM/java-platform, GPG signing/Central Portal), pre-publish secret/CVE/zero-config/QA sweeps, release smoke-test | `opa-abac-publish` |
+| **the Spring Boot 4 / Framework 7 surface** (baseline) — module→artifact splits (locate classes in jars), Jackson-3↔Hibernate jsonb, OTEL-agent trace attribution, SB-BOM↔junit-bom alignment; prime when touching the dependency/runtime plumbing | `opa-abac-sb4-integration` |
+| a **`/deep-review` or `/security-review` pass** — the review process meta + accumulated finding patterns (adversarial-verify, sibling-sweep, completeness-critic) | `code-review-process` |
+| **planning a slice** (grill-me / decompose) — the AI-assisted method (loop framing, ADR-in-decomposition, clean-room build check) **plus** prior run retrospectives | `opa-abac-methodology` `autonomous-runs` |
+| judging **local-Sonar gate** findings — standing by-design false-positives + baseline context. `quality-gate-` prefixes the per-gate family (a coverage gate would be `quality-gate-coverage`). | `quality-gate-sonar` |
+
+The `autonomous-runs` domain is process-level (per-slice run retrospectives) — see below.
 
 ### `autonomous-runs` — the run-retrospective domain (feeds planning)
 
