@@ -1,6 +1,5 @@
 version: '1'
 domains:
-  opa-abac: {}
   rego-policy: {}
   spring-security-integration: {}
   spring-data-filtering: {}
@@ -9,6 +8,12 @@ domains:
   autonomous-runs: {}
   load-testing: {}
   quality-gate-sonar: {}
+  opa-abac-authz-model: {}
+  opa-abac-rig-deploy-ops: {}
+  opa-abac-e2e-suite: {}
+  opa-abac-methodology: {}
+  opa-abac-publish: {}
+  opa-abac-sb4-integration: {}
 governance:
   max_entries: 100
   warn_entries: 150
