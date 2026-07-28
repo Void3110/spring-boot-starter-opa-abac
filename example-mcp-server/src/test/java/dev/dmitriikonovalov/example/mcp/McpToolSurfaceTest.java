@@ -53,6 +53,7 @@ class McpToolSurfaceTest {
                     .hasValueSatisfying(descriptor -> {
                         assertThat(descriptor.action()).isNotBlank();
                         assertThat(descriptor.category()).isNotBlank();
+                        assertThat(descriptor.targetType()).isNotBlank();
                         assertThat(descriptor.riskTags()).isNotEmpty();
                     });
         }
@@ -64,7 +65,15 @@ class McpToolSurfaceTest {
 
         assertThat(product.action()).isEqualTo("view");
         assertThat(product.category()).isEqualTo("READ");
+        assertThat(product.targetType()).isEqualTo("product");
         assertThat(product.riskTags()).containsExactly("medium");
+
+        // The target type is what lets the tool-gate derive the ceiling through the SHIPPED role
+        // model, and it is the type the catalog service will gate again downstream.
+        assertThat(registry.find(CatalogTools.LIST_CATALOGS).orElseThrow().targetType())
+                .isEqualTo("catalog");
+        assertThat(registry.find(CatalogTools.LIST_CATEGORIES).orElseThrow().targetType())
+                .isEqualTo("category");
 
         // The allow/deny contrast this slice demonstrates: the product read sits a risk tier above the
         // structural reads, so a capability capped at "low" is narrowed without gating any mutation.

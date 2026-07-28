@@ -88,8 +88,8 @@ class ToolRegistryValidatorTest {
         @Bean
         ToolRegistry toolRegistry() {
             return new ToolRegistry(List.of(
-                    new ToolDescriptor("list_catalogs", "list", "READ", Set.of("low")),
-                    new ToolDescriptor("get_catalog", "view", "READ", Set.of("low"))));
+                    new ToolDescriptor("list_catalogs", "list", "READ", "catalog", Set.of("low")),
+                    new ToolDescriptor("get_catalog", "view", "READ", "catalog", Set.of("low"))));
         }
 
         @Bean
@@ -104,7 +104,7 @@ class ToolRegistryValidatorTest {
         @Bean
         ToolRegistry toolRegistry() {
             return new ToolRegistry(
-                    List.of(new ToolDescriptor("list_catalogs", "list", "READ", Set.of("low"))));
+                    List.of(new ToolDescriptor("list_catalogs", "list", "READ", "catalog", Set.of("low"))));
         }
 
         @Bean
@@ -119,9 +119,9 @@ class ToolRegistryValidatorTest {
         @Bean
         ToolRegistry toolRegistry() {
             return new ToolRegistry(List.of(
-                    new ToolDescriptor("list_catalogs", "list", "READ", Set.of("low")),
-                    new ToolDescriptor("get_catalog", "view", "READ", Set.of("low")),
-                    new ToolDescriptor("delete_everything", "delete", "WRITE", Set.of("high"))));
+                    new ToolDescriptor("list_catalogs", "list", "READ", "catalog", Set.of("low")),
+                    new ToolDescriptor("get_catalog", "view", "READ", "catalog", Set.of("low")),
+                    new ToolDescriptor("delete_everything", "delete", "WRITE", "product", Set.of("high"))));
         }
 
         @Bean
@@ -136,8 +136,8 @@ class ToolRegistryValidatorTest {
         @Bean
         ToolRegistry toolRegistry() {
             return new ToolRegistry(List.of(
-                    new ToolDescriptor("list_catalogs", "list", "READ", Set.of("low")),
-                    new ToolDescriptor("get_catalog", "view", "", Set.of("low"))));
+                    new ToolDescriptor("list_catalogs", "list", "READ", "catalog", Set.of("low")),
+                    new ToolDescriptor("get_catalog", "view", "", "catalog", Set.of("low"))));
         }
 
         @Bean

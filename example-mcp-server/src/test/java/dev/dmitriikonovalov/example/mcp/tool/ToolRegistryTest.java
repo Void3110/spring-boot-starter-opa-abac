@@ -11,9 +11,9 @@ import org.junit.jupiter.api.Test;
 class ToolRegistryTest {
 
     private static final ToolDescriptor LIST_CATALOGS =
-            new ToolDescriptor("list_catalogs", "list", "READ", Set.of("low"));
+            new ToolDescriptor("list_catalogs", "list", "READ", "catalog", Set.of("low"));
     private static final ToolDescriptor GET_PRODUCT =
-            new ToolDescriptor("get_product", "view", "READ", Set.of("medium"));
+            new ToolDescriptor("get_product", "view", "READ", "product", Set.of("medium"));
 
     @Test // U1
     void resolvesADeclaredTool() {
@@ -48,7 +48,7 @@ class ToolRegistryTest {
 
     @Test // U1 — an ambiguous declaration would make the gate's answer depend on map ordering
     void rejectsDuplicateToolNames() {
-        ToolDescriptor duplicate = new ToolDescriptor("list_catalogs", "view", "READ", Set.of("high"));
+        ToolDescriptor duplicate = new ToolDescriptor("list_catalogs", "view", "READ", "catalog", Set.of("high"));
 
         assertThatThrownBy(() -> new ToolRegistry(List.of(LIST_CATALOGS, duplicate)))
                 .isInstanceOf(IllegalArgumentException.class)

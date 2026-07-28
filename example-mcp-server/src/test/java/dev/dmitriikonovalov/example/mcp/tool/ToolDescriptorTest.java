@@ -16,7 +16,7 @@ class ToolDescriptorTest {
     @Test // U1
     void carriesTheDeclaredTripleVerbatim() {
         ToolDescriptor descriptor =
-                new ToolDescriptor("get_product", "view", "READ", Set.of("medium", "pii"));
+                new ToolDescriptor("get_product", "view", "READ", "product", Set.of("medium", "pii"));
 
         assertThat(descriptor.name()).isEqualTo("get_product");
         assertThat(descriptor.action()).isEqualTo("view");
@@ -27,7 +27,7 @@ class ToolDescriptorTest {
     @Test // U2 — the risk tags cannot be mutated after declaration
     void riskTagsAreDefensivelyCopiedAndImmutable() {
         Set<String> mutable = new HashSet<>(Set.of("low"));
-        ToolDescriptor descriptor = new ToolDescriptor("t", "view", "READ", mutable);
+        ToolDescriptor descriptor = new ToolDescriptor("t", "view", "READ", "product", mutable);
 
         mutable.add("high");
 
@@ -38,7 +38,7 @@ class ToolDescriptorTest {
 
     @Test // U2
     void rejectsABlankCategory() {
-        assertThatThrownBy(() -> new ToolDescriptor("get_product", "view", "  ", Set.of("low")))
+        assertThatThrownBy(() -> new ToolDescriptor("get_product", "view", "  ", "product", Set.of("low")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("get_product")
                 .hasMessageContaining("category");
@@ -46,28 +46,28 @@ class ToolDescriptorTest {
 
     @Test // U2
     void rejectsABlankAction() {
-        assertThatThrownBy(() -> new ToolDescriptor("get_product", null, "READ", Set.of("low")))
+        assertThatThrownBy(() -> new ToolDescriptor("get_product", null, "READ", "product", Set.of("low")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("action");
     }
 
     @Test // U2
     void rejectsABlankName() {
-        assertThatThrownBy(() -> new ToolDescriptor("", "view", "READ", Set.of("low")))
+        assertThatThrownBy(() -> new ToolDescriptor("", "view", "READ", "product", Set.of("low")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("name");
     }
 
     @Test // U2 — no risk tags at all is unclassifiable, not "no risk"
     void rejectsAnEmptyRiskTagSet() {
-        assertThatThrownBy(() -> new ToolDescriptor("get_product", "view", "READ", Set.of()))
+        assertThatThrownBy(() -> new ToolDescriptor("get_product", "view", "READ", "product", Set.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("risk tags");
     }
 
     @Test // U2
     void rejectsABlankRiskTag() {
-        assertThatThrownBy(() -> new ToolDescriptor("get_product", "view", "READ", Set.of(" ")))
+        assertThatThrownBy(() -> new ToolDescriptor("get_product", "view", "READ", "product", Set.of(" ")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("risk tag");
     }

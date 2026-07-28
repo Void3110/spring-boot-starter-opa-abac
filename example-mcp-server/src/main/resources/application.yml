@@ -29,6 +29,32 @@ example:
       actor-claim: act_chain
       max-chain-depth: 4
       max-claim-length: 2048
+    # The demo agent registry. Every dimension NARROWS — the tool-gate intersects these with the
+    # principal's ceiling in Rego, so nothing here can grant an agent what its principal lacks.
+    # allowed-tools is MANDATORY: an empty list denies every tool, it does not mean "unrestricted".
+    agents:
+      profiles:
+        # Strictly narrower than its principal: structural reads only, capped below get_product's
+        # medium risk tier. This is the persona the roster cut is demonstrated with.
+        - actor-id: agent-readonly
+          allowed-categories: [READ]
+          allowed-tools: [list_catalogs, get_catalog]
+          allowed-actions: [view, list]
+          max-risk-tag: low
+        # Deliberately WIDER than any demo principal — it lists WRITE and every verb. It exists to
+        # prove on the live rig, not only in `opa test`, that a capability wider than the ceiling
+        # yields the CEILING: this agent still cannot do anything its principal cannot.
+        - actor-id: agent-overreach
+          allowed-categories: [READ, WRITE, TAG, GRANT]
+          allowed-tools: [list_catalogs, get_catalog, list_categories, get_product]
+          allowed-actions: [view, list, create, update, delete]
+          max-risk-tag: high
+        # A known agent with zero capability — authoritative-empty, distinct from an outage.
+        - actor-id: agent-revoked
+          allowed-categories: []
+          allowed-tools: []
+          allowed-actions: []
+          max-risk-tag: ""
 
 # The starter: this service reads the forwarded bearer into an AbacAuthentication. The OPA client is
 # configured from T4, when the tool-gate starts asking policy questions.

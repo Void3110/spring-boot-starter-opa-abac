@@ -35,6 +35,9 @@ public class ToolRegistrationConfiguration {
     private static final String CATEGORY_READ = "READ";
     private static final String ACTION_LIST = "list";
     private static final String ACTION_VIEW = "view";
+    private static final String TYPE_CATALOG = "catalog";
+    private static final String TYPE_CATEGORY = "category";
+    private static final String TYPE_PRODUCT = "product";
     private static final String RISK_LOW = "low";
     private static final String RISK_MEDIUM = "medium";
 
@@ -42,13 +45,17 @@ public class ToolRegistrationConfiguration {
     ToolRegistry toolRegistry() {
         return new ToolRegistry(List.of(
                 new ToolDescriptor(
-                        CatalogTools.LIST_CATALOGS, ACTION_LIST, CATEGORY_READ, Set.of(RISK_LOW)),
+                        CatalogTools.LIST_CATALOGS, ACTION_LIST, CATEGORY_READ, TYPE_CATALOG,
+                        Set.of(RISK_LOW)),
                 new ToolDescriptor(
-                        CatalogTools.GET_CATALOG, ACTION_VIEW, CATEGORY_READ, Set.of(RISK_LOW)),
+                        CatalogTools.GET_CATALOG, ACTION_VIEW, CATEGORY_READ, TYPE_CATALOG,
+                        Set.of(RISK_LOW)),
                 new ToolDescriptor(
-                        CatalogTools.LIST_CATEGORIES, ACTION_LIST, CATEGORY_READ, Set.of(RISK_LOW)),
+                        CatalogTools.LIST_CATEGORIES, ACTION_LIST, CATEGORY_READ, TYPE_CATEGORY,
+                        Set.of(RISK_LOW)),
                 new ToolDescriptor(
-                        CatalogTools.GET_PRODUCT, ACTION_VIEW, CATEGORY_READ, Set.of(RISK_MEDIUM))));
+                        CatalogTools.GET_PRODUCT, ACTION_VIEW, CATEGORY_READ, TYPE_PRODUCT,
+                        Set.of(RISK_MEDIUM))));
     }
 
     /**
