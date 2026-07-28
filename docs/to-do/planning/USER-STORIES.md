@@ -228,6 +228,32 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   [[0020-user-directory-port|0020]] + the control-plane vocabulary, ADR
   [[0015-control-plane-vocabulary-categorization|0015]])
 
+### Epic J — "An AI agent acting for me can never exceed me — and usually does less" (agent tool-call authorization)
+
+> The starter secures what a **person** calls. An AI agent calling tools on someone's behalf is a second
+> caller shape: it holds a delegated token and picks actions itself. These stories capture the cut a
+> **dual-identity** decision makes — the human is the ceiling, the agent's capability profile only narrows
+> — proven by [[AGENT-TOOL-AUTHZ]] (Phase 9) on a new `example-mcp-server`. Planned, not yet shipped.
+
+- **J1** *As a user whose agent acts for me*, the agent can never do anything **I** couldn't do myself: my
+  own role is the ceiling, and a capability profile that claims more than my role grants still yields only
+  my role's actions. — **Phase 9 (agent tool-call authz)** 📋 (the no-widening case, proven in `opa test`
+  **and** live on the rig)
+- **J2** *As a user*, my agent is further **restricted** to the job I gave it: a capability profile narrower
+  than my role means the agent may call only that subset — an out-of-capability tool is denied even though
+  I could have called it myself. — **Phase 9** 📋
+- **J3** *As an agent*, I see only the tools I may actually call — the advertised tool list is filtered to
+  my effective authority, so I don't burn turns discovering denials. The list is a **hint**: a tool listed
+  a moment ago whose capability was revoked is still denied when I call it. — **Phase 9** 📋
+- **J4** *As an agent*, a denial tells me **which layer** refused (the tool-gate vs the resource's own
+  policy) as a structured, advisory error — enough to pick another tool or ask for escalation, never a
+  silent failure and never a stack trace. — **Phase 9** 📋
+- **J5** *As an operator*, when the decision service is unreachable the agent path **denies** and the tool
+  list degrades to un-filtered (never empty, never wider): no outage ever grants an agent something it
+  couldn't do while healthy. — **Phase 9** 📋 (the fail-closed drill)
+- **J6** *As a person signing in normally*, nothing changes: a token with no agent actor is an ordinary
+  human call, decided exactly as before. — **Phase 9** 📋
+
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
 > much as a re-implementation of Epic B's decisions in a different place, to teach RBAC-vs-ABAC-vs-ReBAC.
