@@ -14,10 +14,19 @@ import java.util.Optional;
  *
  * <p>Duplicate names are rejected at construction. Two tools sharing a name would make the gate's answer
  * depend on map ordering, which is exactly the kind of ambiguity a policy decision must not have.
+ *
+ * <h2>Order is part of the contract</h2>
+ * {@link #all()} and {@link #names()} return <strong>declaration order</strong>, held in a separate
+ * immutable list rather than read back out of the lookup map. {@code Map.copyOf} gives no ordering
+ * guarantee at all — its iteration order is randomized <em>per JVM run</em> — so serving the roster from
+ * the map would make the advertised tool order nondeterministic, and would break any caller that pairs
+ * this list positionally with another. The roster pre-flight does exactly that: it sends one context per
+ * tool and matches the returned booleans <em>by index</em>.
  */
 public final class ToolRegistry {
 
     private final Map<String, ToolDescriptor> byName;
+    private final List<ToolDescriptor> ordered;
 
     public ToolRegistry(List<ToolDescriptor> descriptors) {
         Map<String, ToolDescriptor> index = new LinkedHashMap<>();
@@ -29,6 +38,7 @@ public final class ToolRegistry {
             }
         }
         this.byName = Map.copyOf(index);
+        this.ordered = List.copyOf(index.values());
     }
 
     /** The descriptor for {@code toolName}, or empty when the tool was never declared. */
@@ -36,13 +46,13 @@ public final class ToolRegistry {
         return toolName == null ? Optional.empty() : Optional.ofNullable(byName.get(toolName));
     }
 
-    /** Every declared tool, in declaration order. */
+    /** Every declared tool, in declaration order — stable within and across runs. */
     public List<ToolDescriptor> all() {
-        return List.copyOf(byName.values());
+        return ordered;
     }
 
-    /** The declared tool names. */
-    public java.util.Set<String> names() {
-        return byName.keySet();
+    /** The declared tool names, in declaration order — positionally aligned with {@link #all()}. */
+    public List<String> names() {
+        return ordered.stream().map(ToolDescriptor::name).toList();
     }
 }

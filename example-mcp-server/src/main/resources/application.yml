@@ -22,12 +22,27 @@ example:
       base-url: http://localhost:8080
       connect-timeout: 2s
       read-timeout: 5s
+    identity:
+      # The claim carrying RFC 8693 `act` semantics. It MUST also appear in
+      # opa.abac.subject.attribute-claims below — ActorClaimWiringCheck fails startup if it does not,
+      # because a claim that never reaches the subject would make every agent call read as a human one.
+      actor-claim: act_chain
+      max-chain-depth: 4
+      max-claim-length: 2048
 
 # The starter: this service reads the forwarded bearer into an AbacAuthentication. The OPA client is
 # configured from T4, when the tool-gate starts asking policy questions.
 opa:
   abac:
     enabled: true
+    subject:
+      # Explicit acknowledgment that a signature-validating gateway (APISIX openid-connect) fronts this
+      # app — the starter's JWT extractor decodes the forwarded token WITHOUT verifying its signature,
+      # so it stays disabled until this is set. Never enable gateway-less.
+      trust-forwarded-jwt: true
+      # Carries the delegation claim into AbacContext.Subject#attributes, where the extractor reads it.
+      attribute-claims:
+        - act_chain
 
 management:
   endpoints:
