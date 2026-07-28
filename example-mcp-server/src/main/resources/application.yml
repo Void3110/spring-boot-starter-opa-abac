@@ -55,6 +55,20 @@ example:
           allowed-tools: []
           allowed-actions: []
           max-risk-tag: ""
+    authz:
+      # The OPA document the tool-gate asks — the PACKAGE path. The shipped client POSTs
+      # /v1/data/<policy-path> for one decision and /v1/data/<policy-path>/bulk for a batch, so
+      # 'agent_tools/allow' here would make the batch resolve a path that does not exist.
+      policy-path: agent_tools
+      agent-gate:
+        # OFF removes the agent NARROWING only: the call is then evaluated as an ordinary human
+        # principal's would be, and the catalog service still enforces that principal's ceiling on
+        # every resource. There is deliberately no switch that disables call-time enforcement.
+        enabled: true
+      role-source:
+        # The user-management service — where the principal's type-level ceiling is resolved from.
+        base-url: http://localhost:8081
+        timeout: 2s
 
 # The starter: this service reads the forwarded bearer into an AbacAuthentication. The OPA client is
 # configured from T4, when the tool-gate starts asking policy questions.
