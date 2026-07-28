@@ -69,6 +69,25 @@ ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2   # identity search on the user-servi
                                              # (force-enables ENABLE_OIDC + ENABLE_USER_SERVICE)
 ```
 
+### The MCP server module (Phase 9, AGENT-TOOL-AUTHZ)
+
+`example-mcp-server` is the **third** example app: a Spring AI **2.0.0** MCP server whose `@McpTool`
+methods proxy the catalog service's REST API with the caller's own bearer, gated by a tool-gate policy
+(`agent_tools.rego`). It consumes the shipped starter like any adopter — **no library module changes**.
+
+Two things about its build are non-obvious:
+
+- Spring AI 2.0.0's starter POM declares **Spring Boot 4.1.0**, but the dependency-management plugin
+  imports *this* repo's Boot BOM (4.0.7) first, so every `spring-boot-*` artifact resolves to 4.0.7. The
+  MCP auto-configuration starts cleanly on that baseline (verified, not assumed).
+- The module **excludes `opa-abac-spring-data`** from the starter: it owns no persistence, and the
+  transitive `spring-boot-starter-data-jpa` would otherwise make Boot auto-configure a `DataSource` and
+  fail at startup. Excluding it lets the JPA auto-configurations back off on an absent classpath.
+
+```bash
+./gradlew :example-mcp-server:test
+```
+
 ### Container runtime for tests (important)
 
 Integration tests (`CatalogCrudIT`) run against **real Postgres via Testcontainers** — never H2.
@@ -87,6 +106,7 @@ opa-abac-spring-data/           # partial-eval → JPA Specification data filter
 opa-abac-keycloak-directory/    # OPTIONAL: Keycloak-admin impl of the UserDirectory port (ADR 0020)
 opa-abac-spring-boot-starter/   # auto-configuration (the published starter)
 example-catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
+example-mcp-server/             # Spring AI MCP server: @McpTool catalog proxies behind an OPA tool-gate
 compose.yaml · profile.sh       # local infra (Postgres now; Keycloak/APISIX/OPA/Jaeger added incrementally)
 docs/                           # Obsidian vault — see docs/README.md
 .claude/skills/                 # decompose, deep-review (local-only; rego-skill & mulch are global)

@@ -61,7 +61,7 @@ or the smaller result**, and each kill-switch's OFF state is never wider than it
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Walking skeleton: `example-mcp-server` + declared `@McpTool` catalog proxies (no authz) | 📋 TODO |
+| T1 | Walking skeleton: `example-mcp-server` + declared `@McpTool` catalog proxies (no authz) | ✅ DONE |
 | T2 | Dual identity: `DelegationChainExtractor` (RFC 8693 `act` semantics, fail-closed) | 📋 TODO |
 | T3 | Tool-gate rego (ceiling ∩ capability, in Rego) + `AgentCapabilitySupplier` | 📋 TODO |
 | T4 | The PEP: `@McpTool` interception, layer-naming advisory deny, kill-switch | 📋 TODO |

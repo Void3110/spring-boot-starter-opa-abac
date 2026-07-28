@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: example-mcp-server
+  ai:
+    mcp:
+      server:
+        name: opa-abac-catalog-tools
+        version: 1.0.0
+        # The tool surface is declared with @McpTool annotations (see CatalogTools) and discovered by
+        # Spring AI's annotation scanner.
+        annotation-scanner:
+          enabled: true
+
+server:
+  port: 8082
+
+# Where the tools proxy to. On the rig this is the catalog service's IN-NETWORK address; the tools never
+# reach it through a published host port.
+example:
+  mcp:
+    catalog:
+      base-url: http://localhost:8080
+      connect-timeout: 2s
+      read-timeout: 5s
+
+# The starter: this service reads the forwarded bearer into an AbacAuthentication. The OPA client is
+# configured from T4, when the tool-gate starts asking policy questions.
+opa:
+  abac:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    dev.dmitriikonovalov.example.mcp: INFO
