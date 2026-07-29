@@ -146,6 +146,17 @@ Project expertise lives in `.mulch/`. Before a non-trivial task: `ml prime <doma
 > `git restore --staged .`** so the sync commit touches `.mulch/` only — otherwise it sweeps unrelated
 > staged code into the "mulch: update expertise" commit.
 
+> **The prime-budget trap.** `ml prime` applies a **4000-token budget per domain** and silently
+> truncates what doesn't fit (no warning). Domains near ~50 records overflow it —
+> `spring-security-integration` measurably truncates today. Prime large rows with
+> **`--budget 8000`** (output saturates there; the flag is CLI-only, there is no config knob).
+
+> **Calibration (2026-07-29 — don't "fix" it back).** `governance.max_entries=150` (was 100,
+> incoherently below `warn_entries`) and `classification_defaults.shelf_life.tactical=90` (was 14
+> days, which mis-read 230 of 282 durable records as stale). "Stale" in this store means
+> mis-classification, not decay — **never bulk-`ml prune` on staleness alone**; a couple dozen
+> flagged records in `ml doctor` is the healthy steady state.
+
 ### Domains
 
 Fourteen domains, split by **recall moment** — prime the row matching your task, not a catch-all.
