@@ -58,16 +58,27 @@ summary) — their findings come back to you; the code, tests, and docs are writ
    What-NOT-to-touch. **This is your work list.** **Amendment 2026-07-31:** T5's mechanism was
    re-settled after the T1–T4 run verified that the originally assumed `tools/list` hook does not
    exist in the SDK — the rewritten T5 section and `00-DESIGN.md` §3.2 are **authoritative** over
-   anything else in this package that still implies such a hook. Two failure classes, never
-   conflated: an adapter **installation** failure fails startup (never degrade); a **runtime**
-   roster failure degrades to the unfiltered list (never fail the request, never an empty roster).
-   The QA doc's roster/e2e blocks were extended the same day (I22–I28, E10–E11).
+   anything else in this package, on **both** the mechanism *and the roster failure semantics*.
+   **Three** failure classes, never conflated:
+   1. an adapter **installation** failure fails startup (never degrade);
+   2. the **batch** returning all-`false` — or, from a substituted `OpaClient`, a wrong-length vector
+      — is **authoritative ⇒ an empty roster**. The shipped `allowAll` is total and fail-closed: it
+      never throws and normalises outage, timeout, non-200, malformed body and length mismatch alike
+      into all-`false`, so a PDP outage is *indistinguishable* here from a zero-capability agent, and
+      an empty roster is correct in both cases (during that outage every `tools/call` denies too);
+   3. only the edges **outside** the batch — an unreadable roster identity, and the
+      capability/ceiling lookups preceding it — degrade to the **unfiltered** list + WARN.
+
+   Never fabricate a tool, in any mode. *(This supersedes the earlier blanket "a runtime roster
+   failure degrades to the unfiltered list, never an empty roster", which was written against a
+   failure signal this seam cannot emit.)* The QA doc's roster/e2e blocks were extended the same day
+   (I22–I31, E10–E11).
 4. **The pinned decisions** — [[0028-agent-tool-call-authorization|ADR 0028]] (the two-layer decision
    model, enforcement-by-composition with no role propagation, the additive dual-identity subject
    shape, example-first packaging), plus the three it builds on:
    [[0014-supplier-outage-error-distinct|ADR 0014]] (the tri-state supplier contract the capability
    seam copies), [[0023-request-scoped-resolution-memoization|ADR 0023]] (the memo scope this slice
-   narrows to a turn), [[0024-batch-role-resolution|ADR 0024]] (the batch `allowAll` primitive the
+   narrows to a turn), [[0016-action-enrichment-affordance-metadata|ADR 0016]] (the `allowAll` batch primitive the
    roster pre-flight reuses).
 5. `10-QA-TEST-CASES.md` — the unit / integration / e2e cases your work must satisfy.
 6. **Context you will be checked against** in the review gate (step 5): the shipped
@@ -170,7 +181,8 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
      [[B2-SUPPLIER-OUTAGE]] tri-state supplier contract (resolved / authoritative-empty /
      outage-throws, distinct in the log and the error code, identical to the caller), the
      [[B3-HTTP-RESILIENCE]] edge-wrapping discipline for the OPA and catalog calls, and the
-     [[0024-batch-role-resolution|ADR 0024]] batch `allowAll` primitive for the roster.
+     [[0016-action-enrichment-affordance-metadata|ADR 0016]] batch `allowAll` primitive for the roster —
+     **total and fail-closed**, unlike ADR 0024's `lookupAll`, which throws for the whole batch.
    - **SOLID / decomposition** — cohesive (SRP), depends on interfaces (DIP); anything to split/simplify?
    - **Static-analysis gate — the local Sonar scan is CLEAN on the changed files.** For a ticket that
      touches `.java`, run `./.sonar-local/sonar-local.sh` (the pinned local SonarQube,
@@ -187,8 +199,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
      the catalog API and OPA, asserting the caller's bearer is forwarded byte-for-byte with no
      role/capability/acting-as header, that a tool-gate deny means the catalog stub is **never called**,
      that every OPA failure mode (5xx, timeout, malformed body, missing `allow` binding) denies, and
-     that a short/long `allowAll` response degrades to the **unfiltered** roster rather than an
-     index-shifted partial filter. Fix-until-green.
+     that a **dead PDP** yields the **empty** roster (authoritative — the shipped `allowAll` cannot
+     signal failure) and that a **stubbed** `OpaClient` returning a wrong-length vector also lands on
+     the **empty** roster, never the unfiltered list and never an index-shifted partial filter.
+     Fix-until-green.
    - **T3:** `opa test infra/opa/policies -v` — the new `agent_tools_test.rego` **and** every
      pre-existing policy test still green (an additive document must not shadow a sibling). The
      load-bearing case is a capability **wider** than the ceiling yielding the **ceiling**.
@@ -202,10 +216,13 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
      the mid-run PDP-kill drill proving zero widening. Fix-until-green.
 
 7. **Update documentation (after each ticket).** Tick the ticket in the `AGENT-TOOL-AUTHZ.md` status
-   table; record real values/decisions in `STATUS-0N.md`. The ticket that finalizes a guide topic
-   writes/reconciles `docs/guides/AGENT-TOOL-AUTHORIZATION.md` (T6 — the two-layer model, the
-   dual-identity claim shape, the capability tri-state, the roster-is-a-hint rule, the fail-closed
-   table, the scope boundary) and ticks the guide index in `docs/README.md`, the [[POC-ROADMAP]]
+   table; record real values/decisions in `STATUS-0N.md`. `docs/guides/AGENT-TOOL-AUTHORIZATION.md` is
+   written across **two** tickets, deliberately: **T5 CREATES it** (the two-layer model, the
+   dual-identity claim shape, the capability tri-state, the roster-is-a-hint rule, its own roster
+   section, and the explicit-`STREAMABLE` requirement) so the slice has a guide even if the run stops
+   after T5 — T1–T4 shipped with none; **T6 EXTENDS it** (the rig story, the e2e cut, the fail-closed
+   table, the scope boundary). T6 must not "create" a file T5 already wrote. T6 also ticks the guide
+   index in `docs/README.md`, the [[POC-ROADMAP]]
    Phase 9 row, and the ADR index entry for
    [[0028-agent-tool-call-authorization|ADR 0028]]. Root/project `CLAUDE.md` gets the new module + the
    `ENABLE_MCP` rig flag, since both are new build/run steps.
@@ -258,8 +275,9 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   header, and never a minted, exchanged, or rewritten token; agent capability **narrows only, never
   grants** — a capability wider than the principal's ceiling yields the ceiling, and the intersection
   is computed **in Rego** so it stays auditable; **call-time enforcement is always authoritative** and
-  the roster is a hint (a listed tool never skips the gate, and a failed roster batch degrades to the
-  **unfiltered** list, never to an empty one and never to a fabricated tool); the tool-gate runs
+  the roster is a hint (a listed tool never skips the gate; an all-`false` **batch** result is
+  authoritative ⇒ the **empty** roster, while only the edges *outside* the batch degrade to the
+  unfiltered list; and a tool is **never fabricated** in any mode); the tool-gate runs
   **before** the tool body, so a denied call resolves no target and makes no downstream request; a
   **malformed** agent claim denies while an **absent** one is an ordinary human call; and **zero**
   `opa-abac-*` module, existing example service, or pre-existing `.rego` document is created or
@@ -284,19 +302,22 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   call, and the mid-run PDP-kill drill showing zero widening. T3's wider-capability-yields-the-ceiling
   `opa test` case is the single assertion the whole agent model rests on.
 - **The fail-closed edge to eyeball** — the **roster degradation path** and the **kill-switch OFF
-  states**. Degrading a failed `allowAll` to the *unfiltered* list only stays safe while the call-time
-  gate is untouchable; if an agent ever adds a roster-derived cache or an "already checked in the
-  pre-flight" shortcut, the hint has silently become a grant. Likewise check that
+  states**. The degradation-to-unfiltered path now covers only the edges *outside* the batch (an
+  unreadable identity, the capability/ceiling lookups); the batch itself lands on the **empty**
+  roster. Either way it only stays safe while the call-time gate is untouchable; if an agent ever adds
+  a roster-derived cache or an "already checked in the pre-flight" shortcut, the hint has silently
+  become a grant. Likewise check that
   `agent-gate.enabled=false` merely removes the *narrowing* (the catalog service still enforces the
-  principal ceiling) and that `rosterFilter.enabled=false` is **byte-identical** to the degradation
-  path — an OFF state that is wider than ON is the failure mode this design exists to avoid. Also grep
+  principal ceiling) and that `rosterFilter.enabled=false` is **byte-identical** to the outside-batch
+  degradation path — an OFF state that is wider than ON is the failure mode this design exists to
+  avoid. Also grep
   the diff for any role/capability/acting-as header before the ★ review passes.
 - **Standalone-value subset** — **T1–T4** are the reusable core (a runnable MCP server, dual identity,
   the tool-gate policy + capability seam, the enforcing PEP), unit- and `opa test`-provable without the
   rig. **T1 alone lands independently** — a Spring AI MCP server proxying the catalog REST API with the
   caller's token, every tool declaring action/category/risk-tags, no authorization yet. T5 and T6 can
   follow if the window is short — but **T5 is not "polish"** post-amendment: the reflective roster
-  adapter, the transport-provider replacement, and the explicit `STREAMABLE` protocol flip make it
+  adapter, its startup smoke check, and the explicit `STREAMABLE` protocol flip make it
   the riskiest ticket in the slice (00-DESIGN §3.2). T6 (rig/e2e/docs) is the wrapper.
 - **Rig / e2e specifics** — mint tokens **in-network** (the compose network), per the rig caveats;
   **restart OPA after editing a policy** (T3 and T6 both need this — an edited `agent_tools.rego` is

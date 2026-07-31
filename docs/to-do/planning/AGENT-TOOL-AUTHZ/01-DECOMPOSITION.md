@@ -30,9 +30,11 @@ caller's bearer, every tool declaring its action/category/risk-tags, no authoriz
 standalone demo value. **T1–T4 are the reusable core** — identity normalization, the tool-gate
 policy + capability seam, and the enforcing PEP; if the window is short, T5 and T6 can follow —
 but post-amendment (2026-07-31) **T5 is no longer "polish"**: it carries the slice's riskiest
-mechanics (the reflective adapter, the transport-provider replacement, and the protocol flip from
-the module's unintended T1–T4 SSE state; [[00-DESIGN]] §3.2). The ★ review + checkpoint after each
-ticket is mandatory.
+mechanics (the reflective adapter into the SDK's live handler map, its startup smoke check, and the
+protocol flip from the module's unintended T1–T4 SSE state; [[00-DESIGN]] §3.2). The ★ review +
+checkpoint after each ticket is mandatory. *(The "transport-provider replacement" this line used to
+name was **withdrawn** on 2026-07-31 — identity is `SecurityContextHolder`, so there is no provider
+bean to replace.)*
 
 **Invariants every ticket carries** (repeated in each *What NOT to touch*): fail-closed on every new
 edge; no library module and no existing service/rego touched; the MCP server never asserts a role,
@@ -65,8 +67,11 @@ surface the next five tickets gate. No authorization in this ticket.
   half).
 - `…mcp.tool.CallerBearerSupplier` — reads the validated bearer off the current request context.
 - `…mcp.tool.ToolDescriptor` record `(String name, String action, String category, Set<String>
-  riskTags)` + `…mcp.tool.ToolRegistry` — the static declarations, validated **at registration
-  time**: a tool missing action, category, or risk-tags **fails context startup and is not exposed**
+  riskTags)` **(superseded: shipped with a mandatory `String targetType` fifth component — the
+  ceiling is derived through `permissions.effective_actions(role_definition, target_type)`, and
+  [[00-DESIGN]] §2.2 makes an absent `target_type` a deny, so every context T5 builds must carry it;
+  STATUS-03 Decisions)** + `…mcp.tool.ToolRegistry` — the static declarations, validated **at
+  registration time**: a tool missing action, category, or risk-tags **fails context startup and is not exposed**
   (the fail-closed "unclassifiable tool" edge, [[00-DESIGN]] §4).
 - `…mcp.tool.ToolCallClassifier` — **SPI, contract only, no implementation**. Javadoc pins
   *most-restrictive-on-ambiguity* and names the consumer: `ToolCallAuthorizer` (T4) would consult it
@@ -295,11 +300,23 @@ is deleted when #578 ships.
 - `…mcp.authz.ToolRosterFilter` — the **durable core**, mechanism-agnostic: caller identity + the
   delegate's `ListToolsResult` in; one `AbacContext` per registered tool (T4's context builder, the
   shared turn-scoped capability memo); a **single** `OpaClient.allowAll(List<AbacContext>)`
-  round-trip — the batch primitive of [[0024-batch-role-resolution|ADR 0024]] — against the
+  round-trip — the `allowAll`/`bulk` batch primitive of [[0016-action-enrichment-affordance-metadata|ADR 0016]], which is
+  **total and fail-closed** (ADR 0024's `lookupAll` is the *role* batch and **throws** for the whole
+  batch on outage — do not carry that contract over here) — against the
   `agent_tools` document; booleans paired with `ToolRegistry` declaration order **by index** (the
-  order contract pinned in T2); omitted-only output. **Uniform for every caller**: a human (no
-  delegation chain) gets ceiling-only, an agent gets ceiling ∩ capability — the same `bulk` rule,
-  no code branch.
+  order contract on `ToolRegistry` itself, shipped in T1) — then reduced to an **allow-set of tool
+  names** and applied to the delegate's `ListToolsResult.tools()` **by name, never by position**.
+  The registry's declaration order and the SDK's advertised order are two different lists, and
+  nothing contracts them to agree; zipping positionally would advertise one tool on another's
+  `true`. Omitted-only output. **Uniform for every caller**: a human (no delegation chain) gets
+  ceiling-only, an agent gets ceiling ∩ capability — the same `bulk` rule, no code branch.
+- **`ToolCallAuthorizer.buildContext(descriptor, boolean applyAgentNarrowing)`** — the one signature
+  change this ticket makes to shipped T4 code, and the seam **I29** needs. The shipped builder
+  attaches `actor` / `chain` / `agent_capability` unconditionally and lets `authorize()` consult
+  `agent-gate.enabled` only afterwards; reused as-is, the roster would keep narrowing by capability
+  with the gate OFF while the call path did not — a roster **narrower** than the calls it predicts,
+  the one direction a hint must never fail in ([[00-DESIGN]] §3.2). Both callers now pass
+  `properties.getAgentGate().isEnabled()`, so the switch is read in exactly one place.
 - `…mcp.authz.RosterFilterInstaller` — the **disposable adapter**: a `SmartInitializingSingleton`
   (default eager init is a documented precondition) that resolves the transport provider **by its
   interface type** (`McpStreamableServerTransportProvider` — so a test can substitute a stub, see
@@ -318,11 +335,12 @@ is deleted when #578 ships.
   earlier plan to replace the transport-provider bean with a custom `contextExtractor` is
   **withdrawn** — it was written against an assumption the spike disproved, and one identity source
   means the roster and the gate can never disagree about the caller.
-- **Guide: create `docs/guides/AGENT-TOOL-AUTHORIZATION.md`** covering the model already shipped
-  (two-layer enforcement, dual identity, the capability tri-state, roster-is-a-hint) plus this
-  ticket's roster section and the explicit-`STREAMABLE` requirement — T6 completes it with the rig
-  and e2e story. This closes the coverage hole left by T1–T4 shipping with no guide at all, and the
-  guide exists even if the run stops here. The SDK-internal pins and the mechanism traps go to
+- **Guide: T5 CREATES `docs/guides/AGENT-TOOL-AUTHORIZATION.md`** (T6 *extends* it — the split is
+  deliberate and is stated identically in T6's deliverables and in the prompt's step 7) covering the
+  model already shipped (two-layer enforcement, dual identity, the capability tri-state,
+  roster-is-a-hint) plus this ticket's roster section and the explicit-`STREAMABLE` requirement.
+  This closes the coverage hole left by T1–T4 shipping with no guide at all, and the guide exists
+  even if the run stops here. The SDK-internal pins and the mechanism traps go to
   **Mulch**, not the guide: they are true only for SDK 2.0.0 and become false at 2.1.
 - **`application.yml`: `spring.ai.mcp.server.protocol: STREAMABLE`**, with the trap documented in
   place: the auto-config conditionals ignore the properties-field default; absent ⇒ the legacy SSE
@@ -336,11 +354,20 @@ is deleted when #578 ships.
   `OpaClient.allowAll` is **total and fail-closed**: it never throws and always returns exactly N
   booleans, normalising outage, timeout, non-200, malformed body and length mismatch alike into
   all-`false` (`HttpOpaClient#allowAll` → `allFalse(n)`). So:
-  - **Do not write a degradation branch keyed on the batch throwing or returning a wrong-length
-    list — those signals do not exist at this seam.** An all-`false` vector is taken as
-    **authoritative ⇒ an empty roster**, whether it came from an outage or a zero-capability agent.
-    That is correct in both cases: during an outage every `tools/call` denies too, so an empty
-    roster is the honest report (settled 2026-07-31).
+  - **Do not write a degradation branch keyed on the batch throwing or on an outage — those signals
+    do not exist at this seam.** An all-`false` vector is taken as **authoritative ⇒ an empty
+    roster**, whether it came from an outage or a zero-capability agent. That is correct in both
+    cases: during an outage every `tools/call` denies too, so an empty roster is the honest report
+    (settled 2026-07-31).
+  - **Do keep one defensive length guard, landing on the *empty* roster.** `OpaClient` is an
+    adopter-implementable SPI that deliberately refuses a default implementation precisely so nobody
+    inherits a fail-open filter, so `ToolRosterFilter` must not *assume* the shipped client's
+    totality: `booleans.size() != contexts.size()` ⇒ serve the **empty** roster and log WARN. Never
+    the unfiltered list (that would widen on a contract violation, against §4) and never an
+    index-shifted partial filter. The shipped `HttpOpaClient` cannot reach this branch — it
+    normalises a wrong-length OPA response to all-`false` first — so **I27 drives it with a stub
+    `OpaClient`**, the one deliberate exemption from the `HttpServer`-stub harness convention
+    ([[10-QA-TEST-CASES]] preamble).
   - **Degrade to the unfiltered list only on the edges outside the batch**, which genuinely can
     fail: an unreadable roster identity, and the capability/ceiling lookups preceding the batch —
     log WARN, serve the full list, and let the (still-enforcing) call-time gate decide.
@@ -348,26 +375,34 @@ is deleted when #578 ships.
 - **Consumers named:** the wrapped `tools/list` handler consumes the filter; T6's scripted client
   asserts the resulting cut.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **I16–I30** — the roster block, re-cited 2026-07-31 to the QA
-doc's own numbering (the earlier `U8`/`I4` citations pointed at T2 cases there): **I16–I21** as
-written 2026-07-28 (list-equals-callable by name, the single batch round-trip,
-failure-degrades-unfiltered vs authoritative-empty-lists-empty, kill-switch OFF, listed-but-revoked
-denied at call time), plus the amendment's additions — **I22** the wire-level `POST /mcp` streamable
+**Acceptance.** [[10-QA-TEST-CASES]] **I16–I31** — the roster block, re-cited 2026-07-31 to the QA
+doc's own numbering (the earlier `U8`/`I4` citations pointed at T2 cases there): **I16–I21**
+(list-equals-callable by name, the single batch round-trip, **a dead PDP and a zero-capability agent
+both yielding the same authoritative *empty* roster** — I18 was rewritten 2026-07-31 and no longer
+asserts degradation — kill-switch OFF, listed-but-revoked denied at call time), plus the amendment's
+additions — **I22** the wire-level `POST /mcp` streamable
 handshake (the protocol pin took effect; the 401-before-routing in `McpServerSecurityTest` never
 proved routing), **I23** against the **real** context the map's `"tools/list"` entry IS the wrapping
 handler (the `ToolGateInstallationTest` analog for the list path), **I24** the smoke check's failure
 branch — a doctored/absent seam ⇒ context startup fails naming the pinned internals, **I25** two
 concurrent sessions with different identities receive **different** rosters and neither ever
 observes the other's, **I26** a human token (no actor claim) gets the ceiling-only roster from the
-same rule, **I27** a size-mismatched `allowAll` response ⇒ the unfiltered list, never an
-index-shifted partial filter (an empty registry ⇒ an empty list with **no** OPA call), **I28**
-roster identity unreadable at list time ⇒ the unfiltered list + WARN while the call-time gate still
-denies the agent. `./gradlew :example-mcp-server:test`.
+same rule, **I27** a wrong-length vector from a **stubbed** `OpaClient` ⇒ the **empty** roster (the
+fail-closed guard above), never the unfiltered list and never an index-shifted partial filter — and
+an empty registry ⇒ an empty list with **no** OPA call, **I28** roster identity unreadable at list
+time ⇒ the unfiltered list + WARN while the call-time gate still denies the agent, **I29** the
+gate-OFF roster is the ceiling-only cut and is **wider** than I16's agent roster, **I30**
+`nextCursor` and `meta` survive the filter byte-identically, **I31** a delegate advertising the same
+tools in a **different order** yields the same cut — the decisions are applied by name, so an index
+shift is structurally impossible. `./gradlew :example-mcp-server:test`.
 
 **What NOT to touch.** A listed tool **never** skips the call-time gate — no roster-derived cache, no
-"already checked in the pre-flight" shortcut. Never present an empty roster on *runtime* failure and
-never fabricate a tool (startup is deliberately different: an installation failure fails the context,
-[[00-DESIGN]] §3.2). **Never** shape the roster with `addTool`/`removeTool` — global state, leaks
+"already checked in the pre-flight" shortcut. Never fabricate a tool, in any failure mode. On the
+**edges outside the batch** (an unreadable roster identity, the capability/ceiling lookups that
+precede it) never present an empty roster — those degrade to the *unfiltered* list. Inside the batch
+the opposite holds: an all-`false` vector, or a contract-violating wrong-length one, **is** the empty
+roster, authoritatively (settled 2026-07-31; [[00-DESIGN]] §3.2 + the §4 table). Startup is different
+again: an installation failure fails the context. **Never** shape the roster with `addTool`/`removeTool` — global state, leaks
 across sessions, races, and the 2026-07-28 spec revision forbids per-connection variation; the
 handler map is written exactly once, before traffic. No `notifications/tools/list_changed` (v1
 stance: revocation bites at call time immediately, at the next re-list for the view). The roster
@@ -392,6 +427,21 @@ service into `deploy.sh`, document it, and move the folder to `implemented/`.
   base-url (the user-service — reached for the type-level ceiling, so a wrong value denies **every**
   tool call with `tool-gate-ceiling-unavailable`), and the starter's OPA url. Assert all three in the
   pod's environment, not just the catalog one.
+- **Gateway route — `infra/apisix/init-routes.sh`.** Easy to miss and load-bearing: the MCP server is
+  gateway-fronted like every other service (its `application.yml` sets
+  `opa.abac.subject.trust-forwarded-jwt: true` and says why — "a signature-validating gateway
+  (APISIX openid-connect) fronts this app… Never enable gateway-less"), and **no seeded route maps
+  `/mcp` to it today**, while `catalog-all` (`uri: /*`, the default priority 0) already matches. Under
+  `ENABLE_MCP`, seed an `mcp-pool` upstream over the MCP pod(s) and an `mcp` route
+  (`uri: /mcp*`, **priority 65** — above the `/*` catch-all and usermgmt's 60, below
+  `internal-blocked`'s 70) carrying the **usermgmt** plugin set: `openid-connect` + `response-rewrite`
+  + tracing-when-`ENABLE_TRACING` + cors-when-`ENABLE_SPA` — and **NOT** the catalog `opa` gateway
+  plugin, for exactly the reason the user-service routes omit it (this server authorizes itself, with
+  its own tool-gate). The scripted client enters at `http://localhost:9085/mcp`, the gateway, never a
+  published pod port ([[E2E-TESTING]] and all 13 existing runners). **Verify at run time** that APISIX
+  proxies the streamable `text/event-stream` response without buffering that would break `data:`
+  framing — if it does buffer, that is a rig finding to solve in this ticket, not a reason to bypass
+  the gateway.
 - **Realm:** `infra/keycloak/realm-export.json` gains **one client per demo actor** —
   `catalog-agent-readonly`, `catalog-agent-overreach`, `catalog-agent-revoked` — each with a
   hardcoded-claim **protocol mapper** minting `act_chain` with that client's actor id. The actor
@@ -412,14 +462,23 @@ service into `deploy.sh`, document it, and move the folder to `implemented/`.
   `Accept: application/json, text/event-stream`; `initialize` answers as plain `application/json`
   and assigns `Mcp-Session-Id` as a **response header**; every later request carries the
   `mcp-session-id` header (enforced by the transport) plus `MCP-Protocol-Version` (spec-required of
-  clients; not validated by this server version) and its response arrives **SSE-framed**
-  (`text/event-stream`, `data:` lines) on the same endpoint — the collection's scripts parse both
-  framings. Ordered JSON-RPC `initialize` → `notifications/initialized` → `tools/list` →
-  `tools/call`, asserting **the actual cut** (which tool names, which denials, which layer label),
-  never just response shape ([[E2E-TESTING]]).
-- **Docs:** a new `docs/guides/AGENT-TOOL-AUTHORIZATION.md` (the two-layer model, the dual-identity
-  claim shape, the capability tri-state, the roster-is-a-hint rule, the fail-closed table, the scope
-  boundary); tick the guide index in `docs/README.md` and the [[POC-ROADMAP]] Phase 9 row, and confirm
+  clients; not validated by this server version). Framing differs by message kind and the collection's
+  scripts must handle all three: `initialize` answers plain `application/json`; a JSON-RPC
+  **notification** (`notifications/initialized` — no `id`) answers **`202 Accepted` with an empty
+  body**, not SSE, so a script that tries to parse it fails; every later **request** (`tools/list`,
+  `tools/call`) arrives **SSE-framed** (`text/event-stream`, `data:` lines) on the same endpoint.
+  Ordered JSON-RPC `initialize` → `notifications/initialized` → `tools/list` → `tools/call`, asserting
+  **the actual cut** (which tool names, which denials, which layer label), never just response shape
+  ([[E2E-TESTING]]).
+- **Fixture-id reservation.** The user-service DB persists across runs, so the registry in
+  `scripts/postman/README.md` is a hard convention, not a nicety: claim the next free catalog-id
+  prefix — **`bbbb…`** — for this matrix, add its row to that table, seed under it only, and tear it
+  down on green like every other runner. E1/E2/E4/E5 need both a catalog the principal may read and
+  one they may not; both live under this prefix. Never grant on, assert on, or seed under another
+  matrix's prefix.
+- **Docs:** **extend** the `docs/guides/AGENT-TOOL-AUTHORIZATION.md` that **T5 created** — add the rig
+  story, the e2e cut, and the fail-closed table; do not "create" it again. Tick the guide index in
+  `docs/README.md` and the [[POC-ROADMAP]] Phase 9 row, and confirm
   [[0028-agent-tool-call-authorization|ADR 0028]] is linked from the ADR index.
 - **Folder move:** `git mv docs/to-do/planning/AGENT-TOOL-AUTHZ docs/to-do/implemented/`, flip the
   index frontmatter `status/planned → status/done`, add a **Shipped** banner, and record the run
@@ -430,7 +489,9 @@ QA doc's own numbering (this ticket's earlier inline E-numbers had drifted from 
 the headline case): E1 human parity through the tool surface, E2 the allow/deny narrowing contrast
 on one token, E3 the agent roster cut by exact tool name, E4 the target-gate layer distinguishable
 end-to-end, **E5 the headline** — the low-privilege replay with nothing asserted downstream, E6 the
-mid-run PDP-kill drill (zero widening; the roster degrades unfiltered while calls still deny), E7
+mid-run PDP-kill drill (zero widening; **calls deny *and* the roster goes empty — the honest pair**,
+per the 2026-07-31 correction: the shipped `allowAll` cannot signal failure, so the older
+"degrades unfiltered" reading was unreachable here), E7
 the `agent-gate` OFF drill proving OFF is never wider than ON, E8 the structured layer-naming error
 on every deny, E9 every pre-existing e2e matrix re-runs green, plus the amendment's additions —
 **E10** a human token's roster is the ceiling-only cut from the same rule (no-actor is an honest
@@ -440,9 +501,11 @@ does not exist and is not in scope; the turn-scoped memo it was testing is prove
 `ENABLE_MCP=1 ./deploy.sh up --pods 2`
 then `scripts/postman/run-agent-tool-matrix.sh`; plus `./gradlew build` green.
 
-**What NOT to touch.** No existing collection's assertions change — the new matrix is additive and
-`run-tests.sh` only gains a registration. The existing rego is unchanged, so the other matrices need
-no policy reload. Mint tokens **in-network**, per the rig caveats. Clean-room: no employer, internal
+**What NOT to touch.** No existing collection **and no existing runner** changes — the new matrix is a
+standalone `run-agent-tool-matrix.sh` plus a new row in the `scripts/postman/README.md` runner table.
+**`run-tests.sh` is untouched**: it runs the lifecycle collection only and is not an aggregate suite
+runner, so there is nothing to "register" (E9 requires it to stay green as shipped). The existing rego
+is unchanged, so the other matrices need no policy reload. Mint tokens **in-network**, per the rig caveats. Clean-room: no employer, internal
 system, or proprietary name anywhere in the compose file, the realm export, the collection, or the
 guide; the demo domain stays product catalogs. **Do NOT push, open a PR, or touch `main`.** The
 library-module extraction (`opa-abac-agent`) is the slice's **exit criterion**, deliberately **not**

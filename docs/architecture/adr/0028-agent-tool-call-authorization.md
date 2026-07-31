@@ -117,9 +117,17 @@ Every new edge lands on **deny, or the smaller result**: malformed / oversized /
 → deny; capability outage → deny; tool-gate OPA unreachable or timing out → deny. The **roster is a hint,
 never a grant** — `tools/list` filtering is an affordance, call-time enforcement is authoritative and
 always runs (which is also how mid-session revocation is caught; an MCP `listChanged` notification is a
-documented follow-up). If the roster batch fails, the server degrades to the **unfiltered** list plus the
-still-enforcing call-time gate: **omit-never-fabricate** — never present "no tools" (which reads as
-broken) and never invent one.
+documented follow-up). **Roster failure semantics (revised 2026-07-31 — see the [[AGENT-TOOL-AUTHZ]]
+slice's `00-DESIGN` §3.2):** the shipped `OpaClient.allowAll` is contractually **total and fail-closed** — it
+never throws and normalises outage, timeout, non-200, malformed body and length mismatch alike into an
+all-`false` vector — so "the roster batch failed" is not a signal this seam can emit. An all-`false`
+result is therefore taken as **authoritative ⇒ an empty roster**, which is the honest report: during a PDP
+outage every `tools/call` denies too, so a roster advertising four unusable tools would be the misleading
+one. Degradation to the **unfiltered** list survives only for the edges *outside* the batch — an
+unreadable roster identity, and the capability/ceiling lookups preceding it. In every mode:
+**omit-never-fabricate** — a tool is never invented. *(The original text here read "if the roster batch
+fails, the server degrades to the unfiltered list… never present 'no tools'"; that rule was written
+against a failure signal the batch cannot express.)*
 
 Kill-switches are per-layer and **their OFF state is never wider than ON**: switching the agent gate off
 leaves the catalog service enforcing the principal ceiling, so the worst case is "this agent is as capable

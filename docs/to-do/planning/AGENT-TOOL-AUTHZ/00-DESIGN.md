@@ -200,16 +200,26 @@ split deliberately into a durable core and a disposable adapter:
 - **`ToolRosterFilter` — the durable core** (survives SDK 2.1; owns all the semantics and tests).
   Given the caller's resolved identity and the delegate's `ListToolsResult`: one `AbacContext` per
   registered tool (T4's context builder, the shared turn-scoped capability memo), a **single** batch
-  `allowAll` round-trip ([[0024-batch-role-resolution|ADR 0024]]) against the `agent_tools` document,
-  booleans paired with the registry's declaration order **by index**, omitted-only output.
+  `allowAll` round-trip ([[0016-action-enrichment-affordance-metadata|ADR 0016]] — the `allowAll`/`bulk` batch, **total and
+  fail-closed**; NOT ADR 0024's `lookupAll`, whose batch *throws* on outage) against the
+  `agent_tools` document,
+  booleans paired with the registry's declaration order **by index** — then reduced to an
+  **allow-set of tool names** and applied to the delegate's `ListToolsResult.tools()` **by name**,
+  never by position. The two lists are different objects: the contexts are built in `ToolRegistry`
+  declaration order (the order contract shipped in T1), while the delegate's list is whatever order
+  Spring AI's annotation scanner produced, which is nowhere contracted to match. Zipping the vector
+  positionally onto the delegate's list would advertise tool A on tool B's `true` — a widening bug a
+  hand-built fixture whose two orders happen to agree would never catch. Omitted-only output.
 - **The adapter — disposable** (deleted the day #578 ships; the migration touches only this class).
   Once at startup, before the connector opens: reach the streamable transport provider's session
   factory (`DefaultMcpStreamableServerSessionFactory`) and its shared `requestHandlers` map — two
   reflective field reads, workable because the jars are non-modular — and wrap the `"tools/list"`
-  entry: delegate to the original handler, then filter its result by the identity riding
-  `exchange.transportContext()`. All sessions share that one map, so one wrap covers every caller;
-  per-request state rides the exchange the session constructs per JSON-RPC request. The map is
-  **never** mutated after startup.
+  entry: delegate to the original handler, then filter its result by the identity resolved from
+  `SecurityContextHolder` — the same source `ToolCallAuthorizer` uses, per the identity paragraph
+  below. **The exchange is not an identity source**: the stock auto-configured provider installs no
+  `McpTransportContextExtractor`, so its default returns `McpTransportContext.EMPTY` and
+  `exchange.transportContext()` is blank for every caller. All sessions share that one handler map,
+  so one wrap covers every caller; the map is **never** mutated after startup.
 
 **One hard prerequisite, with a startup guard:**
 
@@ -238,6 +248,14 @@ leaving them to be discovered: with **`agent-gate` OFF** the call path evaluates
 principal, so the roster builds its contexts **without the agent attributes** and shows the
 ceiling-only cut. A roster that kept narrowing by capability while calls did not would hide tools the
 caller can successfully call — the one direction a hint must never fail in.
+
+**The seam that makes that true** (named here because the shipped T4 code does not have it): today
+`ToolCallAuthorizer.buildContext` attaches `actor` / `chain` / `agent_capability` unconditionally
+whenever the caller is an agent, and `authorize()` consults `agent-gate.enabled` only *afterwards*.
+Reused as-is by the roster, that would make the gate-OFF roster **narrower** than the gate-OFF call
+path — the forbidden direction. T5 therefore widens the builder to
+`buildContext(descriptor, boolean applyAgentNarrowing)`, and both callers pass the switch, so the two
+paths read it in exactly one place.
 
 **Failure semantics — two distinct classes, deliberately different:**
 
@@ -300,6 +318,7 @@ on the **smaller** of the two possible results, on any error, timeout, or missin
 | tool-gate OPA call | policy returns no `allow` binding | **deny** (`default allow := false`) |
 | roster batch `allowAll` | OPA down / timeout / malformed / length mismatch | the shipped client normalises **all** of these to all-`false` and never throws ⇒ an **empty roster**, treated as authoritative. Honest: during that outage every `tools/call` denies too (§3.2) |
 | roster batch `allowAll` | a genuine zero-capability agent | the same **empty roster** — indistinguishable by design, and correct in both cases |
+| roster batch `allowAll` | a **substituted** `OpaClient` returns a wrong-length vector (the shipped client cannot — it normalises this to all-`false` before the caller sees it, but `OpaClient` is an adopter-implementable SPI that deliberately refuses a default impl) | the **empty roster** — a defensive `booleans.size() != contexts.size()` guard in `ToolRosterFilter` lands on the *smaller* result, never the unfiltered list and never an index-shifted partial filter |
 | roster identity | no `AbacAuthentication` in the security context at list time | **unfiltered list** + WARN — an unauthenticated caller never reaches the surface anyway (the chain rejects it), and the call-time gate denies on the same condition |
 | capability supplier at **list** time | outage (throws) | **unfiltered list** + WARN — the hint carries no authority, and the call-time gate denies every tool for the same outage |
 | principal ceiling at **list** time | `RoleResolutionException` | **unfiltered list** + WARN — same reasoning; the authoritative deny still happens per call |
@@ -386,6 +405,8 @@ that reckoning, which is the intended migration trigger toward java-sdk #578.
   [[0014-supplier-outage-error-distinct|ADR 0014]] (the tri-state supplier doctrine) ·
   [[0018-team-scoped-resource-isolation|ADR 0018]] (why nothing asserts a role downstream) ·
   [[0023-request-scoped-resolution-memoization|ADR 0023]] (the memo scope this one narrows to a turn) ·
-  [[0024-batch-role-resolution|ADR 0024]] (the batch primitive the roster filter reuses)
+  [[0016-action-enrichment-affordance-metadata|ADR 0016]] (the `allowAll` batch primitive the roster filter
+  reuses) · [[0024-batch-role-resolution|ADR 0024]] (the *role* batch `lookupAll` — a different
+  primitive with the opposite, throwing failure contract)
 - [[ABAC-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[PERMISSION-MODEL]] · [[HTTP-RESILIENCE]] · [[E2E-TESTING]]
 - [[POC-ROADMAP]] (Phase 9) · [[MULTI-TENANT-ISOLATION]] (slice B4, the fail-open shape not reintroduced)

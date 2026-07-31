@@ -19,7 +19,10 @@ tags:
 > `com.sun.net.httpserver.HttpServer` stubs (one for OPA, one for the catalog REST API) — **never
 > WireMock**. `example-mcp-server` owns **no persistence**, so it has no Testcontainers of its own;
 > the real-Postgres path (**never H2**) stays where it already lives — the catalog service's own ITs,
-> untouched this slice — and is exercised for real end-to-end in E*.
+> untouched this slice — and is exercised for real end-to-end in E*. **One deliberate exemption: I27**
+> substitutes a stub `OpaClient` rather than an `HttpServer` stub, because the behaviour it pins is a
+> violation of the `OpaClient` **SPI contract** — something the shipped `HttpOpaClient` normalises away
+> before any HTTP stub could express it.
 > **E** = e2e — a **deterministic scripted MCP client** through the rig (no LLM). It asserts **the
 > actual cut** — which tool names are listed, which calls are allowed, which layer denied — not
 > response shape ([[E2E-TESTING]]).
@@ -31,10 +34,10 @@ tags:
 
 | ID | Case | Asserts | → Ticket |
 |---|---|---|---|
-| U1 | Registration scan over all registered `@McpTool` methods | **every** tool declares a non-blank action verb, a category, and a present risk-tag set — the declared triple is the only source of tool attributes | T1 |
+| U1 | Registration scan over all registered `@McpTool` methods | **every** tool declares a non-blank action verb, a category, a present risk-tag set, **and a non-blank `targetType`** — the declared quadruple is the only source of tool attributes *(`targetType` added by T3 and recorded here 2026-07-31; the ceiling is derived through `permissions.effective_actions(role_definition, target_type)`, so an absent one denies)* | T1 |
 | U2 | A tool registered with a missing/blank category or an absent risk-tag attribute | **startup fails fast** (bean-initialization error naming the tool); an unclassifiable tool is **never exposed** — the fail-closed edge from [[00-DESIGN]] §4 | T1 |
 | U3 | `ToolCallClassifier` seam | the interface exists and its contract states **most-restrictive-on-ambiguity**; assert **no** implementation bean is present in the context — the unconsumed seam is deliberate, not an omission | T1 |
-| U4 | Tool descriptor → OPA input mapping for `get_product` | `input.resource.type == "tool"`, `input.resource.attributes.category` / `.risk_tags` carry the **declared** values, `input.action` is the declared verb — no derivation, no defaulting | T1 |
+| U4 | Tool descriptor → OPA input mapping for `get_product` | `input.resource.type == "tool"`, `input.resource.attributes.category` / `.risk_tags` / **`.target_type`** carry the **declared** values, `input.action` is the declared verb — no derivation, no defaulting | T1 |
 
 ## Unit — delegation-chain extraction (U5–U12, T2)
 
@@ -78,7 +81,7 @@ audit of it.
 | U26 | `actor` present, `agent_capability` **absent** from the input | **deny** — no capability means no agent authority, never "unrestricted" | T3 |
 | U27 | No `role_definition` / no resolved ceiling (subject roles only) | **deny** — no subject-roles fallback, consistent with the boundary [[MULTI-TENANT-ISOLATION|slice B4]] set | T3 |
 | U28 | Unknown tool category, or an action verb outside the vocabulary | **deny** (both asserted) | T3 |
-| U29 | Batch `allowAll` over the full roster (the [[0024-batch-role-resolution|ADR 0024]] primitive) | one boolean **per tool, order-preserving**; a zero-capability agent gets all-`false`; a mixed profile gets exactly the expected true/false vector | T3 |
+| U29 | Batch `allowAll` over the full roster (the [[0016-action-enrichment-affordance-metadata|ADR 0016]] primitive) | one boolean **per tool, order-preserving**; a zero-capability agent gets all-`false`; a mixed profile gets exactly the expected true/false vector | T3 |
 | U30 | Whole policy suite | `opa test` **all green**, count updated for `agent_tools_test.rego`; **no existing policy file changed** (the per-type documents are byte-identical) | T3 |
 
 ## Integration — tools over the catalog REST edge (I1–I3, T1)
@@ -116,11 +119,13 @@ is how "the tool body never ran" is proven rather than assumed.
 | I14 | Tool-gate allows, catalog stub returns **403** (the target-gate denying) | a structured advisory error naming layer **`target-gate`**, upstream error code preserved — the two layers are **distinguishable** by the caller, which is what lets a model react instead of retrying blindly | T4 |
 | I15 | Kill-switch `agent-gate` **OFF** | the tool-gate is skipped; the call is evaluated exactly as a human principal's would be; the catalog stub **still 403s** for a resource the principal may not touch → **OFF is never wider than ON**. Asserted alongside: **no** property disables call-time enforcement — with every switch off, the authoritative gate is still installed | T4 |
 
-## Integration — roster filtering (I16–I30, T5)
+## Integration — roster filtering (I16–I31, T5)
 
-Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I28 were added by the
+Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I30 were added by the
 2026-07-31 mechanism amendment ([[00-DESIGN]] §3.2: the delegate-then-filter adapter, the
-`STREAMABLE` protocol pin, the identity-carrying `contextExtractor`).
+`STREAMABLE` protocol pin, and the `SecurityContextHolder` identity path — the earlier
+"identity-carrying `contextExtractor`" was **withdrawn** by the same amendment, since the stock
+provider's default extractor returns `McpTransportContext.EMPTY`).
 
 | ID | Case | Asserts | → Ticket |
 |---|---|---|---|
@@ -128,14 +133,15 @@ Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I
 | I17 | `tools/list` with N registered tools | **one** batch `allowAll` round-trip (OPA stub request count == 1), N booleans back — not N calls | T5 |
 | I18 | Roster batch against a **dead** OPA (stub 5xx / timeout / connection-refused) | the shipped `allowAll` normalises all of these to all-`false` and never throws, so the roster is **empty** — asserted as the *authoritative* reading, not a degradation — and every `tools/call` in the same turn **also denies**. The pair is what makes the empty roster honest rather than broken *(rewritten 2026-07-31 — the old "degrades to unfiltered" assertion described a signal this seam cannot emit)* | T5 |
 | I19 | Roster batch **succeeds** with all-`false` (a zero-capability agent) | the same **empty** roster as I18, byte-identical — the indistinguishability is asserted deliberately: the roster carries no authority, so both answers are correct | T5 |
-| I20 | Kill-switch `roster-filter` **OFF** | unfiltered list, call-time enforcement unchanged — externally identical to I18's degradation, and no wider | T5 |
+| I20 | Kill-switch `roster-filter` **OFF** | unfiltered list, call-time enforcement unchanged — externally identical to the **outside-the-batch** degradation path (I28), and no wider. *(Corrected 2026-07-31: this row used to point at "I18's degradation"; I18 was rewritten the same day to the authoritative-**empty** roster, so the old cross-reference asserted unfiltered == empty.)* | T5 |
 | I21 | Listed-but-revoked: turn 1 lists a tool; the capability profile is then revoked; turn 2 calls it | **denied at call time** — the list was a hint, never a grant, and the turn-scoped memo (U16) is what makes the revocation visible on the next turn | T5 |
 | I22 | `POST /mcp` streamable handshake at the wire | `initialize` answers `application/json` + the `Mcp-Session-Id` **response header**; a follow-up request on the same session answers **SSE-framed** — the `protocol: STREAMABLE` pin took effect (a 401-before-routing never proves routing) | T5 |
 | I23 | The installed handler, inspected against the **real** context | the request-handler map's `"tools/list"` entry IS the wrapping handler (delegate-then-filter) — the `ToolGateInstallationTest` analog for the list path | T5 |
 | I24 | The adapter's smoke check, failure branch — an `ApplicationContextRunner` registering a **stub** `McpStreamableServerTransportProvider` whose internals do not match | context startup **fails**, asserted via `.getFailure()` (not `.rootCause()` — a `SmartInitializingSingleton` throws un-wrapped, per `ToolRegistryValidatorTest`), with a message naming `sessionFactory` / `requestHandlers` — never a silent unfiltered no-op | T5 |
 | I25 | Two concurrent sessions, different identities | **different** rosters, and neither session ever observes the other's — the cross-session leak the rejected global-mutation shape would cause | T5 |
 | I26 | A human token (no actor claim), `tools/list` | the **ceiling-only** roster from the same `bulk` rule — no code branch, no special-casing | T5 |
-| I27 | `allowAll` response shorter/longer than the request; and an **empty registry** | size mismatch ⇒ the **unfiltered** list, never an index-shifted partial filter; empty registry ⇒ an empty list with **no** OPA call | T5 |
+| I27 | A **stub `OpaClient`** (see the harness exemption above) returns a vector shorter/longer than the contexts; and, separately, an **empty registry** | wrong length ⇒ the **empty** roster + WARN — the fail-closed guard, never the unfiltered list and never an index-shifted partial filter; empty registry ⇒ an empty list with **no** OPA call. *(Rewritten 2026-07-31: the original read "size mismatch ⇒ the unfiltered list", which was both unreachable — `HttpOpaClient` normalises a wrong-length OPA response to all-`false` first — and, as a widening on a contract violation, contrary to the §4 fail-closed table.)* | T5 |
+| I31 | The boolean vector is paired with `ToolRegistry` declaration order, but the delegate's `ListToolsResult` advertises the **same tools in a different order** *(added 2026-07-31)* | the filter applies the decisions to `ListToolsResult.tools()` **by tool name**, so the divergent advertised order still yields the same cut — an index shift is structurally impossible rather than merely untested. This is the case a hand-built fixture whose two orders happen to agree would never catch | T5 |
 | I28 | No `AbacAuthentication` in the security context at list time | the **unfiltered** list + WARN — an unauthenticated caller never reaches the surface anyway, and the call-time gate denies on the same condition | T5 |
 | I29 | Kill-switch `agent-gate` **OFF**, `roster-filter` ON *(added 2026-07-31)* | the roster is the **ceiling-only** cut — contexts built **without** the agent attributes, exactly as the call path evaluates them with the gate off. Asserted against I16's agent roster to show it is **wider**, never narrower: a roster must never hide a tool the caller can successfully call | T5 |
 | I30 | The delegate returns a `ListToolsResult` carrying `nextCursor` and `meta` *(added 2026-07-31)* | both survive the filter **byte-identically** — the rebuild uses the full record constructor, not `builder(tools).build()`, which silently drops them. Omission-only means omitting tools, never losing response fields | T5 |
@@ -152,7 +158,7 @@ agent acting for **them**.
 | E2 | Agent acting for that human, capability capped at `low` risk: `list_catalogs` **and** `get_product` | **allow / deny contrast in one run** — `list_catalogs` (declared `low`) succeeds; `get_product` (declared `medium`) is denied at **`tool-gate`** although the *principal* is permitted it. The narrowing is visible end-to-end *(rewritten 2026-07-31 — the original named a "write / high-risk tool"; the surface is four READ tools by design and gating a mutation is out of scope, so the risk **tier** carries the contrast; STATUS-01)* | T6 |
 | E3 | The agent's `tools/list` | equals the expected set **by exact tool name** (name-by-name equality, not a count), and every listed tool is then successfully callable | T6 |
 | E4 | Agent whose tool-gate allows the tool, acting for a principal who may not reach the **target** | denied at **`target-gate`** — the catalog service's own unchanged policy, exercised as shipped; the layers are distinguishable in the error | T6 |
-| E5 | The same tool + target that E2's agent was allowed, replayed by an agent acting for the **low-privilege** principal | **denied** — the agent never exceeds its principal. Asserted with it: the catalog service received **no** role, capability or acting-as header on any request in the run (the fail-open shape [[MULTI-TENANT-ISOLATION|slice B4]] removed is not reintroduced) | T6 |
+| E5 | The same tool + target that E2's agent was allowed, replayed by an agent acting for the **low-privilege** principal | **denied** — the agent never exceeds its principal. Asserted with it, but **as an operator check, not a collection assertion** — the MCP-server → catalog hop is internal and invisible to a client speaking to the gateway: `docker logs` on the catalog pod shows **no** role, capability or acting-as header on any request in the run, and the branch diff is grepped for the same. The wire-level proof stays **I1** *(scoped 2026-07-31)*. The fail-open shape [[MULTI-TENANT-ISOLATION|slice B4]] removed is not reintroduced | T6 |
 | E6 | **Mid-run PDP-kill drill** — stop OPA mid-suite | every subsequent tool call **denies** at `tool-gate`, and `tools/list` returns an **empty** roster — the two together are the point: nothing is callable and the roster says so *(corrected 2026-07-31 — the shipped `allowAll` cannot signal failure, so "degrades to the unfiltered list" was unreachable here; see [[00-DESIGN]] §3.2)*. Assert **zero widening** — no call denied before the kill succeeds after it. Restart OPA → the pre-kill cut returns **exactly** (same tool names, same allow/deny vector) | T6 |
 | E7 | Kill-switch drill — `agent-gate` OFF, replay E2's denied `get_product` **for a principal who may not read that product** | the tool-gate no longer denies, and the **catalog target-gate still denies** it → the OFF state is **not wider** than ON, proven on the rig rather than argued. *(Rewritten 2026-07-31: E2's own principal IS permitted the product, so replaying E2's exact subject would correctly succeed and prove nothing — the drill needs a principal the target-gate refuses.)* | T6 |
 | E8 | Every deny produced in E2 / E4 / E6 | a **structured** tool-error carrying a stable error code **and** the denying layer; no stack trace, no bare 5xx, never a silent empty result | T6 |
@@ -178,8 +184,12 @@ them. E6 is the fail-closed proof: killing the PDP mid-run can only ever **shrin
 degraded roster carries no authority. **U22** is the same invariant at the policy level — a
 capability naming a category the ceiling does not grant grants nothing.
 
-**I15 + I18** are the second-order proofs: an OFF kill-switch is never wider than ON, and a failed
-roster batch degrades a *hint* while the authoritative gate keeps enforcing.
+**I15 + I18** are the second-order proofs: an OFF kill-switch is never wider than ON, and a dead PDP
+shrinks the *hint* to nothing while the authoritative gate keeps enforcing — the roster never widens
+on failure. *(Corrected 2026-07-31 in step with the I18 rewrite: this paragraph used to read "a failed
+roster batch degrades a hint", which described the pre-amendment unfiltered-degradation reading the
+batch seam cannot express.)* The degradation-to-unfiltered claim now belongs to **I28** — the edges
+*outside* the batch.
 
 ## Suite-level
 

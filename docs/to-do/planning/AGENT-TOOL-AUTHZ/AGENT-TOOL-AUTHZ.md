@@ -65,8 +65,8 @@ or the smaller result**, and each kill-switch's OFF state is never wider than it
 | T2 | Dual identity: `DelegationChainExtractor` (RFC 8693 `act` semantics, fail-closed) | ✅ DONE |
 | T3 | Tool-gate rego (ceiling ∩ capability, in Rego) + `AgentCapabilitySupplier` | ✅ DONE |
 | T4 | The PEP: `@McpTool` interception, layer-naming advisory deny, kill-switch | ✅ DONE |
-| T5 | Roster filtering: `tools/list` via batch `allowAll`, omit-never-fabricate | 📋 TODO |
-| T6 | Rig + scripted-client e2e + guide + folder move | 📋 TODO |
+| T5 | Roster filtering: `tools/list` via batch `allowAll`, omit-never-fabricate **+ creates the guide** | 📋 TODO |
+| T6 | Rig + scripted-client e2e + **guide completion** + folder move | 📋 TODO |
 
 ## Critical path
 
@@ -78,9 +78,10 @@ Strictly sequential. **T1 is independently landable** — a runnable MCP server 
 REST API with the caller's token, every tool declaring its action/category/risk-tags, no
 authorization yet — and carries standalone demo value on its own. **T1–T4 are the reusable core**
 (identity + policy + PEP) if the window is short. Post-amendment (2026-07-31) **T5 is no longer
-"polish"**: it carries the slice's riskiest mechanics — the reflective roster adapter, the
-transport-provider replacement, and the explicit `STREAMABLE` protocol flip ([[00-DESIGN]] §3.2).
-T6 is the rig/e2e/docs wrapper.
+"polish"**: it carries the slice's riskiest mechanics — the reflective roster adapter, its startup
+smoke check, and the explicit `STREAMABLE` protocol flip ([[00-DESIGN]] §3.2). T5 also **creates**
+`docs/guides/AGENT-TOOL-AUTHORIZATION.md`, so the slice has a guide even if the run stops there.
+T6 is the rig/e2e/docs wrapper and **extends** that guide.
 
 ## Conventions
 
@@ -107,6 +108,9 @@ T6 is the rig/e2e/docs wrapper.
 - [[0028-agent-tool-call-authorization|ADR 0028]] — the two-layer decision model, enforcement-by-composition
   (no role propagation), the additive dual-identity subject shape, example-first packaging.
 - [[0019-pluggable-cross-service-ownership|ADR 0019]] — the SPI shape the two new seams mirror.
-- [[0024-batch-role-resolution|ADR 0024]] — the batch `allowAll` primitive the roster pre-flight reuses.
+- [[0016-action-enrichment-affordance-metadata|ADR 0016]] — the `allowAll`/`bulk` batch primitive the roster
+  pre-flight reuses (total, fail-closed).
+- [[0024-batch-role-resolution|ADR 0024]] — the *role* batch `lookupAll`, reused by T4's ceiling
+  lookup. Its failure contract is the **opposite** (whole-batch throw), so it is not the roster's model.
 - [[0006-three-layer-enforcement-model|ADR 0006]] — the pre-existing layered enforcement model this slice extends upward to tools.
 - [[MULTI-TENANT-ISOLATION]] — where asserting a caller-supplied role was removed as fail-open.
