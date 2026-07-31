@@ -1,13 +1,14 @@
 {
   "info": {
     "name": "Catalog E2E (via gateway)",
-    "description": "End-to-end CRUD over Catalog -> Category -> Product through APISIX, authenticated with a Keycloak token. Skeleton: the auth + happy-path chain works; the autonomous run (ticket 5) adds richer assertions and negative cases. See docs/guides/E2E-TESTING.md.",
+    "description": "End-to-end CRUD over Catalog -> Category -> Product through APISIX, authenticated with a Keycloak token. Runs on BOTH rig flavours: on the OIDC-only quickstart rig (catalog `role-source=demo`) the static supplier grants, and on the user-service rig the suite claims its freshly created catalog with a self-service team first — Slice B4 (ADR 0018) made membership the sole access path, so without that step a catalog is unreachable even by its creator. The runner probes the rig and sets `b4_bootstrap`; the claim step skips itself when it is not set. See docs/guides/E2E-TESTING.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "catalog_id", "value": "" },
     { "key": "category_id", "value": "" },
-    { "key": "product_id", "value": "" }
+    { "key": "product_id", "value": "" },
+    { "key": "team_id", "value": "" }
   ],
   "auth": {
     "type": "bearer",
@@ -105,6 +106,68 @@
               "raw": "{{collection_base_url}}/catalogs",
               "host": ["{{collection_base_url}}"],
               "path": ["catalogs"]
+            }
+          }
+        },
+        {
+          "name": "Claim the catalog (self-service team) — B4 rigs only",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Slice B4 (ADR 0018) made MEMBERSHIP THE SOLE ACCESS PATH: on the user-service rig a freshly",
+                  "// created catalog is unreachable — even by its creator — until a governing team exists. This",
+                  "// step is that team, created through the SHIPPED public self-service endpoint (owner-on-create",
+                  "// binds the caller), so the suite exercises the real onboarding flow rather than a back door.",
+                  "//",
+                  "// On the OIDC-only quickstart rig (catalog `role-source=demo`, no user-service) there is no team",
+                  "// model at all and the static supplier already grants — so the step is SKIPPED rather than",
+                  "// failed. `b4_bootstrap` is set by the runner, which reads the catalog pod's CATALOG_ROLE_SOURCE.",
+                  "if (pm.environment.get('b4_bootstrap') !== 'true') { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const team = pm.response.json();",
+                  "pm.test('has id', () => pm.expect(team).to.have.property('id'));",
+                  "pm.collectionVariables.set('team_id', team.id);",
+                  "pm.test('the team governs the catalog just created', () => {",
+                  "  pm.expect(team.targetType).to.eql('catalog');",
+                  "  pm.expect(team.targetId).to.eql(pm.collectionVariables.get('catalog_id'));",
+                  "});",
+                  "// The owner binding is not visible on this DTO — it is proven by the NEXT request:",
+                  "// on a B4 rig 'Get catalog' 200s only because owner-on-create bound the caller."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"E2E lifecycle team\",\n  \"targetType\": \"catalog\",\n  \"targetId\": \"{{catalog_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/teams",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "teams"
+              ]
             }
           }
         },

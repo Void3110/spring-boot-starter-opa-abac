@@ -55,6 +55,36 @@ request asserts the status code and field-level response shape.
 - `newman` installed (`npm install -g newman` or `brew install newman`).
 - Docker/podman available (needed to mint an in-network token — see below).
 
+### Two rig flavours, and which suites need which
+
+Every runner here targets one of **two** rigs, and picking the wrong one produces failures that look
+like regressions:
+
+| Flavour | Command | What decides authorization |
+|---|---|---|
+| **OIDC-only** (the quickstart) | `ENABLE_OIDC=1 ./deploy.sh up --pods 2` | the catalog's **static `demo` role supplier** (`CATALOG_ROLE_SOURCE` unset) — realm roles map straight to permissions, no teams exist |
+| **user-service** (everything else) | `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2` | **real membership** — `CATALOG_ROLE_SOURCE=http`, roles resolved from the user-service |
+
+**`run-tests.sh` and `run-matrix.sh` run on both.** They create their own catalog, and since
+[[MULTI-TENANT-ISOLATION|Slice B4]] (ADR 0018) membership is the **sole access path** — so on the
+user-service rig a freshly created catalog is unreachable *even by its creator* until a governing
+team exists. Both collections therefore claim their catalog with a **self-service team** (the shipped
+public `POST /api/v1/teams`, owner-on-create) before using it, and the `run-matrix.sh` collection also
+binds its viewer to that team as a `reader`. Those steps **skip themselves** on the OIDC-only rig,
+where no team model exists. Each runner detects the flavour by reading the catalog pod's own
+`CATALOG_ROLE_SOURCE` and prints which one it found — nothing to pass, nothing to remember.
+
+> Read the flavour from the **catalog pod**, not from whether the user-service is reachable.
+> `ENABLE_OIDC=1 ./deploy.sh up` recreates the catalog pods on the static supplier but leaves an
+> already-running `usermgmt` container alone, so a reachability probe reports "membership rig" on a
+> rig that ignores membership entirely.
+
+**Every other runner requires the user-service flavour**, and several need more (the resilience
+matrix repoints role resolution at a fault-injecting stub and is rig-exclusive; the
+permission-categories and action-enrichment matrices need *both* app images rebuilt). Their
+individual prerequisites are in the per-matrix sections below and in
+[`scripts/postman/README.md`](../../scripts/postman/README.md).
+
 ## The in-network token caveat (important)
 
 Keycloak is **hostname-aware**. Inside the compose network it issues and advertises the issuer

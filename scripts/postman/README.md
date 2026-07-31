@@ -8,6 +8,9 @@ End-to-end API tests that drive **Catalog → Category → Product** CRUD throug
 ```bash
 # 1. Bring the full rig up (Postgres + APISIX + Keycloak + catalog pods)
 ENABLE_OIDC=1 ./deploy.sh up --pods 2
+# ...or the membership-driven flavour every other matrix here needs. run-tests.sh and
+# run-matrix.sh detect which one is live and adapt; the rest require this one:
+#   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 
 # 2. First time: copy the env template
 cd scripts/postman
@@ -26,9 +29,8 @@ token in-network).
 
 | File | Role |
 |------|------|
-| `run-tests.sh` | Runner: mints an in-network Keycloak token, injects it, runs the lifecycle collection. |
-| `catalog-e2e.postman_collection.json` | The lifecycle collection: Auth → Catalog → Category → Product → Cleanup. |
-| `run-matrix.sh` + `catalog-abac-matrix.postman_collection.json` | The **role-based** allow/deny matrix (viewer reads / can't write; editor writes) — Phase 3. |
+| `run-tests.sh` + `catalog-e2e.postman_collection.json` | Runner: mints an in-network Keycloak token, injects it, runs the lifecycle collection (Auth → Catalog → Category → Product → Cleanup). **Runs on both rig flavours** — it detects the catalog pod's `CATALOG_ROLE_SOURCE` and, on the user-service rig, claims its freshly created catalog with a self-service team first (Slice B4 made membership the sole access path, so a team-less catalog is unreachable even by its creator); that step skips itself on the OIDC-only quickstart rig. |
+| `run-matrix.sh` + `catalog-abac-matrix.postman_collection.json` | The **role-based** allow/deny matrix (viewer reads / can't write; editor writes) — Phase 3. **Runs on both rig flavours**: on the user-service rig the editor claims the seeded catalog with a self-service team and the viewer is bound to it as a `reader`, so the same 200/403 contrast is decided by **real membership**; on the OIDC-only rig those two steps skip themselves and the static `demo` supplier decides. |
 | `run-team-matrix.sh` + `team-abac-matrix.postman_collection.json` | The **team-based** allow/deny matrix (Phase 4): roles resolved from real team membership in the user-service. Mints four tokens, bootstraps the team data via the user-service internal API, then asserts owner-writes / viewer-denied / custom-editor-writes / non-member-denied through the gateway + the dogfood management path. |
 | `run-tag-matrix.sh` + `tag-abac-matrix.postman_collection.json` | The **tag-based** allow/deny matrix (Phase 4.5): grants driven by the *resource's tags* matched against a role's `requiredTags`, in Rego. Seeds two tag-gated roles + three differently-tagged Categories, then proves the decisive contrast — the SAME member reads a matching-tag Category (200) and a non-matching one (403) — plus ANY_OF/ALL_OF, the dictionary define dogfood (owner 201 / member 403), and an illegal assignment (422). Needs `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1`. |
 | `run-filter-matrix.sh` + `data-filter-matrix.postman_collection.json` | The **data-filtering** matrix (Phase 5): OPA partial-evaluation **list** filtering. Seeds two single-region-gated readers (emea / apac) + an allow-all owner + an unbound stranger, and three region-tagged Categories, then hits the SAME list endpoint (`GET /catalogs/{id}/categories`) for each: reader-emea sees only the emea row, reader-apac only the apac row (a **different** set), owner all three, and the stranger (no role definition) **none** — proving the residual is pushed into SQL and the `filter` rule fails *closed* on a missing role. Needs `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1`. |
@@ -99,9 +101,13 @@ cascades; the PC matrix also drops its synthetic `pc-target-*` users, and the is
 its name-keyed `Alice Co` / `Carol Co` rows). A **failed run keeps its fixtures** for debugging, and
 `KEEP_FIXTURES=1` skips teardown explicitly. Caveats and rules:
 
-- **`run-matrix.sh` and `run-spa-auth-smoke.sh` have no teardown block** — the abac matrix cleans up
-  through its own in-collection DELETE requests (which run regardless of assertion failures), so
-  `KEEP_FIXTURES` does not apply to them.
+- **`run-spa-auth-smoke.sh` has no teardown block**, and neither collection-level cleanup path
+  needs one: `run-tests.sh` and `run-matrix.sh` delete their own catalog through in-collection
+  DELETE requests (which run regardless of assertion failures). Those two *do* have a small
+  teardown block for the **team** they create on the user-service rig — a team is not a catalog
+  child, so it would outlive the cascade as an orphan row in the shared store and show up in
+  the demo UI's team list. It is keyed by the team's fixed name (`E2E lifecycle team` /
+  `ABAC matrix team`), which those suites own, and is a no-op on the OIDC-only rig.
 - **The shared `3333…` id (filter + hierarchy) is torn down by whichever of the two runs green** —
   when debugging one of those matrices, don't run the other (or run it with `KEEP_FIXTURES=1`), or
   the kept debug state is swept.

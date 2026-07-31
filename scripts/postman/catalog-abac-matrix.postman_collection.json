@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Catalog ABAC allow/deny matrix",
-    "description": "Proves the library-spine authorization end to end through the gateway: a viewer token can read but not write, an editor token can write. Decisions are role-definition-driven, enforced by @OpaPreAuthorize -> OPA. run-tests.sh mints BOTH tokens in-network and injects viewer_token + editor_token; the editor folder chains created ids in COLLECTION scope.",
+    "description": "Proves the library-spine authorization end to end through the gateway: a viewer token can read but not write, an editor token can write. Decisions are role-definition-driven, enforced by @OpaPreAuthorize -> OPA. run-tests.sh mints BOTH tokens in-network and injects viewer_token + editor_token; the editor folder chains created ids in COLLECTION scope. Runs on BOTH rig flavours: on the OIDC-only quickstart rig (catalog `role-source=demo`) the static supplier decides, and on the user-service rig the editor first claims the seeded catalog with a self-service team and the viewer is bound to it as a `reader` — Slice B4 (ADR 0018) made membership the sole access path, so the viewer's reads would otherwise 403 for a reason that has nothing to do with the allow/deny contrast under test. Both bootstrap steps skip themselves unless the runner sets `b4_bootstrap`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -15,6 +15,10 @@
     },
     {
       "key": "product_id",
+      "value": ""
+    },
+    {
+      "key": "team_id",
       "value": ""
     }
   ],
@@ -67,6 +71,122 @@
               }
             }
           ]
+        },
+        {
+          "name": "Editor claims the catalog (self-service team) — B4 rigs only",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Slice B4 (ADR 0018) made MEMBERSHIP THE SOLE ACCESS PATH: on the user-service rig a freshly",
+                  "// created catalog is unreachable — even by its creator — until a governing team exists. This",
+                  "// step is that team, created through the SHIPPED public self-service endpoint (owner-on-create",
+                  "// binds the caller), so the suite exercises the real onboarding flow rather than a back door.",
+                  "//",
+                  "// On the OIDC-only quickstart rig (catalog `role-source=demo`, no user-service) there is no team",
+                  "// model at all and the static supplier already grants — so the step is SKIPPED rather than",
+                  "// failed. `b4_bootstrap` is set by the runner, which reads the catalog pod's CATALOG_ROLE_SOURCE.",
+                  "if (pm.environment.get('b4_bootstrap') !== 'true') { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('editor create team -> 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('team_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ABAC matrix team\",\n  \"targetType\": \"catalog\",\n  \"targetId\": \"{{catalog_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/teams",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "teams"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bind the viewer as a reader on that team — B4 rigs only",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Slice B4 (ADR 0018) made MEMBERSHIP THE SOLE ACCESS PATH: on the user-service rig a freshly",
+                  "// created catalog is unreachable — even by its creator — until a governing team exists. This",
+                  "// step is that team, created through the SHIPPED public self-service endpoint (owner-on-create",
+                  "// binds the caller), so the suite exercises the real onboarding flow rather than a back door.",
+                  "//",
+                  "// On the OIDC-only quickstart rig (catalog `role-source=demo`, no user-service) there is no team",
+                  "// model at all and the static supplier already grants — so the step is SKIPPED rather than",
+                  "// failed. `b4_bootstrap` is set by the runner, which reads the catalog pod's CATALOG_ROLE_SOURCE.",
+                  "if (pm.environment.get('b4_bootstrap') !== 'true') { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('membership created -> 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "// `reader` is the SYSTEM role that reads and does not write — precisely the contrast",
+                  "// the whole matrix draws. Binding the viewer with anything wider would make folder 3's",
+                  "// denials pass for the wrong reason, or fail outright."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": \"{{team_id}}\",\n  \"userId\": \"{{viewer_uid}}\",\n  \"roleCode\": \"reader\"\n}"
+            },
+            "url": {
+              "raw": "{{user_service}}/internal/bootstrap/memberships",
+              "host": [
+                "{{user_service}}"
+              ],
+              "path": [
+                "internal",
+                "bootstrap",
+                "memberships"
+              ]
+            }
+          }
         },
         {
           "name": "Editor create category",
