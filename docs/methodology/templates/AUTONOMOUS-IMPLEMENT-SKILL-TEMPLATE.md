@@ -33,8 +33,13 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
 
 ## The invariant core (keep in every instantiation)
 
-1. **Prerequisite gate.** A complete, *verified* package (run the phase-② verify script). No
-   package, or red gates → STOP and run `/decompose`; never improvise the plan here.
+1. **Prerequisite gate.** A complete package that passed **both** phase-② gates — the mechanical
+   verify script *and* the adversarial validation pass (seam existence · unpinned semantics ·
+   cross-doc consistency). Re-run the script here; for the adversarial gate, confirm it was run and
+   its run-stoppers closed, because that is the one that establishes the tickets name APIs which
+   actually exist. No package, red gates, or an adversarial gate that never ran → STOP and route to
+   `/decompose`; never improvise the plan here. **A green script alone is not a verified package** —
+   it checks shape, not claims.
 2. **The three failure modes are the design brief.** Every structural element counters one:
 
    | Failure mode | The counter in the loop |
@@ -55,6 +60,15 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
    cause survives ≥3 focused attempts, a design fork the docs don't cover changes
    externally-visible behavior, or a local prerequisite is unrecoverable. Report the block;
    never silently scope-cut.
+5a. **A ticket that names a seam reality disagrees with is a REPORTED deviation, never a silent
+   adaptation.** When a named third-party class/method/property/endpoint/policy path turns out not
+   to exist, to have a different signature, or to behave differently: confirm against the artifact
+   (disassemble the jar, read the shipped types, run the policy engine, call the endpoint), then
+   **write the deviation into the ticket's STATUS *Decisions* section in your own words** before
+   proceeding — and escalate to a stop-and-ask if the correction changes externally-visible
+   behavior. This is the failure mode `fix-until-green` most easily swallows: the agent quietly
+   adapts, the run stays green, and a **planning defect that would recur in every future slice
+   disappears without a trace**. The whole outer loop depends on it surfacing.
 6. **The decided forks are binding** ("do NOT re-ask"); a *new* behavior-changing fork is a
    stop-and-ask, an internal detail with a sane default is decide-and-record-in-STATUS.
 7. **Never push, open PRs/MRs, or touch the default branch.** Local + the named branch(es)
@@ -63,7 +77,12 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
    maintainer-only handoff list, offer the phase-④ review, move the package to
    `implemented/` — and **record a run retrospective** to Mulch (one record per run: what the
    structure caught, where the run stalled or asked, which invariant earned its keep, what
-   the next package should pin earlier).
+   the next package should pin earlier). **Classify every pause and every reported deviation (5a)
+   into a named class**, so runs are comparable and a class recurring twice can be converted into a
+   gate rather than restated as advice. The classes this method has accumulated: *blast radius too
+   large to enumerate* · *a fail-open/contract semantic left unpinned* · *a third-party seam named
+   from a mental model* · *a rig/test-harness gotcha discovered mid-run*. An unclassified
+   retrospective is a diary entry; a classified one is an input to the next package's gates.
 
 ## The slots (what each repo decides)
 
@@ -95,7 +114,7 @@ effort: high
 > The package's AUTONOMOUS-IMPLEMENTATION-PROMPT.md is the marching orders; this skill is
 > the runner discipline around it.
 ## The three failure modes this structure defeats   ← the table, verbatim
-## Phase 0 — Load & verify    ← resolve package; verify script green or STOP → /decompose
+## Phase 0 — Load & verify    ← resolve package; BOTH phase-② gates green or STOP → /decompose
 ## Phase 1 — Set up           ← slot 1 branch/identity; decided forks binding; slot 4 rig
 ## Phase 2 — The per-ticket loop  ← the 10 steps; slot 2 commands; slot 3 ★gate table
 ## Phase 3 — Close out        ← summary, handoff list, retrospective (slot 7), move package
@@ -113,6 +132,10 @@ effort: high
       (this repo's is `autonomous-runs`); `ml add run-retrospective` only if none exists.
 - [ ] 5. Dry-run against the most recently shipped package: Phase 0 must pass its verify
       gates; the loop's commands must be copy-paste runnable.
+- [ ] 6. Check the alignment the loop depends on in **both** directions: the ★gate's escalation
+      table names review skills that exist, and invariant 5a's deviation rule appears in the §4
+      prompt's hard rules too. A runner that reports wrong-seam deviations while the prompt tells
+      the agent to work around them will follow whichever it read last.
 
 ## Related
 

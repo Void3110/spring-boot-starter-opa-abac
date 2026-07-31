@@ -167,8 +167,20 @@ mechanism *and* adds surface depending on it; **(b)** it crosses >1 deployable; 
 codified.
 
 **What makes a good ticket:** one focused commit; named deliverables; acceptance = the exact test/e2e that
-proves the *cut* (not just a 200-vs-403 shape); What-NOT-to-touch carrying the slice invariants forward; and
-**every new seam names its consumer + a non-happy-path test** (a seam with zero callers is not done).
+proves the *cut* (not just a 200-vs-403 shape); What-NOT-to-touch carrying the slice invariants forward;
+**every new seam names its consumer + a non-happy-path test** (a seam with zero callers is not done); and
+**every *third-party* seam verified against the real artifact, with the ticket saying how in one line** —
+disassemble the jar, read the shipped types, run the policy engine, call the endpoint. A ticket that names
+a library hook from memory is the second recorded way to stop a run (§7), and the check costs minutes.
+
+**Validating the package (the plan gets the same treatment as the code).** Two gates, both mandatory:
+a **mechanical** one (`verify-package.sh` — files, frontmatter, clean-room scan, no unfilled slots, the
+prompt's invariant skeleton, ticket/STATUS parity, **acceptance-citation cross-reference**, link
+resolution) and an **adversarial** one (a read-only fan-out: seam-existence auditors, an
+unpinned-semantics critic primed on the run retrospectives, and a cross-doc consistency pass — each
+finding adversarially verified, then ranked run-stopper / contradiction / nit). Neither substitutes for
+the other: the script cannot tell whether a named seam exists, and the fan-out is too expensive to re-run
+for a typo.
 
 ---
 
@@ -229,9 +241,22 @@ At the end of a slice run (phase ④, after `/deep-review`, before the folder mo
 fork that stopped it + any checkpoint friction + **the planning-gap → fix** (what phase ①/② should have
 pre-resolved so it won't recur). Across the first six slices the single recurring pause class was *"design
 left a fail-open/contract semantic unpinned,"* followed by *"a rig/test-harness gotcha discovered mid-run."*
-Pre-resolving those in design is what converts a paused run into a full-success run — so phase ① of the next
-slice **primes `autonomous-runs` and asks about exactly those**. That read-at-①, write-at-④ cycle is the
-outer loop; the slice-sizing gate (§4) is its most valuable single output.
+The seventh added a third, in a slice that integrated an unfamiliar third-party SDK: **"the decomposition
+named an integration point in someone else's API without verifying it exists."** Pre-resolving these in
+design is what converts a paused run into a full-success run — so phase ① of the next slice **primes
+`autonomous-runs` and asks about exactly those**. That read-at-①, write-at-④ cycle is the outer loop.
+
+**Each recurring class has been converted into a gate rather than left as advice** — that conversion is
+what the outer loop is *for*, and it is the honest measure of whether a retrospective was worth writing:
+
+| Recurring pause class | The gate it became |
+|---|---|
+| blast radius too large to enumerate | the **slice-sizing gate** (§4) — refuse to decompose on any split smell |
+| a fail-open/contract semantic left unpinned | the **unpinned-semantics critic** in the package's adversarial gate (§4), primed on this very domain |
+| a third-party seam named from a mental model | the **verify-the-artifact ticket rule** (§4) + the **seam-existence auditors** in the same gate |
+
+The pattern generalizes: prose in a guide degrades silently, a scripted or agentic gate does not. When a
+retrospective names a class twice, the response is to mechanize it — not to write it more emphatically.
 
 ---
 
@@ -240,7 +265,7 @@ outer loop; the slice-sizing gate (§4) is its most valuable single output.
 | Tool | Phase | Role in the loop |
 |---|---|---|
 | **grill-me** (Matt Pocock) | ① Plan | one-question-at-a-time fork resolution → the ADRs + design |
-| **decompose** (this repo's skill; [template](templates/DECOMPOSE-SKILL-TEMPLATE.md)) | ② Decompose | deterministic template instantiation — keeps the prompt skeleton verbatim (counters goal drift at the planning seam) |
+| **decompose** (this repo's skill; [template](templates/DECOMPOSE-SKILL-TEMPLATE.md)) | ② Decompose | deterministic template instantiation — keeps the prompt skeleton verbatim (counters goal drift at the planning seam); gated by `verify-package.sh` **and** a validation fan-out (seam existence · unpinned semantics · cross-doc consistency, adversarially verified) |
 | **the autonomous prompt** ([template](templates/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md)) | ③ Implement | the self-contained, checkpoint-gated hand-off one agent runs |
 | **deep-review** (this repo's skill; [template](templates/DEEP-REVIEW-TEMPLATE.md)) | ④ Review | fan-out → **adversarial verification** → completeness-critic (per-slice diff gate) |
 | **security-review** ([template](templates/SECURITY-REVIEW-SKILL-TEMPLATE.md)) | ④ Review (release) | whole-surface fan-out, adversarially verified + **live-probed** against the running rig; report-only |

@@ -40,7 +40,7 @@ tags:
 
 | ID | Case | Asserts | → Ticket |
 |---|---|---|---|
-| U5 | Well-formed custom claim, one actor | `DelegationChain` with `principal` == token `sub`, `actor` == the agent id, chain ordered `[principal, actor]`, `isAgentCall() == true` | T2 |
+| U5 | Well-formed custom claim, one actor | `DelegationChain` with `principal` == token `sub`, `actor` == the agent id, chain ordered `[actor]` — **actors only, nearest first; the principal is the separate `principal` component** *(corrected 2026-07-31: the original `[principal, actor]` contradicted U6 and the shipped shape; STATUS-02 Decisions §3)* — and `isAgentCall() == true` | T2 |
 | U6 | Nested chain, two hops (RFC 8693 `act` semantics) | chain **preserves order** and depth 2; the outermost actor is the immediate caller | T2 |
 | U7 | **No** actor claim | `actor` absent, `isAgentCall() == false`, **no throw** — an ordinary human call, the widest the tool-gate ever goes and still bounded by the principal's ceiling | T2 |
 | U8 | Malformed claim — a string where an object is expected, or an actor entry with no id | **throws** the extraction failure → **deny**; explicitly **does not** fall back to principal-only (a broken agent claim is not a human) | T2 |
@@ -126,8 +126,8 @@ Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I
 |---|---|---|---|
 | I16 | `tools/list`, then invoke **all four** tools | the listed set equals the callable set **exactly, by name** — the same 2 are listed and the same 2 pass the call-time gate; the other 2 are neither listed nor callable | T5 |
 | I17 | `tools/list` with N registered tools | **one** batch `allowAll` round-trip (OPA stub request count == 1), N booleans back — not N calls | T5 |
-| I18 | Roster batch fails (stub 5xx / timeout) | the server degrades to the **unfiltered** list — all 4 names present, **never empty, never fabricated** — and the call-time gate **still denies** the 2 non-callable tools (asserted by actually calling them) | T5 |
-| I19 | Roster batch **succeeds** with all-`false` (a zero-capability agent) | an **empty** roster is the correct answer here — the contrast with I18 proves degradation keys on *failure*, not on emptiness | T5 |
+| I18 | Roster batch against a **dead** OPA (stub 5xx / timeout / connection-refused) | the shipped `allowAll` normalises all of these to all-`false` and never throws, so the roster is **empty** — asserted as the *authoritative* reading, not a degradation — and every `tools/call` in the same turn **also denies**. The pair is what makes the empty roster honest rather than broken *(rewritten 2026-07-31 — the old "degrades to unfiltered" assertion described a signal this seam cannot emit)* | T5 |
+| I19 | Roster batch **succeeds** with all-`false` (a zero-capability agent) | the same **empty** roster as I18, byte-identical — the indistinguishability is asserted deliberately: the roster carries no authority, so both answers are correct | T5 |
 | I20 | Kill-switch `roster-filter` **OFF** | unfiltered list, call-time enforcement unchanged — externally identical to I18's degradation, and no wider | T5 |
 | I21 | Listed-but-revoked: turn 1 lists a tool; the capability profile is then revoked; turn 2 calls it | **denied at call time** — the list was a hint, never a grant, and the turn-scoped memo (U16) is what makes the revocation visible on the next turn | T5 |
 | I22 | `POST /mcp` streamable handshake at the wire | `initialize` answers `application/json` + the `Mcp-Session-Id` **response header**; a follow-up request on the same session answers **SSE-framed** — the `protocol: STREAMABLE` pin took effect (a 401-before-routing never proves routing) | T5 |
@@ -147,16 +147,25 @@ agent acting for **them**.
 | ID | Flow | Asserts (the actual cut) | → Ticket |
 |---|---|---|---|
 | E1 | Human token (no actor claim), `list_catalogs` through the MCP server | succeeds, and returns **the same catalogs** the same token gets from the catalog REST API directly — the tool surface adds no access and removes none | T6 |
-| E2 | Agent acting for that human, read-only capability: `list_catalogs` **and** a write / high-risk tool | **allow / deny contrast in one run** — the read tool succeeds; the write tool is denied at **`tool-gate`** although the *principal* is permitted it. The narrowing is visible end-to-end | T6 |
+| E2 | Agent acting for that human, capability capped at `low` risk: `list_catalogs` **and** `get_product` | **allow / deny contrast in one run** — `list_catalogs` (declared `low`) succeeds; `get_product` (declared `medium`) is denied at **`tool-gate`** although the *principal* is permitted it. The narrowing is visible end-to-end *(rewritten 2026-07-31 — the original named a "write / high-risk tool"; the surface is four READ tools by design and gating a mutation is out of scope, so the risk **tier** carries the contrast; STATUS-01)* | T6 |
 | E3 | The agent's `tools/list` | equals the expected set **by exact tool name** (name-by-name equality, not a count), and every listed tool is then successfully callable | T6 |
 | E4 | Agent whose tool-gate allows the tool, acting for a principal who may not reach the **target** | denied at **`target-gate`** — the catalog service's own unchanged policy, exercised as shipped; the layers are distinguishable in the error | T6 |
 | E5 | The same tool + target that E2's agent was allowed, replayed by an agent acting for the **low-privilege** principal | **denied** — the agent never exceeds its principal. Asserted with it: the catalog service received **no** role, capability or acting-as header on any request in the run (the fail-open shape [[MULTI-TENANT-ISOLATION|slice B4]] removed is not reintroduced) | T6 |
-| E6 | **Mid-run PDP-kill drill** — stop OPA mid-suite | every subsequent tool call **denies** at `tool-gate`; `tools/list` degrades to the unfiltered list while call-time **still denies everything**; assert **zero widening** — no call denied before the kill succeeds after it. Restart OPA → the pre-kill cut returns **exactly** (same tool names, same allow/deny vector) | T6 |
-| E7 | Kill-switch drill — `agent-gate` OFF, replay E2's denied write tool | the tool-gate no longer denies, and the **catalog target-gate still denies** it for a principal without the permission → the OFF state is **not wider** than ON, proven on the rig rather than argued | T6 |
+| E6 | **Mid-run PDP-kill drill** — stop OPA mid-suite | every subsequent tool call **denies** at `tool-gate`, and `tools/list` returns an **empty** roster — the two together are the point: nothing is callable and the roster says so *(corrected 2026-07-31 — the shipped `allowAll` cannot signal failure, so "degrades to the unfiltered list" was unreachable here; see [[00-DESIGN]] §3.2)*. Assert **zero widening** — no call denied before the kill succeeds after it. Restart OPA → the pre-kill cut returns **exactly** (same tool names, same allow/deny vector) | T6 |
+| E7 | Kill-switch drill — `agent-gate` OFF, replay E2's denied `get_product` **for a principal who may not read that product** | the tool-gate no longer denies, and the **catalog target-gate still denies** it → the OFF state is **not wider** than ON, proven on the rig rather than argued. *(Rewritten 2026-07-31: E2's own principal IS permitted the product, so replaying E2's exact subject would correctly succeed and prove nothing — the drill needs a principal the target-gate refuses.)* | T6 |
 | E8 | Every deny produced in E2 / E4 / E6 | a **structured** tool-error carrying a stable error code **and** the denying layer; no stack trace, no bare 5xx, never a silent empty result | T6 |
-| E9 | Every existing e2e matrix (catalog / hierarchy / tags / pagination / permission-categories / team / user-service) | re-runs **green** — this slice changed nothing they depend on | T6 |
+| E9 | Every pre-existing e2e runner — `run-tests.sh` **plus every** `scripts/postman/run-*-matrix.sh`, per the runner table in `scripts/postman/README.md` *(enumerated from the README rather than listed here, 2026-07-31 — the hand-written list had drifted)* | re-runs **green** — this slice changed nothing they depend on | T6 |
 | E10 | Human token (no actor claim), `tools/list` through the rig *(added 2026-07-31)* | the **ceiling-only** roster from the same rule — the principal-only cut; no-actor is an honest human call, and the agent path only ever narrows it | T6 |
-| E11 | Turn 1 lists a tool for the agent; the capability profile is revoked; turn 2 calls it *(added 2026-07-31)* | **denied at call time** on the live rig, next turn, **no restart** — I21's invariant proven end-to-end | T6 |
+| E11 | Turn 1 lists a tool for the agent; the pod's `example.mcp.agents` profile for that actor is rewritten to the empty profile; the MCP pod is restarted; turn 2 lists and calls the same tool *(added 2026-07-31; **scope corrected same day** — see note)* | the tool is **absent from the roster** and **denied at call time** with `tool-gate` — revocation is visible end-to-end on the rig | T6 |
+
+> **E11 scope note.** As first written, E11 demanded revocation **"no restart"** — but the shipped
+> `ConfigAgentCapabilitySupplier` reads static Spring config with no refresh path, so no such
+> mechanism exists and none is in scope to build. The **turn-scoped memo** (the thing "no restart"
+> was really testing) is proven deterministically in-process by **U16 + I21**; E11 keeps only what
+> the rig can honestly show — that a revoked profile disappears from both the roster and the call
+> path. A live-mutation capability source (a file-backed `AgentCapabilitySupplier` behind the
+> shipped SPI, rewritten between turns) is the natural **follow-up** if the drill is ever wanted
+> without a restart.
 
 ## Headline proof
 

@@ -111,6 +111,10 @@ example-mcp-server  (NEW Gradle module, dev.dmitriikonovalov.example.mcp.*)
                                   deleted when java-sdk #578 ships (SDK 2.1)
     (transport wiring)            the streamable transport provider rebuilt with an identity-carrying
                                   contextExtractor + a startup wiring check (§3.2, prerequisite 2)
+    TypeLevelRoleDefinitionSupplier  the principal's TYPE-LEVEL ceiling, resolved from the shipped
+                                  user-service (`/internal/governed-targets` then the batch
+                                  `/internal/effective-roles`, unioned) — added in T4 because the
+                                  tool-gate deliberately resolves no target; STATUS-04 Decisions §2
     ToolAuthorizationProperties   kill-switches (per layer) + timeouts
 
 infra/opa/policies
@@ -136,7 +140,7 @@ The tool-gate reuses the shipped `AbacContext` shape as-is. `AbacContext.Subject
 | `input.subject.attributes.actor` | the **agent** (absent for an ordinary human call) |
 | `input.subject.attributes.chain` | the ordered delegation chain |
 | `input.subject.attributes.agent_capability` | the capability profile (categories, max risk, allow-list) |
-| `input.resource.type` = `"tool"`, `input.resource.attributes` | the tool's declared category + risk-tags |
+| `input.resource.type` = `"tool"`, `input.resource.attributes` | the tool's declared **category, `target_type`, and risk-tags**. `target_type` is the resource type the tool reads (`catalog` / `category` / `product`) and is **mandatory** — the policy derives `principal_actions` through `permissions.effective_actions(role_definition, target_type)`, so an absent value leaves that undefined and the call **denies** (added in T3; STATUS-03) |
 | `input.action` | the tool's declared action verb |
 
 No core type changes; no per-type policy changes. The existing documents never see these keys
@@ -230,12 +234,25 @@ split deliberately into a durable core and a disposable adapter:
   unfiltered roster here would be *safe* — the roster is a hint — but it would switch the slice's
   headline off silently; a demo whose flagship feature can quietly vanish is worse than one that
   refuses to boot after an unverified upgrade.
-- **Runtime failure degrades, omit-never-fabricate.** If the roster batch fails at request time
-  (`allowAll` throws, times out, returns a size-mismatched list, or the roster identity is
-  unreadable), the server logs WARN and returns the **unfiltered** list plus the (still-enforcing)
-  call-time gate. It never presents "no tools" — that looks broken and the agent gives up — and it
-  never fabricates a tool. Degrading the *hint* is safe precisely because the hint carries no
-  authority.
+- **Runtime failure degrades, omit-never-fabricate — but the batch itself cannot report failure.**
+  The shipped `OpaClient.allowAll` is **contractually total and fail-closed**: it never throws and
+  always returns exactly N booleans, normalising every transport error, timeout, non-200, malformed
+  body **and** length mismatch into an all-`false` vector (`HttpOpaClient#allowAll` → `allFalse(n)`).
+  A PDP outage is therefore **indistinguishable** at this seam from a genuine zero-capability answer,
+  and the design does not pretend otherwise:
+  - **All-`false` is treated as authoritative ⇒ an empty roster is the correct answer**, whatever
+    caused it. During an OPA outage every `tools/call` denies too, so an empty roster is the *honest*
+    report — a roster advertising four tools that all fail would be the misleading one. (Settled
+    2026-07-31; supersedes the earlier "never present an empty roster" rule for the batch path, which
+    was written against failure modes this seam cannot express.)
+  - **The degradation-to-unfiltered path survives only for the edges *outside* the batch** — the ones
+    that really can fail: an unreadable roster identity, and the capability/ceiling lookups that
+    precede the batch (§4). Those log WARN and serve the **unfiltered** list plus the (still-enforcing)
+    call-time gate.
+  - **Never fabricate**: no tool is ever added to a roster, in any failure mode.
+
+  Degrading a *hint* is safe precisely because the hint carries no authority — and so is an empty one,
+  because the authoritative gate is what actually decides.
 
 **Uniform rule, no special-casing.** Every caller's roster answers the same policy question the call
 gate asks: for a human (no delegation chain) the `bulk` rule evaluates ceiling-only; for an agent,
@@ -266,10 +283,14 @@ on the **smaller** of the two possible results, on any error, timeout, or missin
 | `AgentCapabilitySupplier` | resolved profile | narrow by it |
 | `AgentCapabilitySupplier` | **authoritative-empty** (agent known, zero capability) | **deny** every tool (a real answer, per [[0014-supplier-outage-error-distinct\|ADR 0014]]) |
 | `AgentCapabilitySupplier` | outage / timeout (throws) | **deny** — distinct from authoritative-empty in the log and the error code, identical to the caller |
+| principal ceiling (user-service) | outage / timeout / non-200 at **call** time | **deny** (`tool-gate-ceiling-unavailable`) — B2's strict classification: only an explicit success is trusted |
 | tool-gate OPA call | OPA down / timeout / malformed response | **deny** (the shipped `OpaClient` fail-closed contract; [[HTTP-RESILIENCE]]) |
 | tool-gate OPA call | policy returns no `allow` binding | **deny** (`default allow := false`) |
-| roster batch `allowAll` | any failure | **unfiltered list** + call-time gate still enforcing (degrading a hint, not a grant) |
+| roster batch `allowAll` | OPA down / timeout / malformed / length mismatch | the shipped client normalises **all** of these to all-`false` and never throws ⇒ an **empty roster**, treated as authoritative. Honest: during that outage every `tools/call` denies too (§3.2) |
+| roster batch `allowAll` | a genuine zero-capability agent | the same **empty roster** — indistinguishable by design, and correct in both cases |
 | roster identity (transport context) | empty / unreadable at list time | **unfiltered list** + WARN — the call-time gate reads identity from the security context and still denies an agent properly |
+| capability supplier at **list** time | outage (throws) | **unfiltered list** + WARN — the hint carries no authority, and the call-time gate denies every tool for the same outage |
+| principal ceiling at **list** time | `RoleResolutionException` | **unfiltered list** + WARN — same reasoning; the authoritative deny still happens per call |
 | roster adapter (startup, not runtime) | pinned SDK internals moved by an upgrade | **startup failure** — the smoke check fails the context naming the pins; never a silent unfiltered no-op (§3.2) |
 | tool metadata | a tool with no declared action/category/risk | **deny** at registration-time validation — an unclassifiable tool is not exposed |
 | tool body | downstream catalog call denied | the target-gate's deny, surfaced as a labelled advisory error |

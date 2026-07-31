@@ -294,8 +294,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Standalone-value subset** — **T1–T4** are the reusable core (a runnable MCP server, dual identity,
   the tool-gate policy + capability seam, the enforcing PEP), unit- and `opa test`-provable without the
   rig. **T1 alone lands independently** — a Spring AI MCP server proxying the catalog REST API with the
-  caller's token, every tool declaring action/category/risk-tags, no authorization yet. T5 (roster
-  polish) and T6 (rig/e2e/docs) can follow if the window is short.
+  caller's token, every tool declaring action/category/risk-tags, no authorization yet. T5 and T6 can
+  follow if the window is short — but **T5 is not "polish"** post-amendment: the reflective roster
+  adapter, the transport-provider replacement, and the explicit `STREAMABLE` protocol flip make it
+  the riskiest ticket in the slice (00-DESIGN §3.2). T6 (rig/e2e/docs) is the wrapper.
 - **Rig / e2e specifics** — mint tokens **in-network** (the compose network), per the rig caveats;
   **restart OPA after editing a policy** (T3 and T6 both need this — an edited `agent_tools.rego` is
   not live until the container restarts); `ENABLE_MCP=1` adds the new service to the pod set and

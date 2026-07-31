@@ -56,7 +56,9 @@ surface the next five tickets gate. No authorization in this ticket.
 - `…mcp.tool.CatalogTools` — **4** `@McpTool` methods: `listCatalogs`, `getCatalog`,
   `listCategories`, `getProduct`. Each delegates to `CatalogApiClient`; **no** persistence, **no**
   shared DB, **no** duplicated enforcement.
-- `…mcp.tool.CatalogApiClient` — `RestClient` over `example.mcp.catalog.base-url`, forwarding the
+- `…mcp.tool.CatalogApiClient` — `RestClient` (superseded: shipped on the JDK `HttpClient` +
+  Jackson, matching the repo's three other outbound clients; STATUS-01 Decisions §3) over
+  `example.mcp.catalog.base-url`, forwarding the
   **caller's** bearer verbatim (never minting, exchanging, or rewriting a token) with connect/read
   timeouts; `…mcp.tool.CatalogApiErrorTranslator` maps a downstream 403 to the
   `target-gate`-labelled advisory error (the label vocabulary lands here; T4 adds the `tool-gate`
@@ -75,14 +77,16 @@ surface the next five tickets gate. No authorization in this ticket.
 - **STATUS-01 note:** the 30-second confirm that the spec site has flipped **Current** to the
   2026-07-28 revision — a docs-only observation; the pins in this ticket do not move.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **U1** (all 4 registered tools expose a non-blank action, a
-category, and at least one risk-tag; a `ToolRegistry` lookup of an unregistered name returns empty,
-never a permissive default) + **U2** (registration-time validation: a descriptor with a blank category
-fails startup — the tool is **not** exposed) + **I1** (in-process
-`com.sun.net.httpserver.HttpServer` stub standing in for the catalog REST API: the tool call carries
-the caller's bearer **byte-for-byte** and no extra role/capability header; a stub 403 → the
-`target-gate` advisory error; a stub 5xx / connection-refused → a structured tool error, never a raw
-stack trace). `./gradlew :example-mcp-server:test`.
+**Acceptance.** [[10-QA-TEST-CASES]] **U1–U4** + **I1–I3** (citations repaired 2026-07-31 to the QA
+doc's own numbering): **U1** all 4 registered tools expose a non-blank action, a category, and at
+least one risk-tag, and a `ToolRegistry` lookup of an unregistered name returns empty, never a
+permissive default; **U2** registration-time validation — a descriptor with a blank category or an
+absent risk-tag fails startup, the tool is **not** exposed; **U3** the `ToolCallClassifier` seam
+ships contract-only; **U4** the descriptor → OPA input mapping for `get_product`; **I1–I3**
+(in-process `com.sun.net.httpserver.HttpServer` stub standing in for the catalog REST API) the tool
+call carries the caller's bearer **byte-for-byte** with no extra role/capability header, a stub 403 →
+the `target-gate` advisory error, and a stub 5xx / connection-refused → a structured tool error,
+never a raw stack trace. `./gradlew :example-mcp-server:test`.
 
 **What NOT to touch.** No `opa-abac-*` module (this is an example service **on** the published
 starter). No change to `example-catalog-management-service`, `example-user-management-service`, or any
@@ -124,14 +128,17 @@ from a **plain custom claim** minted by stock Keycloak — fail-closed on every 
   through this seam; in this ticket the only consumer is the unit test (the bean is registered so T4
   can inject it unchanged).
 
-**Acceptance.** [[10-QA-TEST-CASES]] **U3** (no actor claim → `principal == sub`, `actor == null`,
-`chain` empty, `isAgentCall() == false` — the honest human reading, **not** a deny and **not** an
-agent grant) + **U4**, the non-happy path (each of: a claim of the wrong JSON type, a blank `sub`,
-chain depth 5 against max 4, an oversized claim, a cycle `agent-a → agent-b → agent-a`, and an actor
-id with illegal characters → `DelegationChainException`; **none** of them falls back to
-principal-only) + **I2** (a real Spring `Jwt` carrying the demo realm's minted claim → principal +
-actor + the chain in order; the extractor reads **only** the identity claim — never roles, scopes, or
-audience). `./gradlew :example-mcp-server:test`.
+**Acceptance.** [[10-QA-TEST-CASES]] **U5–U12** + **I4–I5** (citations repaired 2026-07-31 to the QA
+doc's own numbering): **U5–U6** a well-formed claim, one actor and a two-hop nested chain (RFC 8693
+`act` semantics) → principal + actor + the chain in order; **U7** **no** actor claim →
+`principal == sub`, `actor == null`, `chain` empty, `isAgentCall() == false` — the honest human
+reading, **not** a deny and **not** an agent grant; **U8–U12** the non-happy paths (a claim of the
+wrong JSON type, an array where an object is expected, a blank actor, chain depth above the max, an
+oversized claim, a cycle `agent-a → agent-b → agent-a`, an actor id with illegal characters, a
+missing/blank token `sub`) → `DelegationChainException`, **none** of them falling back to
+principal-only; **I4–I5** an inbound request with an agent-claim token vs. a plain token, and the
+chain derived **per request** — the extractor reads **only** the identity claim, never roles, scopes,
+or audience. `./gradlew :example-mcp-server:test`.
 
 **What NOT to touch.** A **malformed** agent claim is never downgraded to "an ordinary human call" —
 broken agent identity denies (the two rows in [[00-DESIGN]] §4 are deliberately different). The
@@ -187,12 +194,19 @@ allow and **every** deny edge.
   puts the profile on `input.subject.attributes.agent_capability`; `ToolRosterFilter` (T5) reuses the
   same turn's memo across the whole batch.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **U5**, the non-happy path (a known actor → a profile; an
-**unknown** actor → authoritative-empty, asserted **distinct** from outage; a throwing config source →
-`AgentCapabilityUnavailableException`, never a silent `empty()`) + **U6** (the turn-scoped memo: two
-lookups inside one turn → **one** source call; a second turn → a **fresh** call, so a profile revoked
-between turns takes effect on the second) + **P1–P10** (the `agent_tools_test.rego` cases above).
-`opa test infra/opa/policies -v` and `./gradlew :example-mcp-server:test`.
+**Acceptance.** [[10-QA-TEST-CASES]] **U13–U30** + **I6–I7** (citations repaired 2026-07-31: the
+earlier `U5`/`U6` belong to T2 and the cited `P1–P10` never existed — the policy cases are **U18–U30**):
+**U13–U15** the supplier's tri-state (a known actor → a profile; an **unknown** actor →
+authoritative-empty, asserted **distinct** from outage; a throwing source →
+`AgentCapabilityUnavailableException`, never a silent `empty()`); **U16–U17** the turn-scoped memo —
+two lookups inside one turn → **one** source call, a second turn → a **fresh** call, so a profile
+revoked between turns takes effect on the second, and different actors never share an entry;
+**U18–U30** the `agent_tools_test.rego` suite — empty input denies, the human path, ceiling ∩
+capability in every combination (including **U22**, a capability naming a category the ceiling does
+not grant, which grants nothing), risk-tag capping, the tool allow-list, authoritative-empty vs
+absent capability, no resolved ceiling, unknown category/verb, the batch `allowAll` entrypoint, and
+the existing documents byte-identical; **I6–I7** the supplier over its real HTTP edge and the exact
+JSON sent to the OPA stub. `opa test infra/opa/policies -v` and `./gradlew :example-mcp-server:test`.
 
 **What NOT to touch.** **No existing rego document** — `catalog.rego`, `category.rego`,
 `product.rego`, `role.rego`, `team.rego`, `permissions.rego` and their tests are read-only here; this
@@ -232,21 +246,26 @@ that names the denying layer, and land a kill-switch whose OFF state is provably
   T5's batch; STATUS-03 Decisions §6.)
 - `…mcp.authz.ToolAuthorizationProperties` — `@ConfigurationProperties("example.mcp.authz")`:
   `agent-gate.enabled` (default **true**), `policy-path` (default `agent_tools/allow` — superseded,
-  shipped default **`agent_tools`**; STATUS-03 Decisions §6), `timeout`.
+  shipped default **`agent_tools`**; STATUS-03 Decisions §6), and `role-source.{base-url,timeout}`
+  (a bare `timeout` under this prefix never shipped — the OPA-call timeout is the starter's own
+  `opa.abac` setting, not a property of `example.mcp.authz`; STATUS-04).
   The Javadoc states the OFF semantics: the tool-gate is skipped, the call is evaluated exactly as a
   human principal's would be, and the catalog service still enforces the principal ceiling — so OFF
   removes the **narrowing** and can never grant beyond the principal.
 - **Consumers named:** every `@McpTool` in `CatalogTools` (T1) is intercepted; T5's roster filter
   reuses this ticket's context builder for the batch.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **U7** (context build: every input path of §2.2 present and
-correctly populated; the declared risk-tags land in `resource.attributes`; nothing agent-related leaks
-into `resource`) + **I3**, the non-happy paths (in-process `HttpServer` OPA stub + catalog stub: allow
-→ the body runs and the catalog stub sees the caller's bearer; **deny → the catalog stub is never
-called** and the error names `tool-gate`; OPA 5xx / timeout / malformed body / a missing `allow`
-binding → **deny**; `AgentCapabilityUnavailableException` → deny with a distinct code but a
-caller-identical advisory; `DelegationChainException` → deny; `agent-gate.enabled=false` → the
-tool-gate is skipped **and** the catalog stub's 403 still surfaces as `target-gate`).
+**Acceptance.** [[10-QA-TEST-CASES]] **I8–I15** (citations repaired 2026-07-31: the earlier `U7`/`I3`
+belong to T2/T1; the context-shape assertions live inside these cases), the non-happy paths through an
+in-process `HttpServer` OPA stub + catalog stub: **I8** allow → the body runs, exactly one OPA call,
+and it **precedes** the catalog call; **I9** tool-gate deny → **the catalog stub is never called** and
+the error names `tool-gate`; **I10–I11** OPA 5xx / timeout / connection-refused / malformed body / a
+missing `allow` binding → **deny** on every edge; **I12** a malformed identity claim → deny **before
+any OPA call**; **I13** capability outage vs authoritative-empty → both deny with **distinct** codes
+and **identical** caller-facing content; **I14** the catalog's 403 → an advisory error naming
+`target-gate` with the upstream code preserved; **I15** kill-switch `agent-gate` OFF → OPA is not
+asked **and** the catalog's 403 still denies as `target-gate`. Every input path of §2.2 is asserted
+present and correctly populated, with nothing agent-related leaking into `resource`.
 `./gradlew :example-mcp-server:test`.
 
 **What NOT to touch.** **Never** send a role, capability, chain, or acting-as header to the catalog
@@ -303,11 +322,19 @@ is deleted when #578 ships.
   the adapter installation **and its smoke check** entirely — the deliberate post-upgrade escape
   hatch when an SDK bump moves the pinned internals — and at runtime is byte-identical to the
   degradation path below.
-- **Omit-never-fabricate degradation (runtime only)** — on any request-time failure (`allowAll`
-  throws, times out, or returns a size-mismatched list; the roster identity is unreadable) the
-  server logs WARN and returns the **unfiltered** list. It never returns an empty roster (that reads
-  as broken and the agent gives up) and never invents a tool name. Degrading a hint is safe
-  precisely because the hint carries no authority.
+- **Failure semantics — read [[00-DESIGN]] §3.2 before writing this.** The shipped
+  `OpaClient.allowAll` is **total and fail-closed**: it never throws and always returns exactly N
+  booleans, normalising outage, timeout, non-200, malformed body and length mismatch alike into
+  all-`false` (`HttpOpaClient#allowAll` → `allFalse(n)`). So:
+  - **Do not write a degradation branch keyed on the batch throwing or returning a wrong-length
+    list — those signals do not exist at this seam.** An all-`false` vector is taken as
+    **authoritative ⇒ an empty roster**, whether it came from an outage or a zero-capability agent.
+    That is correct in both cases: during an outage every `tools/call` denies too, so an empty
+    roster is the honest report (settled 2026-07-31).
+  - **Degrade to the unfiltered list only on the edges outside the batch**, which genuinely can
+    fail: an unreadable roster identity, and the capability/ceiling lookups preceding the batch —
+    log WARN, serve the full list, and let the (still-enforcing) call-time gate decide.
+  - **Never fabricate** a tool name, in any failure mode.
 - **Consumers named:** the wrapped `tools/list` handler consumes the filter; T6's scripted client
   asserts the resulting cut.
 
@@ -350,15 +377,26 @@ service into `deploy.sh`, document it, and move the folder to `implemented/`.
   `ENABLE_MCP=1` flag that force-enables `ENABLE_OIDC` + `ENABLE_OPA` + `ENABLE_USER_SERVICE` (the
   `ENABLE_SPA` / `ENABLE_DIRECTORY` precedent), the image build step, the health wait, and the status
   line. The default rig (no `ENABLE_MCP`) stays byte-for-byte unchanged.
-- **Realm:** `infra/keycloak/realm-export.json` gains an agent client plus a **protocol mapper**
-  minting the plain `act_chain` custom claim, and the personas the matrix needs — a principal with a
-  broad catalog role, an agent actor whose capability profile is strictly narrower, and one actor
-  configured with an **empty** profile. Demo secrets only, obviously demo-scoped.
+  **Every outbound base-URL must be overridden in-network — the shipped defaults are `localhost`,
+  which on the rig resolves to the pod itself:** the catalog base-url, the `authz.role-source`
+  base-url (the user-service — reached for the type-level ceiling, so a wrong value denies **every**
+  tool call with `tool-gate-ceiling-unavailable`), and the starter's OPA url. Assert all three in the
+  pod's environment, not just the catalog one.
+- **Realm:** `infra/keycloak/realm-export.json` gains **one client per demo actor** —
+  `catalog-agent-readonly`, `catalog-agent-overreach`, `catalog-agent-revoked` — each with a
+  hardcoded-claim **protocol mapper** minting `act_chain` with that client's actor id. The actor
+  therefore comes from *which client* minted the token, so the same human principals can also obtain
+  an ordinary **no-actor** token through the existing client (which E1/E10 require). A single agent
+  client cannot mint three distinct actors, and a user-attribute mapper would bind the actor to the
+  human instead of the agent. Demo secrets only, obviously demo-scoped.
 - **Capability config:** the `example.mcp.agents` demo profiles passed to the service pod, including
   both the narrower-than-ceiling profile and a deliberately **wider-than-ceiling** one, so the e2e can
   prove no widening on the live rig and not only in `opa test`.
-- **e2e:** `scripts/postman/agent-tool-matrix.postman_collection.json` +
-  `scripts/postman/run-agent-tool-matrix.sh`, registered in `scripts/postman/run-tests.sh`. The
+- **e2e:** `scripts/postman/agent-tool-matrix.postman_collection.json` + a **standalone**
+  `scripts/postman/run-agent-tool-matrix.sh`, documented as a new row in the runner table of
+  `scripts/postman/README.md`. (There is nothing to "register": `run-tests.sh` runs the lifecycle
+  collection only — it is not an aggregate suite runner, and the repo's convention is one standalone
+  `run-<name>-matrix.sh` per matrix.) The
   collection **is** the deterministic scripted MCP client, and it must speak the **real** streamable
   framing (T5 pins `protocol: STREAMABLE`): every request POSTs `/mcp` with
   `Accept: application/json, text/event-stream`; `initialize` answers as plain `application/json`
@@ -386,8 +424,10 @@ mid-run PDP-kill drill (zero widening; the roster degrades unfiltered while call
 the `agent-gate` OFF drill proving OFF is never wider than ON, E8 the structured layer-naming error
 on every deny, E9 every pre-existing e2e matrix re-runs green, plus the amendment's additions —
 **E10** a human token's roster is the ceiling-only cut from the same rule (no-actor is an honest
-human call; the agent path only ever narrows it), **E11** a listed-then-revoked tool is still denied
-at call time on the next turn, live on the rig, no restart. `ENABLE_MCP=1 ./deploy.sh up --pods 2`
+human call; the agent path only ever narrows it), **E11** a revoked profile removes the tool from both the roster and the call path on the rig (via a
+config rewrite + pod restart — the "no restart" variant needs a live-mutation capability source that
+does not exist and is not in scope; the turn-scoped memo it was testing is proven by U16 + I21).
+`ENABLE_MCP=1 ./deploy.sh up --pods 2`
 then `scripts/postman/run-agent-tool-matrix.sh`; plus `./gradlew build` green.
 
 **What NOT to touch.** No existing collection's assertions change — the new matrix is additive and
@@ -409,7 +449,9 @@ part of this ticket.
 - The agent matrix green through the rig (`ENABLE_MCP=1 ./deploy.sh up --pods 2` →
   `scripts/postman/run-agent-tool-matrix.sh`), and the full `scripts/postman/run-tests.sh` still green.
 - **Fail-closed holds on every new edge** — chain extraction, capability lookup, the tool-gate OPA
-  call, the roster batch: each lands on deny or the **smaller** result (U4, U5, I3, I4, E5). No new
+  call, the roster batch: each lands on deny or the **smaller** result (chain extraction U8–U12 +
+  I12; capability lookup U15 + I13; the tool-gate OPA call I10–I11; the roster batch I18–I19 + I27–I28;
+  end-to-end E5 + E6 — citations repaired 2026-07-31). No new
   code path can widen a decision.
 - **The intersection is provable and computed in Rego** — a capability wider than the principal's
   ceiling yields the ceiling, not the capability (the `agent_tools_test.rego` case + E2).

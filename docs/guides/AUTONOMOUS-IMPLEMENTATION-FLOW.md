@@ -195,6 +195,41 @@ a **1:1 structural mirror** of every prior slice:
   off-state behavior, the recovery edge fired). Completeness rules framed around the happy round-trip
   silently exclude exactly these — recovery and secondary paths are first-class links to trace, not an
   appendix.
+- **Verify every THIRD-PARTY seam against the real artifact — never from a mental model.** A ticket may
+  not name a class, method, annotation, config property, endpoint, or policy path *belonging to someone
+  else's code* unless it was checked against ground truth, and the ticket says how in one line:
+  `javap -p` / `unzip -p` against the jar in the Gradle cache for a library API; the OpenAPI spec or a
+  live call for a service endpoint; the autoconfigure class's constants for a Spring property; `opa`
+  against the corpus for a rego path. **This is the keystone lesson of the AGENT-TOOL-AUTHZ run:** four
+  deviations — a `tools/list` filter hook that does not exist, `extract(Jwt)` where the repo has no
+  Spring `Jwt`, `policy-path: agent_tools/allow` that would break the batch endpoint, and a
+  `ToolDescriptor` missing the field the ceiling needs — all traced to plausible-sounding APIs written
+  from memory, and two of them stopped the run. The counter-example is the habit to generalize: that
+  run's T1 opened with a throwaway context-start spike proving Spring AI booted on this repo's Boot
+  baseline **before** any code was written. An afternoon of artifact inspection during planning is
+  cheaper than one paused run.
+- **Pin the OFF state and the error state of everything you introduce.** Every kill-switch, degradation
+  path, and failure edge states explicitly what it does — and, where two failure *classes* exist (e.g.
+  a startup/installation failure vs a request-time failure), which lands where. Across the shipped
+  slices the single most common cause of a paused run is **"the design left a fail-open/contract
+  semantic unpinned"**; a switch documented only as "OFF disables X" is that gap in miniature.
+
+**Validating the package before it ships (the decomposition's own quality gate).** The package *is* the
+deliverable of this phase, so it gets the same treatment code gets: a deterministic gate plus an
+adversarial pass.
+
+1. **Mechanical** — `scripts/planning/verify-package.sh <SLICE>`: files, frontmatter, clean-room scan,
+   no unfilled slots, the prompt's invariant skeleton, ticket/STATUS parity, **acceptance-citation
+   cross-reference** (every `U*/I*/E*` a ticket cites exists in `10-QA-TEST-CASES.md` *and* that case's
+   `→ Ticket` column agrees), and **wikilink resolution**.
+2. **Adversarial** — the `decompose` skill's validation workflow: seam-existence auditors (every
+   third-party claim re-checked against the real artifact), an unpinned-semantics critic (primed with
+   the `autonomous-runs` pause classes), and a cross-doc consistency auditor (design ↔ decomposition ↔
+   QA ↔ prompt telling one story), each finding adversarially verified before it is reported.
+
+Both must be clean before the package is committed. The two classes they catch are precisely the two
+that have historically stopped runs: a **named seam that does not exist**, and a **semantic left
+unpinned**.
 
 **Conventions for every note:** valid frontmatter (one `status/`, one `type/`, ≥1 `area/`),
 `UPPER-KEBAB-CASE.md`, `[[wikilinks]]`, links back to `[[POC-ROADMAP]]`. A structural decision surfaced
@@ -359,7 +394,19 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   cause survives ≥3 focused attempts, OR a design decision the docs don't cover is needed, OR a local
   prerequisite is unrecoverable.
 - **«Fail-closed is the load-bearing invariant — restate it for this slice in one sentence: no path
-  returns more/wider results on an error than on success».**
+  returns more/wider results on an error than on success».** Fail-closed does **not** always mean
+  "deny and continue": where the slice defines more than one failure *class*, each lands where the
+  design says — a request-time failure may degrade to the narrower result while an
+  install/startup-time failure **fails the context outright** rather than booting silently degraded.
+  «Name this slice's classes and where each lands, or say "one class only".» Never collapse two
+  classes into one rule because the sentence reads cleaner.
+- **Verify a third-party seam before you build on it.** If a ticket names a library class, method,
+  annotation, config property, endpoint, or policy path and reality disagrees — the signature differs,
+  the hook does not exist, the property behaves differently — **that is not a blocker to work around
+  and not a silent adaptation**: confirm against the artifact («the repo's ground-truth commands»),
+  then record the deviation in the STATUS *Decisions* section, in the ticket's own words, before
+  proceeding. A plan that named the seam from a mental model is a planning defect the run should
+  surface, not absorb.
 - **«Slice-specific invariants — e.g. AND-don't-replace; additive-only library change; match-in-Rego;
   flat-verb-only. List every one the agent must never trade away».**
 - **Clean-room IP boundary** — never introduce proprietary names, package names, comments, or source.
@@ -564,6 +611,36 @@ knows that material rather than looking like bespoke ceremony.
 > [`docs/methodology/templates/DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). Treat the
 > entries below as living.
 
+### What a workflow subagent actually knows (probed 2026-07-31, two independent agents agreeing)
+
+Several gates in this method are multi-agent fan-outs, so how a spawned agent acquires expertise is a
+method question, not a tooling detail. Measured, not assumed:
+
+| | What the subagent gets |
+|---|---|
+| Parent conversation | **Nothing.** No turns, no summary, no prior findings. Only the prompt string it was handed. |
+| Global + workspace-root `CLAUDE.md`, `MEMORY.md` | **Pre-injected**, verbatim, before any tool call. |
+| The **repo-local** `CLAUDE.md` (IP boundary · commit identity · Mulch domain table) | **NOT pre-injected** — it arrives only after the agent's first command touches that directory. |
+| Mulch | Reachable (`ml` on PATH, the store resolves, records return) — but **nothing auto-primes**. The parent's `ml prime` lives in the *parent's* context only. |
+| The vault + the whole workspace tree | Readable, including material outside the repo. |
+
+Three consequences for authoring any workflow in this method:
+
+1. **Carry facts, fetch corpora.** If the parent already knows what matters, paste it into the prompt
+   (the seam auditors get exact jar paths, not "go find the jars") — N agents × a full prime is real
+   cost and each one can truncate. Make an agent prime only when reasoning over a whole domain *is*
+   its job, and pass `--budget 8000` inside that prompt: the truncation trap applies to subagents too.
+2. **Restate the boundaries you depend on.** Never assume the clean-room rule, the commit identity, or
+   the read-only posture reached the agent — the file carrying them is the one that is *not*
+   pre-injected. Every prompt in this repo's workflows states them inline for that reason.
+3. **Agents report, the parent records.** Parallel agents writing to one Mulch store race on the same
+   file and multiply the swept-staged trap. The report-only split that makes reviews trustworthy is
+   also what keeps the accumulator consistent.
+
+> **Operational note:** everything in the global `CLAUDE.md` is in *every* subagent's context from its
+> first token. Secrets kept there are therefore broadcast to every agent a fan-out spawns — worth
+> knowing before putting a live token in that file.
+
 ### The stack at a glance
 
 | Tool | What it is | Used in phase | Upstream | Pattern it instantiates |
@@ -704,6 +781,8 @@ prime it *before* judging that gate's output, so a documented FP is never re-fix
 
 | Gate | Kind | Scope | When | Green means |
 |------|------|-------|------|-------------|
+| **`verify-package.sh`** | mechanical | the planning package | phase ②, before the docs commit | files · frontmatter · clean-room · no unfilled slots · prompt skeleton · ticket/STATUS parity · **acceptance citations resolve and are owned** · links resolve |
+| **the decompose validation workflow** | judgment | the planning package | phase ②, after the mechanical gate | every **run-stopper** and **contradiction** fixed (seam existence · unpinned semantics · cross-doc consistency), then the mechanical gate re-run |
 | Compile + unit tests (`./gradlew :module:test`) | mechanical | ticket | per-ticket step 4 | fix-until-green |
 | **★ architecture review + refactor** | judgment | ticket | step 5, *before* IT/e2e | lenses applied; findings refactored + re-tested; STATUS note written |
 | **Local Sonar** (`./.sonar-local/sonar-local.sh`) | mechanical | changed `.java` files | inside step 5 / `/deep-review` validate | `CLEAN — 0 open findings` on changed files (FPs: `ml prime quality-gate-sonar`) |
