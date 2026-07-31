@@ -34,6 +34,23 @@ monolith); this template is distilled from both.
    can't name every consumer of a mechanism it changes. On a hit, propose the 2–3 smaller slices and
    route back to phase ①. (B4 tripped all four — see §2a.) This gate is itself an invariant: every
    instantiation enforces it, however its phase boundary is drawn.
+1b. **Read the retrospective history before decomposing — this is the outer loop's READ side, and it
+   is an invariant, not a slot.** Prime the repo's **dedicated** run-retrospective domain and ask two
+   questions explicitly: *which fail-open/contract semantics are unpinned here?* and *which prior-run
+   gotchas apply to this slice?* Every gate in this method was once a pause recorded in that domain —
+   the slice-sizing gate (1a) and the seam-verification rule (5a) both came from it — so a package
+   decomposed without reading it re-earns lessons already paid for.
+
+   **The failure mode this invariant exists to prevent is silent and common:** retrospectives get
+   *written* at close-out and never *read* at planning, so the loop looks complete while nothing
+   flows back. Observed in a sibling instantiation 2026-07-31 — records were being filed at ④ into a
+   general-purpose domain, and the phase-② skill primed "the domains for the surfaces the slice
+   touches", which never includes the retrospective one. Half a loop is decoration. Check both
+   directions when instantiating: something must **read** it here, something must **write** it at
+   close-out (runner invariant 8), and it must be its **own** domain — folded into a general store it
+   is unprimeable in practice, because you cannot prime "the pause history" without also pulling in
+   every unrelated technical record.
+
 2. **Phase boundary is explicit.** Either the skill *refuses* phase-① work and routes to the
    planning step (this repo's choice), or it *folds ① in* with an interview at the top (the
    other instantiation's choice) — but the exit criterion is identical: **every fork that

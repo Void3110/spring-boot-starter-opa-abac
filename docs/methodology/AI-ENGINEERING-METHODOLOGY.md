@@ -258,6 +258,21 @@ what the outer loop is *for*, and it is the honest measure of whether a retrospe
 The pattern generalizes: prose in a guide degrades silently, a scripted or agentic gate does not. When a
 retrospective names a class twice, the response is to mechanize it — not to write it more emphatically.
 
+**The retrospective domain is therefore structural, not optional.** It is the loop's memory: the only
+artifact that outlives a context window, and the substrate the phase-② unpinned-semantics critic reads.
+Two properties are load-bearing and both fail quietly, so check them deliberately in any instantiation:
+
+- **Dedicated.** Folded into a general expertise store it becomes unprimeable in practice — you cannot
+  pull "the pause history" without dragging in every unrelated technical record, so nobody does.
+- **Read as well as written.** Phase ④ writing to it while phase ① never primes it produces a loop that
+  *looks* closed while nothing flows back. Records accumulate; no gate is ever born from them. Observed
+  in a sibling instantiation (2026-07-31): retrospectives were filed diligently at close-out into a
+  general domain, and the decomposition skill primed only "the domains for the surfaces the slice
+  touches" — which never includes the retrospective one. Half a loop is decoration.
+
+The read-at-①/write-at-④ pair is what makes this an outer *loop* rather than a filing habit. Neither
+half is worth much alone.
+
 ---
 
 ## 8. The tooling & skills stack (what powers each phase)

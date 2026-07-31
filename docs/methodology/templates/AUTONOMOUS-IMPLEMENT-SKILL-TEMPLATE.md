@@ -75,7 +75,19 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
    only. Phase ④ is the maintainer's.
 8. **Close-out**: final summary (all tickets, the headline proof, the full-suite result), the
    maintainer-only handoff list, offer the phase-④ review, move the package to
-   `implemented/` — and **record a run retrospective** to Mulch (one record per run: what the
+   `implemented/` — and **record a run retrospective to the repo's DEDICATED retrospective domain.**
+
+   That domain is an **invariant of the method, not a per-repo slot**: it is the outer loop's memory,
+   the only artifact that survives a context window, and the substrate the phase-② unpinned-semantics
+   critic reads. Two properties are load-bearing and both fail quietly:
+   - **Dedicated, never folded into a general store.** Mixed in with technical records it becomes
+     unprimeable in practice — you cannot pull "the pause history" without dragging in everything
+     else, so nobody does.
+   - **Read as well as written.** If phase ② doesn't prime it (decompose invariant 1b), records
+     accumulate that nothing consumes, and the loop *looks* closed while nothing flows back.
+     Verify both directions at instantiation, not once the packages exist.
+
+   One record per run: what the
    structure caught, where the run stalled or asked, which invariant earned its keep, what
    the next package should pin earlier). **Classify every pause and every reported deviation (5a)
    into a named class**, so runs are comparable and a class recurring twice can be converted into a
@@ -128,8 +140,12 @@ effort: high
       where they overlap** — the skill must never contradict the prompt it runs.
 - [ ] 3. Add the repo's review skills to the ★gate table (slot 3); confirm the heavy path
       reviews committed diff.
-- [ ] 4. Check `ml status` for an existing retrospective domain first — the name varies per repo
-      (this repo's is `autonomous-runs`); `ml add run-retrospective` only if none exists.
+- [ ] 4. **Confirm a DEDICATED retrospective domain exists, and create one if it does not** — the
+      name varies per repo (this repo's is `autonomous-runs`), but a general-purpose domain does
+      **not** satisfy this: "we file retrospectives into the main store" is the failure, not the
+      workaround. Then verify the loop is closed in **both** directions — the phase-② skill primes
+      it (decompose invariant 1b) *and* close-out writes to it (invariant 8). A repo that only writes
+      has half a loop and will re-earn lessons it already paid for.
 - [ ] 5. Dry-run against the most recently shipped package: Phase 0 must pass its verify
       gates; the loop's commands must be copy-paste runnable.
 - [ ] 6. Check the alignment the loop depends on in **both** directions: the ★gate's escalation
