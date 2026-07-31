@@ -151,7 +151,11 @@ effort: high
 - [ ] 4. **Confirm a DEDICATED retrospective domain exists, and create one if it does not** — the
       name varies per repo (this repo's is `autonomous-runs`), but a general-purpose domain does
       **not** satisfy this: "we file retrospectives into the main store" is the failure, not the
-      workaround. Then verify the loop is closed in **both** directions — the phase-② skill primes
+      workaround. **Keep it separate from the *method* domain too** — they are different kinds of
+      knowledge (append-only dated observations vs. superseded rules; linear growth vs. stepwise;
+      primed at planning vs. primed while working), and merged, any shelf-life setting is wrong for
+      half the records. See the flow guide / methodology "why the method and the run history are two
+      domains" for the composition evidence and the three-stage pipeline between them. Then verify the loop is closed in **both** directions — the phase-② skill primes
       it (decompose invariant 1b) *and* close-out writes to it (invariant 8). A repo that only writes
       has half a loop and will re-earn lessons it already paid for.
 - [ ] 5. Dry-run against the most recently shipped package: Phase 0 must pass its verify

@@ -273,6 +273,55 @@ Two properties are load-bearing and both fail quietly, so check them deliberatel
 The read-at-①/write-at-④ pair is what makes this an outer *loop* rather than a filing habit. Neither
 half is worth much alone.
 
+### 7a. Why the method and the run history are two domains
+
+They look like one topic ("how we work") and are two different **kinds of knowledge**, with different
+write moments, different lifecycles, and different recall moments. Keeping them apart is not tidiness —
+merged, each corrupts the other. The store's own composition shows the separation is real rather than
+asserted (measured 2026-07-31, ~53 days in):
+
+| | `opa-abac-methodology` — the method | `autonomous-runs` — the run history |
+|---|---|---|
+| Holds | rules: the loop, the gates, decisions *about* the method | observations: one record per slice run, dated |
+| Record types | 12 `decision` · 2 `convention` · 2 `failure` · 1 `pattern` · 1 `reference` | **29 `reference`** · 2 `pattern` |
+| Classification | 14 `tactical` · 2 `foundational` · 2 observational | **29 `observational`** · 1 each other |
+| Grows | in **steps**, only when a class recurs and is mechanized | **linearly**, one per run, forever |
+| Lifecycle | records are **superseded** when a better rule replaces them | records are **append-only** — a run happened; that is history |
+| Primed when | *doing* the work | *planning* the next slice |
+| Count | 18 | 31 |
+
+Near-total separation by both type and classification — the method domain is `decision`-shaped and
+durable, the run history is `reference`-shaped and observational. That is what makes the split
+structural rather than a filing preference.
+
+**The pipeline between them is the outer loop, in three stages.** Observations accumulate
+(`autonomous-runs`, one `reference` per run) → a **synthesis** record distils the recurring shape
+across runs (`autonomous-runs`, `pattern` — this store has 2, e.g. "the two recurring planning-gap
+classes") → the class becomes a **rule or a gate** in the method domain (`opa-abac-methodology`,
+`decision`). Every gate this method has was born that way. The synthesis stage is the one that gets
+skipped, and it is the one that matters: raw run records are evidence, not lessons.
+
+**Reading the ratio — a shape, never a metric.** After ~53 days the run history (31) is *larger* than
+the method (18), and **that inversion is healthy**: you should run far more often than you change how
+you work, so the observational side must outgrow the rule side. The signal worth glancing at is not the
+number but the **shape over time** — *run history growing while the method domain stays flat* means the
+synthesis stage has stopped and observations are piling up unread; the reverse (rules multiplying
+without runs behind them) is process invented ahead of evidence. Do **not** turn this into an SLO or a
+tracked metric: at n≈30 heterogeneous runs it is statistically empty, and dashboarding it would be
+exactly the "metric theater a sophisticated buyer discounts" that this method already rejected once.
+Glance at it when a slice closes; act only on a flatline.
+
+**What merging them would break**, concretely — the reason "just put retrospectives in the main store"
+is a failure and not a shortcut:
+- **Priming.** You could no longer pull the pause history without dragging in every technical record,
+  so in practice nobody would — the critic that reads it goes blind (§7).
+- **Staleness and pruning.** Append-only dated history and mutable rules need opposite decay
+  treatment. Mixed in one domain, any shelf-life setting is wrong for half the records — a real hazard
+  here, where a default `shelf_life.tactical` of 14 days once flagged 230 of 282 durable records as
+  stale.
+- **Supersession.** A rule gets replaced; a run record never does. One domain cannot honestly hold both
+  semantics.
+
 ---
 
 ## 8. The tooling & skills stack (what powers each phase)
