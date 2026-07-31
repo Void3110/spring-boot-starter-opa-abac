@@ -107,10 +107,9 @@ example-mcp-server  (NEW Gradle module, dev.dmitriikonovalov.example.mcp.*)
                                   invocation path (T4 deviation, STATUS-04 Decisions §1)
     ToolRosterFilter              tools/list: the DURABLE filter core (batch `allowAll`) — §3.2
     RosterFilterInstaller         the DISPOSABLE startup adapter installing the core into the SDK's
-                                  request-handler map — smoke-checked, fails the context on drift;
-                                  deleted when java-sdk #578 ships (SDK 2.1)
-    (transport wiring)            the streamable transport provider rebuilt with an identity-carrying
-                                  contextExtractor + a startup wiring check (§3.2, prerequisite 2)
+                                  request-handler map — resolves the transport provider by INTERFACE
+                                  type so a stub can be substituted in tests; smoke-checked, fails
+                                  the context on drift; deleted when java-sdk #578 ships (SDK 2.1)
     TypeLevelRoleDefinitionSupplier  the principal's TYPE-LEVEL ceiling, resolved from the shipped
                                   user-service (`/internal/governed-targets` then the batch
                                   `/internal/effective-roles`, unioned) — added in T4 because the
@@ -212,20 +211,33 @@ split deliberately into a durable core and a disposable adapter:
   per-request state rides the exchange the session constructs per JSON-RPC request. The map is
   **never** mutated after startup.
 
-**Two hard prerequisites, each with a startup guard:**
+**One hard prerequisite, with a startup guard:**
 
 1. **`spring.ai.mcp.server.protocol=STREAMABLE`, set explicitly.** The 2.0.0 auto-config
    `@Conditional`s match the property string and ignore the properties-field default — with the
    property absent the server silently runs the legacy SSE transport (`GET /sse` +
    `POST /mcp/message`; `POST /mcp` 404s), where the adapter's seam is not reachable. The smoke
    check asserts the transport type, not just the fields.
-2. **An identity-carrying `contextExtractor`.** The stock transport produces an **empty**
-   `McpTransportContext` — the filter would see no principal for anyone. The transport-provider bean
-   is replaced (that one *is* `@ConditionalOnMissingBean`-replaceable) with one whose extractor
-   captures the resolved caller on the servlet thread — after the security chain, before any MCP
-   code. A wiring check in the spirit of `ActorClaimWiringCheck` fails startup if the
-   identity-carrying extractor is not the one installed: an empty context would silently un-filter
-   every roster.
+
+**Identity: `SecurityContextHolder`, the same source the call path already uses** — settled by a lab
+spike 2026-07-31, replacing an earlier prerequisite that assumed otherwise. The list handler runs
+**inline on the servlet thread, inside the security filter chain** (Spring AI's sync auto-config sets
+`immediateExecution(true)`), so the resolved `AbacAuthentication` is visible there exactly as it is in
+`ToolCallAuthorizer`. Measured, not inferred: a probe filter that clears its `ThreadLocal` in a
+`finally` still had the value visible inside a wrapped `tools/list` handler, on the same
+`http-nio-*-exec-*` thread — proving the handler runs *before* the chain unwinds. Consequences: **no
+transport-provider replacement, no custom `contextExtractor`, no wiring guard**, and — the point —
+**one identity mechanism for both paths**, so the roster and the gate can never disagree about who
+the caller is. Request-scoped state resolves for the same reason, so the turn-scoped capability memo
+works unchanged on the list path.
+
+**The governing invariant — the roster answers the same question the call gate will.** Whatever the
+call path would decide for this caller *right now*, the roster must predict. This is what makes the
+hint trustworthy in the only direction that matters, and it settles switch interactions rather than
+leaving them to be discovered: with **`agent-gate` OFF** the call path evaluates an ordinary human
+principal, so the roster builds its contexts **without the agent attributes** and shows the
+ceiling-only cut. A roster that kept narrowing by capability while calls did not would hide tools the
+caller can successfully call — the one direction a hint must never fail in.
 
 **Failure semantics — two distinct classes, deliberately different:**
 
@@ -288,7 +300,7 @@ on the **smaller** of the two possible results, on any error, timeout, or missin
 | tool-gate OPA call | policy returns no `allow` binding | **deny** (`default allow := false`) |
 | roster batch `allowAll` | OPA down / timeout / malformed / length mismatch | the shipped client normalises **all** of these to all-`false` and never throws ⇒ an **empty roster**, treated as authoritative. Honest: during that outage every `tools/call` denies too (§3.2) |
 | roster batch `allowAll` | a genuine zero-capability agent | the same **empty roster** — indistinguishable by design, and correct in both cases |
-| roster identity (transport context) | empty / unreadable at list time | **unfiltered list** + WARN — the call-time gate reads identity from the security context and still denies an agent properly |
+| roster identity | no `AbacAuthentication` in the security context at list time | **unfiltered list** + WARN — an unauthenticated caller never reaches the surface anyway (the chain rejects it), and the call-time gate denies on the same condition |
 | capability supplier at **list** time | outage (throws) | **unfiltered list** + WARN — the hint carries no authority, and the call-time gate denies every tool for the same outage |
 | principal ceiling at **list** time | `RoleResolutionException` | **unfiltered list** + WARN — same reasoning; the authoritative deny still happens per call |
 | roster adapter (startup, not runtime) | pinned SDK internals moved by an upgrade | **startup failure** — the smoke check fails the context naming the pins; never a silent unfiltered no-op (§3.2) |

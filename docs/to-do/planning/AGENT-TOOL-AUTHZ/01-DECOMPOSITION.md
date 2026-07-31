@@ -301,19 +301,29 @@ is deleted when #578 ships.
   delegation chain) gets ceiling-only, an agent gets ceiling ∩ capability — the same `bulk` rule,
   no code branch.
 - `…mcp.authz.RosterFilterInstaller` — the **disposable adapter**: a `SmartInitializingSingleton`
-  (default eager init is a documented precondition) that reaches the streamable transport provider's
-  private `sessionFactory`, casts to `DefaultMcpStreamableServerSessionFactory`, reads its
-  `requestHandlers` map, and wraps the `"tools/list"` entry with delegate-then-filter over the
-  identity riding `exchange.transportContext()`. **The startup smoke check fails the context** —
+  (default eager init is a documented precondition) that resolves the transport provider **by its
+  interface type** (`McpStreamableServerTransportProvider` — so a test can substitute a stub, see
+  Acceptance), reaches its private `sessionFactory`, casts to
+  `DefaultMcpStreamableServerSessionFactory`, reads the `requestHandlers` map, and wraps the
+  `"tools/list"` entry with delegate-then-filter. **The startup smoke check fails the context** —
   fields missing, entry absent, or a non-streamable transport type ⇒ a startup error naming the
   pinned internals; never a silent unfiltered no-op. One wrap covers all sessions (the map is
   shared); the map is never mutated after startup. Carries the deletion note pinning java-sdk #578.
-- **Transport identity wiring** — replace the auto-configured transport provider (it is
-  `@ConditionalOnMissingBean`-replaceable) with a `WebMvcStreamableServerTransportProvider` built
-  via its `Builder` with a `contextExtractor` capturing the resolved caller (servlet thread,
-  post-security-chain) into `McpTransportContext`; plus an `ActorClaimWiringCheck`-style startup
-  check that fails the context if the identity-carrying extractor is not the one installed — the
-  stock default is an **empty** context, i.e. a silent un-filter.
+  **Rebuild the result with the full `ListToolsResult(tools, nextCursor, meta)` constructor** — it is
+  a record carrying more than tools, and `builder(kept).build()` silently drops `nextCursor` and
+  `meta`. Omission-only means omitting *tools*, never losing response fields.
+- **Identity: `SecurityContextHolder`, the same source T4's call path uses — no transport wiring.**
+  Settled by a lab spike (see [[00-DESIGN]] §3.2): the list handler runs inline on the servlet thread
+  inside the security filter chain, so the resolved `AbacAuthentication` is visible there. The
+  earlier plan to replace the transport-provider bean with a custom `contextExtractor` is
+  **withdrawn** — it was written against an assumption the spike disproved, and one identity source
+  means the roster and the gate can never disagree about the caller.
+- **Guide: create `docs/guides/AGENT-TOOL-AUTHORIZATION.md`** covering the model already shipped
+  (two-layer enforcement, dual identity, the capability tri-state, roster-is-a-hint) plus this
+  ticket's roster section and the explicit-`STREAMABLE` requirement — T6 completes it with the rig
+  and e2e story. This closes the coverage hole left by T1–T4 shipping with no guide at all, and the
+  guide exists even if the run stops here. The SDK-internal pins and the mechanism traps go to
+  **Mulch**, not the guide: they are true only for SDK 2.0.0 and become false at 2.1.
 - **`application.yml`: `spring.ai.mcp.server.protocol: STREAMABLE`**, with the trap documented in
   place: the auto-config conditionals ignore the properties-field default; absent ⇒ the legacy SSE
   transport (`GET /sse` + `POST /mcp/message`) serves and `POST /mcp` 404s — which is the module's
@@ -338,7 +348,7 @@ is deleted when #578 ships.
 - **Consumers named:** the wrapped `tools/list` handler consumes the filter; T6's scripted client
   asserts the resulting cut.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **I16–I28** — the roster block, re-cited 2026-07-31 to the QA
+**Acceptance.** [[10-QA-TEST-CASES]] **I16–I30** — the roster block, re-cited 2026-07-31 to the QA
 doc's own numbering (the earlier `U8`/`I4` citations pointed at T2 cases there): **I16–I21** as
 written 2026-07-28 (list-equals-callable by name, the single batch round-trip,
 failure-degrades-unfiltered vs authoritative-empty-lists-empty, kill-switch OFF, listed-but-revoked

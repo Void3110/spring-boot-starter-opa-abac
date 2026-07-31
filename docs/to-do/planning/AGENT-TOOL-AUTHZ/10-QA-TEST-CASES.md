@@ -116,7 +116,7 @@ is how "the tool body never ran" is proven rather than assumed.
 | I14 | Tool-gate allows, catalog stub returns **403** (the target-gate denying) | a structured advisory error naming layer **`target-gate`**, upstream error code preserved — the two layers are **distinguishable** by the caller, which is what lets a model react instead of retrying blindly | T4 |
 | I15 | Kill-switch `agent-gate` **OFF** | the tool-gate is skipped; the call is evaluated exactly as a human principal's would be; the catalog stub **still 403s** for a resource the principal may not touch → **OFF is never wider than ON**. Asserted alongside: **no** property disables call-time enforcement — with every switch off, the authoritative gate is still installed | T4 |
 
-## Integration — roster filtering (I16–I28, T5)
+## Integration — roster filtering (I16–I30, T5)
 
 Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I28 were added by the
 2026-07-31 mechanism amendment ([[00-DESIGN]] §3.2: the delegate-then-filter adapter, the
@@ -132,11 +132,13 @@ Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I
 | I21 | Listed-but-revoked: turn 1 lists a tool; the capability profile is then revoked; turn 2 calls it | **denied at call time** — the list was a hint, never a grant, and the turn-scoped memo (U16) is what makes the revocation visible on the next turn | T5 |
 | I22 | `POST /mcp` streamable handshake at the wire | `initialize` answers `application/json` + the `Mcp-Session-Id` **response header**; a follow-up request on the same session answers **SSE-framed** — the `protocol: STREAMABLE` pin took effect (a 401-before-routing never proves routing) | T5 |
 | I23 | The installed handler, inspected against the **real** context | the request-handler map's `"tools/list"` entry IS the wrapping handler (delegate-then-filter) — the `ToolGateInstallationTest` analog for the list path | T5 |
-| I24 | The adapter's smoke check, failure branch (a doctored/absent seam) | context startup **fails** with an error naming the pinned internals — never a silent unfiltered no-op | T5 |
+| I24 | The adapter's smoke check, failure branch — an `ApplicationContextRunner` registering a **stub** `McpStreamableServerTransportProvider` whose internals do not match | context startup **fails**, asserted via `.getFailure()` (not `.rootCause()` — a `SmartInitializingSingleton` throws un-wrapped, per `ToolRegistryValidatorTest`), with a message naming `sessionFactory` / `requestHandlers` — never a silent unfiltered no-op | T5 |
 | I25 | Two concurrent sessions, different identities | **different** rosters, and neither session ever observes the other's — the cross-session leak the rejected global-mutation shape would cause | T5 |
 | I26 | A human token (no actor claim), `tools/list` | the **ceiling-only** roster from the same `bulk` rule — no code branch, no special-casing | T5 |
 | I27 | `allowAll` response shorter/longer than the request; and an **empty registry** | size mismatch ⇒ the **unfiltered** list, never an index-shifted partial filter; empty registry ⇒ an empty list with **no** OPA call | T5 |
-| I28 | Roster identity unreadable at list time (an empty transport context) | the **unfiltered** list + WARN — and the call-time gate, which reads the security context instead, still denies the agent | T5 |
+| I28 | No `AbacAuthentication` in the security context at list time | the **unfiltered** list + WARN — an unauthenticated caller never reaches the surface anyway, and the call-time gate denies on the same condition | T5 |
+| I29 | Kill-switch `agent-gate` **OFF**, `roster-filter` ON *(added 2026-07-31)* | the roster is the **ceiling-only** cut — contexts built **without** the agent attributes, exactly as the call path evaluates them with the gate off. Asserted against I16's agent roster to show it is **wider**, never narrower: a roster must never hide a tool the caller can successfully call | T5 |
+| I30 | The delegate returns a `ListToolsResult` carrying `nextCursor` and `meta` *(added 2026-07-31)* | both survive the filter **byte-identically** — the rebuild uses the full record constructor, not `builder(tools).build()`, which silently drops them. Omission-only means omitting tools, never losing response fields | T5 |
 
 ## E2E — deterministic scripted MCP client through the rig (E1–E11, T6)
 
