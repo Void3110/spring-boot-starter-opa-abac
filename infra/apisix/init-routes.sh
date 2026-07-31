@@ -245,6 +245,75 @@ if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
   echo "  routes 'usermgmt-teams' (/api/v1/teams*) + 'usermgmt-users' (/api/v1/users*) -> usermgmt-pool  [priority 60; NO /internal route]"
 fi
 
+# AGENT-TOOL-AUTHZ (Phase 9): the MCP server's route. Easy to forget and load-bearing — the catalog
+# route below is a catch-all (/*, the APISIX default priority 0), so WITHOUT this every POST /mcp
+# would be proxied to the catalog pool and 404 there, which reads like "the MCP server is broken"
+# rather than "no route exists". The service is gateway-fronted like every other one here: it sets
+# opa.abac.subject.trust-forwarded-jwt=true precisely because a signature-validating gateway is in
+# front of it, so the e2e must enter at http://localhost:9085/mcp, never the published pod port.
+if [ "${ENABLE_MCP:-0}" = "1" ]; then
+  MCP_NODES="${MCP_NODES:-host.docker.internal:28093}"
+  MCP_NODES_JSON=""
+  IFS=',' read -ra _mcp_nodes <<< "$MCP_NODES"
+  for _n in "${_mcp_nodes[@]}"; do
+    [ -n "$MCP_NODES_JSON" ] && MCP_NODES_JSON="$MCP_NODES_JSON,"
+    MCP_NODES_JSON="$MCP_NODES_JSON\"$_n\":1"
+  done
+  curl -sf -o /dev/null -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/upstreams/mcp-pool" \
+    -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{$MCP_NODES_JSON}}"
+  echo "  upstream 'mcp-pool' -> $MCP_NODES"
+
+  # Same plugin set as the usermgmt routes: openid-connect (bearer validation) + response-rewrite +
+  # tracing/cors when enabled — and NOT the catalog `opa` gateway plugin, for the same reason the
+  # user-service omits it: this service authorizes itself, with its own tool-gate.
+  MCP_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
+  if [ "${ENABLE_OIDC:-0}" = "1" ]; then
+    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{\
+\"_meta\":{\"priority\":2599},\
+\"client_id\":\"catalog-gateway\",\
+\"client_secret\":\"catalog-gateway-secret\",\
+\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
+\"realm\":\"catalog-demo\",\
+\"scope\":\"openid profile email\",\
+\"bearer_only\":$OIDC_BEARER_ONLY,\
+\"use_jwks\":true,\
+\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
+\"set_access_token_header\":true,\
+\"access_token_in_authorization_header\":true,\
+\"ssl_verify\":false}"
+  fi
+  if [ "${ENABLE_SPA:-0}" = "1" ]; then
+    MCP_PLUGINS="$MCP_PLUGINS,\"cors\":{\
+\"_meta\":{\"priority\":4000},\
+\"allow_origins\":\"http://localhost:3000,http://localhost:9085\",\
+\"allow_methods\":\"GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD\",\
+\"allow_headers\":\"Authorization,Content-Type,Accept,Origin,X-Requested-With,Mcp-Session-Id,MCP-Protocol-Version\",\
+\"expose_headers\":\"X-Upstream-Addr,Mcp-Session-Id\",\
+\"allow_credential\":false,\
+\"max_age\":3600}"
+  fi
+  if [ "${ENABLE_TRACING:-1}" = "1" ]; then
+    MCP_PLUGINS="$MCP_PLUGINS,\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
+  fi
+
+  # Priority 65: above the catch-all (0) and usermgmt (60), below internal-blocked (70). /mcp* covers
+  # the streamable endpoint and, if a future SDK version reintroduces them, the legacy SSE sub-paths.
+  mcp_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/routes/mcp" \
+    -d "{\"name\":\"mcp\",\"uri\":\"/mcp*\",\
+\"methods\":[\"GET\",\"POST\",\"DELETE\",\"OPTIONS\"],\
+\"upstream_id\":\"mcp-pool\",\"priority\":65,\"status\":1,\"plugins\":{$MCP_PLUGINS}}")
+  mcp_code=$(printf '%s' "$mcp_resp" | tail -n1)
+  if [ "$mcp_code" != "200" ] && [ "$mcp_code" != "201" ]; then
+    echo "  ERROR: route 'mcp' PUT failed ($mcp_code): $(printf '%s' "$mcp_resp" | head -n1)" >&2
+    exit 1
+  fi
+  echo "  route 'mcp' (/mcp*) -> mcp-pool  [priority 65; NO catalog opa plugin — the tool-gate is in-app]"
+fi
+
 # Slice B4 hardening (deep-review): EXPLICITLY block /internal/* at the gateway. The catalog route below
 # is a catch-all (/*, priority 0); without this, GET /internal/catalog/{id}/created-by (catalog
 # SecurityConfig permitAll's /internal/**) would match the catch-all and proxy through to the catalog pod,

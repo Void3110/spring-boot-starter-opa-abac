@@ -1,6 +1,8 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -105,6 +107,28 @@ public class ToolAuthorizationProperties {
         private String baseUrl = "http://localhost:8081";
 
         private Duration timeout = Duration.ofSeconds(2);
+
+        /**
+         * The resource types a membership — and therefore a role definition — can be recorded on,
+         * beyond the type being asked about.
+         *
+         * <p>Since slice B4 authority is membership-scoped and membership lives on the <strong>governing
+         * root</strong> (ADR 0018), while the role it resolves to carries permissions for the whole
+         * hierarchy. So {@code governed-targets?resourceType=product} is legitimately empty for a
+         * principal who may read every product under a catalog they govern. Enumerating only the asked-for
+         * type therefore <em>under</em>-approximates the ceiling — which would make the tool surface
+         * remove access the caller has over REST, and would hide the agent narrowing behind a principal
+         * denial. Default {@code [catalog]}: this demo's governing root.
+         */
+        private List<String> grantScopeTypes = new ArrayList<>(List.of("catalog"));
+
+        public List<String> getGrantScopeTypes() {
+            return grantScopeTypes;
+        }
+
+        public void setGrantScopeTypes(List<String> grantScopeTypes) {
+            this.grantScopeTypes = grantScopeTypes;
+        }
 
         public String getBaseUrl() {
             return baseUrl;

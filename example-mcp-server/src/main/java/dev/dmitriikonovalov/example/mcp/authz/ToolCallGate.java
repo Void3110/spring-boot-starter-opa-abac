@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
 import dev.dmitriikonovalov.example.mcp.tool.ToolErrorLayer;
+import dev.dmitriikonovalov.example.mcp.tool.ToolFailureRecord;
 import dev.dmitriikonovalov.example.mcp.tool.ToolInvocationException;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
@@ -69,12 +70,46 @@ public class ToolCallGate
             return advisory(decision.layer(), decision.code(), decision.message());
         }
 
+        ToolFailureRecord.clear();
         try {
-            return delegate.apply(exchange, request);
+            CallToolResult result = delegate.apply(exchange, request);
+            return relabelIfStructured(result);
         } catch (ToolInvocationException e) {
-            // The tool body's own structured failure — including the target-gate's translated 403.
+            // The tool body's own structured failure, thrown straight through — the shape a
+            // hand-built specification produces, and the one the unit tests drive.
             return advisory(e.layer(), e.code(), e.getMessage());
         }
+    }
+
+    /**
+     * Restore the layer and code on an error result the tool body actually produced structurally.
+     *
+     * <h2>Why the catch above is not enough</h2>
+     * In the real invocation path the delegate is Spring AI's annotation-scanned handler, and it catches
+     * whatever the {@code @McpTool} method throws, flattening it into a {@code CallToolResult} with
+     * {@code isError} set and a plain-text message. The exception never reaches this class, so a
+     * <strong>target-gate denial arrived looking exactly like a transport fault</strong> — no layer, no
+     * code — which is precisely the distinction this slice exists to make. {@link ToolFailureRecord}
+     * carries the detail across that seam; here it is put back on the result.
+     *
+     * <p>Strictly a labelling step: it only ever rewrites a result that is <em>already</em> an error, and
+     * only when the tool body recorded structured detail for this very request. A missing record leaves
+     * the delegate's result untouched. It can never turn an error into a success.
+     */
+    private CallToolResult relabelIfStructured(CallToolResult result) {
+        if (result == null || !Boolean.TRUE.equals(result.isError())) {
+            ToolFailureRecord.clear();
+            return result;
+        }
+        ToolInvocationException recorded = ToolFailureRecord.take();
+        if (recorded == null) {
+            return result;
+        }
+        if (log.isInfoEnabled()) {
+            log.info("Tool call '{}' failed at {} ({})",
+                    toolName, recorded.layerLabel(), recorded.code());
+        }
+        return advisory(recorded.layer(), recorded.code(), recorded.getMessage());
     }
 
     /** A structured, model-readable error: the layer, a stable code, and a safe message. */

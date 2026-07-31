@@ -28,16 +28,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="opa-abac-example"
 APP_DIR="$SCRIPT_DIR/example-catalog-management-service"
 USERMGMT_DIR="$SCRIPT_DIR/example-user-management-service"
+MCP_DIR="$SCRIPT_DIR/example-mcp-server"
 BASE_COMPOSE="$SCRIPT_DIR/compose.yaml"
 APISIX_COMPOSE="$SCRIPT_DIR/infra/compose.apisix.yaml"
 JAEGER_COMPOSE="$SCRIPT_DIR/infra/compose.jaeger.yaml"
 OPA_COMPOSE="$SCRIPT_DIR/infra/compose.opa.yaml"
 KEYCLOAK_COMPOSE="$SCRIPT_DIR/infra/compose.keycloak.yaml"
 USERMGMT_COMPOSE="$SCRIPT_DIR/infra/compose.usermgmt.yaml"
+MCP_COMPOSE="$SCRIPT_DIR/infra/compose.mcp.yaml"
 GEN_COMPOSE="$SCRIPT_DIR/build/compose.pods.generated.yaml"
 STATE_FILE="$SCRIPT_DIR/build/.deploy.state"
 IMAGE="opa-abac-catalog:local"
 USERMGMT_IMAGE="opa-abac-usermgmt:local"
+MCP_IMAGE="opa-abac-mcp:local"
 
 # Feature toggles. Tracing + OPA on by default (Phase B). OIDC off by default — opt in with
 # ENABLE_OIDC=1 ./deploy.sh up  (Phase 2 gateway auth; needs Keycloak, slower to start).
@@ -80,6 +83,17 @@ ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}"
 if [ "$ENABLE_DIRECTORY" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
 DIRECTORY_ENABLED="false"; [ "$ENABLE_DIRECTORY" = "1" ] && DIRECTORY_ENABLED="true"
 export DIRECTORY_ENABLED
+# AGENT-TOOL-AUTHZ (Phase 9): the example MCP server — the agent tool surface behind the tool-gate.
+# Off by default, so the default rig is byte-for-byte unchanged. Opt in with ENABLE_MCP=1 ./deploy.sh up.
+# Like ENABLE_SPA/ENABLE_DIRECTORY it force-enables its prerequisites, and it needs all three: the
+# gateway validates the bearer (OIDC), the tool-gate asks OPA, and the principal's type-level ceiling
+# is resolved from the user-service — a missing one of those does not degrade, it denies every call.
+ENABLE_MCP="${ENABLE_MCP:-0}"
+if [ "$ENABLE_MCP" = "1" ]; then ENABLE_OIDC=1; ENABLE_OPA=1; ENABLE_USER_SERVICE=1; fi
+# The two kill-switches, exposed so the E6/E7 drills can flip one and redeploy just the mcp service.
+MCP_AGENT_GATE_ENABLED="${MCP_AGENT_GATE_ENABLED:-true}"
+MCP_ROSTER_FILTER_ENABLED="${MCP_ROSTER_FILTER_ENABLED:-true}"
+export MCP_AGENT_GATE_ENABLED MCP_ROSTER_FILTER_ENABLED
 
 APISIX_ADMIN="${APISIX_ADMIN:-http://localhost:9180}"
 API_KEY="${APISIX_API_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
@@ -230,6 +244,7 @@ apply_root_read_exemption() {
 }
 keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
 usermgmt_compose() { docker compose -p "$PROJECT" -f "$USERMGMT_COMPOSE" "$@"; }
+mcp_compose() { docker compose -p "$PROJECT" -f "$MCP_COMPOSE" "$@"; }
 resolve_stub_compose() { docker compose -p "$PROJECT" -f "$RESILIENCE_STUB_COMPOSE" "$@"; }
 base_compose() { docker compose -p "$PROJECT" -f "$BASE_COMPOSE" "$@"; }
 
@@ -238,6 +253,25 @@ build_usermgmt_image() {
   docker build -t "$USERMGMT_IMAGE" -f "$USERMGMT_DIR/Dockerfile" "$SCRIPT_DIR"
 }
 usermgmt_image_exists() { docker image inspect "$USERMGMT_IMAGE" >/dev/null 2>&1; }
+
+build_mcp_image() {
+  echo "==> Building the MCP server image $MCP_IMAGE (Gradle bootJar inside the image)..."
+  docker build -t "$MCP_IMAGE" -f "$MCP_DIR/Dockerfile" "$SCRIPT_DIR"
+}
+mcp_image_exists() { docker image inspect "$MCP_IMAGE" >/dev/null 2>&1; }
+
+wait_mcp_healthy() {
+  echo "==> Waiting for the MCP server to become healthy..."
+  local deadline=$(( SECONDS + 240 ))
+  while (( SECONDS < deadline )); do
+    if curl -sf "http://localhost:28093/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
+      echo "   MCP server healthy (http://localhost:28093)."; return 0
+    fi
+    sleep 3
+  done
+  echo "   WARN: the MCP server did not become healthy in time." >&2
+  return 1
+}
 
 wait_usermgmt_healthy() {
   echo "==> Waiting for the user-management service pods to become healthy..."
@@ -351,6 +385,11 @@ case "$CMD" in
       echo "==> Starting the user-management service + its Postgres..."
       usermgmt_compose up -d
     fi
+    if [ "$ENABLE_MCP" = "1" ]; then
+      mcp_image_exists || build_mcp_image
+      echo "==> Starting the MCP server (agent tool surface)..."
+      mcp_compose up -d
+    fi
     if [ "$ENABLE_RESILIENCE_STUB" = "1" ]; then
       echo "==> Starting the resilience fault-injecting resolve stub (STUB_MODE=${STUB_MODE:-transient}, STUB_FAILS=${STUB_FAILS:-1})..."
       STUB_MODE="${STUB_MODE:-transient}" STUB_FAILS="${STUB_FAILS:-1}" resolve_stub_compose up -d
@@ -361,12 +400,13 @@ case "$CMD" in
     echo "==> Starting $n app pod(s)..."
     app_compose up -d
     [ "$ENABLE_USER_SERVICE" = "1" ] && wait_usermgmt_healthy || true
+    [ "$ENABLE_MCP" = "1" ] && wait_mcp_healthy || true
     wait_pods_healthy "$n" || true
     # OIDC route needs Keycloak's discovery doc reachable before APISIX validates tokens.
     [ "$ENABLE_OIDC" = "1" ] && wait_keycloak || true
     # Seed route (idempotent) then sync upstream to the real pod set.
     ENABLE_OIDC="$ENABLE_OIDC" ENABLE_SPA="$ENABLE_SPA" ENABLE_TRACING="$ENABLE_TRACING" ENABLE_OPA="$ENABLE_OPA" \
-      ENABLE_USER_SERVICE="$ENABLE_USER_SERVICE" \
+      ENABLE_USER_SERVICE="$ENABLE_USER_SERVICE" ENABLE_MCP="$ENABLE_MCP" \
       APISIX_ADMIN="$APISIX_ADMIN" APISIX_API_KEY="$API_KEY" \
       bash "$SCRIPT_DIR/infra/apisix/init-routes.sh"
     apisix_sync_upstream "$n"
@@ -377,6 +417,7 @@ case "$CMD" in
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
     [ "$ENABLE_SPA" = "1" ] && echo "    SPA auth:  gateway in bearer-only mode (validates Authorization: Bearer; no redirect login) + CORS for http://localhost:3000  [public client: catalog-spa]"
     [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: 2 pods http://localhost:28090 + http://localhost:28092  (gateway usermgmt-pool round-robins both; resolve API at /internal/effective-role; catalog role-source=http)"
+    [ "$ENABLE_MCP" = "1" ] && echo "    mcp:       agent tool surface via the gateway at http://localhost:9085/mcp  (pod http://localhost:28093; streamable transport; agent-gate=$MCP_AGENT_GATE_ENABLED roster-filter=$MCP_ROSTER_FILTER_ENABLED)"
     [ "$ENABLE_DIRECTORY" = "1" ] && echo "    directory: identity search active on the user-service (Keycloak admin via catalog-directory, view-users only)"
     [ "$ENABLE_RESILIENCE_STUB" = "1" ] && echo "    resolve-stub: http://localhost:28091  (B3 fault injector; catalog role-source=http -> resolve-stub:8080; mode=${STUB_MODE:-transient})"
     for i in $(seq 1 "$n"); do echo "    catalog-$i -> http://localhost:$((BASE_PORT + i))"; done
@@ -398,6 +439,7 @@ case "$CMD" in
     opa_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     keycloak_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     usermgmt_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    mcp_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     resolve_stub_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     # Base Postgres last: it's the final container on the project network, so tearing it

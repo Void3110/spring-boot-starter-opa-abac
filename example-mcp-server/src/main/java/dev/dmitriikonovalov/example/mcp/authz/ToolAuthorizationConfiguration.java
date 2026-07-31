@@ -51,7 +51,8 @@ public class ToolAuthorizationConfiguration {
         return new TypeLevelRoleDefinitionSupplier(
                 objectMapper,
                 properties.getRoleSource().getBaseUrl(),
-                properties.getRoleSource().getTimeout());
+                properties.getRoleSource().getTimeout(),
+                properties.getRoleSource().getGrantScopeTypes());
     }
 
     @Bean

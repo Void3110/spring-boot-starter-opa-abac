@@ -66,13 +66,40 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final Duration timeout;
+    private final List<String> grantScopeTypes;
 
     public TypeLevelRoleDefinitionSupplier(
-            ObjectMapper objectMapper, String baseUrl, Duration timeout) {
+            ObjectMapper objectMapper, String baseUrl, Duration timeout, List<String> grantScopeTypes) {
         this.objectMapper = objectMapper;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.timeout = timeout;
+        this.grantScopeTypes = List.copyOf(grantScopeTypes);
         this.httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+    }
+
+    /**
+     * The types to enumerate governed targets on, beyond the requested one.
+     *
+     * <h2>Why this is not just {@code resourceType} (found on the rig, 2026-07-31)</h2>
+     * Since slice B4, membership — and therefore the role definition — is recorded on the
+     * <strong>governing root</strong> ([[0018-team-scoped-resource-isolation|ADR 0018]]), while the role
+     * itself carries permissions for the whole hierarchy: a {@code demo-editor} on a *catalog* grants
+     * {@code catalog}, {@code category} <em>and</em> {@code product} actions. So
+     * {@code /internal/governed-targets?resourceType=product} legitimately returns an <em>empty</em> list
+     * for a principal who can nonetheless read every product under a catalog they govern.
+     *
+     * <p>Asking only for the requested type therefore <strong>under</strong>-approximated the ceiling —
+     * the exact direction the class javadoc calls dangerous, and the direction that makes the tool
+     * surface <em>remove</em> access the caller has over REST. On the demo rig it also erased the
+     * slice's headline: with the human's own ceiling empty for {@code product}, an agent's
+     * {@code get_product} denial proved nothing about agent narrowing, because the principal was being
+     * denied for the same reason.
+     */
+    private Set<String> scopeTypesFor(String resourceType) {
+        Set<String> types = new LinkedHashSet<>();
+        types.add(resourceType);
+        types.addAll(grantScopeTypes);
+        return types;
     }
 
     @Override
@@ -81,17 +108,27 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
             return Optional.empty(); // no coordinates to resolve — authoritative no-role, not an outage
         }
 
-        List<String> governed = governedTargets(userId, resourceType);
+        List<String> governed = new ArrayList<>();
+        List<RoleDefinition> scopeRoles = new ArrayList<>();
+        for (String scopeType : scopeTypesFor(resourceType)) {
+            List<String> ids = governedTargets(userId, scopeType);
+            if (ids.isEmpty()) {
+                continue;
+            }
+            governed.addAll(ids);
+            scopeRoles.addAll(resolveAll(userId, scopeType, ids));
+        }
         if (governed.isEmpty()) {
-            log.debug("No governed {} targets for '{}' — authoritative no-role", resourceType, userId);
+            log.debug("No governed targets for '{}' across {} — authoritative no-role",
+                    userId, scopeTypesFor(resourceType));
             return Optional.empty();
         }
-
-        List<RoleDefinition> roles = resolveAll(userId, resourceType, governed);
-        if (roles.isEmpty()) {
+        if (scopeRoles.isEmpty()) {
+            // Governed targets exist but none resolved to a role — an authoritative no-role, not an
+            // outage (an outage would already have thrown from exchange()).
             return Optional.empty();
         }
-        return Optional.of(union(resourceType, roles));
+        return Optional.of(union(resourceType, scopeRoles));
     }
 
     private List<String> governedTargets(String userId, String resourceType) {

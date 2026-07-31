@@ -77,24 +77,24 @@ public class CatalogApiClient {
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw errorTranslator.unreachable(path, e);
+            throw recorded(errorTranslator.unreachable(path, e));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw errorTranslator.unreachable(path, e);
+            throw recorded(errorTranslator.unreachable(path, e));
         }
 
         int status = response.statusCode();
         if (status < 200 || status >= 300) {
-            throw errorTranslator.translate(path, status, response.body());
+            throw recorded(errorTranslator.translate(path, status, response.body()));
         }
         String body = response.body();
         if (body == null || body.isBlank()) {
-            throw errorTranslator.malformed(path);
+            throw recorded(errorTranslator.malformed(path));
         }
         try {
             return objectMapper.readValue(body, JSON_OBJECT);
         } catch (JacksonException _) {
-            throw errorTranslator.malformed(path);
+            throw recorded(errorTranslator.malformed(path));
         }
     }
 
@@ -110,5 +110,18 @@ public class CatalogApiClient {
 
     private static String stripTrailingSlash(String url) {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    /**
+     * Record the structured detail before throwing.
+     *
+     * <p>Spring AI's annotation-scanned call handler catches whatever a {@code @McpTool} method throws
+     * and flattens it into a plain-text error result, so {@code ToolCallGate}'s own {@code catch} never
+     * sees this exception in the real invocation path. {@link ToolFailureRecord} carries the layer and
+     * the code across that seam so a target-gate denial stays distinguishable from a transport fault.
+     */
+    private static ToolInvocationException recorded(ToolInvocationException failure) {
+        ToolFailureRecord.capture(failure);
+        return failure;
     }
 }

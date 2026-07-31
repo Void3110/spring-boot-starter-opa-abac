@@ -14,6 +14,7 @@ import dev.dmitriikonovalov.example.mcp.tool.CatalogApiClient;
 import dev.dmitriikonovalov.example.mcp.tool.CatalogApiErrorTranslator;
 import dev.dmitriikonovalov.example.mcp.tool.CallerBearerSupplier;
 import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.example.mcp.tool.ToolInvocationException;
 import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.HttpOpaClient;
@@ -182,6 +183,40 @@ class ToolCallGateTest {
                 });
 
         return (ToolCallGate) ToolCallGate.gate(specification, authorizer).callHandler();
+    }
+
+    /**
+     * A gate whose delegate behaves like Spring AI's annotation-scanned handler: it CATCHES the tool
+     * body's exception and returns a flat, unlabelled error result rather than letting it propagate.
+     */
+    private ToolCallGate swallowingGate(String opaBaseUrl, String catalogBaseUrl) {
+        ToolCallGate direct = gateWith(opaBaseUrl, catalogBaseUrl, READ_CAPABILITY, CEILING_SUPPLIER);
+        SyncToolSpecification swallowing = new SyncToolSpecification(
+                new Tool(TOOL, null, "get one product", Map.of("type", "object"), null, null, null),
+                (exchange, request) -> {
+                    try {
+                        return direct.apply(exchange, request);
+                    } catch (ToolInvocationException e) {
+                        return new CallToolResult(
+                                List.of(new TextContent(null,
+                                        "Error invoking method: getProduct\n" + e.getMessage(), null)),
+                                Boolean.TRUE, null, Map.of());
+                    }
+                });
+        return (ToolCallGate) ToolCallGate.gate(swallowing, authorizerFor(opaBaseUrl)).callHandler();
+    }
+
+    private ToolCallAuthorizer authorizerFor(String opaBaseUrl) {
+        return new ToolCallAuthorizer(
+                new ToolRegistry(List.of(DESCRIPTOR)),
+                new ClaimDelegationChainExtractor(MAPPER, new IdentityProperties()),
+                READ_CAPABILITY,
+                CEILING_SUPPLIER,
+                new HttpOpaClient(
+                        MAPPER,
+                        new ToolPolicyPathResolver(properties),
+                        new OpaClientConfig(opaBaseUrl, Duration.ofSeconds(2), "allow")),
+                properties);
     }
 
     private static AgentCapabilitySupplier capability(AgentCapabilityProfile profile) {
@@ -414,6 +449,49 @@ class ToolCallGateTest {
         assertThat(layerOf(result)).isEqualTo("target-gate");
         assertThat(opaCalls).hasValue(1);
         assertThat(catalogCalls).hasValue(1);
+    }
+
+    @Test // I14, through the SWALLOWING delegate the real annotation scanner installs (rig-found)
+    void namesTheTargetGateEvenWhenTheDelegateSwallowsTheException() throws IOException {
+        String opa = startOpa(ToolCallGateTest::allowResponse);
+        catalogStub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        catalogStub.createContext("/", exchange -> {
+            catalogCalls.incrementAndGet();
+            try {
+                respond(exchange, 403, "{\"status\":403,\"errorCode\":\"ACCESS_DENIED\"}");
+            } finally {
+                exchange.close();
+            }
+        });
+        catalogStub.start();
+        authenticate(Map.of("act_chain", List.of("agent-a")));
+
+        // The case above lets the tool body's exception propagate straight into the gate — which is
+        // what a HAND-BUILT specification does, and is why it passed while the rig showed an
+        // unlabelled target-gate denial. Spring AI's annotation-scanned handler CATCHES whatever the
+        // @McpTool method throws and returns a flat error result instead. This fixture reproduces
+        // that shape, so the labelling seam is pinned by the same invocation contract the SDK uses.
+        CallToolResult result = swallowingGate(
+                opa, "http://127.0.0.1:" + catalogStub.getAddress().getPort())
+                .apply(null, new CallToolRequest(TOOL, Map.of()));
+
+        assertThat(result.isError()).isTrue();
+        assertThat(layerOf(result))
+                .as("a target-gate denial must stay distinguishable from a transport fault")
+                .isEqualTo("target-gate");
+        assertThat(catalogCalls).hasValue(1);
+    }
+
+    @Test // the labelling seam never invents a failure: a clean result passes through untouched
+    void leavesASuccessfulResultAlone() throws IOException {
+        String opa = startOpa(ToolCallGateTest::allowResponse);
+        authenticate(Map.of("act_chain", List.of("agent-a")));
+
+        CallToolResult result = gateWith(opa, startCatalog(), READ_CAPABILITY, CEILING_SUPPLIER)
+                .apply(null, new CallToolRequest(TOOL, Map.of()));
+
+        assertThat(result.isError()).isFalse();
+        assertThat(result.meta()).isEmpty();
     }
 
     @Test // a human call (no actor claim) carries no agent attributes into the policy input
