@@ -110,9 +110,26 @@ and its rejected alternatives. Reach for one only when you catch yourself writin
 rejected" list worth keeping — routine choices (naming, file layout, test library) don't need one. (See
 `docs/architecture/adr/README.md` → "When to write one.")
 
+**A standing planning question: where does this slice's knowledge land?** Decide it *here*, once, with
+the maintainer — not per-ticket during the run, where it defaults to "write another guide" and the guide
+set sprawls until nobody reads any of it. Three destinations, and the **default is the middle one**:
+
+| Destination | When | Test |
+|---|---|---|
+| **Mulch record** | a trap, gotcha, or hard-won *why* for whoever works here next | nobody would look it up by name — they'd hit the problem and search |
+| **A section in an existing guide** ← **default** | the mechanism is a variation or extension of a subject some guide already owns | a reader would look under that guide's existing title |
+| **A new guide** | the slice introduces a genuinely **new surface** — its own vocabulary, subsystem boundary, or operational story | a reader would look for a title that does not exist yet, *and* the review's surface→guide map has no row that covers the new code |
+
+That last clause is the mechanical arbiter, and it is deliberately hard to pass: **a new guide is
+warranted exactly when a new row in the surface→guide map is** (see §8). A new Camunda-style workflow
+subsystem earns one; a new verb, flag, or variation on an existing mechanism almost never does — it
+belongs in the guide that already owns that surface. Record the decision in `00-DESIGN`, so
+decomposition can attach each ticket's guide delta to a destination that is already settled.
+
 **Exit criterion for planning:** every fork that would otherwise make the autonomous agent *stop and ask*
-is decided and recorded (in an ADR if structural, in `00-DESIGN`'s considered-&-rejected otherwise), and
-the user stories for the slice exist and are phase-tagged. Only then move to decomposition.
+is decided and recorded (in an ADR if structural, in `00-DESIGN`'s considered-&-rejected otherwise), the
+knowledge destination above is chosen, and the user stories for the slice exist and are phase-tagged.
+Only then move to decomposition.
 
 ### 2a. The slice-sizing gate (run before decomposition)
 
@@ -213,6 +230,18 @@ a **1:1 structural mirror** of every prior slice:
   a startup/installation failure vs a request-time failure), which lands where. Across the shipped
   slices the single most common cause of a paused run is **"the design left a fail-open/contract
   semantic unpinned"**; a switch documented only as "OFF disables X" is that gap in miniature.
+- **Every ticket names its DOCUMENTATION DELTA as a deliverable**, pointing at the destination
+  planning already chose (§2's Mulch / existing-guide / new-guide test — **the default is a section in
+  an existing guide**; a new guide must clear the new-surface bar, because a sprawling guide set is
+  read by nobody). Guides are not an epilogue: they are read as **context by the next slice's prompt**
+  and used as the **authority `/deep-review` checks against**, so a mechanism documented nowhere is
+  invisible to both. The ticket that introduces the mechanism owns its delta, **in the same commit as
+  the code**. **Never park the slice's documentation in the final ticket** — a run that stops early
+  then ships mechanism with nothing explaining it, which is exactly what happened when
+  AGENT-TOOL-AUTHZ landed T1–T4 with its only guide parked in T6. "No delta — covered by «guide»" is a
+  valid answer stated explicitly; silence is indistinguishable from an oversight. A **new** guide
+  additionally gets a row in the review's surface→guide map, in the same ticket — an unmapped guide is
+  write-only, because nothing will ever consult it.
 
 **Validating the package before it ships (the decomposition's own quality gate).** The package *is* the
 deliverable of this phase, so it gets the same treatment code gets: a deterministic gate plus an

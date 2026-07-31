@@ -50,8 +50,16 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
 
 3. **The per-ticket loop, in order, no skipping**: prime → build → tests → compile + unit
    green → **★ architecture review + refactor (BEFORE integration/e2e)** → integration/e2e →
-   docs (tick the index, fill the STATUS stub) → Mulch → **one focused commit** →
-   **CHECKPOINT: stop and report**. Do not batch tickets.
+   docs (tick the index, fill the STATUS stub, **and land the ticket's guide delta**) → Mulch →
+   **one focused commit** → **CHECKPOINT: stop and report**. Do not batch tickets.
+   The **documentation delta ships in the same commit as the mechanism it documents** — a deliverable,
+   not an epilogue. Guides are what the next slice's prompt reads as context and what phase ④ reviews
+   against, so deferring them to a final docs ticket means a run that stops early ships mechanism
+   nothing can explain or check. Write to the destination the ticket names (planning already chose
+   between a Mulch record, a section in an existing guide — the default — and a new guide); **do not
+   promote a delta to a new guide on your own initiative**, that is a phase-① decision and guide
+   sprawl is its own failure. `"No delta — covered by «guide»"` is a valid, explicit answer; silently
+   skipping it is not.
 4. **The ★gate escalates by ticket risk** (slot 3): low-risk → focused manual self-review
    against the named template; domain-surface → the repo's targeted review skill; headline /
    high-risk → commit first, then the adversarial multi-lens review workflow on the committed

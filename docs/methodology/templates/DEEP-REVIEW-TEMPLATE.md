@@ -87,6 +87,13 @@ hard-won lessons, not a blank slate.
   "a clever stranger.")*
 - Skim the relevant **«GUIDES»** and any **ADRs** that govern the touched area. If the change came from
   an autonomous run, read the flow doc whose hard rules you'll verify held.
+- **A touched surface with NO guide is itself a finding.** The surface→guide map can only point at
+  guides that exist, so a brand-new subsystem is silently unmapped — the review then has no authority
+  to check it against, and the *next* slice's prompt has no context to read. Whenever the diff adds a
+  surface the map doesn't cover, report it (`docs` severity) with the guide that should own it, and
+  require the new guide to be **registered in the map** in the same change: an unmapped guide is
+  write-only, since nothing will ever consult it. This is the one gap the map cannot self-detect,
+  which is why it is called out here rather than left to the lens list.
 
 ## Phase 1 — Intake & context
 

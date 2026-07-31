@@ -65,6 +65,30 @@ monolith); this template is distilled from both.
    fields (Goal / *named* Deliverables / Acceptance drawn from the QA cases /
    What-NOT-to-touch carrying the slice invariants forward); explicit critical path;
    build-breakers flagged in the ticket that causes them.
+4a. **Every ticket names its DOCUMENTATION DELTA as a deliverable.** Guides are consumed by two phases
+   and produced by none unless this is enforced: the next slice's prompt reads them as **context**,
+   and the phase-④ review uses them as the **authority it checks against**. A mechanism documented
+   nowhere is invisible to both — and the review won't notice, because a surface→guide map can only
+   flag guides that *exist*; a brand-new subsystem simply isn't in the table.
+
+   **Point each delta at the destination phase ① already chose** (the Mulch / existing-guide /
+   new-guide test): a **section in an existing guide is the default**, a Mulch record is right for a
+   trap nobody would look up by name, and a **new guide must clear the new-surface bar** — it is
+   warranted exactly when a new row in the surface→guide map is. Guide sprawl is a real failure mode:
+   a set nobody can hold in their head is read by nobody, so "write another guide" must stay the
+   expensive option. If planning left this unsettled, that is a phase-① gap — route it back rather
+   than improvising per ticket.
+
+   Two rules that make it real:
+   - **The delta lands in the ticket that builds the mechanism**, in the same commit — not collected
+     at the end. **Never park the slice's documentation in the final ticket:** a run that stops early
+     then ships mechanism with nothing explaining it. (Observed 2026-07-31: a slice landed four
+     tickets of new subsystem with its only guide sitting in an unstarted sixth.) `"No delta —
+     covered by «guide»"` is a valid, explicit answer; silence is not.
+   - **A new guide is registered in the review's surface→guide map** in the same ticket. An unmapped
+     guide is write-only — nothing will ever consult it, which is the same half-loop failure as an
+     unread retrospective domain (1b).
+
 5. **Every integration point is a named link.** The recurring planning failure across both
    instantiations is a plan-*asserted* integration that was never wired ("the pipeline
    handles the rest" — nothing did). If a link can't be named, the design isn't done.
