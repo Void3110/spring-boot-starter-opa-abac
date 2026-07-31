@@ -427,7 +427,7 @@ class ToolCallGateTest {
                 new DenyingOpaClient(),
                 properties);
 
-        AbacContext context = authorizer.buildContext(DESCRIPTOR);
+        AbacContext context = authorizer.buildContext(DESCRIPTOR, true);
 
         assertThat(context.subject().attributes()).doesNotContainKeys("actor", "chain", "agent_capability");
         assertThat(context.resource().type()).isEqualTo("tool");
@@ -451,7 +451,7 @@ class ToolCallGateTest {
                 new DenyingOpaClient(),
                 properties);
 
-        AbacContext context = authorizer.buildContext(DESCRIPTOR);
+        AbacContext context = authorizer.buildContext(DESCRIPTOR, true);
 
         assertThat(context.subject().id()).isEqualTo("user-alice");
         assertThat(context.subject().attributes())

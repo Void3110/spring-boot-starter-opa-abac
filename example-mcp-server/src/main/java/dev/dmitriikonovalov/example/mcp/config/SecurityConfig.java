@@ -25,6 +25,25 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
  * <p>With the starter disabled there is no {@link AbacFilter} to build an authentication, so
  * {@code authenticated()} would be unsatisfiable; the chain then serves on gateway trust alone, matching
  * the catalog service's unguarded-baseline posture.
+ *
+ * <h2>Why {@code ASYNC} is permitted here and not in the sibling services</h2>
+ * The streamable MCP transport answers a request by <strong>streaming</strong> it (SSE on the same
+ * {@code POST /mcp} endpoint), which puts the request into async mode and re-dispatches it. Spring
+ * Security filters every dispatcher type, and this chain is {@code STATELESS} — the {@link AbacFilter}
+ * populates the security context on the <em>initial</em> dispatch only, so on the ASYNC re-dispatch there
+ * is no authentication left and {@code authenticated()} denies. Because the response has already begun,
+ * that denial does not produce a clean 403: it <strong>aborts the half-written chunked response</strong>,
+ * and the client sees a transport error instead of its tool list.
+ *
+ * <p>Permitting ASYNC is the standard remedy and does not widen anything: an ASYNC dispatch can only
+ * exist for a request that already passed this chain on its initial dispatch, which is the same reasoning
+ * that already permits {@code ERROR}. The catalog and user-management services stream nothing, so they
+ * never reach an async dispatch and their chains stay as they are — this is a transport-shaped
+ * requirement, not a posture change.
+ *
+ * <p>This surfaced only once {@code spring.ai.mcp.server.protocol=STREAMABLE} was set (T5): through
+ * T1–T4 the module silently ran the legacy SSE transport, where {@code POST /mcp} 404s and nothing ever
+ * streamed through the chain.
  */
 @Configuration
 @EnableWebSecurity
@@ -40,7 +59,7 @@ public class SecurityConfig {
         AbacFilter filter = abacFilter.getIfAvailable();
         if (filter != null) {
             http.authorizeHttpRequests(auth -> auth
-                            .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                            .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                             .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                             .anyRequest().authenticated())
                     .addFilterBefore(filter, AuthorizationFilter.class);

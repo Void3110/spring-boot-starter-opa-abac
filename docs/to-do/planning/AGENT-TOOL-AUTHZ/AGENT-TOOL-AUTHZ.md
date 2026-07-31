@@ -65,7 +65,7 @@ or the smaller result**, and each kill-switch's OFF state is never wider than it
 | T2 | Dual identity: `DelegationChainExtractor` (RFC 8693 `act` semantics, fail-closed) | ✅ DONE |
 | T3 | Tool-gate rego (ceiling ∩ capability, in Rego) + `AgentCapabilitySupplier` | ✅ DONE |
 | T4 | The PEP: `@McpTool` interception, layer-naming advisory deny, kill-switch | ✅ DONE |
-| T5 | Roster filtering: `tools/list` via batch `allowAll`, omit-never-fabricate **+ creates the guide** | 📋 TODO |
+| T5 | Roster filtering: `tools/list` via batch `allowAll`, omit-never-fabricate **+ creates the guide** | ✅ DONE |
 | T6 | Rig + scripted-client e2e + **guide completion** + folder move | 📋 TODO |
 
 ## Critical path

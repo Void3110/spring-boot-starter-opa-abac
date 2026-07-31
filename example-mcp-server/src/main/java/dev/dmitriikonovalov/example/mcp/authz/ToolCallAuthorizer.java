@@ -81,12 +81,13 @@ public class ToolCallAuthorizer {
             return ToolAuthorizationDecision.denied(CODE_UNDECLARED_TOOL);
         }
 
+        boolean applyAgentNarrowing = properties.getAgentGate().isEnabled();
         try {
-            AbacContext context = buildContext(declared.get());
+            AbacContext context = buildContext(declared.get(), applyAgentNarrowing);
             if (context == null) {
                 return ToolAuthorizationDecision.denied(CODE_UNAUTHENTICATED);
             }
-            if (!properties.getAgentGate().isEnabled()) {
+            if (!applyAgentNarrowing) {
                 // OFF removes the NARROWING only. The catalog service still enforces the principal's
                 // ceiling on every resource, so this cannot grant beyond the principal.
                 log.debug("Tool-gate skipped for '{}' (agent-gate disabled)", toolName);
@@ -118,19 +119,32 @@ public class ToolCallAuthorizer {
      * rides in {@code subject.attributes}, the tool is the resource, and the principal's ceiling occupies
      * the same fields every other enforced path uses.
      *
+     * <h2>Why {@code applyAgentNarrowing} is a parameter and not a field read</h2>
+     * The roster ({@code ToolRosterFilter}) builds its contexts with this same method, and the roster's
+     * governing invariant is that it must predict what the call path would decide <em>right now</em>.
+     * With {@code agent-gate} OFF the call path evaluates an ordinary human principal — so if the roster
+     * kept attaching the agent attributes it would keep narrowing by capability while calls did not, and
+     * would hide tools the caller can successfully call. That is the one direction a hint must never fail
+     * in ({@code 00-DESIGN} §3.2). Threading the switch through as an argument means both callers read it
+     * in exactly one place and the two paths cannot drift apart.
+     *
+     * @param applyAgentNarrowing whether the agent identity and capability participate at all; when
+     *                            false the context is an ordinary human principal's
      * @return null when there is no authenticated caller to build a context for
      */
-    AbacContext buildContext(ToolDescriptor descriptor) {
+    AbacContext buildContext(ToolDescriptor descriptor, boolean applyAgentNarrowing) {
         AbacContext.Subject caller = currentSubject();
         if (caller == null) {
             log.warn("Tool-gate denied '{}': no authenticated caller", descriptor.name());
             return null;
         }
 
+        // Extracted even when narrowing is off: a MALFORMED claim must still deny (it is not a human),
+        // and that distinction is the extractor's, not the switch's.
         DelegationChain chain = delegationChainExtractor.extract(caller);
 
         Map<String, Object> subjectAttributes = new LinkedHashMap<>(caller.attributes());
-        if (chain.isAgentCall()) {
+        if (applyAgentNarrowing && chain.isAgentCall()) {
             subjectAttributes.put("actor", chain.actor());
             subjectAttributes.put("chain", chain.chain());
             AgentCapabilityProfile capability = capabilitySupplier.lookup(chain.actor());

@@ -6,6 +6,14 @@ spring:
       server:
         name: opa-abac-catalog-tools
         version: 1.0.0
+        # MUST be set EXPLICITLY, even though STREAMABLE is also the properties class's field default.
+        # The 2.0.0 auto-configuration's @Conditionals match the PROPERTY STRING and ignore that field:
+        # the streamable condition is havingValue="STREAMABLE" matchIfMissing=false, while the SSE twin
+        # is havingValue="SSE" matchIfMissing=TRUE. So with this line absent the server silently serves
+        # the LEGACY SSE transport (GET /sse + POST /mcp/message) and POST /mcp 404s — which is exactly
+        # what this module did through T1-T4. The roster adapter's seam only exists on the streamable
+        # transport, and RosterFilterInstaller fails startup naming this property if it is missing.
+        protocol: STREAMABLE
         # The tool surface is declared with @McpTool annotations (see CatalogTools) and discovered by
         # Spring AI's annotation scanner.
         annotation-scanner:
@@ -64,6 +72,14 @@ example:
         # OFF removes the agent NARROWING only: the call is then evaluated as an ordinary human
         # principal's would be, and the catalog service still enforces that principal's ceiling on
         # every resource. There is deliberately no switch that disables call-time enforcement.
+        # The roster reads the SAME switch, so with it off the advertised list is the ceiling-only cut
+        # the call path would allow — a roster must never hide a tool the caller can successfully call.
+        enabled: true
+      roster-filter:
+        # The tools/list filter. OFF skips the reflective adapter AND its startup smoke check — the
+        # deliberate escape hatch for the day an SDK bump moves the pinned internals. At runtime OFF is
+        # byte-identical to the outside-the-batch degradation path (the unfiltered list), with call-time
+        # enforcement unchanged: OFF is never wider than ON.
         enabled: true
       role-source:
         # The user-management service — where the principal's type-level ceiling is resolved from.

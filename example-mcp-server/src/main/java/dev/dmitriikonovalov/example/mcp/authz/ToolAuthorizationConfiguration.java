@@ -7,6 +7,7 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.spec.McpStreamableServerTransportProvider;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -67,6 +69,34 @@ public class ToolAuthorizationConfiguration {
                 roleDefinitionSupplier,
                 opaClient,
                 properties);
+    }
+
+    @Bean
+    ToolRosterFilter toolRosterFilter(
+            ToolRegistry registry,
+            ToolCallAuthorizer authorizer,
+            OpaClient opaClient,
+            ToolAuthorizationProperties properties) {
+        return new ToolRosterFilter(registry, authorizer, opaClient, properties);
+    }
+
+    /**
+     * Installs the roster filter — <strong>conditionally</strong>, unlike the call-time gate above.
+     *
+     * <p>The asymmetry is the design: the gate has no off switch because it is authoritative, while the
+     * roster is a hint whose adapter reflects into pinned SDK internals. When an upgrade moves them the
+     * installer fails startup by design, and this switch is the escape hatch that lets the server boot
+     * anyway — serving the unfiltered list with call-time enforcement untouched, i.e. exactly the
+     * outside-the-batch degradation path. OFF is therefore never wider than ON.
+     */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "example.mcp.authz.roster-filter", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    RosterFilterInstaller rosterFilterInstaller(
+            ObjectProvider<McpStreamableServerTransportProvider> transportProviders,
+            ToolRosterFilter filter) {
+        return new RosterFilterInstaller(transportProviders, filter);
     }
 
     /**

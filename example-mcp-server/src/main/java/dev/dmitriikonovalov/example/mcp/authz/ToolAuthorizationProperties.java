@@ -22,6 +22,8 @@ public class ToolAuthorizationProperties {
 
     private final AgentGate agentGate = new AgentGate();
 
+    private final RosterFilter rosterFilter = new RosterFilter();
+
     private final RoleSource roleSource = new RoleSource();
 
     /**
@@ -38,6 +40,10 @@ public class ToolAuthorizationProperties {
         return agentGate;
     }
 
+    public RosterFilter getRosterFilter() {
+        return rosterFilter;
+    }
+
     public RoleSource getRoleSource() {
         return roleSource;
     }
@@ -52,6 +58,35 @@ public class ToolAuthorizationProperties {
 
     /** The agent-narrowing kill-switch. */
     public static class AgentGate {
+
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
+    /**
+     * The {@code tools/list} roster-filter kill-switch.
+     *
+     * <h2>OFF is the post-upgrade escape hatch, and it is never wider than ON</h2>
+     * The roster filter is installed by reaching two <em>pinned SDK internals</em> reflectively
+     * ({@code RosterFilterInstaller}), and its smoke check deliberately <strong>fails startup</strong>
+     * when an upgrade moves them. That is the right default — a demo whose flagship feature can quietly
+     * vanish is worse than one that refuses to boot — but it would also make an SDK bump un-runnable
+     * until the adapter is ported. Setting this to {@code false} skips the installation <em>and its
+     * smoke check</em> entirely, so the server boots on the new SDK serving the unfiltered list.
+     *
+     * <p>That is safe because the roster is a <strong>hint</strong>: with the filter off, the served
+     * list is exactly what the outside-the-batch degradation path already serves, and
+     * <strong>call-time enforcement is untouched</strong> — every listed tool is still gated. There is
+     * no property anywhere that disables the authoritative gate.
+     */
+    public static class RosterFilter {
 
         private boolean enabled = true;
 

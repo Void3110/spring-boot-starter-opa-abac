@@ -477,9 +477,11 @@ service into `deploy.sh`, document it, and move the folder to `implemented/`.
   one they may not; both live under this prefix. Never grant on, assert on, or seed under another
   matrix's prefix.
 - **Docs:** **extend** the `docs/guides/AGENT-TOOL-AUTHORIZATION.md` that **T5 created** — add the rig
-  story, the e2e cut, and the fail-closed table; do not "create" it again. Tick the guide index in
-  `docs/README.md` and the [[POC-ROADMAP]] Phase 9 row, and confirm
-  [[0028-agent-tool-call-authorization|ADR 0028]] is linked from the ADR index.
+  story, the e2e cut, and the fail-closed table; do not "create" it again. Tick the [[POC-ROADMAP]]
+  Phase 9 row and confirm [[0028-agent-tool-call-authorization|ADR 0028]] is linked from the ADR
+  index. *(Checked 2026-07-31 during T5: `docs/README.md` carries only a **folder-level** row for
+  `guides/`, not a per-guide list — there is no per-guide index entry to tick. Don't go hunting for
+  one; add the guide to that table only if a per-guide list is introduced.)*
 - **Folder move:** `git mv docs/to-do/planning/AGENT-TOOL-AUTHZ docs/to-do/implemented/`, flip the
   index frontmatter `status/planned → status/done`, add a **Shipped** banner, and record the run
   retrospective in the `autonomous-runs` expertise domain.
