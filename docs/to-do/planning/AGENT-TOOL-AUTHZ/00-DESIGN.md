@@ -11,10 +11,12 @@ tags:
 # AGENT-TOOL-AUTHZ — design
 
 > The settled design for [[AGENT-TOOL-AUTHZ|Phase 9]] — agent tool-call authorization, the
-> smallest honest demo. Grilled 2026-07-27, forked to a decomposition 2026-07-28; the structural
-> rationale is pinned by **[[0028-agent-tool-call-authorization|ADR 0028]]** (referenced here,
-> not repeated). Nothing in the library changes: this slice is a **new example service** that
-> puts the shipped starter behind an MCP tool surface.
+> smallest honest demo. Grilled 2026-07-27, forked to a decomposition 2026-07-28; **§3.2 rewritten
+> 2026-07-31** around the verified `tools/list` mechanism, after the T1–T4 run established that the
+> originally assumed SDK hook does not exist. The structural rationale is pinned by
+> **[[0028-agent-tool-call-authorization|ADR 0028]]** (referenced here, not repeated). Nothing in
+> the library changes: this slice is a **new example service** that puts the shipped starter behind
+> an MCP tool surface.
 
 ## 1. The gap today
 
@@ -32,7 +34,9 @@ The MCP specification does not close the gap — it deliberately stops at the tr
   server exposes.
 - There is **no mechanism for filtering the advertised tool list**. `tools/list` is a static
   catalogue of the server's capabilities; the spec has no notion of "these tools, for this caller."
-  An agent is told about tools it must not use, and the model learns to want them.
+  (The 2026-07-28 revision, via SEP-2567, *sanctions* the set varying by the authorization presented
+  on the request — and forbids per-connection variation — but still ships no mechanism.) An agent is
+  told about tools it must not use, and the model learns to want them.
 - The identity that reaches the tool body is a **single** identity — the token's `sub`. There is no
   spec-level distinction between *the human on whose behalf the call is made* and *the agent making
   it*, so a policy cannot bound the agent separately from the person.
@@ -97,8 +101,16 @@ example-mcp-server  (NEW Gradle module, dev.dmitriikonovalov.example.mcp.*)
 
   …mcp.authz
     ToolCallAuthorizer            the PEP: builds the AbacContext, calls OPA `agent_tools`, decides
-    McpToolAuthorizationAspect    server-side @McpTool interception — runs BEFORE the tool body
-    ToolRosterFilter              tools/list pre-flight via the batch `allowAll` primitive
+    ToolCallGate                  wraps every tool specification's callHandler (BeanPostProcessor) —
+                                  runs BEFORE the tool body; chosen over the originally planned
+                                  aspect because a proxy-based aspect is not reliably in the
+                                  invocation path (T4 deviation, STATUS-04 Decisions §1)
+    ToolRosterFilter              tools/list: the DURABLE filter core (batch `allowAll`) — §3.2
+    RosterFilterInstaller         the DISPOSABLE startup adapter installing the core into the SDK's
+                                  request-handler map — smoke-checked, fails the context on drift;
+                                  deleted when java-sdk #578 ships (SDK 2.1)
+    (transport wiring)            the streamable transport provider rebuilt with an identity-carrying
+                                  contextExtractor + a startup wiring check (§3.2, prerequisite 2)
     ToolAuthorizationProperties   kill-switches (per layer) + timeouts
 
 infra/opa/policies
@@ -167,20 +179,80 @@ would need the later propagation design — it is out of scope here, and §5 say
 
 ### 3.2 One `tools/list`
 
-`ToolRosterFilter` runs a **batch `allowAll` pre-flight**: one context per registered tool, one OPA
-round-trip, N booleans back (the same primitive [[0024-batch-role-resolution|ADR 0024]] introduced
-for role resolution). The agent is advertised only the tools it may call, so the model is not
-tempted by capability it does not have.
+**The verified ground truth (2026-07-29, `javap` against the pinned jars).** MCP Java SDK 2.0.0 has
+**no supported seam** for varying `tools/list` per caller. The handler is a private lambda registered
+into a plain `HashMap` by `McpAsyncServer` (method-local in a private method, then held in a
+package-private field on the session factory — unreachable via any supported API); it reads the live
+global tool list and ignores **both**
+its arguments — including the fresh per-request `McpAsyncServerExchange` that already carries the
+caller's session id, client info, and transport context. Every Spring AI customizer runs at
+construction time only; the `mcpSyncServer` bean carries no `@ConditionalOnMissingBean`; and 2.0.0
+is the newest release of both upstreams. The supported seam is java-sdk **#578** (a pluggable
+`ToolsRepository` whose list method receives per-request context), targeted at the opt-in **2.1**
+minor — unreleased, no date.
+
+**The mechanism (settled 2026-07-31): delegate-then-filter, installed into the live handler map** —
+split deliberately into a durable core and a disposable adapter:
+
+- **`ToolRosterFilter` — the durable core** (survives SDK 2.1; owns all the semantics and tests).
+  Given the caller's resolved identity and the delegate's `ListToolsResult`: one `AbacContext` per
+  registered tool (T4's context builder, the shared turn-scoped capability memo), a **single** batch
+  `allowAll` round-trip ([[0024-batch-role-resolution|ADR 0024]]) against the `agent_tools` document,
+  booleans paired with the registry's declaration order **by index**, omitted-only output.
+- **The adapter — disposable** (deleted the day #578 ships; the migration touches only this class).
+  Once at startup, before the connector opens: reach the streamable transport provider's session
+  factory (`DefaultMcpStreamableServerSessionFactory`) and its shared `requestHandlers` map — two
+  reflective field reads, workable because the jars are non-modular — and wrap the `"tools/list"`
+  entry: delegate to the original handler, then filter its result by the identity riding
+  `exchange.transportContext()`. All sessions share that one map, so one wrap covers every caller;
+  per-request state rides the exchange the session constructs per JSON-RPC request. The map is
+  **never** mutated after startup.
+
+**Two hard prerequisites, each with a startup guard:**
+
+1. **`spring.ai.mcp.server.protocol=STREAMABLE`, set explicitly.** The 2.0.0 auto-config
+   `@Conditional`s match the property string and ignore the properties-field default — with the
+   property absent the server silently runs the legacy SSE transport (`GET /sse` +
+   `POST /mcp/message`; `POST /mcp` 404s), where the adapter's seam is not reachable. The smoke
+   check asserts the transport type, not just the fields.
+2. **An identity-carrying `contextExtractor`.** The stock transport produces an **empty**
+   `McpTransportContext` — the filter would see no principal for anyone. The transport-provider bean
+   is replaced (that one *is* `@ConditionalOnMissingBean`-replaceable) with one whose extractor
+   captures the resolved caller on the servlet thread — after the security chain, before any MCP
+   code. A wiring check in the spirit of `ActorClaimWiringCheck` fails startup if the
+   identity-carrying extractor is not the one installed: an empty context would silently un-filter
+   every roster.
+
+**Failure semantics — two distinct classes, deliberately different:**
+
+- **Installation failure fails startup.** If the smoke check cannot find the pinned internals (an
+  SDK or Spring AI upgrade moved them), the context fails with an error naming them. Degrading to an
+  unfiltered roster here would be *safe* — the roster is a hint — but it would switch the slice's
+  headline off silently; a demo whose flagship feature can quietly vanish is worse than one that
+  refuses to boot after an unverified upgrade.
+- **Runtime failure degrades, omit-never-fabricate.** If the roster batch fails at request time
+  (`allowAll` throws, times out, returns a size-mismatched list, or the roster identity is
+  unreadable), the server logs WARN and returns the **unfiltered** list plus the (still-enforcing)
+  call-time gate. It never presents "no tools" — that looks broken and the agent gives up — and it
+  never fabricates a tool. Degrading the *hint* is safe precisely because the hint carries no
+  authority.
+
+**Uniform rule, no special-casing.** Every caller's roster answers the same policy question the call
+gate asks: for a human (no delegation chain) the `bulk` rule evaluates ceiling-only; for an agent,
+ceiling ∩ capability. "You see what you may call" holds for everyone — the agent-vs-human contrast
+comes from the policy, not from a code branch.
 
 **The list is a hint, never a grant.** Call-time enforcement is authoritative and always runs, even
 for a tool that appeared in the roster a moment ago — which is exactly how mid-session revocation is
 caught. Proving that a *listed-but-since-revoked* tool is still denied at call time is an acceptance
 case, not an implementation detail.
 
-**Omit-never-fabricate.** If the roster batch fails, the server degrades to the **unfiltered** list
-plus the (still-enforcing) call-time gate. It never presents "no tools" — that looks broken and the
-agent gives up — and it never fabricates a tool. Degrading the *hint* is safe precisely because the
-hint carries no authority.
+**Stances pinned 2026-07-31.** No `listChanged` in v1: the SDK offers only a **global** broadcast
+(`notifyToolsListChanged()` has no per-session variant), so a targeted nudge on capability change is
+follow-up material — revocation bites at call time immediately, and at the next re-list for the
+view. The **existence oracle** is accepted and documented: a roster-hidden tool still answers
+`tools/call` with the layer-naming advisory deny, revealing that it exists — all demo tools are
+publicly documented, and hiding existence was never a goal of this slice.
 
 ## 4. Fail-closed posture
 
@@ -197,6 +269,8 @@ on the **smaller** of the two possible results, on any error, timeout, or missin
 | tool-gate OPA call | OPA down / timeout / malformed response | **deny** (the shipped `OpaClient` fail-closed contract; [[HTTP-RESILIENCE]]) |
 | tool-gate OPA call | policy returns no `allow` binding | **deny** (`default allow := false`) |
 | roster batch `allowAll` | any failure | **unfiltered list** + call-time gate still enforcing (degrading a hint, not a grant) |
+| roster identity (transport context) | empty / unreadable at list time | **unfiltered list** + WARN — the call-time gate reads identity from the security context and still denies an agent properly |
+| roster adapter (startup, not runtime) | pinned SDK internals moved by an upgrade | **startup failure** — the smoke check fails the context naming the pins; never a silent unfiltered no-op (§3.2) |
 | tool metadata | a tool with no declared action/category/risk | **deny** at registration-time validation — an unclassifiable tool is not exposed |
 | tool body | downstream catalog call denied | the target-gate's deny, surfaced as a labelled advisory error |
 
@@ -207,8 +281,10 @@ on the **smaller** of the two possible results, on any error, timeout, or missin
   Switching the agent gate off therefore **cannot grant an agent more than its principal already
   has**; it only removes the *narrowing*. That is the whole point of enforcing the intersection
   across layers instead of propagating it.
-- `roster-filter off` ⇒ the unfiltered list, with call-time enforcement unchanged — identical to the
-  degradation path above.
+- `roster-filter off` ⇒ the adapter (and its smoke check) is **not installed at all** — the
+  deliberate post-upgrade escape hatch when an SDK bump moves the pinned internals — and the served
+  roster is the unfiltered list, with call-time enforcement unchanged: at runtime, byte-identical to
+  the degradation path above.
 - There is **no** switch that disables call-time enforcement. The authoritative gate is not
   optional.
 
@@ -250,6 +326,10 @@ See [[0028-agent-tool-call-authorization|ADR 0028]] for the full rationale; the 
 | **A real-LLM e2e driver** | Non-deterministic tool selection makes the e2e assert response *shape* instead of **the actual cut** (which tools, which denials). A scripted client asserts the cut, which is what the suite is for ([[E2E-TESTING]]). |
 | **Keycloak token-exchange / an experimental build for the `act` claim** | RFC 8693 token-exchange support that carries `act` is not in a stock release we can pin the rig to. A plain custom claim minted by a stock protocol mapper carries the same **semantics**, keeps the rig reproducible, and leaves the extractor seam free to read a real `act` later. |
 | **A library module in this slice** (`opa-abac-agent` up front) | Extracting an abstraction from one consumer guesses at the seam. Example-first; extraction is the exit criterion once the shape is proven. |
+| **Per-request `addTool`/`removeTool` to shape the roster** | Global server state: one caller's roster leaks to every concurrent session, and it races. The 2026-07-28 spec revision additionally *forbids* per-connection variation. Written down so nobody reaches for the obvious API later. |
+| **The stateless-protocol handler decorator** (`McpStatelessServerHandler`, mechanism B of the T5 investigation) | Public-API-only — no reflection — but it switches the whole server to the STATELESS variant: no sessions, no server-initiated features, per-request `initialize`, different client framing. A protocol change is a bigger contract change than one deletable reflective adapter. Closest to where upstream PR #1034 is heading; revisit at SDK 2.1. |
+| **Transport-layer JSON-RPC response rewrite** (a servlet filter on `/mcp`) | Verified workable — non-`initialize` POSTs are answered SSE-framed deterministically — but it re-implements JSON-RPC + SSE parsing at the HTTP layer, must parse (never substring-sniff) the method, and couples to response framing. Last resort, ranked below both mechanisms. |
+| **Waiting for SDK 2.1's `ToolsRepository` (java-sdk #578) — descoping the roster from v1** | The supported seam, but unreleased with no committed date. The headline ships now behind a one-class adapter scheduled for deletion; the migration note pins #578 so the wait happens *in parallel*, not *instead*. |
 
 ## 7. Baseline pins
 
@@ -258,6 +338,13 @@ Spring AI **2.0.0** · MCP Java SDK **2.0.0** · MCP spec revision **2025-11-25*
 costs nothing here). Java 25 / Spring Boot 4.0 / Gradle 9.x as the rest of the repo
 ([[0026-spring-boot-4-single-line-port|ADR 0026]]). T1 carries a 30-second confirm that the spec site
 has flipped **Current** to the 2026-07-28 revision — a docs-only note; it changes nothing in this slice.
+
+**Two pins added by the 2026-07-31 amendment:** `spring.ai.mcp.server.protocol=STREAMABLE` must be
+**explicit** — the 2.0.0 auto-config conditionals ignore the properties-field default, and an absent
+property silently serves the legacy SSE transport where `POST /mcp` 404s (verified against the jars;
+recorded in the `opa-abac-sb4-integration` expertise domain). And the roster adapter pins three
+SDK-2.0.0 internals (§3.2), smoke-checked at startup — upgrading either jar deliberately re-opens
+that reckoning, which is the intended migration trigger toward java-sdk #578.
 
 ## Related
 

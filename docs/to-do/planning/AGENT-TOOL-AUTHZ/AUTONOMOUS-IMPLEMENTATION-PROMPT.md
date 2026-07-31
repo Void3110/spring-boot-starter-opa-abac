@@ -55,7 +55,13 @@ summary) — their findings come back to you; the code, tests, and docs are writ
    model, input schema, packaging), the fail-closed posture table + kill-switch semantics, and
    considered-&-rejected.
 3. `01-DECOMPOSITION.md` — the 6 tickets, each with Goal / Deliverables / Acceptance /
-   What-NOT-to-touch. **This is your work list.**
+   What-NOT-to-touch. **This is your work list.** **Amendment 2026-07-31:** T5's mechanism was
+   re-settled after the T1–T4 run verified that the originally assumed `tools/list` hook does not
+   exist in the SDK — the rewritten T5 section and `00-DESIGN.md` §3.2 are **authoritative** over
+   anything else in this package that still implies such a hook. Two failure classes, never
+   conflated: an adapter **installation** failure fails startup (never degrade); a **runtime**
+   roster failure degrades to the unfiltered list (never fail the request, never an empty roster).
+   The QA doc's roster/e2e blocks were extended the same day (I22–I28, E10–E11).
 4. **The pinned decisions** — [[0028-agent-tool-call-authorization|ADR 0028]] (the two-layer decision
    model, enforcement-by-composition with no role propagation, the additive dual-identity subject
    shape, example-first packaging), plus the three it builds on:

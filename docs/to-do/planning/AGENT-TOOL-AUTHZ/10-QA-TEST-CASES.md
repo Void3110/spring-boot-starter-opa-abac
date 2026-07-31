@@ -116,9 +116,11 @@ is how "the tool body never ran" is proven rather than assumed.
 | I14 | Tool-gate allows, catalog stub returns **403** (the target-gate denying) | a structured advisory error naming layer **`target-gate`**, upstream error code preserved — the two layers are **distinguishable** by the caller, which is what lets a model react instead of retrying blindly | T4 |
 | I15 | Kill-switch `agent-gate` **OFF** | the tool-gate is skipped; the call is evaluated exactly as a human principal's would be; the catalog stub **still 403s** for a resource the principal may not touch → **OFF is never wider than ON**. Asserted alongside: **no** property disables call-time enforcement — with every switch off, the authoritative gate is still installed | T4 |
 
-## Integration — roster filtering (I16–I21, T5)
+## Integration — roster filtering (I16–I28, T5)
 
-Fixture: a persona whose capability covers **exactly 2 of the 4** tools.
+Fixture: a persona whose capability covers **exactly 2 of the 4** tools. I22–I28 were added by the
+2026-07-31 mechanism amendment ([[00-DESIGN]] §3.2: the delegate-then-filter adapter, the
+`STREAMABLE` protocol pin, the identity-carrying `contextExtractor`).
 
 | ID | Case | Asserts | → Ticket |
 |---|---|---|---|
@@ -128,8 +130,15 @@ Fixture: a persona whose capability covers **exactly 2 of the 4** tools.
 | I19 | Roster batch **succeeds** with all-`false` (a zero-capability agent) | an **empty** roster is the correct answer here — the contrast with I18 proves degradation keys on *failure*, not on emptiness | T5 |
 | I20 | Kill-switch `roster-filter` **OFF** | unfiltered list, call-time enforcement unchanged — externally identical to I18's degradation, and no wider | T5 |
 | I21 | Listed-but-revoked: turn 1 lists a tool; the capability profile is then revoked; turn 2 calls it | **denied at call time** — the list was a hint, never a grant, and the turn-scoped memo (U16) is what makes the revocation visible on the next turn | T5 |
+| I22 | `POST /mcp` streamable handshake at the wire | `initialize` answers `application/json` + the `Mcp-Session-Id` **response header**; a follow-up request on the same session answers **SSE-framed** — the `protocol: STREAMABLE` pin took effect (a 401-before-routing never proves routing) | T5 |
+| I23 | The installed handler, inspected against the **real** context | the request-handler map's `"tools/list"` entry IS the wrapping handler (delegate-then-filter) — the `ToolGateInstallationTest` analog for the list path | T5 |
+| I24 | The adapter's smoke check, failure branch (a doctored/absent seam) | context startup **fails** with an error naming the pinned internals — never a silent unfiltered no-op | T5 |
+| I25 | Two concurrent sessions, different identities | **different** rosters, and neither session ever observes the other's — the cross-session leak the rejected global-mutation shape would cause | T5 |
+| I26 | A human token (no actor claim), `tools/list` | the **ceiling-only** roster from the same `bulk` rule — no code branch, no special-casing | T5 |
+| I27 | `allowAll` response shorter/longer than the request; and an **empty registry** | size mismatch ⇒ the **unfiltered** list, never an index-shifted partial filter; empty registry ⇒ an empty list with **no** OPA call | T5 |
+| I28 | Roster identity unreadable at list time (an empty transport context) | the **unfiltered** list + WARN — and the call-time gate, which reads the security context instead, still denies the agent | T5 |
 
-## E2E — deterministic scripted MCP client through the rig (E1–E9, T6)
+## E2E — deterministic scripted MCP client through the rig (E1–E11, T6)
 
 Rig personas: a human with catalog access; an **agent client** whose token carries the custom claim
 minted by the demo realm's protocol mapper, acting for that human; and a low-privilege human plus an
@@ -146,6 +155,8 @@ agent acting for **them**.
 | E7 | Kill-switch drill — `agent-gate` OFF, replay E2's denied write tool | the tool-gate no longer denies, and the **catalog target-gate still denies** it for a principal without the permission → the OFF state is **not wider** than ON, proven on the rig rather than argued | T6 |
 | E8 | Every deny produced in E2 / E4 / E6 | a **structured** tool-error carrying a stable error code **and** the denying layer; no stack trace, no bare 5xx, never a silent empty result | T6 |
 | E9 | Every existing e2e matrix (catalog / hierarchy / tags / pagination / permission-categories / team / user-service) | re-runs **green** — this slice changed nothing they depend on | T6 |
+| E10 | Human token (no actor claim), `tools/list` through the rig *(added 2026-07-31)* | the **ceiling-only** roster from the same rule — the principal-only cut; no-actor is an honest human call, and the agent path only ever narrows it | T6 |
+| E11 | Turn 1 lists a tool for the agent; the capability profile is revoked; turn 2 calls it *(added 2026-07-31)* | **denied at call time** on the live rig, next turn, **no restart** — I21's invariant proven end-to-end | T6 |
 
 ## Headline proof
 

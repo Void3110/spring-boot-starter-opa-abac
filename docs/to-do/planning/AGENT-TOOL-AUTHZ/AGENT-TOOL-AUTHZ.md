@@ -77,8 +77,10 @@ T1 ──► T2 ──► T3 ──► T4 ──► T5 ──► T6
 Strictly sequential. **T1 is independently landable** — a runnable MCP server proxying the catalog
 REST API with the caller's token, every tool declaring its action/category/risk-tags, no
 authorization yet — and carries standalone demo value on its own. **T1–T4 are the reusable core**
-(identity + policy + PEP) if the window is short: T5 is roster polish and T6 is the rig/e2e/docs
-wrapper.
+(identity + policy + PEP) if the window is short. Post-amendment (2026-07-31) **T5 is no longer
+"polish"**: it carries the slice's riskiest mechanics — the reflective roster adapter, the
+transport-provider replacement, and the explicit `STREAMABLE` protocol flip ([[00-DESIGN]] §3.2).
+T6 is the rig/e2e/docs wrapper.
 
 ## Conventions
 
@@ -86,7 +88,9 @@ wrapper.
   file; the demo domain stays product catalogs. Packages: `dev.dmitriikonovalov.example.mcp.*`.
 - **Commit identity** `Void3110 <void31102025@gmail.com>` (repo-local — verify before committing).
 - **Baselines:** Spring AI 2.0.0, MCP Java SDK 2.0.0, MCP spec revision 2025-11-25; Java 25 /
-  Spring Boot 4.0 / Gradle 9.x as the rest of the repo.
+  Spring Boot 4.0 / Gradle 9.x as the rest of the repo. `spring.ai.mcp.server.protocol=STREAMABLE`
+  is set **explicitly** — the 2.0.0 auto-config ignores the properties-field default and serves the
+  legacy SSE transport when the property is absent ([[00-DESIGN]] §7).
 - **Tests:** in-process `com.sun.net.httpserver.HttpServer` stubs (never WireMock), real Postgres via
   Testcontainers (never H2) where persistence is involved, `opa test` for policy, and an e2e driven by
   a **deterministic scripted MCP client** asserting the actual cut — which tools, which denials.

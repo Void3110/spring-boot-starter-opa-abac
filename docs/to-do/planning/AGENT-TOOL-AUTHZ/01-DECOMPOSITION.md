@@ -28,8 +28,11 @@ T1 ──► T2 ──► T3 ──► T4 ──► T5 ──► T6
 independently landable** (a runnable MCP server proxying the existing catalog REST API with the
 caller's bearer, every tool declaring its action/category/risk-tags, no authorization yet) and has
 standalone demo value. **T1–T4 are the reusable core** — identity normalization, the tool-gate
-policy + capability seam, and the enforcing PEP; if the window is short, T5 (roster polish) and T6
-(rig/e2e/docs) can follow. The ★ review + checkpoint after each ticket is mandatory.
+policy + capability seam, and the enforcing PEP; if the window is short, T5 and T6 can follow —
+but post-amendment (2026-07-31) **T5 is no longer "polish"**: it carries the slice's riskiest
+mechanics (the reflective adapter, the transport-provider replacement, and the protocol flip from
+the module's unintended T1–T4 SSE state; [[00-DESIGN]] §3.2). The ★ review + checkpoint after each
+ticket is mandatory.
 
 **Invariants every ticket carries** (repeated in each *What NOT to touch*): fail-closed on every new
 edge; no library module and no existing service/rego touched; the MCP server never asserts a role,
@@ -103,7 +106,9 @@ from a **plain custom claim** minted by stock Keycloak — fail-closed on every 
   with `isAgentCall()` (`actor != null`); `chain` is **immutable and ordered** (nearest actor first).
   `principal` is the token `sub`, resolved exactly as the rest of the repo resolves it.
 - `…mcp.identity.DelegationChainExtractor` interface — `DelegationChain extract(Jwt token)`; the
-  Javadoc pins the fail-closed contract: **throw, never widen**.
+  Javadoc pins the fail-closed contract: **throw, never widen**. (Shipped as
+  `extract(AbacContext.Subject)` — this repo's gateway-trust path has no Spring Security `Jwt`;
+  STATUS-02 Decisions §1.)
 - `…mcp.identity.ClaimDelegationChainExtractor` — the implementation. Reads the configurable claim
   (`example.mcp.identity.actor-claim`, default `act_chain`) carrying **RFC 8693 `act` semantics**
   (nested `act` objects, or the flattened array the demo mapper mints) and normalizes both shapes to
@@ -216,13 +221,18 @@ that names the denying layer, and land a kill-switch whose OFF state is provably
 - `…mcp.authz.McpToolAuthorizationAspect` — the server-side `@McpTool` interception, registered by
   `…mcp.authz.ToolAuthorizationConfiguration` and ordered so it runs **before** the tool body. A deny
   **short-circuits**: the body never runs, no target is resolved, no downstream call is made.
+  (Shipped as `ToolCallGate` wrapping each specification's `callHandler` via a `BeanPostProcessor` —
+  a proxy-based aspect is not reliably in the invocation path; STATUS-04 Decisions §1.)
 - `…mcp.authz.ToolAuthorizationException` + the advisory mapping — a denial reaches the client as a
   **structured tool error naming the layer**, carrying a stable code, so the model can pick another
   tool or ask for escalation; never silent, never a raw stack trace.
 - `…mcp.authz.ToolPolicyPathResolver` — a `PolicyPathResolver` binding resource type `tool` to the
-  `agent_tools/allow` document.
+  `agent_tools/allow` document. (Superseded: shipped as **`agent_tools`**, the package — the shipped
+  client posts `/v1/data/<path>` and `/v1/data/<path>/bulk`, so the rule-qualified form would break
+  T5's batch; STATUS-03 Decisions §6.)
 - `…mcp.authz.ToolAuthorizationProperties` — `@ConfigurationProperties("example.mcp.authz")`:
-  `agent-gate.enabled` (default **true**), `policy-path` (default `agent_tools/allow`), `timeout`.
+  `agent-gate.enabled` (default **true**), `policy-path` (default `agent_tools/allow` — superseded,
+  shipped default **`agent_tools`**; STATUS-03 Decisions §6), `timeout`.
   The Javadoc states the OFF semantics: the tool-gate is skipped, the call is evaluated exactly as a
   human principal's would be, and the catalog service still enforces the principal ceiling — so OFF
   removes the **narrowing** and can never grant beyond the principal.
@@ -251,39 +261,81 @@ is consumed as-is. No roster filtering yet (T5).
 
 ## T5 — Roster filtering: `tools/list` via batch `allowAll`, omit-never-fabricate
 
-**Goal.** Advertise only the tools the caller may actually call — in one batch OPA round-trip — while
-keeping the list a **hint** whose failure degrades to *more* visibility, never less, and never to a
-grant.
+**Goal.** Advertise to each caller only the tools they may actually call — one batch OPA round-trip,
+computed **per request** from the caller's authorization — while keeping the list a **hint** whose
+*runtime* failure degrades to *more* visibility, never less, and never to a grant.
+
+**Mechanism note (amended 2026-07-31; the full rationale is [[00-DESIGN]] §3.2).** The originally
+planned "register the filter with the MCP server's `tools/list` handler" names a hook that **does
+not exist** — verified by `javap` against the pinned 2.0.0 jars; the supported seam is java-sdk
+**#578** (`ToolsRepository`, SDK 2.1, unreleased). The chosen mechanism is **delegate-then-filter
+installed into the SDK's live request-handler map**: a durable core plus a disposable adapter that
+is deleted when #578 ships.
 
 **Deliverables.**
-- `…mcp.authz.ToolRosterFilter` — the `tools/list` pre-flight: one `AbacContext` per registered tool
-  (built by T4's context builder, over one shared turn-scoped capability memo), a **single**
-  `OpaClient.allowAll(List<AbacContext>)` round-trip, N booleans back — the batch primitive of
-  [[0024-batch-role-resolution|ADR 0024]] — filtered by index into the advertised list.
-- `…mcp.authz.ToolListFilterConfiguration` — registers the filter with the MCP server's `tools/list`
-  handler; `ToolAuthorizationProperties.rosterFilter.enabled` (default **true**) is the kill-switch,
-  whose OFF state is byte-identical to the degradation path below.
-- **Omit-never-fabricate degradation** — on any failure (`allowAll` throws, times out, or returns a
-  list whose size does not match the request) the server logs WARN and returns the **unfiltered**
-  list. It never returns an empty roster (that reads as broken and the agent gives up) and never
-  invents a tool name. Degrading a hint is safe precisely because the hint carries no authority.
-- **Consumers named:** the MCP `tools/list` handler consumes the filter; T6's scripted client asserts
-  the resulting cut.
+- `…mcp.authz.ToolRosterFilter` — the **durable core**, mechanism-agnostic: caller identity + the
+  delegate's `ListToolsResult` in; one `AbacContext` per registered tool (T4's context builder, the
+  shared turn-scoped capability memo); a **single** `OpaClient.allowAll(List<AbacContext>)`
+  round-trip — the batch primitive of [[0024-batch-role-resolution|ADR 0024]] — against the
+  `agent_tools` document; booleans paired with `ToolRegistry` declaration order **by index** (the
+  order contract pinned in T2); omitted-only output. **Uniform for every caller**: a human (no
+  delegation chain) gets ceiling-only, an agent gets ceiling ∩ capability — the same `bulk` rule,
+  no code branch.
+- `…mcp.authz.RosterFilterInstaller` — the **disposable adapter**: a `SmartInitializingSingleton`
+  (default eager init is a documented precondition) that reaches the streamable transport provider's
+  private `sessionFactory`, casts to `DefaultMcpStreamableServerSessionFactory`, reads its
+  `requestHandlers` map, and wraps the `"tools/list"` entry with delegate-then-filter over the
+  identity riding `exchange.transportContext()`. **The startup smoke check fails the context** —
+  fields missing, entry absent, or a non-streamable transport type ⇒ a startup error naming the
+  pinned internals; never a silent unfiltered no-op. One wrap covers all sessions (the map is
+  shared); the map is never mutated after startup. Carries the deletion note pinning java-sdk #578.
+- **Transport identity wiring** — replace the auto-configured transport provider (it is
+  `@ConditionalOnMissingBean`-replaceable) with a `WebMvcStreamableServerTransportProvider` built
+  via its `Builder` with a `contextExtractor` capturing the resolved caller (servlet thread,
+  post-security-chain) into `McpTransportContext`; plus an `ActorClaimWiringCheck`-style startup
+  check that fails the context if the identity-carrying extractor is not the one installed — the
+  stock default is an **empty** context, i.e. a silent un-filter.
+- **`application.yml`: `spring.ai.mcp.server.protocol: STREAMABLE`**, with the trap documented in
+  place: the auto-config conditionals ignore the properties-field default; absent ⇒ the legacy SSE
+  transport (`GET /sse` + `POST /mcp/message`) serves and `POST /mcp` 404s — which is the module's
+  actual (unintended) state through T1–T4.
+- `ToolAuthorizationProperties.rosterFilter.enabled` (default **true**) — the kill-switch. OFF skips
+  the adapter installation **and its smoke check** entirely — the deliberate post-upgrade escape
+  hatch when an SDK bump moves the pinned internals — and at runtime is byte-identical to the
+  degradation path below.
+- **Omit-never-fabricate degradation (runtime only)** — on any request-time failure (`allowAll`
+  throws, times out, or returns a size-mismatched list; the roster identity is unreadable) the
+  server logs WARN and returns the **unfiltered** list. It never returns an empty roster (that reads
+  as broken and the agent gives up) and never invents a tool name. Degrading a hint is safe
+  precisely because the hint carries no authority.
+- **Consumers named:** the wrapped `tools/list` handler consumes the filter; T6's scripted client
+  asserts the resulting cut.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **U8**, the non-happy path (an `allowAll` response shorter or
-longer than the request → the **unfiltered** list, never an index-shifted partial filter; an empty
-registry → an empty list with **no** OPA call) + **I4** (an OPA stub returning a mixed batch → the
-roster holds **exactly** the allowed tool names; OPA down → the **full** roster, never empty; then a
-tool the roster listed a moment ago, whose capability has since been revoked, is **still denied at
-call time** with `tool-gate` — the list is a hint, the call-time gate is authoritative).
-`./gradlew :example-mcp-server:test`.
+**Acceptance.** [[10-QA-TEST-CASES]] **I16–I28** — the roster block, re-cited 2026-07-31 to the QA
+doc's own numbering (the earlier `U8`/`I4` citations pointed at T2 cases there): **I16–I21** as
+written 2026-07-28 (list-equals-callable by name, the single batch round-trip,
+failure-degrades-unfiltered vs authoritative-empty-lists-empty, kill-switch OFF, listed-but-revoked
+denied at call time), plus the amendment's additions — **I22** the wire-level `POST /mcp` streamable
+handshake (the protocol pin took effect; the 401-before-routing in `McpServerSecurityTest` never
+proved routing), **I23** against the **real** context the map's `"tools/list"` entry IS the wrapping
+handler (the `ToolGateInstallationTest` analog for the list path), **I24** the smoke check's failure
+branch — a doctored/absent seam ⇒ context startup fails naming the pinned internals, **I25** two
+concurrent sessions with different identities receive **different** rosters and neither ever
+observes the other's, **I26** a human token (no actor claim) gets the ceiling-only roster from the
+same rule, **I27** a size-mismatched `allowAll` response ⇒ the unfiltered list, never an
+index-shifted partial filter (an empty registry ⇒ an empty list with **no** OPA call), **I28**
+roster identity unreadable at list time ⇒ the unfiltered list + WARN while the call-time gate still
+denies the agent. `./gradlew :example-mcp-server:test`.
 
 **What NOT to touch.** A listed tool **never** skips the call-time gate — no roster-derived cache, no
-"already checked in the pre-flight" shortcut. Never present an empty roster on failure and never
-fabricate a tool. No `notifications/tools/list_changed` (out of scope; the call-time gate is what
-catches revocation). The roster kill-switch OFF must be **exactly** the degradation path, so OFF is
-never wider than ON. No library module, no existing service, no existing rego; nothing asserted
-downstream.
+"already checked in the pre-flight" shortcut. Never present an empty roster on *runtime* failure and
+never fabricate a tool (startup is deliberately different: an installation failure fails the context,
+[[00-DESIGN]] §3.2). **Never** shape the roster with `addTool`/`removeTool` — global state, leaks
+across sessions, races, and the 2026-07-28 spec revision forbids per-connection variation; the
+handler map is written exactly once, before traffic. No `notifications/tools/list_changed` (v1
+stance: revocation bites at call time immediately, at the next re-list for the view). The roster
+kill-switch OFF must be **exactly** the degradation path, so OFF is never wider than ON. No library
+module, no existing service, no existing rego; nothing asserted downstream.
 
 ---
 
@@ -307,10 +359,16 @@ service into `deploy.sh`, document it, and move the folder to `implemented/`.
   prove no widening on the live rig and not only in `opa test`.
 - **e2e:** `scripts/postman/agent-tool-matrix.postman_collection.json` +
   `scripts/postman/run-agent-tool-matrix.sh`, registered in `scripts/postman/run-tests.sh`. The
-  collection **is** the deterministic scripted MCP client: ordered JSON-RPC `initialize` →
-  `tools/list` → `tools/call` requests over the streamable-HTTP transport, asserting **the actual
-  cut** (which tool names, which denials, which layer label), never just response shape
-  ([[E2E-TESTING]]).
+  collection **is** the deterministic scripted MCP client, and it must speak the **real** streamable
+  framing (T5 pins `protocol: STREAMABLE`): every request POSTs `/mcp` with
+  `Accept: application/json, text/event-stream`; `initialize` answers as plain `application/json`
+  and assigns `Mcp-Session-Id` as a **response header**; every later request carries the
+  `mcp-session-id` header (enforced by the transport) plus `MCP-Protocol-Version` (spec-required of
+  clients; not validated by this server version) and its response arrives **SSE-framed**
+  (`text/event-stream`, `data:` lines) on the same endpoint — the collection's scripts parse both
+  framings. Ordered JSON-RPC `initialize` → `notifications/initialized` → `tools/list` →
+  `tools/call`, asserting **the actual cut** (which tool names, which denials, which layer label),
+  never just response shape ([[E2E-TESTING]]).
 - **Docs:** a new `docs/guides/AGENT-TOOL-AUTHORIZATION.md` (the two-layer model, the dual-identity
   claim shape, the capability tri-state, the roster-is-a-hint rule, the fail-closed table, the scope
   boundary); tick the guide index in `docs/README.md` and the [[POC-ROADMAP]] Phase 9 row, and confirm
@@ -319,17 +377,18 @@ service into `deploy.sh`, document it, and move the folder to `implemented/`.
   index frontmatter `status/planned → status/done`, add a **Shipped** banner, and record the run
   retrospective in the `autonomous-runs` expertise domain.
 
-**Acceptance.** [[10-QA-TEST-CASES]] **E1** (roster cut: the agent persona's `tools/list` returns
-**exactly** the allowed subset of the 4 registered tools — named and counted) + **E2** (allow/deny
-contrast on the same token: an in-capability tool returns catalog data, an out-of-capability tool is
-denied with the `tool-gate` label and the catalog service shows **no** corresponding request) + **E3**
-(the same principal's token **without** the actor claim gets the full principal-only cut — proving
-no-actor is an honest human call and that the agent path only ever narrowed it) + **E4** (a
-listed-but-since-revoked tool is still denied at call time, on the next turn, with no restart) +
-**E5** (the mid-run PDP-kill drill: stop the OPA container → every tool call denies and `tools/list`
-degrades to the **unfiltered** roster; **zero widening** — the previously denied tool is still denied;
-restart OPA and the matrix resumes green). `ENABLE_MCP=1 ./deploy.sh up --pods 2` then
-`scripts/postman/run-agent-tool-matrix.sh`; plus `./gradlew build` green.
+**Acceptance.** [[10-QA-TEST-CASES]] **E1–E11** — the full agent matrix, re-cited 2026-07-31 to the
+QA doc's own numbering (this ticket's earlier inline E-numbers had drifted from it, silently dropping
+the headline case): E1 human parity through the tool surface, E2 the allow/deny narrowing contrast
+on one token, E3 the agent roster cut by exact tool name, E4 the target-gate layer distinguishable
+end-to-end, **E5 the headline** — the low-privilege replay with nothing asserted downstream, E6 the
+mid-run PDP-kill drill (zero widening; the roster degrades unfiltered while calls still deny), E7
+the `agent-gate` OFF drill proving OFF is never wider than ON, E8 the structured layer-naming error
+on every deny, E9 every pre-existing e2e matrix re-runs green, plus the amendment's additions —
+**E10** a human token's roster is the ceiling-only cut from the same rule (no-actor is an honest
+human call; the agent path only ever narrows it), **E11** a listed-then-revoked tool is still denied
+at call time on the next turn, live on the rig, no restart. `ENABLE_MCP=1 ./deploy.sh up --pods 2`
+then `scripts/postman/run-agent-tool-matrix.sh`; plus `./gradlew build` green.
 
 **What NOT to touch.** No existing collection's assertions change — the new matrix is additive and
 `run-tests.sh` only gains a registration. The existing rego is unchanged, so the other matrices need
