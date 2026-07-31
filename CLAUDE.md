@@ -86,6 +86,10 @@ Two things about its build are non-obvious:
 
 ```bash
 ./gradlew :example-mcp-server:test
+
+ENABLE_MCP=1 ./deploy.sh up --pods 2       # the tool surface on the rig, behind the gateway at /mcp
+                                           # (force-enables ENABLE_OIDC + ENABLE_OPA + ENABLE_USER_SERVICE)
+scripts/postman/run-agent-tool-matrix.sh   # the E1–E11 agent matrix, through the gateway
 ```
 
 ### Container runtime for tests (important)

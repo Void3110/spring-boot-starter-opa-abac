@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -11,7 +11,14 @@ tags:
 
 # AGENT-TOOL-AUTHZ — AI-agent tool-call authorization on the shipped starter (Phase 9)
 
-> **Status: Planning.** A new example service — **`example-mcp-server`**, a Spring AI MCP server
+> ✅ **SHIPPED 2026-07-31** — branch `feature/void3110/agent-tool-authz`, T1–T6 all green.
+> `./gradlew build` ✅ · `:example-mcp-server:test` **129** · `opa test` **264/264** ·
+> `scripts/postman/run-agent-tool-matrix.sh` **49 requests / 73 assertions, 0 failures** ·
+> the pre-existing e2e fleet **14/14** on its documented rig flavours. Guide:
+> [[AGENT-TOOL-AUTHORIZATION]]. The optional `opa-abac-agent` library module remains the
+> slice's **exit criterion**, deliberately not shipped.
+>
+> A new example service — **`example-mcp-server`**, a Spring AI MCP server
 > exposing catalog tools — gains a **server-side `@McpTool` policy gate** with OPA as the PDP, so an
 > agent's tool call is authorized *before* it executes. It proves the emerging agent-authorization
 > pattern **on the published starter with zero library change**: no `opa-abac-*` module, no existing
@@ -66,7 +73,7 @@ or the smaller result**, and each kill-switch's OFF state is never wider than it
 | T3 | Tool-gate rego (ceiling ∩ capability, in Rego) + `AgentCapabilitySupplier` | ✅ DONE |
 | T4 | The PEP: `@McpTool` interception, layer-naming advisory deny, kill-switch | ✅ DONE |
 | T5 | Roster filtering: `tools/list` via batch `allowAll`, omit-never-fabricate **+ creates the guide** | ✅ DONE |
-| T6 | Rig + scripted-client e2e + **guide completion** + folder move | 📋 TODO |
+| T6 | Rig + scripted-client e2e + **guide completion** + folder move | ✅ DONE |
 
 ## Critical path
 

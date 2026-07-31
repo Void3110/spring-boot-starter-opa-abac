@@ -55,11 +55,15 @@ services:
       #                   get_product's medium risk tier) — the persona the roster cut is shown with.
       # agent-overreach : deliberately WIDER than any demo principal (lists WRITE and every verb).
       # agent-revoked   : a known agent with ZERO capability — authoritative-empty, not an outage.
+      # The readonly profile's four dimensions are interpolated so the e2e can REVOKE it in place
+      # (E11): `MCP_READONLY_TOOLS= MCP_READONLY_CATEGORIES= MCP_READONLY_ACTIONS= … up -d
+      # --force-recreate` leaves the actor DECLARED but with zero capability — a known agent whose
+      # answer is authoritative-empty, not an outage. The defaults below are the shipped demo profile.
       EXAMPLE_MCP_AGENTS_PROFILES_0_ACTOR_ID: "agent-readonly"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_CATEGORIES: "READ"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_TOOLS: "list_catalogs,get_catalog"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_ACTIONS: "view,list"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_MAX_RISK_TAG: "low"
+      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_CATEGORIES: "${MCP_READONLY_CATEGORIES-READ}"
+      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_TOOLS: "${MCP_READONLY_TOOLS-list_catalogs,get_catalog}"
+      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_ACTIONS: "${MCP_READONLY_ACTIONS-view,list}"
+      EXAMPLE_MCP_AGENTS_PROFILES_0_MAX_RISK_TAG: "${MCP_READONLY_MAX_RISK-low}"
 
       EXAMPLE_MCP_AGENTS_PROFILES_1_ACTOR_ID: "agent-overreach"
       EXAMPLE_MCP_AGENTS_PROFILES_1_ALLOWED_CATEGORIES: "READ,WRITE,TAG,GRANT"

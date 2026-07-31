@@ -9,7 +9,8 @@ tags:
 
 # ADR 0028 — Agent tool-call authorization: two decision layers, enforcement by composition
 
-**Status:** Accepted (planned — Phase 9, [[AGENT-TOOL-AUTHZ]])
+**Status:** Accepted — **shipped 2026-07-31** (Phase 9, [[AGENT-TOOL-AUTHZ]]; guide
+[[AGENT-TOOL-AUTHORIZATION]], e2e `scripts/postman/run-agent-tool-matrix.sh`)
 **Date:** 2026-07-28
 **Context tags:** MCP tool-call PEP, dual identity (principal ≠ actor), RFC 8693 `act`, narrowing-only capability, no role propagation, example-first, fail-closed
 

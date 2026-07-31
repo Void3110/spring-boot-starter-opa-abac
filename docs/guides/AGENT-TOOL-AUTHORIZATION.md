@@ -20,9 +20,9 @@ tags:
 > capability in Rego**.
 >
 > **Nothing in the library changes.** No `opa-abac-*` module, no existing service, no existing
-> `.rego` document. The MCP server consumes the published starter exactly as an adopter would.
->
-> *(T5 wrote this guide; T6 adds the rig and end-to-end sections.)*
+> `.rego` document. The MCP server consumes the published starter exactly as an adopter would —
+> which is also what makes [[#On the local rig|the e2e]] meaningful: the target layer it denies at is
+> the shipped one, byte-for-byte.
 
 ## Why the MCP specification does not cover this
 
@@ -212,6 +212,80 @@ opa test infra/opa/policies -v
 > aborting a half-written chunked body rather than returning a clean 403. Permitting `ASYNC` (as this
 > module's `SecurityConfig` does, alongside `ERROR`) widens nothing: an async dispatch can only exist
 > for a request that already passed the chain on its initial dispatch.
+
+## On the local rig
+
+```bash
+ENABLE_MCP=1 ./deploy.sh up --pods 2      # force-enables OIDC + OPA + the user-service
+scripts/postman/run-agent-tool-matrix.sh  # the E1-E11 matrix, through the gateway
+```
+
+The tool surface is **gateway-fronted like every other service here** — the scripted client enters at
+`http://localhost:9085/mcp`, never a published pod port. Three details are load-bearing:
+
+- **The route.** `ENABLE_MCP` seeds an `mcp` route (`/mcp*`, **priority 65** — above the `/*`
+  catch-all and the user-service's 60, below `internal-blocked`'s 70) carrying the *user-service*
+  plugin set: `openid-connect` + `response-rewrite` + tracing/CORS, and deliberately **not** the
+  catalog `opa` gateway plugin. This server authorizes itself, with its own tool-gate. Without the
+  route, `catalog-all` (`/*`, priority 0) already matches `/mcp` and the whole matrix would quietly
+  hit the catalog pods instead.
+- **Three outbound base-URLs, all overridden in-network.** The shipped defaults are `localhost`,
+  which inside a container is the container. The role-source one is the trap: point it wrong and
+  *every* tool call denies with `tool-gate-ceiling-unavailable`, which reads like a broken policy and
+  is a broken URL.
+- **The actor comes from which client minted the token.** The realm carries one client per demo
+  actor — `catalog-agent-{readonly,overreach,revoked}` — each with a hardcoded-claim protocol mapper
+  minting `act_chain` with that actor's id. So the same human can *also* obtain an ordinary no-actor
+  token through `catalog-gateway`, which is exactly what the human-parity cells need. One agent
+  client could not mint three actors, and a user-attribute mapper would bind the actor to the human.
+
+### What the matrix proves
+
+`agent-tool-matrix.postman_collection.json` **is** the MCP client — a deterministic scripted one that
+speaks the real streamable framing (`initialize` answers plain `application/json` and assigns
+`Mcp-Session-Id` as a *response header*; a notification answers `202` with an empty body, **not** SSE;
+every later request is SSE-framed). Every assertion is on the actual cut — which tool names, which
+denials, which **layer** — never on response shape alone.
+
+| Persona (same principal unless noted) | `tools/list` | `get_product` on its own catalog |
+|---|---|---|
+| human — no actor claim | all four tools | allowed |
+| `agent-readonly` — capped below `medium` risk | exactly `list_catalogs`, `get_catalog` | **denied `tool-gate`** |
+| `agent-overreach` — capability lists WRITE, GRANT, every verb | the human's four, **never more** | allowed |
+| the same `agent-readonly`, acting for a **low-privilege** principal | `[]` | denied |
+
+The middle two rows are the whole argument: the capability **narrows and never grants**, and the
+contrast is drawn on *one* token — the same human is permitted `get_product` directly. Alongside
+them: a foreign catalog answers `target-gate` / `ACCESS_DENIED`, so a caller can tell the two layers
+apart end to end; a tool omitted from the roster is still *denied*, not merely hidden; and killing
+OPA mid-suite empties the roster **and** denies every call, with the pre-kill vector — same allows,
+same denies — returning exactly on restart.
+
+Three cells are rig **drills** the runner orchestrates rather than collection steps: it stops and
+restarts the PDP around the outage folders, recreates the pod with `agent-gate` OFF (proving the
+catalog's own gate still refuses what the tool-gate no longer does), and recreates it with the
+readonly actor's capability emptied — a revocation that removes the tool from the roster *and* denies
+it at call time.
+
+### Two things only the rig could show
+
+Both were found driving the live rig, after the unit and integration suites were green — and both are
+the same shape: **a third-party seam behaving differently from the mental model of it.**
+
+1. **The type-level ceiling under-approximated.** It asked the user-service for governed targets of
+   the *requested* type, but membership lives on the **governing root** ([[HIERARCHICAL-AUTHORIZATION|ADR 0018]])
+   while the role it resolves to carries the whole hierarchy's permissions — so
+   `?resourceType=product` is legitimately empty for someone who may read every product under a
+   catalog they govern. The tool surface *removed* access the caller had over REST, and denied the
+   human and the agent for the same reason, erasing the contrast. Now enumerated over the requested
+   type **plus** `example.mcp.authz.role-source.grant-scope-types` (default `[catalog]`).
+   *Diagnostic tell: a human roster identical to a narrowed agent's is a ceiling bug, not a policy bug.*
+2. **A target-gate denial arrived unlabelled.** Spring AI's annotation-scanned call handler *catches*
+   whatever an `@McpTool` method throws and flattens it to a plain-text error result, so the gate's
+   own `catch` never fires in the real path — and the layer distinction this slice exists to make was
+   silently gone. A request-scoped, read-once record now carries layer and code across that seam. The
+   unit tests could not see it: they build the specification themselves, with a handler that throws
+   straight through.
 
 ## Scope boundary — explicitly not in this slice
 
