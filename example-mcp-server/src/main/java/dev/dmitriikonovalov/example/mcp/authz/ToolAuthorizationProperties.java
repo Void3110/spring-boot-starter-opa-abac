@@ -9,9 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Tool-gate settings, under {@code example.mcp.authz}.
  *
  * <h2>What OFF means, and why it is never wider than ON</h2>
- * {@code agent-gate.enabled=false} skips the <strong>tool-gate</strong>. The call is then evaluated
- * exactly as an ordinary human principal's would be — and the catalog service still enforces that
- * principal's ceiling on every resource it touches, because this server asserts nothing downstream. So
+ * {@code agent-gate.enabled=false} drops the <strong>agent conjunct</strong> from the tool-gate — not
+ * the gate itself. The policy is still asked, with a context that is an ordinary human principal's, so
+ * the principal's own ceiling is still enforced at call time — and the catalog service enforces that
+ * ceiling again on every resource it touches, because this server asserts nothing downstream. So
  * switching the agent gate off removes the <em>narrowing</em> and <strong>cannot grant an agent more
  * than its principal already has</strong>. That property is a consequence of enforcing the intersection
  * across two independent layers rather than propagating it, and it is what makes the kill-switch safe

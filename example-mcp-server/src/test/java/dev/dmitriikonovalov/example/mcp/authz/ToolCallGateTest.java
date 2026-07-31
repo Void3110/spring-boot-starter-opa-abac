@@ -69,6 +69,8 @@ class ToolCallGateTest {
     private final AtomicInteger opaCalls = new AtomicInteger();
     private final AtomicInteger catalogCalls = new AtomicInteger();
     private final AtomicReference<String> callOrder = new AtomicReference<>("");
+    /** The last body POSTed to the OPA stub — what the gate actually asked, not what it meant to. */
+    private final AtomicReference<String> opaBody = new AtomicReference<>("");
 
     private final ToolAuthorizationProperties properties = new ToolAuthorizationProperties();
 
@@ -99,6 +101,10 @@ class ToolCallGateTest {
             opaCalls.incrementAndGet();
             callOrder.updateAndGet(order -> order + "O");
             try {
+                // Capture the request body: several cells assert what was ASKED, not just the verdict —
+                // a gate that sends the wrong input can still return the expected answer.
+                opaBody.set(new String(
+                        exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
                 handler.handle(exchange);
             } finally {
                 exchange.close();
@@ -397,7 +403,9 @@ class ToolCallGateTest {
 
     @Test // I15 — the kill-switch: OFF skips the NARROWING, and the target-gate still denies
     void offIsNeverWiderThanOn() throws IOException {
-        String opa = startOpa(ToolCallGateTest::denyResponse);
+        // The policy's HUMAN branch permits this principal — the ceiling-only answer the switch leaves
+        // in place. The refusal below therefore has to come from the other layer, which is the point.
+        String opa = startOpa(ToolCallGateTest::allowResponse);
         // A catalog that refuses this principal on the actual resource.
         catalogStub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         catalogStub.createContext("/", exchange -> {
@@ -416,14 +424,63 @@ class ToolCallGateTest {
         properties.getAgentGate().setEnabled(false);
         CallToolResult result = invoke(gateWith(opa, catalog, READ_CAPABILITY, CEILING_SUPPLIER));
 
-        // The tool-gate no longer denies (OPA was not even asked)...
-        assertThat(opaCalls).hasValue(0);
-        // ...but the catalog service's own gate still refuses, surfaced as target-gate. OFF removes the
-        // narrowing; it cannot grant beyond the principal.
+        // OFF drops the capability conjunct and NOTHING else: the gate still asks, with a context that
+        // is an ordinary human principal's. (Deep review 2026-07-31 — this cell previously asserted
+        // `opaCalls == 0`, pinning a short-circuit that made the switch disable call-time enforcement
+        // outright and left the roster, which never short-circuited, NARROWER than the call path.)
+        assertThat(opaCalls).hasValue(1);
+        assertThat(opaBody.get())
+                .as("the agent identity and capability must be absent from a gate-off context")
+                .doesNotContain("\"actor\"")
+                .doesNotContain("\"agent_capability\"")
+                .doesNotContain("\"chain\"");
+        // The policy's human branch allows it, and the catalog service's own gate then refuses on the
+        // actual resource — surfaced as target-gate. OFF cannot grant beyond the principal.
         assertThat(result.isError()).isTrue();
         assertThat(layerOf(result)).isEqualTo("target-gate");
         assertThat(codeOf(result)).isEqualTo("ACCESS_DENIED");
         assertThat(catalogCalls).hasValue(1);
+    }
+
+    @Test // the other half of the switch's contract: OFF still enforces the PRINCIPAL's ceiling
+    void offStillDeniesWhenThePrincipalsOwnCeilingRefuses() throws IOException {
+        // The policy refuses this principal even without any agent narrowing — the ceiling-only answer.
+        String opa = startOpa(ToolCallGateTest::denyResponse);
+        String catalog = startCatalog();
+        authenticate(Map.of("act_chain", List.of("agent-a")));
+
+        properties.getAgentGate().setEnabled(false);
+        CallToolResult result = invoke(gateWith(opa, catalog, READ_CAPABILITY, CEILING_SUPPLIER));
+
+        // Denied at the TOOL-gate, and the tool body never ran: turning the narrowing off is not a
+        // bypass of the gate itself. Without this cell, "OFF is never wider than ON" rests entirely on
+        // the downstream refusing for an independent reason.
+        assertThat(result.isError()).isTrue();
+        assertThat(layerOf(result)).isEqualTo("tool-gate");
+        assertThat(codeOf(result)).isEqualTo("tool-gate-denied");
+        assertThat(catalogCalls).hasValue(0);
+    }
+
+    @Test // I7 — the gate asks the right QUESTION, not just gets the right answer
+    void sendsTheDeclaredToolAttributesAndTheDualIdentityToThePolicy() throws IOException {
+        String opa = startOpa(ToolCallGateTest::allowResponse);
+        String catalog = startCatalog();
+        authenticate(Map.of("act_chain", List.of("agent-a")));
+
+        invoke(gateWith(opa, catalog, READ_CAPABILITY, CEILING_SUPPLIER));
+
+        // The resource is the TOOL, carrying the statically declared attributes the policy reads; the
+        // dual identity rides in subject.attributes. A gate that sent, say, the target type as the
+        // resource type would still get "allow" from a stub and be wrong in production.
+        assertThat(opaBody.get())
+                .contains("\"type\":\"tool\"")
+                .contains("\"id\":\"" + TOOL + "\"")
+                .contains("\"category\":\"READ\"")
+                .contains("\"target_type\":\"product\"")
+                .contains("\"medium\"")
+                .contains("\"action\":\"view\"")
+                .contains("\"actor\":\"agent-a\"")
+                .contains("\"agent_capability\"");
     }
 
     @Test // I14 — the two layers are distinguishable by the caller

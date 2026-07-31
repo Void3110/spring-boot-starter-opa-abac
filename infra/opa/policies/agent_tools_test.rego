@@ -117,6 +117,37 @@ test_human_call_denied_without_a_grant_on_the_target_type if {
 	not agent_tools.allow with input as request(human_subject, "view", product_tool, no_product_role)
 }
 
+# --- an actor of ANY shape stays on the agent branch (deep review 2026-07-31) ---
+#
+# `is_agent_call` used to be a bare truthiness test, and Rego's only falsy value is `false` — so an
+# actor of `false` made the rule undefined and the call was decided by the HUMAN branch, skipping the
+# capability conjunct entirely. The principal here is fully permitted `view` on `product`, so the human
+# branch ALLOWS: without the presence guard this case returns true with a zero-capability agent.
+test_a_boolean_false_actor_is_still_an_agent_call_and_denies if {
+	subject := {
+		"id": "user-alice",
+		"roles": ["product-editor"],
+		"attributes": {"actor": false, "agent_capability": empty_capability},
+	}
+	not agent_tools.allow with input as request(subject, "view", product_tool, principal_role_def)
+}
+
+# The sibling shapes, pinned together so the guard can never be "fixed" into a type check that pushes
+# an empty or null actor back onto the human branch — that would widen two shapes to narrow one.
+test_every_malformed_actor_shape_stays_on_the_agent_branch if {
+	every actor in [false, "", 0, null, []] {
+		not agent_tools.allow with input as request(
+			malformed_actor_subject(actor), "view", product_tool, principal_role_def,
+		)
+	}
+}
+
+malformed_actor_subject(actor) := {
+	"id": "user-alice",
+	"roles": ["product-editor"],
+	"attributes": {"actor": actor, "agent_capability": empty_capability},
+}
+
 # --- U20: the agent happy path -------------------------------------------------
 
 test_agent_call_allowed_when_the_intersection_is_non_empty if {

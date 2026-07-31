@@ -25,7 +25,7 @@ import java.util.Set;
  * </ul>
  *
  * <p>The JSON names are the wire contract with {@code agent_tools.rego} and are pinned by
- * {@code AgentCapabilityProfileSerializationTest} — a rename on either side is a silent
+ * {@code AgentCapabilityWireContractTest} — a rename on either side is a silent
  * "no capability", which the policy reads as deny, so it fails safe but would be baffling.
  */
 public record AgentCapabilityProfile(

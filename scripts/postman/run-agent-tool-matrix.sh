@@ -25,7 +25,9 @@
 #           OFF is not wider than ON, proven on the rig rather than argued
 #   E8      every deny is a structured tool error naming its layer and a stable code
 #   E11     revocation: the actor's profile is emptied and the pod restarted -> the tool leaves the
-#           roster AND denies at call time
+#           roster AND denies at call time. E11-b adds the other shape in the same pass: the
+#           `agent-revoked` actor, DECLARED with zero capability from the start, so its empty roster is
+#           an authoritative answer rather than the all-false vector a dead PDP produces
 # E9 (every pre-existing runner still green) is a suite-level acceptance, not a cell here.
 #
 # Prereq: the full rig is up WITH the MCP server (the flag force-enables OIDC + OPA + the user-service):
@@ -73,6 +75,8 @@ MCP_COMPOSE="${MCP_COMPOSE:-$REPO_ROOT/infra/compose.mcp.yaml}"
 MCP_HEALTH="${MCP_HEALTH:-http://localhost:28093/actuator/health}"
 OPA_HEALTH="${OPA_HEALTH:-http://localhost:28181/health}"
 GATEWAY="${GATEWAY:-http://localhost:9085}"
+# The ref the "as shipped" advisory compares against; override on a fork without origin/main.
+SHIPPED_BASE="${SHIPPED_BASE:-origin/main}"
 REPORT_DIR="${REPORT_DIR:-build/reports/postman}"
 RUN_ID="${E2E_RUN_ID:-agent-$$}"
 
@@ -182,6 +186,7 @@ run_folder() { # folder-name report-suffix
     --env-var "readonly_token=$READONLY_TOKEN" \
     --env-var "overreach_token=$OVERREACH_TOKEN" \
     --env-var "lowpriv_token=$LOWPRIV_TOKEN" \
+    --env-var "revoked_token=$REVOKED_TOKEN" \
     --reporter-cli \
     --reporter-json-export "$REPORT_DIR/$RUN_ID/agent-tool-matrix-$2.json"
 }
@@ -194,9 +199,11 @@ HUMAN_TOKEN="$(mint_token "$DEMO_USER" "$DEMO_PASS")"
 READONLY_TOKEN="$(mint_token "$DEMO_USER" "$DEMO_PASS" catalog-agent-readonly catalog-agent-readonly-secret)"
 OVERREACH_TOKEN="$(mint_token "$DEMO_USER" "$DEMO_PASS" catalog-agent-overreach catalog-agent-overreach-secret)"
 LOWPRIV_TOKEN="$(mint_token "$LOWPRIV_USER" "$LOWPRIV_PASS" catalog-agent-readonly catalog-agent-readonly-secret)"
+REVOKED_TOKEN="$(mint_token "$DEMO_USER" "$DEMO_PASS" catalog-agent-revoked catalog-agent-revoked-secret)"
 SEEDER_TOKEN="$(mint_token "$SEEDER_USER" "$SEEDER_PASS")"
 for pair in "human:$HUMAN_TOKEN" "agent-readonly:$READONLY_TOKEN" "agent-overreach:$OVERREACH_TOKEN" \
-            "agent-readonly(low-priv):$LOWPRIV_TOKEN" "seeder:$SEEDER_TOKEN"; do
+            "agent-readonly(low-priv):$LOWPRIV_TOKEN" "agent-revoked:$REVOKED_TOKEN" \
+            "seeder:$SEEDER_TOKEN"; do
   name="${pair%%:*}"; tok="${pair#*:}"
   [ -n "$tok" ] || {
     echo "ERROR: no token for '$name'. Is the rig up with OIDC, and is the realm current?" >&2
@@ -296,8 +303,11 @@ echo "  category=$CATEGORY_ID product=$PRODUCT_ID foreign-category=$FOREIGN_CATE
 #   1. the outbound client sets exactly two headers, Authorization + Accept — no role, no capability,
 #      no acting-as;
 #   2. no source in the MCP module mentions such a header at all;
-#   3. the target layer really is exercised AS SHIPPED — this branch changed no library module, no
-#      existing example service, and no pre-existing .rego document.
+#   3. the target layer really is exercised AS SHIPPED — the branch changed no library module, no
+#      existing example service, and no pre-existing .rego document. This third check is ADVISORY: it
+#      is a statement about THIS slice's branch, not about the rig, and a later slice that legitimately
+#      touches the catalog service must not find this runner failing for a reason that has nothing to
+#      do with the run. It warns; it does not abort.
 if [ "${SKIP_OPERATOR_CHECK:-0}" != "1" ]; then
   echo "==> E5 operator check: nothing is asserted downstream ..."
   OUTBOUND_HEADERS="$(grep -o '\.header("[^"]*"' "$REPO_ROOT/example-mcp-server/src/main/java/dev/dmitriikonovalov/example/mcp/tool/CatalogApiClient.java" \
@@ -310,23 +320,20 @@ if [ "${SKIP_OPERATOR_CHECK:-0}" != "1" ]; then
     echo "ERROR: the MCP module names an agent/role/acting-as header — the tool surface must assert nothing downstream." >&2
     exit 1
   fi
-  UNTOUCHED="$(git -C "$REPO_ROOT" diff --name-only origin/main...HEAD -- \
+  # Advisory from here down — a VCS fact about the branch, not a rig fact about the run.
+  UNTOUCHED="$(git -C "$REPO_ROOT" diff --name-only "$SHIPPED_BASE"...HEAD -- \
       opa-abac-core opa-abac-spring-security opa-abac-spring-data opa-abac-spring-boot-starter \
       opa-abac-keycloak-directory example-catalog-management-service example-user-management-service \
-      2>/dev/null || echo GIT_UNAVAILABLE)"
-  [ -z "$UNTOUCHED" ] || {
-    echo "ERROR: this branch changed the library or an existing example service, so the target-gate is" >&2
-    echo "       no longer being exercised as shipped:" >&2
-    printf '  %s\n' $UNTOUCHED >&2
-    exit 1
-  }
-  CHANGED_REGO="$(git -C "$REPO_ROOT" diff --name-only origin/main...HEAD -- 'infra/opa/policies/*.rego' 2>/dev/null \
+      2>/dev/null || true)"
+  CHANGED_REGO="$(git -C "$REPO_ROOT" diff --name-only "$SHIPPED_BASE"...HEAD -- 'infra/opa/policies/*.rego' 2>/dev/null \
     | grep -v 'agent_tools' || true)"
-  [ -z "$CHANGED_REGO" ] || {
-    echo "ERROR: this branch changed a pre-existing policy document: $CHANGED_REGO" >&2
-    exit 1
-  }
-  echo "  outbound headers = Authorization + Accept only; no library, example-service or sibling-policy change."
+  if [ -n "$UNTOUCHED" ] || [ -n "$CHANGED_REGO" ]; then
+    echo "  NOTE: this branch changes code the tool surface treats as 'the shipped target layer':" >&2
+    printf '    %s\n' $UNTOUCHED $CHANGED_REGO >&2
+    echo "    The matrix still runs; re-read E4/E7 before trusting them as an as-shipped proof." >&2
+  else
+    echo "  outbound headers = Authorization + Accept only; no library, example-service or sibling-policy change."
+  fi
 fi
 
 # --- the main pass -------------------------------------------------------------

@@ -287,6 +287,20 @@ the same shape: **a third-party seam behaving differently from the mental model 
    unit tests could not see it: they build the specification themselves, with a handler that throws
    straight through.
 
+### Known limits of the demo tool surface
+
+Not defects — demo scope, named so a reader does not mistake them for the design:
+
+- **The two list tools expose no paging.** `list_catalogs` and `list_categories` proxy paged REST
+  endpoints without forwarding `page`/`perPage`, so a caller silently gets the API's default first
+  page. A real tool surface would either forward the parameters or state the cap in the tool
+  description; four read tools over a demo catalog do not need it, and adding it would put a
+  pagination contract in a slice about authorization.
+- **The ceiling is resolved per turn, not cached across them.** That is deliberate (a revocation lands
+  on the next turn), and it costs one fan-out per turn per target type — bounded by the starter's
+  resolve memo within a turn, and chunked so a principal governing many roots cannot build a request
+  line the servlet container refuses.
+
 ## Scope boundary — explicitly not in this slice
 
 MCP transport / OAuth authorization (the scope fence sits **above** the validated token, delegated to

@@ -7,8 +7,7 @@
   "variable": [
     { "key": "catalog_id", "value": "" },
     { "key": "category_id", "value": "" },
-    { "key": "product_id", "value": "" },
-    { "key": "team_id", "value": "" }
+    { "key": "product_id", "value": "" }
   ],
   "auth": {
     "type": "bearer",
@@ -137,8 +136,7 @@
                   "pm.test('201 Created', () => pm.response.to.have.status(201));",
                   "const team = pm.response.json();",
                   "pm.test('has id', () => pm.expect(team).to.have.property('id'));",
-                  "pm.collectionVariables.set('team_id', team.id);",
-                  "pm.test('the team governs the catalog just created', () => {",
+                          "pm.test('the team governs the catalog just created', () => {",
                   "  pm.expect(team.targetType).to.eql('catalog');",
                   "  pm.expect(team.targetId).to.eql(pm.collectionVariables.get('catalog_id'));",
                   "});",

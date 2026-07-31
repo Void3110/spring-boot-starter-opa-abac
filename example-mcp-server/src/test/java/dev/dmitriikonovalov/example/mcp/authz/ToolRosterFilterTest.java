@@ -284,7 +284,10 @@ class ToolRosterFilterTest {
 
     @Test // I29 — agent-gate OFF: the ceiling-only cut, asserted WIDER than the agent roster
     void theGateOffRosterIsTheCeilingOnlyCutAndIsWiderThanTheAgentRoster() throws IOException {
-        String opa = startPolicyStub(Set.of(LIST_CATALOGS, GET_CATALOG, LIST_CATEGORIES, GET_PRODUCT));
+        // The ceiling DENIES get_product — so the gate-off roster is a real cut, not the whole
+        // registry. (Deep review 2026-07-31: this stub used to allow all four names, which made the
+        // containment assertion below hold by construction and unable to fail whatever the code did.)
+        String opa = startPolicyStub(Set.of(LIST_CATALOGS, GET_CATALOG, LIST_CATEGORIES));
         agentCaller();
         AtomicReference<Boolean> sawAgentAttributes = new AtomicReference<>(Boolean.TRUE);
 
@@ -304,11 +307,16 @@ class ToolRosterFilterTest {
         List<String> gateOff = rosterNames(filter(authorizer, opa));
 
         assertThat(gateOff)
-                .as("with the gate off the roster is the ceiling-only cut")
-                .containsExactly(LIST_CATALOGS, GET_CATALOG, LIST_CATEGORIES, GET_PRODUCT);
+                .as("with the gate off the roster is the ceiling-only cut — the ceiling still bites")
+                .containsExactly(LIST_CATALOGS, GET_CATALOG, LIST_CATEGORIES);
         assertThat(gateOff)
                 .as("OFF must be WIDER than ON — a roster must never hide a callable tool")
                 .containsAll(List.of(LIST_CATALOGS, GET_CATALOG));
+        // With teeth: the ceiling refused get_product, so the roster must too. A gate-off roster that
+        // returned the whole registry would pass the containment check above and fail here.
+        assertThat(gateOff)
+                .as("OFF removes the capability conjunct, NOT the ceiling")
+                .doesNotContain(GET_PRODUCT);
         assertThat(sawAgentAttributes.get())
                 .as("with the gate off the capability source is not even consulted")
                 .isFalse();

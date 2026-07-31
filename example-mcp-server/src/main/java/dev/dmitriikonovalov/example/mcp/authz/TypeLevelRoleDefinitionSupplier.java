@@ -62,6 +62,13 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
 
     private static final Logger log = LoggerFactory.getLogger(TypeLevelRoleDefinitionSupplier.class);
 
+    /**
+     * Governed targets per {@code /internal/effective-roles} request. At roughly 50 bytes per
+     * {@code &target=catalog%3A<uuid>} parameter this keeps the request line near 2.5 KB — comfortably
+     * inside a servlet container's default budget, with room for the base URL and the subject.
+     */
+    private static final int RESOLVE_CHUNK = 50;
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
@@ -138,18 +145,30 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
         return parse(exchange(uri), ID_LIST, uri);
     }
 
+    /**
+     * Resolve every governed target's role, in <strong>chunks</strong>.
+     *
+     * <p>The batch is one {@code &target=} parameter per id, and this path is id-less by design — the
+     * tool-gate asks about a <em>type</em>, so nothing upstream bounds the set the way a page bounds
+     * the catalog service's equivalent call. A principal governing enough roots would push the request
+     * line past the servlet container's limit, and the non-200 that follows is read as an outage: every
+     * tool call would deny with {@code tool-gate-ceiling-unavailable}. Fail-closed, but for a reason no
+     * operator could guess from the symptom. Chunking keeps each request a fixed size; the roles union
+     * across chunks exactly as they union across scope types. (Deep review 2026-07-31.)
+     */
     private List<RoleDefinition> resolveAll(String userId, String resourceType, List<String> ids) {
-        StringBuilder query = new StringBuilder("?userId=").append(enc(userId));
-        for (String id : ids) {
-            query.append("&target=").append(enc(resourceType + ":" + id));
-        }
-        URI uri = URI.create(baseUrl + "/internal/effective-roles" + query);
-        List<EffectiveRoleEntry> entries = parse(exchange(uri), ROLE_ENTRIES, uri);
-
-        List<RoleDefinition> roles = new ArrayList<>(entries.size());
-        for (EffectiveRoleEntry entry : entries) {
-            if (entry.role() != null) {
-                roles.add(entry.role());
+        List<RoleDefinition> roles = new ArrayList<>(ids.size());
+        for (int from = 0; from < ids.size(); from += RESOLVE_CHUNK) {
+            List<String> chunk = ids.subList(from, Math.min(from + RESOLVE_CHUNK, ids.size()));
+            StringBuilder query = new StringBuilder("?userId=").append(enc(userId));
+            for (String id : chunk) {
+                query.append("&target=").append(enc(resourceType + ":" + id));
+            }
+            URI uri = URI.create(baseUrl + "/internal/effective-roles" + query);
+            for (EffectiveRoleEntry entry : parse(exchange(uri), ROLE_ENTRIES, uri)) {
+                if (entry.role() != null) {
+                    roles.add(entry.role());
+                }
             }
         }
         return roles;

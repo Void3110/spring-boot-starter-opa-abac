@@ -364,6 +364,13 @@ require_postgres() {
 case "$CMD" in
   build)
     build_image
+    # `up` only builds the MCP image when it is ABSENT (mcp_image_exists || build_mcp_image), so
+    # without this an edit to example-mcp-server would silently run against a stale opa-abac-mcp:local
+    # — the same "new code not reflected in pods" trap the catalog image has. Only rebuilt when the
+    # image already exists or ENABLE_MCP is on, so the default rig stays untouched.
+    if [ "$ENABLE_MCP" = "1" ] || mcp_image_exists; then
+      build_mcp_image
+    fi
     ;;
 
   up)

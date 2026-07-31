@@ -2859,6 +2859,218 @@
        ]
       }
      }
+    },
+    {
+     "name": "initialize (agent-revoked)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('agent-revoked handshake: 200', function () { pm.response.to.have.status(200); });",
+         "pm.collectionVariables.set('session2', pm.response.headers.get('Mcp-Session-Id'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-revoked)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('agent-revoked handshake: 202, empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim()).to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-revoked) — a DECLARED zero-capability actor",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The other half of revocation, and the one the emptied-profile drill above cannot show:",
+         "// this actor is DECLARED in the registry with zero capability from the start. Its empty",
+         "// roster is therefore an AUTHORITATIVE answer, not the all-false vector a dead PDP would",
+         "// produce — the two are indistinguishable in the response, which is exactly why the",
+         "// registry declares the actor rather than letting an unknown one fall through.",
+         "mcpRoster('E11-b roster for a declared zero-capability actor', pm.response, []);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call list_catalogs (agent-revoked)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "mcpDenied('E11-b: a declared zero-capability actor is denied at the tool-gate',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"list_catalogs\", \"arguments\": {}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
     }
    ]
   }

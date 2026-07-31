@@ -59,7 +59,17 @@ is_tool_request if {
 # ABSENCE is an ordinary human call (honest, and still ceiling-bounded); a MALFORMED claim never
 # reaches this policy at all, because the extractor denies before the PEP builds a context.
 is_agent_call if {
-	input.subject.attributes.actor
+	# PRESENCE, not truthiness. In Rego the only falsy value is `false`, so the bare reference
+	# `input.subject.attributes.actor` leaves this rule UNDEFINED for an actor of `false` — and
+	# `not is_agent_call` then succeeds, routing that call down the unnarrowed HUMAN branch. Every
+	# other malformed shape ("", 0, null, []) was already truthy here and correctly denied; `false`
+	# was the single value that escaped. Testing the KEY keeps all of them on the agent branch while
+	# an ABSENT claim stays an honest human call — a type guard would instead push "" and null onto
+	# the human branch, widening two shapes to fix one. The shipped PEP cannot produce a boolean
+	# actor (it writes a pattern-validated String), but this document states it enforces the
+	# narrowing independently of the PEP, so it must not offer a shape that opts out of its own
+	# agent branch. (Deep review 2026-07-31.)
+	"actor" in object.keys(input.subject.attributes)
 }
 
 # --- tool-declaration integrity -----------------------------------------------

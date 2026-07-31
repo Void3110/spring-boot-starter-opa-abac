@@ -87,13 +87,17 @@ public class ToolCallAuthorizer {
             if (context == null) {
                 return ToolAuthorizationDecision.denied(CODE_UNAUTHENTICATED);
             }
-            if (!applyAgentNarrowing) {
-                // OFF removes the NARROWING only. The catalog service still enforces the principal's
-                // ceiling on every resource, so this cannot grant beyond the principal.
-                log.debug("Tool-gate skipped for '{}' (agent-gate disabled)", toolName);
-                return ToolAuthorizationDecision.permitted();
-            }
-            // The shipped OpaClient is fail-closed by contract: any outage, timeout, malformed body or
+            // OFF removes the agent NARROWING — not the gate. The context built above is an ordinary
+            // human principal's, and it is still evaluated: the policy's human branch is exactly the
+            // ceiling-only check, so the switch drops the capability conjunct and nothing else.
+            //
+            // It deliberately does NOT short-circuit to permitted() here. That would make the switch
+            // disable call-time enforcement outright, which contradicts what this module promises in
+            // three places (the guide's kill-switch table, ToolAuthorizationProperties, and the
+            // configuration's javadoc) — and it would invert the roster's governing invariant, since
+            // ToolRosterFilter still evaluates the same ceiling-only contexts and would then be
+            // NARROWER than the call path, hiding tools the caller could successfully invoke. The
+            // shipped OpaClient is fail-closed by contract: any outage, timeout, malformed body or
             // missing decision field returns false rather than throwing.
             boolean allowed = opaClient.allow(context);
             if (!allowed) {
