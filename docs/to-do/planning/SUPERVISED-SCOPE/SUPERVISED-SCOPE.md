@@ -78,7 +78,29 @@ from her next request, while a direct read of one returns **403**.
 | T4 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
 | T5 | e2e matrix + demo personas + the guide | 📋 TODO |
 
-**Validated:** 2026-08-01 — mechanical [1]–[8] green · adversarial pass clean (2 run-stoppers + 10 contradictions found, fixed, re-gated).
+> ⛔ **BLOCKED — do not run this package.** The 2026-08-01 parts amendment's re-validation found a
+> **confirmed run-stopper**: the design's central claim *"contents close themselves … zero Rego
+> changes"* is false against the shipped policy corpus. `category_inheritable.json` declares
+> `catalog → category` inheritance, so the pinned synthesized role (`catalog: ["READ"]`) grants
+> `category:view` **and** `product:view` on the supervised path whenever ancestors are present —
+> which is always, at runtime. Reproduced independently with `opa eval` against
+> `infra/opa/policies`:
+> `category.allow → true` · `product.allow → true` · type-level `category:list → true` (E6 pins
+> **403**) · the same input **without** ancestors → `false`, which is exactly how **U14's
+> acceptance eval is written** — a green-lighting trap. Adding `denied_actions` for
+> `category`/`product` does **not** close it (`inherited_grant` tests the *ancestor* type's
+> effective actions, where a category denial does not apply). This is a **fail-open on the slice's
+> own headline boundary** and needs a phase-① decision (narrow the inheritance table for the
+> supervisor role · a Rego change, breaking the zero-Rego pin · or re-scope the slice) before any
+> ticket runs. Full finding set: the interrupted validation run's journal, 2026-08-01.
+
+**Validated:** ~~2026-08-01 — mechanical + adversarial clean~~ **SUPERSEDED.** Mechanical [1]–[9]
+green (incl. the new execution-parts gate). **The adversarial re-validation did NOT complete** — 37
+of 41 agents errored on a session limit and *every* verification agent died, so its
+`confirmed: 0` is a **vacuous pass, not a clean one**; the four completed audit agents returned 37
+unrefuted candidate findings (4 run-stopper-class, 15 contradiction-class, 18 nits), one of which is
+independently confirmed above. Re-run the adversarial gate and resolve the run-stopper before this
+line is restored.
 
 ## Files in this folder
 

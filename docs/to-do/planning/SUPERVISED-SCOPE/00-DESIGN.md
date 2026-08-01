@@ -191,3 +191,16 @@ A new section in the existing [[TEAM-BASED-AUTHORIZATION]] guide — this is a s
 surface that guide already owns, not a new subsystem, so it does not earn a new guide
 ([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §3's arbiter: a new guide is warranted exactly when a new row in the
 surface→guide map is).
+
+## Execution parts
+
+**Parts:** part 0 = T1–T2 · part 1 = T3–T5
+
+*(Amended 2026-08-01, after the parts port shipped — this package is the model's first real
+consumer.)* Part 0 is the **user-service side**: after T2 the service answers "who does this subject
+supervise, and with what role" — the decomposition's own independently-landable subset, complete with
+its ITs and nothing user-visible changed. Part 1 is the **catalog side + the e2e proof** (T3–T5). The
+boundary sits at the deployable handoff, not an even split. The one fail-open edge of the slice
+(T4's `supervised := S \ M` set difference) lives entirely inside part 1: its part-runner's inline-2A
+review records the headline downgrade, and the automatic whole-delivery layer-3 review re-covers it
+at branch scope ([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §4a).

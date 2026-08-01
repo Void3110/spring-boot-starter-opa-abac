@@ -248,5 +248,11 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Context management** — if the window grows long mid-run, finish the ticket, stop at its checkpoint,
   and resume in a **fresh session** (the ticket status table + STATUS notes are the handoff); sub-agents
   are for scouting/validation only, never the implementation.
+- **This package declares execution parts** (`00-DESIGN` §Execution parts: part 0 = T1–T2 · part 1 =
+  T3–T5, amended 2026-08-01). Under `/autonomous-implement` the partition runs **orchestrated** — each
+  part a fresh-context subagent, delegated sequentially and collected from disk (guide §4a). The
+  fresh-session note above is the **manual fallback** for a bare-prompt paste, not the primary path;
+  the "do not delegate the implementation" rule binds the implementer (the part-runner), exactly as
+  §4a reconciles it.
 - **Workflow-as-artifact:** keep this prompt verbatim; the `STATUS-0N.md` notes record each ticket's
   outcome. Move the folder to `docs/to-do/implemented/` on ship.
