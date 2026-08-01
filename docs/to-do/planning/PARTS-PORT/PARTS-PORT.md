@@ -46,7 +46,7 @@ across a part boundary.
 | # | Title | Status |
 |---|---|---|
 | T1 | `check-parts.py` + the `verify-package.sh` **[9]** hard-fail gate + self-locating scripts | ✅ DONE |
-| T2 | `scaffold-package.py --parts` (writes the declaration, validates nothing) | 📋 TODO |
+| T2 | `scaffold-package.py --parts` (writes the declaration, validates nothing) | ✅ DONE |
 | T3 | the `/autonomous-implement` runner skill (three modes, Phase 1.5 delegate-and-collect, the part brief) + the flow-guide §4a canonical section | 📋 TODO |
 | T4 | review-layer wiring: the deep-review subagent ceiling row + both markers + loop termination | 📋 TODO |
 | T5 | the live delegation proof: a gate-green fixture package in a scratch git repo, part 0 delegated and collected from disk | 📋 TODO |
