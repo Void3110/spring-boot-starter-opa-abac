@@ -161,7 +161,7 @@ are the consumer's.
 |---|---|
 | Org-relation source **errored / unreachable / non-200 / unparseable** | the subject's **own memberships** — leg 2 contributes nothing |
 | **Partial** derivation (a cycle, a depth-cap breach, a partly-resolvable closure) | **membership-only**, never a partial supervised set |
-| Unauthenticated · no `AbacQueryService` · no `GovernedScopeResolver` · both scopes empty | the **empty page** (unchanged from ADR 0018 §5) |
+| Unauthenticated · no `AbacQueryService` · no `GovernedScopeResolver` · both scopes empty | the **empty page** (unchanged from ADR 0018 §Consequences — “resolver absence ⇒ the safe (empty) outcome”) |
 
 A partial set is indistinguishable from a correct smaller one, which is why it collapses rather than
 degrades. In every branch the floor is the empty page, never the table.

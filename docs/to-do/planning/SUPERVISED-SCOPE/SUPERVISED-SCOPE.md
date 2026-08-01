@@ -92,15 +92,26 @@ from her next request, while a direct read of one returns **403**.
 > effective actions, where a category denial does not apply). This is a **fail-open on the slice's
 > own headline boundary** and needs a phase-① decision (narrow the inheritance table for the
 > supervisor role · a Rego change, breaking the zero-Rego pin · or re-scope the slice) before any
-> ticket runs. Full finding set: the interrupted validation run's journal, 2026-08-01.
+> ticket runs.
+>
+> **Open alongside it, pending the same fork** (they reshape with whatever is decided): **U14's
+> input shape** (its eval must carry the resolver's ancestor chain — ancestor-less is not a valid
+> probe), **E6's pinned 403** for the supervised category list, **E8's fault-injection mechanism**
+> (the named B3 approach repoints the *whole* user-service the rest of the matrix needs — it needs
+> its own supervised base-URL property), and **ADR 0029 §9**, which orders a `GovernedScopeResolver`
+> contract-text revision this slice's "no library changes" rule forbids.
 
-**Validated:** ~~2026-08-01 — mechanical + adversarial clean~~ **SUPERSEDED.** Mechanical [1]–[9]
-green (incl. the new execution-parts gate). **The adversarial re-validation did NOT complete** — 37
-of 41 agents errored on a session limit and *every* verification agent died, so its
-`confirmed: 0` is a **vacuous pass, not a clean one**; the four completed audit agents returned 37
-unrefuted candidate findings (4 run-stopper-class, 15 contradiction-class, 18 nits), one of which is
-independently confirmed above. Re-run the adversarial gate and resolve the run-stopper before this
-line is restored.
+**Validated:** ~~2026-08-01 — mechanical + adversarial clean~~ **SUPERSEDED — BLOCKED.**
+Mechanical [1]–[9] green (incl. the new execution-parts gate). The adversarial re-validation
+**completed on the second attempt** (41/41 agents, 0 errors — the first attempt's `confirmed: 0`
+was a *vacuous* pass: 37 agents, including every verifier, had died on a session limit).
+Result: **20 confirmed / 17 refuted — 2 run-stoppers, 8 contradictions, 10 nits.** Both
+run-stoppers are the inheritance fail-open above, from two independent angles; it survived
+adversarial refutation and an independent hand-check with `opa eval`. **10 fork-independent
+corrections are applied** (the `pm-bob` persona is new, not existing; the E7 matrix minimum gains
+the isolation matrix; ADR 0018 has no §5; the wire field is `count`, not `totalElements`; four
+internal endpoints, not three). This line is restored only when the run-stopper is resolved and
+the gate re-run clean.
 
 ## Files in this folder
 
@@ -114,7 +125,7 @@ line is restored.
 
 ## Conventions
 
-- **Fail-closed floor is the empty page**, never the table — in every branch, exactly as ADR 0018 §5.
+- **Fail-closed floor is the empty page**, never the table — in every branch, exactly as ADR 0018 §Consequences.
 - **Additive only**: no library module changes at all in this slice; both new endpoints mirror shipped
   siblings (`/internal/governed-targets`, `/internal/bootstrap/*`).
 - **Zero Rego changes** — so the mirrored-bundle drift guard is not in play here.

@@ -74,7 +74,7 @@ reporting edges through CONTROL-capable memberships, depth-capped and cycle-guar
 - `@PostMapping("/internal/bootstrap/reporting-edges")` on `InternalBootstrapController`, mirroring the
   shipped bootstrap endpoints, so fixtures seed edges the same way teams and memberships already are.
 - **OpenAPI: no change.** `/internal/**` endpoints are hand-written and deliberately absent from
-  `user-mgmt-api.yaml` (which is public-API-only and drives codegen) — the three shipped internal
+  `user-mgmt-api.yaml` (which is public-API-only and drives codegen) — the four shipped internal
   endpoints are excluded the same way. Document both new contracts in the controller javadoc, exactly
   as `/internal/governed-targets` is.
 
@@ -235,8 +235,8 @@ document the second access path.
 
 - **Realm accounts (`infra/keycloak/realm-export.json`).** An e2e persona **is** a Keycloak user — every
   matrix mints its token by password grant against `catalog-demo` — so the personas must be added to the
-  realm export: **`sup-anna`**, **`sup-victor`**, **`pm-carol`**, **`outsider-eve`** (`pm-bob` and the
-  other existing demo users are reused as-is), plus the **UX-only `unit-supervisor` realm role** that E10
+  realm export: **`sup-anna`**, **`sup-victor`**, **`pm-bob`**, **`pm-carol`**, **`outsider-eve`** (all five are NEW
+  accounts — the realm ships no `pm-*` user; the existing demo users are untouched), plus the **UX-only `unit-supervisor` realm role** that E10
   asserts grants nothing. This is the **only** realm change slice A makes — see the narrowed scope
   boundary in [[00-DESIGN]]; the `acr`/`auth_time` scopes, mappers, the conditional flow and any new
   client remain slices B and C.
@@ -263,7 +263,7 @@ and **unchanged** (zero Rego edits this slice — E7); the new matrix green.
 independent `run-*.sh` with *mutually exclusive* rig flavours (the resilience matrix needs
 `ENABLE_RESILIENCE_STUB=1`, which by construction disables the real user-service the others require), and
 there is **no aggregate runner**. On one `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`
-rig, re-run every matrix that exercises catalog listing or role resolution — at minimum the team, tag,
+rig, re-run every matrix that exercises catalog listing or role resolution — at minimum the isolation (B4's own `GET /catalogs` matrix), team, tag,
 filter, hierarchy, permission-categories and resource-resolution matrices plus `./run-tests.sh` — and
 record in `STATUS-05.md` **the exact list you ran and any you deliberately skipped, with the reason**.
 Silently skipping a matrix would make E7 assert less than it claims.

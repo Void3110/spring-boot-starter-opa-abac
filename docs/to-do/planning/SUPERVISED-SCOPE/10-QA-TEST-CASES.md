@@ -50,8 +50,8 @@ tags:
 | U28 | Both scopes empty | **empty page** — no widening to the table | T4 |
 | U29 | Membership role source throws while supervised ids exist | the membership leg contributes nothing; the supervised leg still resolves; no 500 | T4 |
 | U30 | Supervised source fails (per U19) while membership ids exist | the page equals **membership-only** — the documented degrade, never wider | T4 |
-| U31 | `totalElements` on a mixed page | the authorized total across both legs — not the table count, not one leg's | T4 |
-| U32 | Unauthenticated / no `AbacQueryService` / no `GovernedScopeResolver` | **empty page** in each branch (ADR 0018 §5, unchanged) | T4 |
+| U31 | the page's total (wire `count`, from `Page.getTotalElements()`) on a mixed page | the authorized total across both legs — not the table count, not one leg's | T4 |
+| U32 | Unauthenticated / no `AbacQueryService` / no `GovernedScopeResolver` | **empty page** in each branch (ADR 0018 §Consequences, unchanged) | T4 |
 | U33 | A chain of **exactly 10 hops** (the inclusive boundary) | resolves **fully** — every hop returned, **no WARN, no collapse**. Pins that the cap is inclusive; an off-by-one here silently empties a legitimate manager | T1 |
 | U34 | The supervisor role's residual is **unconditional** | compiling the synthesized role yields `ALLOW_ALL` (it grants `READ` with empty `requiredTags`). **This is the precondition that makes admitting supervised rows through `subtreeSpec` correct** — if a later slice gives the role a tag requirement, T4's composition must change | T4 |
 
@@ -74,7 +74,7 @@ tags:
 |---|---|---|---|
 | E1 | **Headline.** `sup-anna` (member of no team) lists catalogs | **exactly** her unit's ids, including her report's report's — asserted id-by-id with an exact count | T5 |
 | E2 | `sup-victor` lists catalogs | a set **disjoint** from anna's; neither leaks into the other | T5 |
-| E3 | `outsider-eve` lists catalogs | **empty page** — `200` with `totalElements: 0`, not 403, not 500 | T5 |
+| E3 | `outsider-eve` lists catalogs | **empty page** — `200` with the envelope's `count: 0` (the wire field; ADR 0012), not 403, not 500 | T5 |
 | E4 | **Liveness + two denials.** Remove `pm-bob` from anna's reports, re-list | his catalogs gone next request; a direct `GET` of one now **403** | T5 |
 | E5 | **Read-only ceiling.** anna on a supervised catalog | `GET` 200; `PUT`/`DELETE`/tag-assign each **403**; `_actions` as I5 | T5 |
 | E6 | **Contents closed.** anna `GET`s the supervised catalog's categories, a category, a product | each **403** — the slice-boundary assertion that contents did not open early | T5 |
