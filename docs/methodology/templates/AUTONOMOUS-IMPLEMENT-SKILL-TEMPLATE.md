@@ -13,6 +13,12 @@ phase-③ loop of [`AUTONOMOUS-IMPLEMENTATION-FLOW.md`](../../guides/AUTONOMOUS-
 Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase ②) and
 [`DEEP-REVIEW-TEMPLATE.md`](DEEP-REVIEW-TEMPLATE.md) (phase ④).
 
+> **Scope note (2026-08-01): this is the PRE-PARTS, single-session form.** This repo's live
+> runner skill has since grown the **parts execution model** — a declared partition run as
+> sequential, subagent-delegated parts under a collect-from-disk orchestrator. That model's
+> canonical prose is the flow guide's **§4a**; it has not been folded into this template yet.
+> Port from §4a, not from memory, when a target repo needs parts.
+
 > **Do you need this at all?** This repo runs phase ③ by **pasting the prepared
 > `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` into a fresh session** — the prompt is self-contained
 > (L4), the skeleton is hardened, and for a single-repo slice that is enough. The skill

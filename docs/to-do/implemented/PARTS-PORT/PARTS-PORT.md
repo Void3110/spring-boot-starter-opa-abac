@@ -1,17 +1,22 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/methodology
 ---
 
 # PARTS-PORT — the runner learns to delegate a slice as parts
 
-> **Status: Planning.** Gives the repo a **phase-③ runner skill** (`/autonomous-implement`) whose
-> execution model can run a large slice as **sequential, subagent-delegated PARTS** under an
-> orchestrator — so a multi-part slice reaches full closure unattended instead of being babysat through
-> pause-and-prepare cycles. Strictly additive: a package with no parts declaration runs byte-identically
-> to today's bare-prompt paste.
+> ✅ **SHIPPED 2026-08-01** — branch `feature/void3110/parts-port`, T1–T5 all green, live two-part
+> delegation proven, deep-reviewed same day (Approved with fixes — [[PARTS-PORT-REVIEW]]); the
+> close-out review now runs **automatically** at the end of every run (maintainer decision shipped
+> with the review).
+>
+> The repo's **phase-③ runner skill** (`/autonomous-implement`): its execution model can run a large
+> slice as **sequential, subagent-delegated PARTS** under an orchestrator — so a multi-part slice
+> reaches full closure unattended instead of being babysat through pause-and-prepare cycles.
+> Strictly additive: a package with no parts declaration runs byte-identically to the bare-prompt
+> paste.
 
 ## Why this slice exists
 
@@ -45,11 +50,11 @@ across a part boundary.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | `check-parts.py` + the `verify-package.sh` **[9]** hard-fail gate + self-locating scripts | 📋 TODO |
-| T2 | `scaffold-package.py --parts` (writes the declaration, validates nothing) | 📋 TODO |
-| T3 | the `/autonomous-implement` runner skill (three modes, Phase 1.5 delegate-and-collect, the part brief) + the flow-guide §4a canonical section | 📋 TODO |
-| T4 | review-layer wiring: the deep-review subagent ceiling row + both markers + loop termination | 📋 TODO |
-| T5 | the live delegation proof: a gate-green fixture package in a scratch git repo, part 0 delegated and collected from disk | 📋 TODO |
+| T1 | `check-parts.py` + the `verify-package.sh` **[9]** hard-fail gate + self-locating scripts | ✅ DONE |
+| T2 | `scaffold-package.py --parts` (writes the declaration, validates nothing) | ✅ DONE |
+| T3 | the `/autonomous-implement` runner skill (three modes, Phase 1.5 delegate-and-collect, the part brief) + the flow-guide §4a canonical section | ✅ DONE |
+| T4 | review-layer wiring: the deep-review subagent ceiling row + both markers + loop termination | ✅ DONE |
+| T5 | the live delegation proof: a gate-green fixture package in a scratch git repo, part 0 delegated and collected from disk | ✅ DONE |
 
 **Validated:** 2026-08-01 — mechanical [1]–[8] green · adversarial pass clean (1 run-stopper + 11 contradictions found, fixed, re-gated).
 

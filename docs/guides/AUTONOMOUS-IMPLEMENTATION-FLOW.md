@@ -70,8 +70,9 @@ instantiates, is documented in [§8](#8-the-tooling--skills-stack-what-powers-ea
                                      ▼
         ┌─────────────────────────────────────────────────────────────┐
         │ ④ REVIEW / SHIP (maintainer-driven)                          │
-        │   /deep-review the branch · push · PR · CI green · merge      │
-        │   record the run retrospective → `autonomous-runs` Mulch      │
+        │   read the run's own /deep-review (runs AUTO at ③ close-out,  │
+        │     with the run retrospective → `autonomous-runs` Mulch)     │
+        │   push · PR · CI green · merge                                │
         │   git mv  planning/ → implemented/  + Shipped banner          │
         └─────────────────────────────────────────────────────────────┘
 ```
@@ -81,6 +82,13 @@ planning agent work *together* and produce only docs. In phase ③ the agent doe
 the branch** — code, tests, docs, Mulch, one commit per ticket. The **maintainer pushes, opens the PR,
 and merges** (phase ④). The prompt must say *"Do NOT push, open PRs, or touch `main`."* Pushing is a
 separate, explicit "let's push and create pr and then merge" turn.
+
+**The whole-delivery `/deep-review` runs automatically at the end of phase ③** (maintainer decision
+2026-08-01: it was never skipped in practice, so the run's definition of done includes its own
+review). When the last ticket — or, under parts, the last collected part — is committed and gates
+are green, the runner's close-out runs layer 3 (§4a) and the run retrospective; phase ④ is then
+*reading* that review, followed by push · PR · merge. Review fix-commits land on the branch before
+the maintainer sees it; pushing anything remains the maintainer's move alone.
 
 ---
 
@@ -162,6 +170,15 @@ blast-radius and hope the run catches the rest.
 > fix, proven by the isolation matrix + a re-run of the existing suite; **(2) self-service** = the
 > ownership SPI + `createTeam` + gateway routing. Each ~4–5 tickets, each blast-radius enumerable. (Mulch
 > `autonomous-runs` `mx-76cf08`.)
+
+**The partition test (run it before shrinking a slice).** The smells above measure *blast-radius* —
+whether phase ① can enumerate every consumer. A slice can pass all four and still be too big for one
+**context window**: coherent, enumerable, but more tickets than one session finishes. That slice
+**partitions; it does not have to shrink** — declare execution parts in its `00-DESIGN.md`
+(`**Parts:** part 0 = T1–T4 · part 1 = T5–T8`, validated by `verify-package.sh` [9]) and the runner
+executes it as sequential, subagent-delegated parts (§4a). Splitting is for blast-radius failures;
+partitioning is for context failures. A slice that fails *both* splits first, then partitions if still
+needed.
 
 **Exit criterion for sizing:** the slice trips none of (a)–(d), *or* it has been split into slices that
 each pass. Only a slice that passes this gate goes to decomposition.
@@ -250,13 +267,26 @@ adversarial pass.
 1. **Mechanical** — `scripts/planning/verify-package.sh <SLICE>`: files, frontmatter, clean-room scan,
    no unfilled slots, the prompt's invariant skeleton, ticket/STATUS parity, **acceptance-citation
    cross-reference** (every `U*/I*/E*` a ticket cites exists in `10-QA-TEST-CASES.md` *and* that case's
-   `→ Ticket` column agrees), and **wikilink resolution**.
+   `→ Ticket` column agrees), **wikilink resolution**, and **execution-parts coverage** ([9] — a
+   `**Parts:**` declaration, when present, is validated by `scripts/planning/check-parts.py`, the
+   single authority: near-misses and non-covering partitions hard-fail; absence is the green
+   single-session default — the execution model is §4a).
 2. **Adversarial** — the `decompose` skill's validation workflow: seam-existence auditors (every
    third-party claim re-checked against the real artifact), an unpinned-semantics critic (primed with
    the `autonomous-runs` pause classes), and a cross-doc consistency auditor (design ↔ decomposition ↔
    QA ↔ prompt telling one story), each finding adversarially verified before it is reported.
 
-Both must be clean before the package is committed. The two classes they catch are precisely the two
+Both must be clean before the package is committed. **On both gates passing, one line is written into
+the package index** (the `**Validated:**` convention):
+
+```
+**Validated:** <date> — mechanical + adversarial clean
+```
+
+The adversarial workflow is report-only and leaves no artifact, so this line is the **on-disk evidence
+the phase-③ runner's Phase 0 checks** before executing the package; it is written only after both
+gates are green and re-dated on a re-run. A package without it makes the runner stop and ask rather
+than silently proceed. The two classes they catch are precisely the two
 that have historically stopped runs: a **named seam that does not exist**, and a **semantic left
 unpinned**.
 
@@ -459,6 +489,130 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Workflow-as-artifact:** keep this prompt verbatim; the `STATUS-0N.md` notes record each ticket's
   outcome. Move the folder to `docs/to-do/implemented/` on ship.
 ````
+
+---
+
+## 4a. The execution model: single-session, orchestrator, parts
+
+*(Canonical. The `/autonomous-implement` skill instantiates this section; where they could drift, this
+guide wins — fix the guide first, then the skill.)*
+
+Phase ③ has one prompt but **three execution modes**, resolved from one line in the package.
+
+### The declaration
+
+A package that is too large for one context window declares its partition on **one line** of its
+`00-DESIGN.md`:
+
+```
+**Parts:** part 0 = T1–T4 · part 1 = T5–T8
+```
+
+Part numbers are 0-based, contiguous, ascending in written order; ranges are contiguous, ascending,
+non-overlapping, and cover **exactly** `T1..TN`; two or more parts (one part is what absence already
+means); en dash, em dash and hyphen all parse. `scripts/planning/check-parts.py` is the **single
+validation authority** (`verify-package.sh` [9] and the runner both delegate to it; the scaffold's
+`--parts` writes the line blind). Fenced examples and inline-backticked mentions never count; a
+**near-miss** at the start of a line's content (`- **Parts:**` bulleted, `Parts:` unbolded,
+`**Parts**:` colon outside the bold) is a **hard error, never "absent"** — absence is the green
+default, so a near-miss falling through would hide a partition that drops tickets.
+
+### The three modes (one re-entrant skill)
+
+| Invocation | Declaration | Mode | Behaviour |
+|---|---|---|---|
+| slice | absent | **single-session** | the §4 prompt's loop for T1..TN, verbatim — byte-identical to the bare-prompt run |
+| slice | present | **ORCHESTRATOR** | delegates each part to a fresh-context subagent, in order; builds nothing itself |
+| slice + `part N` | present | **PART-RUNNER** | runs only part N's ticket range, then its layer-2 review, then returns |
+
+`part N` against a package with **no** declaration is a contradiction: **stop and say so** — never
+guess which tickets were meant. **The OFF state:** no declaration means the orchestrator path is
+*never entered* — not "orchestration with one part". OFF delegates nothing, spawns nothing, greps
+nothing; it is strictly narrower than ON.
+
+**Reconciling the §4 skeleton's "do not delegate the implementation to a sub-agent":** that sentence
+binds **whoever is implementing**. Under orchestration the part-runner is the implementer and still
+implements directly (its sub-agents remain scout/validate-only); the orchestrator delegates *parts*,
+and implements **nothing**. The two texts do not contradict — one constrains the implementer's
+delegation, the other defines who the implementer is.
+
+### Delegation and collection (the orchestrator's loop)
+
+Delegation is **synchronous only** — parts share one branch and one working tree, and part N's brief
+names part N−1's STATUS notes; parallel delegation is **forbidden, not degraded** (if synchronous
+delegation is unavailable, stop). Each part gets a short **brief** that points at the runner skill
+rather than duplicating its loop (a copied loop drifts), restates the repo-local rules that do not
+auto-inject into a fresh subagent (commit identity, clean-room boundary, the `ml sync` staged-sweep
+guard, do-NOT-push), lists the prior parts' STATUS notes, marks the not-yours boundary — and opens
+with an **absolute `cd` into the repo as its literal step 0** (a subagent's shell starts outside the
+repo, where nothing cwd-derived works; scripts self-locate for the same reason).
+
+The orchestrator **collects from disk, never from the reply** — the subagent's final message is a
+summary written by the thing being checked. A part is closed by five checks on on-disk state alone:
+
+1. **Commits** on the branch for the part's tickets;
+2. the slice's **verify/build gates green**;
+3. a **clean working tree** — `git status --porcelain` empty except paths the brief declared as
+   untracked deliverables (an uncommitted edit would ride invisibly into the next part on the shared
+   tree);
+4. every owned `STATUS-0N.md` **filled** — `**Status:**` flipped, no empty section, and a section
+   still holding template placeholder text **counts as empty** (placeholders are replaced, never
+   appended under);
+5. a **layer-2 review record** in the part's last STATUS note, in one of three states: recorded →
+   pass · `**LAYER-2 NOT RUN:** <why>` → the orchestrator reviews that part itself before delegating
+   on (a behavior-changing finding from that fallback review is an unconfirmable end-state → stop;
+   doc-only findings are recorded in the part's STATUS and the loop proceeds) · absent/empty →
+   **stop**. Silence is never benign.
+
+Only after all five, plus the marker checks below, does the orchestrator **tick the package index
+itself** (the index is the orchestrator's file — a shared file two parts would contend on; each
+brief's not-yours boundary forbids parts from touching it) and delegate the next part. Any check
+failing, or a subagent erroring or returning nothing → **stop; part N+1 is never delegated.**
+
+### Three review layers · the two markers
+
+| Layer | Runs in | Scope | Path |
+|---|---|---|---|
+| 1 — per-ticket ★ gate | the implementer | one ticket | as §4 step 5; inside a part, capped at 2A |
+| 2 — per-part review | the part-runner, fixing its own findings | the part's tickets | **2A applied INLINE** — the lens set in the part-runner's own context, never a spawned review sub-agent |
+| 3 — whole-delivery `/deep-review` | the **main session**, at the run's close-out — **automatic in every mode** (never in a PART-RUNNER) | the whole delivery vs `main` | **2B** — and under parts the only scope that sees cross-part composition |
+
+The Path column is a **capability, not a preference**: the multi-lens 2B path invokes `Workflow`,
+which does not exist inside a subagent (capability spike 2026-08-01, Mulch `autonomous-runs`
+mx-4b9171) — and a part-runner spawning a review sub-agent would be one-level nesting, the rejected
+fork (untested everywhere; do not build on it). A headline ticket inside a part takes inline-2A **and
+records the downgrade** in its STATUS note; layer 3 re-covers it at the only scope that can see
+cross-part composition — per-increment reviews have all passed clean while a whole-branch review
+caught a Critical, which is why layer 3 is mandatory under parts rather than belt-and-braces.
+
+Two **fixed, greppable markers** are the channels between layers, always written verbatim at the
+start of a line's content in a STATUS note:
+
+- `**ESCALATION (cross-part):** <what, and which part it reaches>` — a finding whose blast radius
+  reaches an **already-completed part** is escalated, never fixed across the boundary (the earlier
+  part was never briefed on this part's decided forks; a local fix is a silent cross-part
+  adaptation). It lands in a STATUS *Decisions* section; the orchestrator greps for it across
+  **every** `STATUS-*.md` in the package before delegating the next part.
+- `**LAYER-2 NOT RUN:** <why>` — the layer-2 fallback trigger (state 2 above).
+
+Both marker checks share one discipline: **every regex metacharacter escaped** (the markers contain
+`*()`; raw, grep exits with an *error* indistinguishable from "absent" if only truthiness is tested —
+a fail-open on the escalation channel), **anchored to the start of a line's content** (list/quote
+prefixes allowed — Decisions sections are bullet lists; mid-sentence and backticked mentions
+excluded, or the check false-halts on documentation prose), and **three exit codes**: found → HALT ·
+absent → proceed · check-failed → **HALT too**. Never read a check error as "absent". The exact
+commands live in the runner skill (one home); this section is their contract.
+
+### The three failure classes (never collapsed)
+
+**One sentence: no missing, malformed, unverifiable or escalated state ever causes MORE tickets to
+run than a fully verified one.**
+
+| Class | Trigger | Lands |
+|---|---|---|
+| **A — gate-time** | a Parts line present but malformed (near-miss, gap, overlap, out-of-range, <2 parts, two live lines) | `verify-package.sh` [9] exits 1; the runner's Phase 0 refuses the package |
+| **B — run-time** | a part's end-state unconfirmable: red gates · a dirty tree · an owned STATUS not filled · no layer-2 record · subagent errored/empty | the orchestrator **stops after that part**; N+1 never delegated |
+| **C — escalation** | the cross-part marker found — or the marker **check itself errors** | the orchestrator **halts and asks the maintainer**; never auto-fixes, never continues |
 
 ---
 
@@ -678,8 +832,8 @@ Three consequences for authoring any workflow in this method:
 | **LSP code intelligence** (`jdtls`) | Eclipse JDT language server, exposed as the agent's `LSP` tool: real Java symbol resolution — `goToDefinition`, `findReferences`, `goToImplementation`, `documentSymbol`/`workspaceSymbol`, call hierarchy. *Symbol-accurate*, not text-grep. | All phases (precise navigation: scope a change in ①/②, trace blast-radius in ④) | **Anthropic** — the `jdtls-lsp` Claude Code plugin (+ `pyright-lsp` for Python). | *Ground-truth structural index* — answers "who calls this / what implements this" from the compiler's model, where ripgrep can only guess. The Java-native code intelligence layer. |
 | **grill-me** | A skill that interviews the maintainer one question at a time, walking each branch of the design tree and recommending an answer, until every fork is resolved. | ① Planning | **Matt Pocock** — [`mattpocock/skills`](https://github.com/mattpocock/skills) (`productivity/grill-me`). | *Evaluator-driven elicitation* — front-loads decisions into ADRs **before** the autonomous run, so the run has fewer reasons to stop (the planning-time form of "stop and ask"). |
 | **decompose** (formerly `slice-planner`) | A skill that turns a *settled* design (`00-DESIGN` + ADRs + user stories) into the rest of the planning package: the ordered tickets, QA cases, the verbatim §4 autonomous prompt, and STATUS stubs. Refuses to do phase-① work — if the design inputs are missing it stops and routes back to planning. Portable form: [`DECOMPOSE-SKILL-TEMPLATE.md`](../methodology/templates/DECOMPOSE-SKILL-TEMPLATE.md). | ② Decomposition | This repo's own skill (local, in `.claude/skills/` — **gitignored**). | *Deterministic template instantiation* — it is the **automation for §3–§4 of this very guide**; the guide is the single source of truth and the skill defers to it ("when they disagree, the guide wins"). Counters **goal drift** at the planning seam by keeping the prompt skeleton verbatim. |
-| **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ④ Review / ship | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
-| **Claude Code dynamic workflows** | The runtime that executes a JS orchestration script of many subagents in the background; the deep-review skill's heavy path (2B) *is* such a workflow. | ④ (the heavy review path) | **Anthropic** — [official docs](https://code.claude.com/docs/en/workflows) + the "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)" blog. | The substrate the patterns run on — see the [vault distillation](#related) of the feature. |
+| **deep-review** (`/deep-review`) | A full-lifecycle review skill: scope the diff → multi-lens analysis → adversarially refute each finding → fix → build + e2e → review note → commit. | ③ close-out (auto) · read in ④ | This repo's own skill (local, in `.claude/skills/` — **gitignored**); generalized in [`DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). | **Fan-out → adversarial-verification → completeness-critic** — three of Anthropic's named harness shapes composed in one workflow (`deep-review-workflow.js`). |
+| **Claude Code dynamic workflows** | The runtime that executes a JS orchestration script of many subagents in the background; the deep-review skill's heavy path (2B) *is* such a workflow. | ③ close-out / ④ (the heavy review path) | **Anthropic** — [official docs](https://code.claude.com/docs/en/workflows) + the "[a harness for every task](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)" blog. | The substrate the patterns run on — see the [vault distillation](#related) of the feature. |
 
 ### Why these three, mapped to the three failure modes
 
@@ -717,7 +871,7 @@ risk routing *is* Anthropic's "match architectural complexity to value" decision
 > **Skills vs. Workflows** (the distinction worth keeping straight, and worth teaching): a **skill** is
 > *knowledge the agent follows*; a **workflow** is *orchestration the runtime executes*. `grill-me` and
 > `decompose` are pure skills (phases ① and ②). `deep-review` is a skill that, on a large/high-risk
-> diff, *reaches for* a workflow (phase ④). Mulch is neither — it's the external store all three lean on.
+> diff, *reaches for* a workflow (the run close-out review). Mulch is neither — it's the external store all three lean on.
 
 ### Code intelligence: LSP over text-grep (and why not a code-DB here)
 
@@ -762,16 +916,20 @@ Two of the four tools are **upstream** (others' work we adopt); two are **this r
 - **decompose** (formerly `slice-planner`) — the phase-② automation that instantiates §3–§4 of this
   guide; the guide stays the single source of truth, the skill is its checklist + scaffolding. Portable
   form: [`DECOMPOSE-SKILL-TEMPLATE.md`](../methodology/templates/DECOMPOSE-SKILL-TEMPLATE.md).
-- **deep-review** — the phase-④ review harness; its portable form is
+- **deep-review** — the close-out review harness (auto at the end of ③, read in ④); its portable form is
   [`DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md). Built by composing the Anthropic
   patterns above, tuned to this repo's invariants.
 - **security-review** — the *whole-surface* counterpart to deep-review: not diff-scoped but a fan-out over
   the real attack surface, adversarially verified and **live-probed against the running rig**, written as
   a dated report (report-only; fixes are a follow-up branch). Portable form:
   [`SECURITY-REVIEW-SKILL-TEMPLATE.md`](../methodology/templates/SECURITY-REVIEW-SKILL-TEMPLATE.md).
-- **autonomous-implement** (template only, for now) — the phase-③ runner discipline as a skill wrapper,
-  for repos that outgrow pasting the bare §4 prompt. Portable form:
-  [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](../methodology/templates/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md).
+- **autonomous-implement** — the phase-③ runner as a local skill (shipped with the parts port,
+  2026-08-01): resolves the package, re-runs its gates, and executes the §4 prompt in one of the
+  **three §4a modes** (single-session default / ORCHESTRATOR / PART-RUNNER), with the
+  delegate-and-collect loop and both marker checks. §4a is its canonical prose. Portable form:
+  [`AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md`](../methodology/templates/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md)
+  — **the pre-parts, single-session form**; the parts execution model has not been folded into the
+  template yet (§4a is the source to port from).
 
 A reader who wants to adopt the *review* half of this flow in their own project should start from
 [`docs/methodology/templates/DEEP-REVIEW-TEMPLATE.md`](../methodology/templates/DEEP-REVIEW-TEMPLATE.md) — a vendor-neutral
@@ -810,13 +968,13 @@ prime it *before* judging that gate's output, so a documented FP is never re-fix
 
 | Gate | Kind | Scope | When | Green means |
 |------|------|-------|------|-------------|
-| **`verify-package.sh`** | mechanical | the planning package | phase ②, before the docs commit | files · frontmatter · clean-room · no unfilled slots · prompt skeleton · ticket/STATUS parity · **acceptance citations resolve and are owned** · links resolve |
+| **`verify-package.sh`** | mechanical | the planning package | phase ②, before the docs commit | files · frontmatter · clean-room · no unfilled slots · prompt skeleton · ticket/STATUS parity · **acceptance citations resolve and are owned** · links resolve · **execution-parts declaration valid or absent** ([9] — `check-parts.py`) |
 | **the decompose validation workflow** | judgment | the planning package | phase ②, after the mechanical gate | every **run-stopper** and **contradiction** fixed (seam existence · unpinned semantics · cross-doc consistency), then the mechanical gate re-run |
 | Compile + unit tests (`./gradlew :module:test`) | mechanical | ticket | per-ticket step 4 | fix-until-green |
 | **★ architecture review + refactor** | judgment | ticket | step 5, *before* IT/e2e | lenses applied; findings refactored + re-tested; STATUS note written |
 | **Local Sonar** (`./.sonar-local/sonar-local.sh`) | mechanical | changed `.java` files | inside step 5 / `/deep-review` validate | `CLEAN — 0 open findings` on changed files (FPs: `ml prime quality-gate-sonar`) |
 | Integration / e2e (Testcontainers IT · `opa test` · newman matrix) | mechanical | ticket / slice | step 6 / `/deep-review` validate | green, fix-until-green |
-| **`/deep-review`** | judgment | the slice diff | phase ④, every slice | verdict + fixes committed, review note written |
+| **`/deep-review`** | judgment | the slice diff | **end of phase ③ (the runner's close-out — automatic)**, read in phase ④ | verdict + fixes committed, review note written |
 | **`/security-review`** | judgment | whole surface | release / risky-slice cadence | dated report; fixes land as a follow-up slice |
 
 Naming convention for the domain family: one domain per gate (`quality-gate-sonar` today; a

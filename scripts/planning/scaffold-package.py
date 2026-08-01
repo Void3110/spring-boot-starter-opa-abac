@@ -15,22 +15,30 @@ word-for-word.
 
 Usage:
   python3 scripts/planning/scaffold-package.py --slice ACTION-ENRICHMENT --tickets 6 \
-      --area abac --area opa [--with-design] [--force]
+      --area abac --area opa [--with-design] [--force] \
+      [--parts "part 0 = T1–T3 · part 1 = T4–T6"] [--planning-root <dir>]
+
+--parts (needs --with-design) appends an "Execution parts" section carrying the
+declaration VERBATIM to the 00-DESIGN.md stub. The scaffold validates NOTHING —
+scripts/planning/check-parts.py is the single validation authority, and
+verify-package.sh [9] is where a bad partition is caught.
 
 Idempotent: existing files are skipped unless --force. Writes nothing outside
-docs/to-do/planning/<SLICE>/. Placeholders use «guillemets» so
-scripts/planning/verify-package.sh flags any that remain unfilled.
+the package folder — docs/to-do/planning/<SLICE>/ by default, or
+<planning-root>/<SLICE>/ with --planning-root (e.g. a scratch fixture dir).
+Placeholders use «guillemets» so scripts/planning/verify-package.sh flags any
+that remain unfilled.
 """
 import argparse
 import os
-import subprocess
 import sys
 
 
 def repo_root():
-    return subprocess.check_output(
-        ["git", "rev-parse", "--show-toplevel"], text=True
-    ).strip()
+    # Self-locating, never cwd-derived: the script may be invoked from outside the
+    # repo (where a git-rev-parse subprocess fatals). The repo root is two levels
+    # up from this file: scripts/planning/ -> scripts/ -> the root.
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def frontmatter(status, typ, areas):
@@ -70,7 +78,7 @@ def index_note(slice_name, areas, n):
     return body
 
 
-def design_note(slice_name, areas):
+def design_note(slice_name, areas, parts=None):
     body = frontmatter("planned", "architecture", areas)
     body += f"""# {slice_name} — design
 
@@ -97,6 +105,10 @@ failure modes and where each lands.»
 |---|---|
 | «alt» | «reason» |
 """
+    if parts is not None:
+        # Written VERBATIM, validated by nothing here — check-parts.py is the single
+        # validation authority (verify-package.sh [9] is where a bad partition fails).
+        body += f"\n## 5. Execution parts\n\n**Parts:** {parts}\n"
     return body
 
 
@@ -197,6 +209,13 @@ def main():
                     help="frontmatter area/ tag (repeatable; >=1 required)")
     ap.add_argument("--with-design", action="store_true",
                     help="also stub the phase-(1) files (<SLICE>.md index + 00-DESIGN.md)")
+    ap.add_argument("--parts", default=None, metavar="DECLARATION",
+                    help="append an 'Execution parts' section with this **Parts:** "
+                         "declaration, VERBATIM, to the 00-DESIGN.md stub (needs "
+                         "--with-design; validated only by check-parts.py, never here)")
+    ap.add_argument("--planning-root", default=None, metavar="DIR",
+                    help="build the package skeleton under DIR instead of "
+                         "docs/to-do/planning/ (e.g. a scratch fixture dir)")
     ap.add_argument("--force", action="store_true", help="overwrite existing files")
     a = ap.parse_args()
 
@@ -204,14 +223,17 @@ def main():
         sys.exit("error: at least one --area is required")
     if a.tickets < 1:
         sys.exit("error: --tickets must be >= 1")
+    if a.parts is not None and not a.with_design:
+        sys.exit("error: --parts needs --with-design (the declaration lands in the 00-DESIGN.md stub)")
 
-    folder = os.path.join(repo_root(), "docs", "to-do", "planning", a.slice)
+    planning_root = a.planning_root or os.path.join(repo_root(), "docs", "to-do", "planning")
+    folder = os.path.join(planning_root, a.slice)
     os.makedirs(folder, exist_ok=True)
     print(f"Scaffolding {folder}/ ({a.tickets} tickets, areas={a.areas})")
 
     if a.with_design:
         write(os.path.join(folder, f"{a.slice}.md"), index_note(a.slice, a.areas, a.tickets), a.force)
-        write(os.path.join(folder, "00-DESIGN.md"), design_note(a.slice, a.areas), a.force)
+        write(os.path.join(folder, "00-DESIGN.md"), design_note(a.slice, a.areas, a.parts), a.force)
     write(os.path.join(folder, "01-DECOMPOSITION.md"), decomposition_note(a.slice, a.areas, a.tickets), a.force)
     write(os.path.join(folder, "10-QA-TEST-CASES.md"), qa_note(a.slice, a.areas), a.force)
     for i in range(1, a.tickets + 1):

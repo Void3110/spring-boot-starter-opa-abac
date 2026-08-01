@@ -196,8 +196,9 @@ slowed the last one. The `opa-abac` domain answers "what did we learn about the 
 **"was the run a clean full-success, or did it have to pause and ask — and what should planning have
 pinned so it wouldn't?"**
 
-**When to record:** at the **end of a slice run** (flow phase ④, after `/deep-review`, before the folder
-moves to `implemented/`). One `reference` record per run, `--outcome-status` set:
+**When to record:** at the **end of a slice run** — the run's close-out, right after the automatic
+`/deep-review` (layer 3 runs at the end of phase ③ since 2026-08-01), before the folder moves to
+`implemented/`. One `reference` record per run, `--outcome-status` set:
 
 ```bash
 ml record autonomous-runs --type reference \
