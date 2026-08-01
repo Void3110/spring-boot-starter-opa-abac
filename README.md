@@ -21,8 +21,8 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 > **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
 > engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
 > `plan → decompose → autonomous-implement → review` — where each pass leaves artifacts (in **Mulch**
-> and this vault) that make the next one sharper. **21 feature slices, 27 ADRs, 830 unit/IT tests +
-> `opa test` 233/233 + a 14-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
+> and this vault) that make the next one sharper. **22 feature slices, 28 ADRs, 972 unit/IT tests +
+> `opa test` 266/266 + a 15-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
 > security review** — all delivered this way, with the prompts and per-slice retrospectives kept
 > verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
 
@@ -40,7 +40,7 @@ implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
 ```
 
 Six coordinates publish: `opa-abac-{core, spring-security, spring-data, keycloak-directory,
-spring-boot-starter}` + the `opa-abac-bom` platform. The two `example-*` services are demos and are
+spring-boot-starter}` + the `opa-abac-bom` platform. The three `example-*` services are demos and are
 **not** published.
 
 **Shipped:**
@@ -79,6 +79,10 @@ spring-boot-starter}` + the `opa-abac-bom` platform. The two `example-*` service
 - **Cross-service HTTP resilience** — a backend-agnostic `CallGuard` (Resilience4j) with per-edge
   retry/backoff/circuit-break that makes outages rarer **without** ever re-opening the fail-closed
   outage→deny contract.
+- **Agent tool-call authorization** — a third example service puts an **MCP tool surface** in front of the
+  catalog and gates it: effective authority is the **principal's ceiling ∩ the agent's declared
+  capability**, computed in Rego, over the catalog's *unchanged* policies. **Zero library change.**
+  See [Agent tool-call authorization](#agent-tool-call-authorization-mcp).
 
 **Now on Spring Boot 4:** the whole line targets **Boot 4.0 / Framework 7 / Security 7 / Hibernate 7 /
 Jackson 3** on **Java 25 / Gradle 9**, as a single artifact line (see [ADR 0026](docs/architecture/adr/0026-spring-boot-4-single-line-port.md)).
@@ -135,12 +139,13 @@ spring-boot-starter-opa-abac/
 ├── opa-abac-spring-boot-starter/        # Auto-configuration (the published starter)
 ├── example-catalog-management-service/  # E-commerce product catalog REST service (the app we secure)
 ├── example-user-management-service/     # Users/teams/role-definitions/tag-dictionary (drives the ABAC attributes)
+├── example-mcp-server/                  # MCP server: @McpTool catalog proxies behind an OPA tool-gate (agent authz)
 ├── infra/                               # The local rig: APISIX, Keycloak, OPA (+ policies), Jaeger
 ├── scripts/postman/                     # Newman e2e matrices (the through-the-gateway proofs)
 └── docs/                                # Architecture, ADRs, guides, per-slice planning packages
 ```
 
-The `opa-abac-*` modules are the publishable library. The two `example-*` services are
+The `opa-abac-*` modules are the publishable library. The three `example-*` services are
 demonstrations and are **not** published.
 
 ### The architecture (running today via `deploy.sh`)
@@ -148,9 +153,13 @@ demonstrations and are **not** published.
 ```mermaid
 flowchart TD
     Client["browser / client"] --> APISIX["APISIX<br/>(gateway)"]
+    Agent["AI agent<br/>(MCP client)"] --> APISIX
     APISIX -- "OIDC" --> Keycloak["Keycloak"]
     APISIX -- "opa check" --> OPA["OPA"]
     APISIX -- "proxied request (JWT)" --> Catalog["catalog-management-service<br/>(ABAC checks via starter)"]
+    APISIX -- "POST /mcp (JWT)" --> Mcp["mcp-server<br/>(tool-gate: ceiling ∩ capability)"]
+    Mcp -- "tool-gate decision" --> OPA
+    Mcp -- "the caller's OWN token, nothing added" --> Catalog
     Catalog --> Postgres["Postgres"]
     Catalog -- "effective role / tags" --> UserSvc["user-management-service<br/>(roles + tag dictionary)"]
     Catalog -. "traces" .-> Jaeger["Jaeger"]
@@ -159,12 +168,18 @@ flowchart TD
     classDef svc fill:#ecfdf5,stroke:#059669,color:#064e3b;
     classDef infra fill:#f1f5f9,stroke:#475569,color:#0f172a;
     class APISIX gw;
-    class Catalog,UserSvc svc;
+    class Catalog,UserSvc,Mcp svc;
     class Keycloak,OPA,Postgres,Jaeger infra;
 ```
 
 The `user-management-service` (teams, role definitions, a dynamic tag dictionary) supplies the
 attributes the ABAC decisions are made with — and dogfoods the starter to secure its own API.
+
+The `mcp-server` is a **second front door** onto the same resources for AI agents — and the reason it is
+drawn reaching OPA *and* the catalog separately: it decides whether the **tool call** is permitted, then
+makes the downstream request with the caller's own token and nothing added, so the catalog re-decides the
+**resource** on its own unchanged policies. See
+[Agent tool-call authorization](#agent-tool-call-authorization-mcp) below.
 
 ## The example: catalog-management-service
 
@@ -252,6 +267,91 @@ docker compose -f .sonar-local/docker-compose.yml up -d && ./.sonar-local/bootst
 The full tree is at **0 open findings**; standing by-design false-positives are recorded, so a non-clean
 result on a change is a real signal, not noise.
 
+## Agent tool-call authorization (MCP)
+
+An AI agent calling tools on someone's behalf collapses **two identities into one bearer token**: the
+human the call is for, and the agent making it. Everything else in this repo answers *"may this
+**human** act on this resource?"* — so an agent inherits the human's **whole** ceiling. And the tool
+surface above it has no gate at all: the MCP specification covers how a server validates a bearer, not
+*which* tools that bearer may then call, and offers no way to vary the advertised list per caller.
+
+`example-mcp-server` — **four read-only `@McpTool` catalog proxies** on Spring AI 2.0.0, streamable-HTTP
+MCP (spec revision `2025-11-25`) — closes that with a structure rather than a feature:
+
+| Layer | Asks | Owned by | Policy |
+|---|---|---|---|
+| **Tool-gate** | may this *(principal, actor)* pair invoke **this tool at all**? | the MCP server | `agent_tools.rego` — new, `default allow := false` |
+| **Target-gate** | may this **principal** touch **this resource**? | the catalog service | its per-type policies, **unchanged** |
+
+**Nothing travels between them.** A tool body calls the catalog REST API with **the caller's own bearer
+and nothing else** — the outbound client sets exactly `Authorization` and `Accept`; no role, capability,
+acting-as header or minted token exists anywhere in the module. The catalog service re-derives the
+principal exactly as it would for a browser. Effective authority is therefore **principal ceiling ∩
+agent capability**, held *across* two independent layers instead of passed between them — and the
+intersection is computed **in Rego**, not in Java:
+
+```rego
+effective_actions := principal_actions & agent_actions   # a set intersection can only SHRINK
+```
+
+That one line is the whole agent model. A capability naming an action the ceiling does not grant
+contributes nothing, and a tool surface that asserts nothing downstream **can only fail to narrow,
+never widen** — bypass the tool-gate entirely and the worst case is the human's own authority.
+(Propagating a role downstream instead would be the very fail-open shape the tenant-isolation slice
+deleted.)
+
+**Proven live through the gateway** — `scripts/postman/run-agent-tool-matrix.sh`, **53 requests /
+78 assertions, 0 failures**, entering at `/mcp` alongside every other proof here rather than at a
+published pod port. The assertions pin the streamable-HTTP framing *and* the authorization cells; every
+cell below is a *difference between callers*, never "a 200":
+
+| Caller (same principal unless noted) | `tools/list` advertises | `get_product` on its own catalog |
+|---|---|---|
+| **human** — no actor claim | all four tools | allowed |
+| **`agent-readonly`** — capped below `get_product`'s `medium` risk tier | exactly `list_catalogs`, `get_catalog` | **denied at `tool-gate`** |
+| **`agent-overreach`** — capability lists WRITE, GRANT and every verb | the human's four, **never more** | allowed |
+| the same **`agent-readonly`**, acting for a **low-privilege** principal | `[]` | denied |
+
+The middle two rows are the argument, and they are drawn on *one* token: the same principal is
+permitted `get_product` **directly**, so row 2 is a real restriction rather than a missing grant — and
+row 3 is a capability that lists everything and still buys nothing. A *foreign* catalog denies at
+**`target-gate` / `ACCESS_DENIED`** instead, so the two layers are distinguishable in the error the
+model receives — every denial is a structured `CallToolResult` naming its layer and a stable code, so a
+model can react (pick another tool, ask the human to escalate) rather than retry blindly.
+
+Dual identity is additive: RFC 8693 `act` semantics on a plain custom claim minted by a **stock
+Keycloak** protocol mapper — no token exchange. An **absent** actor is an ordinary human call; a
+**malformed** one denies. `tools/list` is filtered by **one batch round-trip**, but the roster is a
+**hint, never a grant**: call-time enforcement is authoritative and unconditional, which is what makes
+a mid-session revocation bite. Three drills prove the edges on the rig rather than in prose — killing
+the PDP mid-run empties the roster **and** denies every call (zero widening; the pre-kill vector
+returns exactly on restart), running with the agent-gate **off** stops the narrowing while the
+catalog's own gate still denies, and emptying an actor's profile removes the tool from the roster
+**and** denies it at call time.
+
+**Zero library change.** No `opa-abac-*` module, no existing example service and no pre-existing
+`.rego` document was touched — verified by diff. The MCP server reaches the starter only through its
+public seams, the way an adopter would (an in-repo project dependency on the same unmodified source),
+which is what makes the target-gate denial mean anything: it denies at the shipped layer, byte-for-byte.
+**The library does not ship agent support — this is an example built *on* it.**
+
+Two limits, stated rather than hidden: the roster filter reaches two pinned SDK internals
+**reflectively**, because MCP Java SDK 2.0.0 exposes no per-caller `tools/list` seam
+([java-sdk #578](https://github.com/modelcontextprotocol/java-sdk/issues/578)) — it fails startup by
+design if an upgrade moves them, and carries a kill-switch; and the per-type catalog policies never see
+the actor, so agent-aware *row* filtering is not expressible here. Extracting a reusable
+`opa-abac-agent` library module is the slice's stated **exit criterion** and is deliberately **not**
+shipped — the seams get exercised by a running demo before anything is frozen into published API.
+
+```bash
+ENABLE_MCP=1 ./deploy.sh up --pods 2      # the tool surface, behind the gateway at /mcp
+scripts/postman/run-agent-tool-matrix.sh  # the E1–E11 matrix, through the gateway
+```
+
+Full contract: [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) ·
+decision record: [ADR 0028](docs/architecture/adr/0028-agent-tool-call-authorization.md) · review
+(14 findings, **0 Critical**): [`docs/code-review/AGENT-TOOL-AUTHZ-REVIEW.md`](docs/code-review/AGENT-TOOL-AUTHZ-REVIEW.md).
+
 ## How this repo is built — AI-assisted engineering (the second deliverable)
 
 Beyond the library, this repo is a deliberate, **studyable case study in high-autonomy AI-assisted
@@ -293,9 +393,9 @@ verified — nothing is hidden behind "the AI did it."
 
 | | |
 |---|---|
-| **21** feature slices | each planned → decomposed → autonomously implemented → reviewed |
-| **27** ADRs | every structural fork pinned as an immutable decision record |
-| **830** unit/IT tests · `opa test` **233/233** · **14**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
+| **22** feature slices | each planned → decomposed → autonomously implemented → reviewed |
+| **28** ADRs | every structural fork pinned as an immutable decision record |
+| **972** unit/IT tests · `opa test` **266/266** · **15**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
 | **+0.79 ms** ABAC gate at p50 | measured on the real rig, statistically flat at the tail ([PERFORMANCE.md](PERFORMANCE.md)) |
 | **0 Critical** security review | pre-publish 8-angle review + secret scan + CVE sweep, findings fixed |
 
@@ -379,9 +479,11 @@ the one-command rerun).
 
 The full architecture, decision records, and per-feature guides live in [`docs/`](docs/README.md):
 - **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
+- **Agent / MCP authorization** — [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) + [ADR 0028](docs/architecture/adr/0028-agent-tool-call-authorization.md) — the two-layer model, the tri-state capability seam, the roster-is-a-hint rule, and the fail-closed table
 - **Architecture & ADRs** — [`docs/architecture/`](docs/architecture/)
 - **Roadmap** — [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md)
 - **AI-assisted methodology** — [`docs/methodology/`](docs/methodology/README.md) (the `plan → implement → review` loop this repo is built with, framed + indexed) + the deep reference [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) and the portable phase [`templates/`](docs/methodology/templates/)
+- **Policy tooling** — [**rego-skill**](https://github.com/Void3110/rego-skill): the companion Claude Code skill for generating, reviewing, and testing the OPA Rego policies this starter evaluates — the 6-step secure-policy workflow plus a multi-agent security-audit for a whole policy corpus. The example policies in this repo are maintained with it.
 
 ## License
 
