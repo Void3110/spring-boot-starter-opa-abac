@@ -49,7 +49,7 @@ across a part boundary.
 | T2 | `scaffold-package.py --parts` (writes the declaration, validates nothing) | ✅ DONE |
 | T3 | the `/autonomous-implement` runner skill (three modes, Phase 1.5 delegate-and-collect, the part brief) + the flow-guide §4a canonical section | ✅ DONE |
 | T4 | review-layer wiring: the deep-review subagent ceiling row + both markers + loop termination | ✅ DONE |
-| T5 | the live delegation proof: a gate-green fixture package in a scratch git repo, part 0 delegated and collected from disk | 📋 TODO |
+| T5 | the live delegation proof: a gate-green fixture package in a scratch git repo, part 0 delegated and collected from disk | ✅ DONE |
 
 **Validated:** 2026-08-01 — mechanical [1]–[8] green · adversarial pass clean (1 run-stopper + 11 contradictions found, fixed, re-gated).
 
