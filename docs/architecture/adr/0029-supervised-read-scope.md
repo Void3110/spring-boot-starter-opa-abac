@@ -8,7 +8,7 @@ tags:
 
 # ADR 0029 — Supervised read scope: a second, disjoint access path beside membership
 
-**Status:** Accepted — planning (SUPERVISOR-STEP-UP phase ①)
+**Status:** Accepted — planning; implemented by slice **A**, [[SUPERVISED-SCOPE]]
 **Date:** 2026-08-01
 **Context tags:** org-relation seam, derived id set, non-membership role resolution, partitioned list, disjoint scopes, fail-closed
 
@@ -17,6 +17,13 @@ tags:
 > the realm-role fallback [[0018-team-scoped-resource-isolation|ADR 0018]] deliberately removed. The
 > **elevation** half — the production tier, the second factor and the challenge protocol — is
 > [[0030-step-up-decision-contract|ADR 0030]].
+>
+> **Delivery note (2026-08-01).** The supervisor feature was scoped as one slice and **failed the
+> slice-sizing gate** ([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §2a — ~13 tickets over five deployables,
+> tripping smells (a), (b) and (c)). It ships as three, each fail-closed at its boundary so every later
+> slice only ever *widens* what the previous one closed: **A** [[SUPERVISED-SCOPE]] (this ADR — the list,
+> read-only, contents closed), **B** `PRODUCTION-TIER` and **C** `STEP-UP-ELEVATION` (ADR 0030). This ADR
+> is implemented **whole** by slice A, with the single staging exception noted in §6.
 
 ## Context
 
@@ -108,9 +115,25 @@ authorizer resolves its residual-driving role through membership, which a superv
 `/internal/effective-role` answers 204 and the residual compiles to `DENY_ALL`.
 
 So `/internal/effective-role` gains a **non-membership branch**: when the subject supervises the governing
-root, it answers with a **synthesized, read-only supervisor `RoleDefinition`** granting only
-`view` / `list` on `catalog`, `category` and `product`, with vacuous required tags (safe *only* because of
-the disjointness in §5). The role is synthesized in code and never stored.
+root, it answers with a **synthesized, read-only supervisor `RoleDefinition`** granting only the coarse
+**`READ`** token, with vacuous required tags (safe *only* because of the disjointness in §5). The role is
+synthesized in code and never stored.
+
+**Coarse tokens, never fine verbs.** `permissions[<type>]` carries `READ`/`WRITE`/`TAG`/`GRANT`/`CONTROL`
+(ADR 0007/0015), which `data.permission_categories` expands — `READ` → `view, list, list-members`. A role
+written with fine verbs expands to the **empty set** and grants nothing.
+
+**Staged grant (the one place this ADR is delivered incrementally).** The grant widens by slice, and the
+narrower state is load-bearing rather than incidental:
+
+| Slice | `permissions` on the synthesized role | Effect |
+|---|---|---|
+| **A** — [[SUPERVISED-SCOPE]] | `catalog: ["READ"]` only — **no `category`, no `product` key** | Contents are closed **by the role**, so slice A ships **zero Rego changes** |
+| **B** — `PRODUCTION-TIER` | `+ category: ["READ"]`, `+ product: ["READ"]` | Contents open, gated by the `env` tier (ADR 0030 §1–4) |
+
+Because the policies are role-definition-driven, an absent type key already denies every verb on that
+type. Slice A therefore needs no policy edit to keep contents shut — and slice B's widening is what makes
+the tier necessary rather than decorative.
 
 **The realm role is a UX-only eligibility marker.** A `unit-supervisor` realm claim makes the affordance
 visible in a client; it is **never** resolver input. Reach comes entirely from the resolved report set — a
@@ -138,13 +161,29 @@ on the explicit assumption that "every governed catalog is one the subject is a 
 breaks that assumption, so the list becomes two legs over the disjoint scopes, unioned before paging:
 
 ```
-leg1 = id IN M          ∧ residual(membership role)     # unchanged behavior
-leg2 = id IN supervised ∧ residual(supervisor role)     # new
-page   = findAuthorized(leg1 OR leg2)
+findAuthorized( scope       = id IN (M ∪ supervised),
+                context     = the MEMBERSHIP role,
+                subtreeSpec = id IN supervised )
+  ⇒ scope ∧ ( residual_membership ∨ id ∈ supervised ) ∧ notDenied()
 ```
 
-Each leg compiles its own residual from its own role, so no role is ever applied to rows it did not earn.
-`totalElements` remains the subject's authorized total; both legs fail closed to empty independently.
+This is the shipped ADR-0010 base-scope-widening idiom, reused rather than reinvented: a membership row is
+judged by the membership residual, a supervised row is admitted by the widening arm, and the deny-override
+stays AND-ed outside both. When either scope is empty the call collapses to the single-scope form — and
+for an ordinary member that is **byte-identically today's query**.
+
+**Why not two independently-compiled legs.** `findAuthorized` compiles exactly **one** residual, from the
+single `AbacContext` it receives; there is no overload taking two `(scope, context)` pairs, and no public
+method turning a role into a residual `Specification`. A pre-composed `legA.or(legB)` handed in as `scope`
+would get that one residual AND-ed over the union, narrowing supervised rows by the membership role. The
+`subtreeSpec` slot is the shipped way to say "admit these rows too".
+
+**The precondition this buys, stated so it cannot rot.** Admitting supervised rows unconditionally is
+correct **only because the supervisor role's residual is `ALLOW_ALL`** (coarse `READ`, empty
+`requiredTags`). Should a later slice give that role a tag requirement, this composition must change —
+the slice carries an explicit test of the precondition rather than leaving it implicit.
+
+`totalElements` remains the subject's authorized total; every branch fails closed to empty.
 
 ### 9. Failure semantics
 

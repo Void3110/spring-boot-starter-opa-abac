@@ -9,13 +9,21 @@ tags:
 
 # ADR 0030 — Step-up authentication: the production tier, the freshness control, and the challenge contract
 
-**Status:** Accepted — planning (SUPERVISOR-STEP-UP phase ①)
+**Status:** Accepted — planning; implemented by slices **B** (`PRODUCTION-TIER`, §1–4) and **C** (`STEP-UP-ELEVATION`, §5–9)
 **Date:** 2026-08-01
 **Context tags:** RFC 9470, acr/auth_time, refresh laundering, operator-managed tags, structured deny, root attribute enrichment
 
 > Pins the **elevation** forks for the supervisor slice: which reads are sensitive, how the second factor
 > is proven to the resource server, and how a "you must step up" answer travels from policy to client. The
 > **scope** half — who can see what at all — is [[0029-supervised-read-scope|ADR 0029]].
+>
+> **Delivery note (2026-08-01).** This ADR spans **two** slices, split along the §4/§5 line after the
+> feature failed the slice-sizing gate ([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §2a). **Slice B**
+> (`PRODUCTION-TIER`) implements §1–4 — the sensitive-act boundary, the supervised-path-only scoping, the
+> `operatorManaged` tag flag and root-attribute enrichment — and leaves production contents **denied**.
+> **Slice C** (`STEP-UP-ELEVATION`) implements §5–9 — freshness, the envelope, the challenge, audit and
+> factor policy — relaxing that denial to "unless freshly elevated". Neither is implemented by slice
+> **A** ([[SUPERVISED-SCOPE]]), which closes contents outright via the role grant (ADR 0029 §6).
 
 ## Context
 

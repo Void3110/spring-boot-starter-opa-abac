@@ -254,6 +254,39 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **J6** *As a person signing in normally*, nothing changes: a token with no agent actor is an ordinary
   human call, decided exactly as before. — **Phase 9** 📋
 
+### Epic K — "I can see what my people are working on, without joining their teams" (supervised read scope)
+
+> Team membership is the **sole** access path to a catalog (Epic B / slice B4), so a unit manager who sits
+> *above* several teams sees nothing at all. These stories capture the second, **disjoint** access path —
+> derived from the reporting structure, read-only, and audited — plus the second factor that gates
+> production detail. Split across three slices: **A** [[SUPERVISED-SCOPE]] (Phase 10-A), **B**
+> `PRODUCTION-TIER` and **C** `STEP-UP-ELEVATION`. Planned, not yet shipped.
+
+- **K1** *As a unit manager on no team*, I see the catalogs of the teams my reports own or manage —
+  including my reports' reports' — and **nothing** adjacent to my unit. — **Phase 10-A** 📋 (the headline
+  cut, asserted on exact ids)
+- **K2** *As a manager*, my access is **read-only**: I can open a catalog's metadata, and every mutation is
+  refused — the UI shows me no buttons I cannot press. — **Phase 10-A** 📋
+- **K3** *As an organization*, revoking a reporting line takes effect **immediately**: the moment someone
+  stops reporting to me, their catalogs leave my list and a direct read is refused. — **Phase 10-A** 📋
+- **K4** *As a security officer*, a manager who holds the supervisor marker but has **no** reports sees
+  **nothing** — the claim itself grants no access, only eligibility. — **Phase 10-A** 📋
+- **K5** *As an operator*, when the reporting source is unreachable a manager degrades to their **own**
+  memberships — never to everything, and never to a partial, silently-wrong unit. — **Phase 10-A** 📋
+  (the fail-closed drill)
+- **K6** *As a manager who also sits on a team*, my own team's data behaves exactly as it always has — being
+  a supervisor never makes my own work harder to reach. — **Phase 10-A** 📋
+- **K7** *As a product owner*, the fact that a catalog holds **production** data cannot be edited away by
+  the people being supervised — the tier is set by an operator and is not assignable through the API. —
+  **Phase 10-B** 📋
+- **K8** *As a manager*, opening **production** content asks me for a second factor, once, and then lets me
+  work for a bounded window — and refreshing my session does **not** silently extend it. — **Phase 10-C**
+  📋 (the headline step-up round trip)
+- **K9** *As a compliance reviewer*, every privileged production read a manager performs leaves an audit
+  event — the reads are the exact risk the second factor exists for. — **Phase 10-C** 📋
+- **K10** *As an identity team*, we can swap the second factor (TOTP → passkey, say) as a **configuration**
+  change, with no application change and no redeploy. — **Phase 10-C** 📋
+
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
 > much as a re-implementation of Epic B's decisions in a different place, to teach RBAC-vs-ABAC-vs-ReBAC.
