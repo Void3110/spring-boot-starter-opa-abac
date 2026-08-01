@@ -1,17 +1,22 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/methodology
 ---
 
 # PARTS-PORT — the runner learns to delegate a slice as parts
 
-> **Status: Planning.** Gives the repo a **phase-③ runner skill** (`/autonomous-implement`) whose
-> execution model can run a large slice as **sequential, subagent-delegated PARTS** under an
-> orchestrator — so a multi-part slice reaches full closure unattended instead of being babysat through
-> pause-and-prepare cycles. Strictly additive: a package with no parts declaration runs byte-identically
-> to today's bare-prompt paste.
+> ✅ **SHIPPED 2026-08-01** — branch `feature/void3110/parts-port`, T1–T5 all green, live two-part
+> delegation proven, deep-reviewed same day (Approved with fixes — [[PARTS-PORT-REVIEW]]); the
+> close-out review now runs **automatically** at the end of every run (maintainer decision shipped
+> with the review).
+>
+> The repo's **phase-③ runner skill** (`/autonomous-implement`): its execution model can run a large
+> slice as **sequential, subagent-delegated PARTS** under an orchestrator — so a multi-part slice
+> reaches full closure unattended instead of being babysat through pause-and-prepare cycles.
+> Strictly additive: a package with no parts declaration runs byte-identically to the bare-prompt
+> paste.
 
 ## Why this slice exists
 
