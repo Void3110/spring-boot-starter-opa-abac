@@ -163,6 +163,15 @@ blast-radius and hope the run catches the rest.
 > ownership SPI + `createTeam` + gateway routing. Each ~4–5 tickets, each blast-radius enumerable. (Mulch
 > `autonomous-runs` `mx-76cf08`.)
 
+**The partition test (run it before shrinking a slice).** The smells above measure *blast-radius* —
+whether phase ① can enumerate every consumer. A slice can pass all four and still be too big for one
+**context window**: coherent, enumerable, but more tickets than one session finishes. That slice
+**partitions; it does not have to shrink** — declare execution parts in its `00-DESIGN.md`
+(`**Parts:** part 0 = T1–T4 · part 1 = T5–T8`, validated by `verify-package.sh` [9]) and the runner
+executes it as sequential, subagent-delegated parts (§4a). Splitting is for blast-radius failures;
+partitioning is for context failures. A slice that fails *both* splits first, then partitions if still
+needed.
+
 **Exit criterion for sizing:** the slice trips none of (a)–(d), *or* it has been split into slices that
 each pass. Only a slice that passes this gate goes to decomposition.
 
@@ -253,7 +262,7 @@ adversarial pass.
    `→ Ticket` column agrees), **wikilink resolution**, and **execution-parts coverage** ([9] — a
    `**Parts:**` declaration, when present, is validated by `scripts/planning/check-parts.py`, the
    single authority: near-misses and non-covering partitions hard-fail; absence is the green
-   single-session default).
+   single-session default — the execution model is §4a).
 2. **Adversarial** — the `decompose` skill's validation workflow: seam-existence auditors (every
    third-party claim re-checked against the real artifact), an unpinned-semantics critic (primed with
    the `autonomous-runs` pause classes), and a cross-doc consistency auditor (design ↔ decomposition ↔
@@ -462,6 +471,130 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Workflow-as-artifact:** keep this prompt verbatim; the `STATUS-0N.md` notes record each ticket's
   outcome. Move the folder to `docs/to-do/implemented/` on ship.
 ````
+
+---
+
+## 4a. The execution model: single-session, orchestrator, parts
+
+*(Canonical. The `/autonomous-implement` skill instantiates this section; where they could drift, this
+guide wins — fix the guide first, then the skill.)*
+
+Phase ③ has one prompt but **three execution modes**, resolved from one line in the package.
+
+### The declaration
+
+A package that is too large for one context window declares its partition on **one line** of its
+`00-DESIGN.md`:
+
+```
+**Parts:** part 0 = T1–T4 · part 1 = T5–T8
+```
+
+Part numbers are 0-based, contiguous, ascending in written order; ranges are contiguous, ascending,
+non-overlapping, and cover **exactly** `T1..TN`; two or more parts (one part is what absence already
+means); en dash, em dash and hyphen all parse. `scripts/planning/check-parts.py` is the **single
+validation authority** (`verify-package.sh` [9] and the runner both delegate to it; the scaffold's
+`--parts` writes the line blind). Fenced examples and inline-backticked mentions never count; a
+**near-miss** at the start of a line's content (`- **Parts:**` bulleted, `Parts:` unbolded,
+`**Parts**:` colon outside the bold) is a **hard error, never "absent"** — absence is the green
+default, so a near-miss falling through would hide a partition that drops tickets.
+
+### The three modes (one re-entrant skill)
+
+| Invocation | Declaration | Mode | Behaviour |
+|---|---|---|---|
+| slice | absent | **single-session** | the §4 prompt's loop for T1..TN, verbatim — byte-identical to the bare-prompt run |
+| slice | present | **ORCHESTRATOR** | delegates each part to a fresh-context subagent, in order; builds nothing itself |
+| slice + `part N` | present | **PART-RUNNER** | runs only part N's ticket range, then its layer-2 review, then returns |
+
+`part N` against a package with **no** declaration is a contradiction: **stop and say so** — never
+guess which tickets were meant. **The OFF state:** no declaration means the orchestrator path is
+*never entered* — not "orchestration with one part". OFF delegates nothing, spawns nothing, greps
+nothing; it is strictly narrower than ON.
+
+**Reconciling the §4 skeleton's "do not delegate the implementation to a sub-agent":** that sentence
+binds **whoever is implementing**. Under orchestration the part-runner is the implementer and still
+implements directly (its sub-agents remain scout/validate-only); the orchestrator delegates *parts*,
+and implements **nothing**. The two texts do not contradict — one constrains the implementer's
+delegation, the other defines who the implementer is.
+
+### Delegation and collection (the orchestrator's loop)
+
+Delegation is **synchronous only** — parts share one branch and one working tree, and part N's brief
+names part N−1's STATUS notes; parallel delegation is **forbidden, not degraded** (if synchronous
+delegation is unavailable, stop). Each part gets a short **brief** that points at the runner skill
+rather than duplicating its loop (a copied loop drifts), restates the repo-local rules that do not
+auto-inject into a fresh subagent (commit identity, clean-room boundary, the `ml sync` staged-sweep
+guard, do-NOT-push), lists the prior parts' STATUS notes, marks the not-yours boundary — and opens
+with an **absolute `cd` into the repo as its literal step 0** (a subagent's shell starts outside the
+repo, where nothing cwd-derived works; scripts self-locate for the same reason).
+
+The orchestrator **collects from disk, never from the reply** — the subagent's final message is a
+summary written by the thing being checked. A part is closed by five checks on on-disk state alone:
+
+1. **Commits** on the branch for the part's tickets;
+2. the slice's **verify/build gates green**;
+3. a **clean working tree** — `git status --porcelain` empty except paths the brief declared as
+   untracked deliverables (an uncommitted edit would ride invisibly into the next part on the shared
+   tree);
+4. every owned `STATUS-0N.md` **filled** — `**Status:**` flipped, no empty section, and a section
+   still holding template placeholder text **counts as empty** (placeholders are replaced, never
+   appended under);
+5. a **layer-2 review record** in the part's last STATUS note, in one of three states: recorded →
+   pass · `**LAYER-2 NOT RUN:** <why>` → the orchestrator reviews that part itself before delegating
+   on (a behavior-changing finding from that fallback review is an unconfirmable end-state → stop;
+   doc-only findings are recorded in the part's STATUS and the loop proceeds) · absent/empty →
+   **stop**. Silence is never benign.
+
+Only after all five, plus the marker checks below, does the orchestrator **tick the package index
+itself** (the index is the orchestrator's file — a shared file two parts would contend on; each
+brief's not-yours boundary forbids parts from touching it) and delegate the next part. Any check
+failing, or a subagent erroring or returning nothing → **stop; part N+1 is never delegated.**
+
+### Three review layers · the two markers
+
+| Layer | Runs in | Scope | Path |
+|---|---|---|---|
+| 1 — per-ticket ★ gate | the implementer | one ticket | as §4 step 5; inside a part, capped at 2A |
+| 2 — per-part review | the part-runner, fixing its own findings | the part's tickets | **2A applied INLINE** — the lens set in the part-runner's own context, never a spawned review sub-agent |
+| 3 — whole-delivery `/deep-review` | the **main session**, all parts in | all parts vs `main` | **2B** — mandatory under parts |
+
+The Path column is a **capability, not a preference**: the multi-lens 2B path invokes `Workflow`,
+which does not exist inside a subagent (capability spike 2026-08-01, Mulch `autonomous-runs`
+mx-4b9171) — and a part-runner spawning a review sub-agent would be one-level nesting, the rejected
+fork (untested everywhere; do not build on it). A headline ticket inside a part takes inline-2A **and
+records the downgrade** in its STATUS note; layer 3 re-covers it at the only scope that can see
+cross-part composition — per-increment reviews have all passed clean while a whole-branch review
+caught a Critical, which is why layer 3 is mandatory under parts rather than belt-and-braces.
+
+Two **fixed, greppable markers** are the channels between layers, always written verbatim at the
+start of a line's content in a STATUS note:
+
+- `**ESCALATION (cross-part):** <what, and which part it reaches>` — a finding whose blast radius
+  reaches an **already-completed part** is escalated, never fixed across the boundary (the earlier
+  part was never briefed on this part's decided forks; a local fix is a silent cross-part
+  adaptation). It lands in a STATUS *Decisions* section; the orchestrator greps for it across
+  **every** `STATUS-*.md` in the package before delegating the next part.
+- `**LAYER-2 NOT RUN:** <why>` — the layer-2 fallback trigger (state 2 above).
+
+Both marker checks share one discipline: **every regex metacharacter escaped** (the markers contain
+`*()`; raw, grep exits with an *error* indistinguishable from "absent" if only truthiness is tested —
+a fail-open on the escalation channel), **anchored to the start of a line's content** (list/quote
+prefixes allowed — Decisions sections are bullet lists; mid-sentence and backticked mentions
+excluded, or the check false-halts on documentation prose), and **three exit codes**: found → HALT ·
+absent → proceed · check-failed → **HALT too**. Never read a check error as "absent". The exact
+commands live in the runner skill (one home); this section is their contract.
+
+### The three failure classes (never collapsed)
+
+**One sentence: no missing, malformed, unverifiable or escalated state ever causes MORE tickets to
+run than a fully verified one.**
+
+| Class | Trigger | Lands |
+|---|---|---|
+| **A — gate-time** | a Parts line present but malformed (near-miss, gap, overlap, out-of-range, <2 parts, two live lines) | `verify-package.sh` [9] exits 1; the runner's Phase 0 refuses the package |
+| **B — run-time** | a part's end-state unconfirmable: red gates · a dirty tree · an owned STATUS not filled · no layer-2 record · subagent errored/empty | the orchestrator **stops after that part**; N+1 never delegated |
+| **C — escalation** | the cross-part marker found — or the marker **check itself errors** | the orchestrator **halts and asks the maintainer**; never auto-fixes, never continues |
 
 ---
 
