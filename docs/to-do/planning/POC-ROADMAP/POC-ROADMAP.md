@@ -19,6 +19,12 @@ tags:
 > DONE:** `dev.dmitriikonovalov:opa-abac-*:1.0.0` (+ the `opa-abac-bom` platform) is live on Central,
 > tagged `v1.0.0`; `main` is now `1.1.0-SNAPSHOT` (PR #85). This note is the historical record of how the
 > features fit together and the order we tackled them; each has its own folder under `to-do/implemented/`.
+>
+> **Since 1.0.0:** **Phase 9 — agent tool-call authorization — shipped 2026-07-31**
+> ([[AGENT-TOOL-AUTHZ]] / [[0028-agent-tool-call-authorization|ADR 0028]]), a new `example-mcp-server`
+> gating an MCP tool surface with **principal ceiling ∩ agent capability computed in Rego**, over the
+> catalog's unchanged policies and with **zero library-module change**. Phase 8 (ReBAC-in-Rego) is the
+> one functional row still open.
 
 ## The thesis
 

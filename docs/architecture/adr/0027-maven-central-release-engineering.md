@@ -8,12 +8,13 @@ tags:
 
 # ADR 0027 — Maven Central release engineering (groupId, artifacts, signing, plugin)
 
-**Status:** Accepted (planned 2026-07-13; the MAVEN-CENTRAL-PUBLISHING slice implements it)
+**Status:** Accepted — **shipped 2026-07-13** (the [[MAVEN-CENTRAL-PUBLISHING]] slice, T1–T6, PR #84;
+`1.0.0` live on Central, tagged `v1.0.0`)
 **Date:** 2026-07-13
 **Context tags:** Maven Central Publisher Portal, `dev.dmitriikonovalov` namespace, vanniktech maven-publish, local GPG signing, multi-module + BOM, 1.0.0, Gradle 9.6.1 / Java 25
 
 > The release-infrastructure decisions behind the library's **first Maven Central publish** — the sole
-> remaining 1.0 blocker. Settled by grill-me (2026-07-13). The design (`docs/to-do/planning/
+> remaining 1.0 blocker. Settled by grill-me (2026-07-13). The design (`docs/to-do/implemented/
 > MAVEN-CENTRAL-PUBLISHING/00-DESIGN.md`) references this ADR; the rationale is recorded here once so
 > it isn't re-litigated at implementation or at the release itself. Publishing is **build/release
 > infra only** — it changes no library source and does not touch the `opa-abac-core` Spring-free
