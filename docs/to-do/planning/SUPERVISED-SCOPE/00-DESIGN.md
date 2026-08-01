@@ -3,133 +3,191 @@ tags:
   - status/planning
   - type/design
   - area/abac
-  - area/opa
   - area/spring
 ---
 
-# SUPERVISOR-STEP-UP — 00-DESIGN
+# SUPERVISED-SCOPE — 00-DESIGN
 
-**Phase ① complete — 2026-08-01.** Research (2026-07-27) → precondition probe → fork-resolving interview.
-Decisions are pinned in [[0029-supervised-read-scope|ADR 0029]] (scope) and
-[[0030-step-up-decision-contract|ADR 0030]] (elevation). **Next: `/decompose`.**
+**Phase ① complete — 2026-08-01.** Research (2026-07-27) → precondition probe → fork-resolving interview
+→ slice-sizing split. The scope contract is pinned in [[0029-supervised-read-scope|ADR 0029]].
+**Next: the decomposition in [[01-DECOMPOSITION]].**
 
 ## The feature in one paragraph
 
-A **unit manager** — a member of no team — logs in and sees the catalogs owned or managed by the people who
-report to them, transitively. Browsing and metadata are ordinary reads. **Opening the contents of a
-catalog tagged `env=production` requires a second authentication factor**, proven to the resource server by
-a freshness check that a token refresh cannot launder. Access is strictly read-only, derived entirely from
-the reporting structure, and audited.
+A **unit manager** — a member of no team — logs in and sees the catalogs owned or managed by the people
+who report to them, transitively. The page is correct, live and **strictly read-only**, derived entirely
+from the reporting structure and never from a realm grant. **Contents — categories and products — are
+closed in this slice**; opening them behind a production tier and a second factor is slices B and C.
 
 ## What this pierces, and what it must not break
 
 Slice B4 made **team membership the sole access path**: the coarse `catalog:list` gate is gone,
 `GovernedScopeResolver` is the only authority, the `filter` entrypoint is role-definition-only with no
-fallback. A supervisor who is a member of nothing therefore sees nothing — by design.
+subject-roles fallback. A supervisor who is a member of nothing therefore sees nothing — by design.
 
 This slice adds a **second, disjoint** access path. It must not reintroduce the realm-role fallback B4
-removed, and it must leave every existing persona's behavior byte-identical.
+removed, and it must leave **every existing persona's behavior byte-identical**.
 
-## The design, end to end
+## The epic and this slice's boundary
 
-```
-                    ┌─ M = membership ids ──── residual(membership role) ──┐
-GET /catalogs ──────┤                                                      ├── OR ── page
-                    └─ S\M = supervised ids ── residual(supervisor role) ──┘
+The full supervisor feature was scoped as one slice and failed the sizing gate
+([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §2a — ~13 tickets over five deployables; smells (a), (b), (c)). Split
+so each slice only ever *widens* what the previous one closed:
 
-GET /catalogs/{id}                      metadata — never elevated
-GET /catalogs/{id}/categories/…         contents — elevated IFF supervised path AND root env=production
-GET …/products/{pid}                            ↑ root_attributes.env, fetched by path id, memoized
-```
-
-| Layer | Owns |
-|---|---|
-| **Starter library** | `deny_reason` on the decision result (additive, omitted when absent); the RFC 9470 challenge handler mapping *only* the structured step-up deny to 401; `root_attributes` enrichment; `GovernedScopeResolver` contract-text revision; step-up guide + Rego pattern docs. **Not**: acr validation, Keycloak automation, a published org-relation SPI. |
-| **user-service** | Reporting-edge fixture + transitive derivation (depth 10, cycle-guarded) behind `/internal`; the non-membership branch of `/internal/effective-role` returning the synthesized read-only supervisor role; the `operatorManaged` column + `env` seed. |
-| **catalog-service** | Two-leg partitioned `CatalogListAuthorizer` (replaces `governedIds.get(0)`); step-up rules + structured deny in `catalog`/`category`/`product` Rego; root-attribute enrichment; `operatorManaged` enforcement in `TagAssignmentService`; the audit logger. |
-| **SPA** | 9470 challenge parser; `returnTo` persistence; redirect forwarding **`max_age` + essential `acr`**; amber "requires verification" affordance. |
-| **Keycloak (rig)** | Assign built-in `basic` + `acr` client scopes; `acr.loa.map`; conditional browser flow (level 2 = OTP Form, Max Age 300); TOTP enrolment for the supervisor persona. |
-
-## Resolved forks
-
-### Ratified from research (not reopened)
-
-| Fork | Resolution |
-|---|---|
-| F1 mechanism | Derived id set behind governed scope, re-derived per request |
-| F3 scope | Supervised subtree — never flat read-all |
-| F4 relation source | HR-mastered projection via a **new** fail-closed seam; not `UserDirectory`, not Keycloak-native; example-side this slice |
-| F5 transitivity | Full subtree, depth-capped 10, cycle-guarded, fail-closed to empty on a detected cycle |
-| F6 realm claim | UX-only eligibility marker, **never** resolver input |
-| F8 fail-closed | Errored source → own memberships; partial derivation → membership-only; `_actions` read-only |
-| S5 factor | TOTP-first + demonstrated pluggability; SMS = inform, don't block (NIST 800-63B-4 RESTRICTED) |
-
-### Settled in the interview (2026-08-01)
-
-| # | Fork | Resolution | Why it mattered |
+| | Slice | Ships | ADR |
 |---|---|---|---|
-| G1 | `env` governance | New additive **`operatorManaged`** boolean on the tag definition, carried through `TagDefinitionView`, enforced in `TagAssignmentService` | The `abac_deny` precedent does **not** transfer (it is protected by *not existing*), and `is_system` already means something else on keys the demo assigns |
-| G1b | Untagged default | Untagged = non-production, unelevated detail OK | Defensible only because G1 makes tagging operator-controlled — dependency recorded |
-| G1c | How `env` gets set | Seed/fixture only; **no runtime path** | Makes "not self-strippable" true by construction |
-| F2/F7 | Read-verb set | **No new verb.** Gate child reads; root GET is already metadata-only | Avoids a mirrored `permission_categories.json` change in both services |
-| — | Blast radius | Elevation attaches to the **supervised path only** | Ordinary members unaffected; no e2e re-tokenising; keeps the slice read-only |
-| — | Precedence | **Membership always wins**; `supervised := S \ M` | Dual-hatted managers keep frictionless access to their own data, **and** the scopes become disjoint |
-| G3 | Mixed list | Two-leg partitioned query over the disjoint scopes | Disjointness makes the critic's fail-open structurally impossible |
-| — | Provenance | Reserved synthesized role code + marker in the role's existing `attributes` map | Zero envelope shape change; spoofing the code is self-demotion, not escalation |
-| — | Reach | **CONTROL-capable** memberships only (OWNER/ADMINISTRATOR/SENIOR) | Literal "own or manage"; a report's READER seat elsewhere does not widen the supervisor |
-| G2 | Child-tier propagation | `root_attributes`, fetched by the **path's** catalogId, request-memoized | `ParentRef` carries no attributes and neither resolver loads entities — widening it would defeat the ltree optimization |
-| S1/S2 | Elevation scope + lifetime | RS-side freshness only; **no dual token, no TTL pairing**; time-boxed | P0 showed `auth_time` is available, so the whole contingency apparatus is unnecessary |
-| S3 | Challenge channel | RFC 9470 401 for the structured deny only; plain denials stay 403; **client must forward `max_age`** | Omitting `max_age` causes an infinite challenge loop |
-| S6 | Audit | Dedicated structured logger; emission point only, nothing persisted | No audit infrastructure exists today; retention is the consumer's |
-| — | Envelope | Additive `deny_reason`, omitted when absent — **no version bump** | House pattern for evolving the serialized record; versioning is disproportionate for one field |
+| **A** | **SUPERVISED-SCOPE** (this) | list + metadata, read-only; contents closed | 0029 |
+| **B** | PRODUCTION-TIER | `operatorManaged` + `env` + root attributes; non-prod contents open | 0030 §1–4 |
+| **C** | STEP-UP-ELEVATION | `deny_reason` + RFC 9470 + freshness; prod contents open when elevated | 0030 §5–9 |
 
-## Preconditions — discharged 2026-08-01
+**Explicitly NOT in this slice:** the `env` tag and the `operatorManaged` flag; root-attribute enrichment;
+any `deny_reason` or envelope change; the RFC 9470 challenge; `acr` / `auth_time` ingestion; the
+step-up-related Keycloak realm work (the `basic`/`acr` scopes, `acr.loa.map`, the conditional browser
+flow, TOTP enrolment); the SPA. **No library module changes at all.**
 
-Measured on the rig, Keycloak **26.3.2** (the research assumed 26.7.0):
+**The one realm change slice A does make:** an e2e persona *is* a Keycloak user (every matrix mints its
+token by password grant), so T5 adds the new persona accounts and the UX-only `unit-supervisor` realm
+role to `infra/keycloak/realm-export.json`. Nothing else in the realm is touched.
 
-- **`auth_time` reaches code-flow access tokens.** The upstream regression does not bite. The apparent
-  absence was realm config: an explicit `defaultClientScopes` list *replaced* Keycloak's built-in
-  assignment, leaving the built-in **`basic`** (carries the `auth_time` mapper) and **`acr`** scopes
-  assigned to no client. Assigning them fixed it — **a ticket deliverable in the realm export.**
-- **Refresh laundering confirmed**: `auth_time` and `acr` preserved across refresh while `iat` advances.
-  RS-side freshness is the only surviving control.
-- **ROPC cannot carry `auth_time`** even with `basic` assigned. A non-ROPC token path is a **confirmed
-  deliverable**, not a mid-run discovery.
-- **`acr` alone is not a control**: ROPC yields `acr=1`, an SSO-reused browser session yields `acr=0`.
-- **Capabilities present, no upgrade needed**: TOTP, WebAuthn, WebAuthn passwordless/passkey, recovery
-  codes, conditional level-of-authentication, `oidc-amr-mapper`. `acr.loa.map` is **unset** — a deliverable.
+## The design
 
-## Proof plan
+```
+GET /catalogs   →   findAuthorized(scope, ctx, subtreeSpec)   [the SHIPPED 4-arg call]
+                      scope        = id IN (M ∪ supervised)
+                      ctx role     = the membership role
+                      subtreeSpec  = id IN supervised
+                    ⇒ scope ∧ (residual_membership ∨ id∈supervised) ∧ notDenied()
 
-Personas: **sup-anna** (realm marker; reports pm-bob + pm-carol; carol has her own report → transitivity),
-**sup-victor** (disjoint unit), **pm-bob** (plain member), **outsider-eve** (nothing). One of bob's catalogs
-is `env=production`.
+                    M = membership ids · supervised = S \ M  (disjoint)
 
-| # | Proof |
+GET /catalogs/{id}                    metadata — allowed on both paths
+GET /catalogs/{id}/categories/…       DENIED on the supervised path (the role grants no child verbs)
+```
+
+### 1. The reporting relation (T1)
+
+A `reporting_edge` (`manager_id`, `report_id`) table in the user-service, seeded by fixture — the same
+shape and lifecycle as the existing bootstrap fixtures. Derivation is **per request**, depth-capped and **cycle-guarded**. **Depth counts HOPS from the manager
+— a direct report is hop 1; hops 1–10 inclusive are derived, and discovering an 11th hop is a cap
+breach.** (U33 pins the inclusive boundary: a breach collapses the *whole* set, so an off-by-one
+silently empties a legitimate manager.) A cycle-closing edge is rejected on write, and a cycle
+nevertheless detected at read time fails **closed to empty**, never to a partial set.
+
+Reach is **CONTROL-capable memberships only** — a report contributes a team only where they hold
+`OWNER` / `ADMINISTRATOR` / `SENIOR` per the shipped `TeamRoleCapabilities` ladder. `MEMBER` and `READER`
+seats do not propagate: otherwise one report's reader seat on an unrelated team silently widens their
+manager's reach into it.
+
+Exposed as `GET /internal/supervised-targets?subject=&resourceType=catalog` → `200` + a JSON array,
+**always 200**, an empty array being the authoritative "supervises nothing" — mirroring the shipped
+`/internal/governed-targets` exactly.
+
+### 2. The non-membership role branch (T2)
+
+A wider id set alone yields an **empty page**: the `filter` is role-definition-only, and the list
+authorizer resolves its residual-driving role through membership, which a supervisor has none of —
+`/internal/effective-role` answers `204` and the residual compiles to `DENY_ALL`.
+
+So `effective-role` gains a **non-membership branch**: when the subject supervises the governing root, it
+answers with a **synthesized, read-only supervisor role**, granting
+
+```
+catalog : ["READ"]            # the COARSE token; NOTHING on category or product
+```
+
+**Tokens, not verbs.** Since ADR 0007/0015 `permissions[<type>]` carries the coarse tokens
+`READ`/`WRITE`/`TAG`/`GRANT`/`CONTROL`, expanded to fine verbs by `data.permission_categories`
+(`READ` → `view, list, list-members`). Writing the fine verbs directly expands to the **empty set** —
+the documented fail-closed ∅-expansion — so the role would grant nothing and the supervised page would
+be silently empty. U14 asserts this against the policy, not only the Java shape.
+
+Required tags are **vacuous** — safe **only** because the scopes are disjoint (§3). The role is
+synthesized in code and never stored. Provenance rides the reserved role code plus a marker in the role's existing
+generic `attributes` map, so `input.role_definition` carries it with **zero** envelope change.
+
+**Contents close themselves.** Because the role grants no `category` or `product` verbs, the existing
+role-definition-driven policies already deny child reads — so this slice ships **zero Rego changes**.
+Slice B widens the grant; this slice must not.
+
+### 3. Precedence and disjointness (T3, T4)
+
+Where a subject is **both** a member and a supervisor of a team, **membership wins**:
+
+```
+supervised := S \ M
+```
+
+This is load-bearing twice. It is the correct semantic — a dual-hatted manager must not be pushed onto
+the stricter branch for their own team's data. And it makes a row's provenance **unambiguous**, so the
+residual applied to it is never in question and the supervisor role's vacuous tag requirement can never
+widen a tag-gated membership row. Unioning the two roles' permissions is exactly that fail-open, and is
+rejected.
+
+### 4. The list (T4)
+
+`CatalogListAuthorizer` today resolves one role from `governedIds.get(0)` and compiles **one** residual,
+on the stated assumption that "every governed catalog is one the subject is a member of". This slice
+breaks that assumption. The two scopes are composed through the **shipped** `findAuthorized` 4-arg
+overload — the ADR-0010 base-scope-widening idiom — with the supervised ids riding the `subtreeSpec`
+slot, so a membership row is judged by the membership residual while a supervised row is admitted by
+the widening arm. `totalElements` stays the authorized total; every branch fails closed to empty.
+
+**`findAuthorized` compiles exactly ONE residual from the ONE context it is given** — there is no
+overload taking two `(scope, context)` legs. Handing it a pre-composed `legA.or(legB)` as `scope` would
+AND that single residual over the whole union, narrowing supervised rows by the membership role. The
+composition is therefore correct **only while the supervisor role's residual is unconditional**
+(`READ` + empty `requiredTags` → `ALLOW_ALL`); U34 asserts that precondition so the coupling is visible
+if a later slice adds a tag requirement.
+
+### 5. The read-only ceiling and the audit event (T4)
+
+Supervised rows are strictly read-only: every mutation denies. The affordance map follows from the role
+rather than from special-casing — a supervised row emits `{view: true, …mutations false}`. It is **not
+omitted**: the omit-on-all-false degrade fires only when *every* verb is false, and `view` is true here.
+The exact verb set is **verified against the real endpoints, never assumed** (Mulch `mx-3446c4` records
+two corrections caught exactly this way).
+
+A dedicated, separately-routable logger — `dev.dmitriikonovalov.example.catalog.audit.SupervisedRead` —
+emits a structured event per supervised **list** read. **Scope is pinned to the list path in this
+slice**, because that is where the supervised authority is applied; supervised single-`GET` auditing
+rides the gate and is deferred to slice C's audit work. Nothing is persisted — retention and routing
+are the consumer's.
+
+## Fail-closed posture
+
+**Two failure classes, and they land in different places.** Never collapse them into one rule:
+
+| Class | Lands on |
 |---|---|
-| P1 | Scope — anna = exactly unit A (including carol's report's teams), victor = unit B, eve = empty; exact counts, no over-fetch |
-| P2 | Read-only ceiling — anna on a non-prod catalog: read OK, every mutation 403. **`_actions` = `{view:true, mutations:false}` — NOT omitted** (omit-on-all-false fires only when every verb is false), verb set verified against real endpoints |
-| P3 | **Headline** — 1FA contents open → 401 with the exact `WWW-Authenticate` shape → SPA persists route, redirects with `max_age` + essential `acr` → Keycloak prompts **only** TOTP (asserts the conditional-subflow skip) → new token → route restored, contents visible |
-| P4 | Expiry + laundering — after Max Age the next open re-challenges; refreshing the elevated session does **not** restore access; **and no challenge loop occurs** |
-| P5 | Liveness + two denials — remove bob from anna's reports → his catalogs drop live; a direct read is now **403 (out of scope)**, distinguishable from the under-elevated **401** |
-| P6 | Fail-closed outage — org-relation source down → anna sees only her own memberships; no 5xx |
-| P7 | Factor swap (manual) — flow edit adds an Alternative; rerun P3 unchanged but for the factor screen; zero app-side diff |
-| P8 | Tier not self-strippable — a TAG-holding member tries to set **and** to strip `env` → both rejected; tag still present |
-| P9 | Tier reaches contents — 1FA read of a product/category under the prod root → challenged (root-attribute enrichment works) |
-| P10 | Audit — a supervised production read emits an event; elevation emits one too |
-| P11 | **Non-regression** — a plain member reading their own production catalog is **never** challenged; existing collections unchanged |
-| P12 | **Dual-hat** — a subject both member and supervisor of the same catalog takes the membership path: no elevation required |
+| Org-relation source **errored / unreachable / non-200 / unparseable** | the subject's **own memberships** — leg 2 contributes nothing |
+| **Partial** derivation (a cycle, a depth-cap breach, a partly-resolvable closure) | **membership-only**, never a partial supervised set |
+| Unauthenticated · no `AbacQueryService` · no `GovernedScopeResolver` · both scopes empty | the **empty page** (unchanged from ADR 0018 §5) |
 
-## Carried into `/decompose`
+A partial set is indistinguishable from a correct smaller one, which is why it collapses rather than
+degrades. In every branch the floor is the empty page, never the table.
 
-1. **Pin the non-ROPC token path as a ticket** (scripted code flow + computed TOTP), the way the prior
-   slice had to pin the gateway route its e2e needed. It is the single most likely source of a mid-run stall.
-2. **Realm-export deliverables**: assign `basic` + `acr`; set `acr.loa.map`; conditional browser flow with
-   Max Age 300; TOTP enrolment for anna.
-3. **The mirrored-bundle guard**: this slice changes Rego in both service bundles — grow the drift guard if
-   a file is added.
-4. **`AbacTestConfig` in-process OPA stubs** must be updated whenever a policy's decision shape changes —
-   the `deny_reason` addition qualifies.
-5. `_actions` verb sets are **verified against real endpoints, never assumed**.
-6. Watch which seams this slice strains: it is plausibly the dry run for a second consumer, and that is the
-   signal the agent-module extraction has been waiting on.
+## Considered and rejected
+
+- **A realm-role fallback** for supervisors — the fail-open backdoor B4 removed. The realm claim stays a
+  UX-only marker: claim + zero reports sees nothing.
+- **Unioning membership and supervisor permissions** on a doubly-reachable row — the fail-open the
+  precedence rule eliminates structurally.
+- **Extending the `UserDirectory` port** — its contract is two-field text search and says not to add
+  fields; widening it turns a user picker into an org-chart oracle.
+- **A Keycloak-native org relation** — 26.x organization groups carry no manager relation and cannot drive
+  authorization policies.
+- **Modelling supervision on the resource hierarchy** — reporting is people-structure, not
+  resource-structure; different shape, lifetime and owner.
+- **Any membership counting toward reach** (not only CONTROL-capable) — silently widens a manager through
+  a report's unrelated reader seat.
+- **Precomputing the closure** — at demo scale a per-request walk is correct with zero invalidation
+  machinery. Deferred until list latency forces it; it hides behind the same seam.
+- **Promoting the org-relation seam to a published SPI now** — a published SPI is permanent API surface,
+  and the contract should be pinned by a real consumer's real source, not by our fixture.
+
+## Knowledge destination
+
+A new section in the existing [[TEAM-BASED-AUTHORIZATION]] guide — this is a second access path onto a
+surface that guide already owns, not a new subsystem, so it does not earn a new guide
+([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §3's arbiter: a new guide is warranted exactly when a new row in the
+surface→guide map is).
