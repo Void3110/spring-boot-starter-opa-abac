@@ -4,8 +4,10 @@
 # gates that decide "the package is done" are scripted, not prose.
 #
 # Usage:  scripts/planning/verify-package.sh <SLICE | path/to/package-folder>
-#         A bare slice name resolves to docs/to-do/planning/<SLICE>; a path (e.g.
-#         docs/to-do/implemented/<SLICE>) is used as-is.
+#         A bare slice name resolves to docs/to-do/planning/<SLICE> in THIS repo; a
+#         path (e.g. docs/to-do/implemented/<SLICE>, or an absolute out-of-tree
+#         fixture dir) is used as-is — a relative path resolves against the
+#         invocation cwd.
 # Exit:   0 = all gates green · 1 = problems found (printed). Read-only — never edits.
 #
 # Clean-room gate: a few generic patterns (secrets, local absolute paths) are built in;
@@ -15,14 +17,27 @@
 # when the file is missing: fail closed, like everything else in this repo.
 
 set -u
-cd "$(git rev-parse --show-toplevel)" || exit 1
+# Self-locating, never cwd-derived: sessions and subagents may start OUTSIDE the
+# repo (where a git-rev-parse preamble fatals). The repo root is two levels up
+# from this script's own location.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 
 ARG="${1:?usage: verify-package.sh <SLICE | path/to/package-folder>}"
 case "$ARG" in
-  */*) DIR="${ARG%/}" ;;
+  */*)
+    DIR="${ARG%/}"
+    # Resolve against the invocation cwd BEFORE the cd below; a path inside the
+    # repo is used repo-relative, exactly as before.
+    if [ -d "$DIR" ]; then DIR="$(cd "$DIR" && pwd -P)"
+    else case "$DIR" in /*) ;; *) DIR="$PWD/$DIR" ;; esac
+    fi
+    case "$DIR" in "$REPO_ROOT"/*) DIR="${DIR#"$REPO_ROOT"/}" ;; esac
+    ;;
   *)   DIR="docs/to-do/planning/$ARG" ;;
 esac
 SLICE="$(basename "$DIR")"
+cd "$REPO_ROOT" || exit 1
 FAIL=0
 ok()  { printf '  \033[0;32m✓\033[0m %s\n' "$1"; }
 bad() { printf '  \033[0;31m✗\033[0m %s\n' "$1"; FAIL=1; }
@@ -131,6 +146,21 @@ for f in "$DIR"/*.md; do
 done
 if [ -z "$BROKEN" ]; then ok "every [[wikilink]] resolves to a note under docs/"
 else bad "unresolved wikilinks:"; printf "$BROKEN\n"; fi
+
+# ── 9. Execution-parts coverage (absence = single-session; malformed is fatal) ──
+# check-parts.py is the SINGLE validation authority for the **Parts:** grammar —
+# this gate delegates and never re-parses. Exit codes are distinguished, never
+# truthiness: 0 = valid/absent · 1 = declaration problems · anything else = the
+# checker itself failed, which fails closed too.
+echo "[9] execution parts"
+PARTS_OUT=$(python3 scripts/planning/check-parts.py "$DIR/00-DESIGN.md" "$DIR/01-DECOMPOSITION.md" 2>&1)
+PARTS_RC=$?
+case "$PARTS_RC" in
+  0) ok "$(printf '%s' "$PARTS_OUT" | head -1)" ;;
+  1) bad "execution-parts problems:"; printf '%s\n' "$PARTS_OUT" | sed 's/^/      /' ;;
+  *) bad "check-parts.py could not run (exit $PARTS_RC) — failing closed:"
+     printf '%s\n' "$PARTS_OUT" | sed 's/^/      /' ;;
+esac
 
 echo
 if [ "$FAIL" -eq 0 ]; then

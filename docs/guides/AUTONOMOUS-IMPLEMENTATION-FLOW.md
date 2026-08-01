@@ -250,7 +250,10 @@ adversarial pass.
 1. **Mechanical** — `scripts/planning/verify-package.sh <SLICE>`: files, frontmatter, clean-room scan,
    no unfilled slots, the prompt's invariant skeleton, ticket/STATUS parity, **acceptance-citation
    cross-reference** (every `U*/I*/E*` a ticket cites exists in `10-QA-TEST-CASES.md` *and* that case's
-   `→ Ticket` column agrees), and **wikilink resolution**.
+   `→ Ticket` column agrees), **wikilink resolution**, and **execution-parts coverage** ([9] — a
+   `**Parts:**` declaration, when present, is validated by `scripts/planning/check-parts.py`, the
+   single authority: near-misses and non-covering partitions hard-fail; absence is the green
+   single-session default).
 2. **Adversarial** — the `decompose` skill's validation workflow: seam-existence auditors (every
    third-party claim re-checked against the real artifact), an unpinned-semantics critic (primed with
    the `autonomous-runs` pause classes), and a cross-doc consistency auditor (design ↔ decomposition ↔
@@ -810,7 +813,7 @@ prime it *before* judging that gate's output, so a documented FP is never re-fix
 
 | Gate | Kind | Scope | When | Green means |
 |------|------|-------|------|-------------|
-| **`verify-package.sh`** | mechanical | the planning package | phase ②, before the docs commit | files · frontmatter · clean-room · no unfilled slots · prompt skeleton · ticket/STATUS parity · **acceptance citations resolve and are owned** · links resolve |
+| **`verify-package.sh`** | mechanical | the planning package | phase ②, before the docs commit | files · frontmatter · clean-room · no unfilled slots · prompt skeleton · ticket/STATUS parity · **acceptance citations resolve and are owned** · links resolve · **execution-parts declaration valid or absent** ([9] — `check-parts.py`) |
 | **the decompose validation workflow** | judgment | the planning package | phase ②, after the mechanical gate | every **run-stopper** and **contradiction** fixed (seam existence · unpinned semantics · cross-doc consistency), then the mechanical gate re-run |
 | Compile + unit tests (`./gradlew :module:test`) | mechanical | ticket | per-ticket step 4 | fix-until-green |
 | **★ architecture review + refactor** | judgment | ticket | step 5, *before* IT/e2e | lenses applied; findings refactored + re-tested; STATUS note written |
