@@ -176,7 +176,8 @@ a library hook from memory is the second recorded way to stop a run (§7), and t
 **Validating the package (the plan gets the same treatment as the code).** Two gates, both mandatory:
 a **mechanical** one (`verify-package.sh` — files, frontmatter, clean-room scan, no unfilled slots, the
 prompt's invariant skeleton, ticket/STATUS parity, **acceptance-citation cross-reference**, link
-resolution) and an **adversarial** one (a read-only fan-out: seam-existence auditors, an
+resolution, and **execution-parts coverage** — a declared partition validated by a single authority,
+absence green) and an **adversarial** one (a read-only fan-out: seam-existence auditors, an
 unpinned-semantics critic primed on the run retrospectives, and a cross-doc consistency pass — each
 finding adversarially verified, then ranked run-stopper / contradiction / nit). Neither substitutes for
 the other: the script cannot tell whether a named seam exists, and the fan-out is too expensive to re-run
