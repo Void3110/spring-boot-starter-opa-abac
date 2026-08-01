@@ -15,10 +15,10 @@ domains:
   opa-abac-publish: {}
   opa-abac-sb4-integration: {}
 governance:
-  max_entries: 100
+  max_entries: 150
   warn_entries: 150
   hard_limit: 200
 classification_defaults:
   shelf_life:
-    tactical: 14
+    tactical: 90
     observational: 30

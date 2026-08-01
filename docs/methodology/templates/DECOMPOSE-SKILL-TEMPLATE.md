@@ -34,6 +34,23 @@ monolith); this template is distilled from both.
    can't name every consumer of a mechanism it changes. On a hit, propose the 2–3 smaller slices and
    route back to phase ①. (B4 tripped all four — see §2a.) This gate is itself an invariant: every
    instantiation enforces it, however its phase boundary is drawn.
+1b. **Read the retrospective history before decomposing — this is the outer loop's READ side, and it
+   is an invariant, not a slot.** Prime the repo's **dedicated** run-retrospective domain and ask two
+   questions explicitly: *which fail-open/contract semantics are unpinned here?* and *which prior-run
+   gotchas apply to this slice?* Every gate in this method was once a pause recorded in that domain —
+   the slice-sizing gate (1a) and the seam-verification rule (5a) both came from it — so a package
+   decomposed without reading it re-earns lessons already paid for.
+
+   **The failure mode this invariant exists to prevent is silent and common:** retrospectives get
+   *written* at close-out and never *read* at planning, so the loop looks complete while nothing
+   flows back. Observed in a sibling instantiation 2026-07-31 — records were being filed at ④ into a
+   general-purpose domain, and the phase-② skill primed "the domains for the surfaces the slice
+   touches", which never includes the retrospective one. Half a loop is decoration. Check both
+   directions when instantiating: something must **read** it here, something must **write** it at
+   close-out (runner invariant 8), and it must be its **own** domain — folded into a general store it
+   is unprimeable in practice, because you cannot prime "the pause history" without also pulling in
+   every unrelated technical record.
+
 2. **Phase boundary is explicit.** Either the skill *refuses* phase-① work and routes to the
    planning step (this repo's choice), or it *folds ① in* with an interview at the top (the
    other instantiation's choice) — but the exit criterion is identical: **every fork that
@@ -48,17 +65,75 @@ monolith); this template is distilled from both.
    fields (Goal / *named* Deliverables / Acceptance drawn from the QA cases /
    What-NOT-to-touch carrying the slice invariants forward); explicit critical path;
    build-breakers flagged in the ticket that causes them.
+4a. **Every ticket names its DOCUMENTATION DELTA as a deliverable.** Guides are consumed by two phases
+   and produced by none unless this is enforced: the next slice's prompt reads them as **context**,
+   and the phase-④ review uses them as the **authority it checks against**. A mechanism documented
+   nowhere is invisible to both — and the review won't notice, because a surface→guide map can only
+   flag guides that *exist*; a brand-new subsystem simply isn't in the table.
+
+   **Point each delta at the destination phase ① already chose** (the Mulch / existing-guide /
+   new-guide test): a **section in an existing guide is the default**, a Mulch record is right for a
+   trap nobody would look up by name, and a **new guide must clear the new-surface bar** — it is
+   warranted exactly when a new row in the surface→guide map is. Guide sprawl is a real failure mode:
+   a set nobody can hold in their head is read by nobody, so "write another guide" must stay the
+   expensive option. If planning left this unsettled, that is a phase-① gap — route it back rather
+   than improvising per ticket.
+
+   Two rules that make it real:
+   - **The delta lands in the ticket that builds the mechanism**, in the same commit — not collected
+     at the end. **Never park the slice's documentation in the final ticket:** a run that stops early
+     then ships mechanism with nothing explaining it. (Observed 2026-07-31: a slice landed four
+     tickets of new subsystem with its only guide sitting in an unstarted sixth.) `"No delta —
+     covered by «guide»"` is a valid, explicit answer; silence is not.
+   - **A new guide is registered in the review's surface→guide map** in the same ticket. An unmapped
+     guide is write-only — nothing will ever consult it, which is the same half-loop failure as an
+     unread retrospective domain (1b).
+
 5. **Every integration point is a named link.** The recurring planning failure across both
    instantiations is a plan-*asserted* integration that was never wired ("the pipeline
    handles the rest" — nothing did). If a link can't be named, the design isn't done.
+5a. **A named THIRD-PARTY seam is verified against the real artifact, never written from a
+   mental model** — and the ticket says in one line how it was checked. This is the harder
+   sibling of invariant 5: there the link was unnamed, here it is named *plausibly and
+   wrongly*, which is worse because it reads as done. The 2026-07-31 instance: a decomposition
+   named a `tools/list` filter hook, an `extract(Jwt)` signature, a rule-qualified policy path,
+   and a descriptor field — four APIs that sounded right and did not exist as written; two
+   stopped the run mid-flight. **Ground truth beats memory, and the check is minutes:**
+   disassemble/inspect the artifact on the actual dependency path (JVM: `javap -p/-c/-v`
+   against the jar in the local cache; Node/TS: the shipped `.d.ts` in `node_modules`; Python:
+   `inspect`/`pydoc` against the installed package), read the spec or call the endpoint for a
+   service API, and run the policy/query engine for a policy path. Config and framework
+   behavior deserve special suspicion: a properties *field* default and the *conditional* that
+   reads the property can disagree, and only the artifact tells you which wins. When a seam is
+   load-bearing enough, spike it — a throwaway program proving the seam exists *before* the
+   ticket is written is the cheapest insurance in the method.
+5b. **Every OFF state and error state is pinned.** For each switch, degradation path, and
+   failure edge, the docs state what happens — and where two failure *classes* exist (e.g.
+   an install/startup failure vs a request-time failure), which lands where. "The design left
+   a fail-open/contract semantic unpinned" is the most-recorded cause of a paused run across
+   both instantiations; a switch documented only as "OFF disables X" is that gap in miniature.
 6. **Ground boundaries in the call graph, not grep.** Use the `LSP` tool
    (`findReferences`, `workspaceSymbol`, `goToImplementation`) to scope Deliverables and
    What-NOT-to-touch; every implementation of an interface the slice widens is a
    build-breaker candidate for that ticket.
-7. **Verify before declaring done** — deterministic gates, not prose: all files present;
-   frontmatter valid; ticket count == STATUS-stub count; **no unfilled `«slots»`** in the
-   prompt; plus the repo's own gates (e.g. this repo's clean-room scan). Code is
-   deterministic; language interpretation isn't — script the gates.
+7. **Verify before declaring done — TWO gates, mechanical then adversarial.** The package is
+   what an unattended agent executes, so it earns the same treatment as code.
+   - **Mechanical** (deterministic, scripted — code is deterministic, language interpretation
+     isn't): all files present; frontmatter valid; ticket count == STATUS-stub count; **no
+     unfilled `«slots»`**; **acceptance citations cross-referenced** (every case id a ticket
+     cites exists in the QA doc *and* that case's owning ticket agrees — plus the reverse
+     direction, since a QA case nobody cites is a silently-shrunk definition of done); links
+     resolve; plus the repo's own scans (e.g. clean-room).
+   - **Adversarial** (a read-only fan-out, every finding verified before it is reported):
+     **seam existence** (invariant 5a, re-checked against the artifacts), an
+     **unpinned-semantics critic** (invariant 5b, primed on the repo's own run retrospectives),
+     and **cross-doc consistency** (design ↔ tickets ↔ QA ↔ prompt telling one story, including
+     whether the prompt's vocabulary can even *express* every failure class the design defines).
+     Rank findings run-stopper / contradiction / nit; fix the first two and re-run the
+     mechanical gate.
+
+   Neither gate substitutes for the other: the mechanical one cannot tell whether a named seam
+   exists, and the adversarial one is too expensive to re-run for a typo. Both green, then commit.
 8. **The flow guide is canonical.** When the skill and the guide disagree, the guide wins —
    and fix the skill.
 9. **Prompt-wording rules** (flow guide §7.0) apply when filling slots: positive constraints
@@ -75,10 +150,13 @@ monolith); this template is distilled from both.
 | 3 | Structural-decision record | Immutable ADRs in `docs/architecture/adr/` | A "considered & rejected" section in the design note is the lighter substitute |
 | 4 | User stories | Required, phase-tagged (`USER-STORIES.md`) | Optional where stories live upstream (a ticket tracker) |
 | 5 | Scaffold | `scripts/planning/scaffold-package.py` — idempotent, `--force` to overwrite, `--with-design` for the phase-① stubs | A deterministic scaffold script (folder + stubs + valid frontmatter) beats copying a shipped package by hand |
-| 6 | Verify gates | `scripts/planning/verify-package.sh` — files, frontmatter, clean-room scan (private blocklist in a gitignored `.local`, fail-closed), no unfilled «slots», prompt invariants, count match | Keep the base four; swap clean-room for repo-specific scans; commit the script, keep the blocklist out of the public repo |
+| 6 | Verify gates (mechanical) | `scripts/planning/verify-package.sh` — files, frontmatter, clean-room scan (private blocklist in a gitignored `.local`, fail-closed), no unfilled «slots», prompt invariants, count match, citation cross-reference (`check-citations.py`), wikilink resolution | Keep the base four + citations; swap clean-room for repo-specific scans; commit the script, keep the blocklist out of the public repo |
+| 6a | Adversarial gate | `.claude/skills/decompose/decompose-validation-workflow.js` — 4 angles (library seams · internal/policy/config seams · unpinned semantics · cross-doc consistency), each finding adversarially verified, ranked run-stopper/contradiction/nit | Same four angles port unchanged; only the *ground-truth commands* differ (see slot 12) |
+| 6b | Citation shape | QA cases are table rows `\| U1 \| … \| T2 \|`, cited **bolded** in a ticket's `**Acceptance.**` paragraph, ranges allowed (`I16–I28`) | Any convention works — the parser just needs one grammar for "case id" and "owning ticket". Pick it before the first package, not after |
+| 12 | Ground-truth toolchain (what "verify the seam" means here) | JVM: `javap -p/-c/-v` + `unzip -p` against `~/.gradle/caches/modules-2/files-2.1/…`; Spring properties: the autoconfigure class's `@Conditional*` **and** the properties class's field defaults (they can disagree); rego: `opa eval`/`opa test`; service APIs: the OpenAPI spec under `example-*/…/openapi/` | Name the exact commands for the repo's stack — Node: the `.d.ts` in `node_modules`; Python: `inspect`/`pydoc` on the installed package; Go: `go doc`. A seam-verification rule with no named command degrades to "trust me" |
 | 7 | Test conventions the QA cases honor | In-process OPA stub, Testcontainers Postgres, `opa test`, e2e asserts the *cut* | Name the repo's exact stack — the QA cases are only as good as the conventions they encode |
 | 8 | Branch / identity / commit | `feature/void3110/<slice>`, identity pinned, `Co-Authored-By` welcome | Some repos forbid AI trailers — make it explicit either way |
-| 9 | Mulch domains to prime | `ml prime opa-abac` (+ `autonomous-runs`) | List the domains the slice's surface touches |
+| 9 | Mulch domains to prime | `ml prime opa-abac-methodology autonomous-runs --budget 8000`, then the slice's surface row from `CLAUDE.md` (the `opa-abac` catch-all was decomposed 2026-07-16) | List the domains the slice's surface touches. **`--budget 8000` is not optional** — `ml prime` silently truncates at 4000 tokens per domain |
 | 10 | Multi-repo handling | N/A (single repo) | Multi-repo slices need per-repo branches + a cross-service release order in the prompt's operator notes |
 | 11 | Review authority the prompt's ★gate names | `/deep-review` (this repo's instantiation) | Name whatever review skills exist; the gate escalates by ticket risk |
 
@@ -91,7 +169,7 @@ description: Produce the decomposition package for a <repo> slice — ordered ti
   cases, the verbatim autonomous-implementation prompt, STATUS stubs — from a settled
   design. Use when the user mentions decompose, decomposition, or a planning package.
 argument-hint: [slice/ticket + one-line goal]
-allowed-tools: Read Grep Glob Bash Edit Write AskUserQuestion
+allowed-tools: Read Grep Glob Bash Edit Write AskUserQuestion Workflow
 model: opus
 effort: high
 ---
@@ -101,26 +179,40 @@ effort: high
 ## What this skill produces  ← slot 2: the package table
 ## Procedure
   1. Prime (slot 9) + read the guide §3–§4 + the most similar shipped package
-  2. Decompose into tickets (the four fields; LSP-grounded boundaries)
-  3. Write the QA cases (slot 7)
+  2. Decompose into tickets (the four fields; LSP-grounded boundaries;
+     EVERY third-party seam verified against the artifact — slot 12 — and how, in one line)
+  3. Write the QA cases (slot 7), each owned by exactly one ticket (slot 6b)
   4. Fill the prompt — §4 skeleton verbatim, every «SLOT» from the §6 slot table
   5. STATUS stubs + index + roadmap link
-  6. Verify (slot 6 gates) — fix anything flagged before declaring done
+  6a. Verify MECHANICALLY (slot 6) — fix everything it prints
+  6b. Verify ADVERSARIALLY (slot 6a) — fix every run-stopper + contradiction, re-run 6a
   7. Commit docs-only (slot 8); do NOT push
 ## Important rules           ← the invariant core, in this repo's words
 ```
+
+**Two rules worth restating in the skill's own words**, because both were learned the expensive way:
+*a finding is not a fix* (the validation workflow is report-only — the skill applies fixes and
+re-runs), and *when a finding contradicts a decision already recorded in a shipped ticket's STATUS
+note, **annotate** the stale plan text rather than rewriting it* — the decomposition is a record of
+what was planned as much as a work list.
 
 ## Instantiation checklist (~30 minutes)
 
 - [ ] 1. `mkdir -p .claude/skills/decompose` (gitignored or committed — decide deliberately);
       write `SKILL.md` from the skeleton above.
-- [ ] 2. Fill the 11 slots. If the deltas from this guide are numerous, write a
+- [ ] 2. Fill the slots (1–12). If the deltas from this guide are numerous, write a
       `references/<repo>-conventions.md` documenting **every** override ("already applied —
       do not revert") — that file is what keeps the instantiation honest.
-- [ ] 3. Bundle the scaffold + verify **scripts** (deterministic beats prose).
+- [ ] 3. Bundle the scaffold + verify **scripts** (deterministic beats prose) and the
+      validation **workflow** (slot 6a). Answer slot 12 *first* — the seam-audit angles are
+      only as good as the ground-truth commands you hand them.
 - [ ] 4. Dry-run: regenerate the most recent shipped package's skeleton and diff — the
       structure should match 1:1.
-- [ ] 5. Record the instantiation deltas to the repo's Mulch store.
+- [ ] 5. **Run both gates against an already-shipped package.** This is the honest calibration:
+      a gate that reports nothing on a real package is untested, not clean. (Run here, the
+      citation gate immediately found 17 broken references and 35 uncited QA cases in a package
+      that had passed every prior gate — including a whole `P1–P10` series that never existed.)
+- [ ] 6. Record the instantiation deltas to the repo's Mulch store.
 
 ## Related
 

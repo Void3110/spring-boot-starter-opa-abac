@@ -100,7 +100,43 @@ if [ -f "$D" ]; then
   grep -qi 'critical path' "$D" && ok "has a critical path" || bad "no critical-path section"
 fi
 
+# ── 7. Acceptance citations resolve to real QA cases, owned by the citing ticket ─
+# A ticket citing an id that does not exist (or that the QA doc assigns to a DIFFERENT ticket)
+# sends the run to the wrong tests — or silently shrinks the definition of done. Both have
+# happened here, so this is scripted rather than eyeballed.
+echo "[7] acceptance citations ↔ QA cases"
+Q="$DIR/10-QA-TEST-CASES.md"
+if [ -f "$D" ] && [ -f "$Q" ]; then
+  if CITES=$(python3 scripts/planning/check-citations.py "$D" "$Q" 2>&1); then
+    ok "$(printf '%s' "$CITES" | head -1) — all resolve, all owned, none dropped"
+  else
+    bad "acceptance-citation problems:"
+    printf '%s\n' "$CITES" | sed 's/^/      /'
+  fi
+else
+  bad "cannot cross-reference citations (missing 01-DECOMPOSITION.md or 10-QA-TEST-CASES.md)"
+fi
+
+# ── 8. Wikilinks resolve (was "eyeball it") ─────────────────────────────────────
+echo "[8] wikilinks resolve"
+BROKEN=""
+for f in "$DIR"/*.md; do
+  for target in $(grep -oE '\[\[[^]|]+' "$f" | sed 's/^\[\[//' | sort -u); do
+    # An anchor-only or external-ish target is skipped; everything else must be a real note.
+    case "$target" in \#*) continue ;; esac
+    if ! find docs -name "$target.md" -print -quit 2>/dev/null | grep -q .; then
+      BROKEN="$BROKEN\n      $(basename "$f") → [[$target]]"
+    fi
+  done
+done
+if [ -z "$BROKEN" ]; then ok "every [[wikilink]] resolves to a note under docs/"
+else bad "unresolved wikilinks:"; printf "$BROKEN\n"; fi
+
 echo
-if [ "$FAIL" -eq 0 ]; then printf '\033[0;32mPACKAGE OK\033[0m — ready for the maintainer / the autonomous run\n'
+if [ "$FAIL" -eq 0 ]; then
+  printf '\033[0;32mPACKAGE OK\033[0m — mechanical gates green.\n'
+  printf 'Next: the adversarial pass (seam existence · unpinned semantics · cross-doc consistency) —\n'
+  printf '  Workflow({ scriptPath: ".claude/skills/decompose/decompose-validation-workflow.js",\n'
+  printf '             args: { slice: "%s" } })\n' "$SLICE"
 else printf '\033[0;31mPACKAGE INCOMPLETE\033[0m — fix the ✗ items above\n'; fi
 exit "$FAIL"

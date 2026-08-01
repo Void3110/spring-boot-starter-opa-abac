@@ -167,8 +167,20 @@ mechanism *and* adds surface depending on it; **(b)** it crosses >1 deployable; 
 codified.
 
 **What makes a good ticket:** one focused commit; named deliverables; acceptance = the exact test/e2e that
-proves the *cut* (not just a 200-vs-403 shape); What-NOT-to-touch carrying the slice invariants forward; and
-**every new seam names its consumer + a non-happy-path test** (a seam with zero callers is not done).
+proves the *cut* (not just a 200-vs-403 shape); What-NOT-to-touch carrying the slice invariants forward;
+**every new seam names its consumer + a non-happy-path test** (a seam with zero callers is not done); and
+**every *third-party* seam verified against the real artifact, with the ticket saying how in one line** —
+disassemble the jar, read the shipped types, run the policy engine, call the endpoint. A ticket that names
+a library hook from memory is the second recorded way to stop a run (§7), and the check costs minutes.
+
+**Validating the package (the plan gets the same treatment as the code).** Two gates, both mandatory:
+a **mechanical** one (`verify-package.sh` — files, frontmatter, clean-room scan, no unfilled slots, the
+prompt's invariant skeleton, ticket/STATUS parity, **acceptance-citation cross-reference**, link
+resolution) and an **adversarial** one (a read-only fan-out: seam-existence auditors, an
+unpinned-semantics critic primed on the run retrospectives, and a cross-doc consistency pass — each
+finding adversarially verified, then ranked run-stopper / contradiction / nit). Neither substitutes for
+the other: the script cannot tell whether a named seam exists, and the fan-out is too expensive to re-run
+for a typo.
 
 ---
 
@@ -229,9 +241,86 @@ At the end of a slice run (phase ④, after `/deep-review`, before the folder mo
 fork that stopped it + any checkpoint friction + **the planning-gap → fix** (what phase ①/② should have
 pre-resolved so it won't recur). Across the first six slices the single recurring pause class was *"design
 left a fail-open/contract semantic unpinned,"* followed by *"a rig/test-harness gotcha discovered mid-run."*
-Pre-resolving those in design is what converts a paused run into a full-success run — so phase ① of the next
-slice **primes `autonomous-runs` and asks about exactly those**. That read-at-①, write-at-④ cycle is the
-outer loop; the slice-sizing gate (§4) is its most valuable single output.
+The seventh added a third, in a slice that integrated an unfamiliar third-party SDK: **"the decomposition
+named an integration point in someone else's API without verifying it exists."** Pre-resolving these in
+design is what converts a paused run into a full-success run — so phase ① of the next slice **primes
+`autonomous-runs` and asks about exactly those**. That read-at-①, write-at-④ cycle is the outer loop.
+
+**Each recurring class has been converted into a gate rather than left as advice** — that conversion is
+what the outer loop is *for*, and it is the honest measure of whether a retrospective was worth writing:
+
+| Recurring pause class | The gate it became |
+|---|---|
+| blast radius too large to enumerate | the **slice-sizing gate** (§4) — refuse to decompose on any split smell |
+| a fail-open/contract semantic left unpinned | the **unpinned-semantics critic** in the package's adversarial gate (§4), primed on this very domain |
+| a third-party seam named from a mental model | the **verify-the-artifact ticket rule** (§4) + the **seam-existence auditors** in the same gate |
+
+The pattern generalizes: prose in a guide degrades silently, a scripted or agentic gate does not. When a
+retrospective names a class twice, the response is to mechanize it — not to write it more emphatically.
+
+**The retrospective domain is therefore structural, not optional.** It is the loop's memory: the only
+artifact that outlives a context window, and the substrate the phase-② unpinned-semantics critic reads.
+Two properties are load-bearing and both fail quietly, so check them deliberately in any instantiation:
+
+- **Dedicated.** Folded into a general expertise store it becomes unprimeable in practice — you cannot
+  pull "the pause history" without dragging in every unrelated technical record, so nobody does.
+- **Read as well as written.** Phase ④ writing to it while phase ① never primes it produces a loop that
+  *looks* closed while nothing flows back. Records accumulate; no gate is ever born from them. Observed
+  in a sibling instantiation (2026-07-31): retrospectives were filed diligently at close-out into a
+  general domain, and the decomposition skill primed only "the domains for the surfaces the slice
+  touches" — which never includes the retrospective one. Half a loop is decoration.
+
+The read-at-①/write-at-④ pair is what makes this an outer *loop* rather than a filing habit. Neither
+half is worth much alone.
+
+### 7a. Why the method and the run history are two domains
+
+They look like one topic ("how we work") and are two different **kinds of knowledge**, with different
+write moments, different lifecycles, and different recall moments. Keeping them apart is not tidiness —
+merged, each corrupts the other. The store's own composition shows the separation is real rather than
+asserted (measured 2026-07-31, ~53 days in):
+
+| | `opa-abac-methodology` — the method | `autonomous-runs` — the run history |
+|---|---|---|
+| Holds | rules: the loop, the gates, decisions *about* the method | observations: one record per slice run, dated |
+| Record types | 12 `decision` · 2 `convention` · 2 `failure` · 1 `pattern` · 1 `reference` | **29 `reference`** · 2 `pattern` |
+| Classification | 14 `tactical` · 2 `foundational` · 2 observational | **29 `observational`** · 1 each other |
+| Grows | in **steps**, only when a class recurs and is mechanized | **linearly**, one per run, forever |
+| Lifecycle | records are **superseded** when a better rule replaces them | records are **append-only** — a run happened; that is history |
+| Primed when | *doing* the work | *planning* the next slice |
+| Count | 18 | 31 |
+
+Near-total separation by both type and classification — the method domain is `decision`-shaped and
+durable, the run history is `reference`-shaped and observational. That is what makes the split
+structural rather than a filing preference.
+
+**The pipeline between them is the outer loop, in three stages.** Observations accumulate
+(`autonomous-runs`, one `reference` per run) → a **synthesis** record distils the recurring shape
+across runs (`autonomous-runs`, `pattern` — this store has 2, e.g. "the two recurring planning-gap
+classes") → the class becomes a **rule or a gate** in the method domain (`opa-abac-methodology`,
+`decision`). Every gate this method has was born that way. The synthesis stage is the one that gets
+skipped, and it is the one that matters: raw run records are evidence, not lessons.
+
+**Reading the ratio — a shape, never a metric.** After ~53 days the run history (31) is *larger* than
+the method (18), and **that inversion is healthy**: you should run far more often than you change how
+you work, so the observational side must outgrow the rule side. The signal worth glancing at is not the
+number but the **shape over time** — *run history growing while the method domain stays flat* means the
+synthesis stage has stopped and observations are piling up unread; the reverse (rules multiplying
+without runs behind them) is process invented ahead of evidence. Do **not** turn this into an SLO or a
+tracked metric: at n≈30 heterogeneous runs it is statistically empty, and dashboarding it would be
+exactly the "metric theater a sophisticated buyer discounts" that this method already rejected once.
+Glance at it when a slice closes; act only on a flatline.
+
+**What merging them would break**, concretely — the reason "just put retrospectives in the main store"
+is a failure and not a shortcut:
+- **Priming.** You could no longer pull the pause history without dragging in every technical record,
+  so in practice nobody would — the critic that reads it goes blind (§7).
+- **Staleness and pruning.** Append-only dated history and mutable rules need opposite decay
+  treatment. Mixed in one domain, any shelf-life setting is wrong for half the records — a real hazard
+  here, where a default `shelf_life.tactical` of 14 days once flagged 230 of 282 durable records as
+  stale.
+- **Supersession.** A rule gets replaced; a run record never does. One domain cannot honestly hold both
+  semantics.
 
 ---
 
@@ -240,7 +329,7 @@ outer loop; the slice-sizing gate (§4) is its most valuable single output.
 | Tool | Phase | Role in the loop |
 |---|---|---|
 | **grill-me** (Matt Pocock) | ① Plan | one-question-at-a-time fork resolution → the ADRs + design |
-| **decompose** (this repo's skill; [template](templates/DECOMPOSE-SKILL-TEMPLATE.md)) | ② Decompose | deterministic template instantiation — keeps the prompt skeleton verbatim (counters goal drift at the planning seam) |
+| **decompose** (this repo's skill; [template](templates/DECOMPOSE-SKILL-TEMPLATE.md)) | ② Decompose | deterministic template instantiation — keeps the prompt skeleton verbatim (counters goal drift at the planning seam); gated by `verify-package.sh` **and** a validation fan-out (seam existence · unpinned semantics · cross-doc consistency, adversarially verified) |
 | **the autonomous prompt** ([template](templates/AUTONOMOUS-IMPLEMENT-SKILL-TEMPLATE.md)) | ③ Implement | the self-contained, checkpoint-gated hand-off one agent runs |
 | **deep-review** (this repo's skill; [template](templates/DEEP-REVIEW-TEMPLATE.md)) | ④ Review | fan-out → **adversarial verification** → completeness-critic (per-slice diff gate) |
 | **security-review** ([template](templates/SECURITY-REVIEW-SKILL-TEMPLATE.md)) | ④ Review (release) | whole-surface fan-out, adversarially verified + **live-probed** against the running rig; report-only |

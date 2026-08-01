@@ -37,6 +37,14 @@ keycloak = "26.0.5"
 # security review (docs/code-review/SECURITY-REVIEW-2026-07-12.md, F2).
 commonsIo = "2.19.0"
 
+# Spring AI — the MCP server starter behind example-mcp-server (Phase 9, AGENT-TOOL-AUTHZ). 2.0.0 is
+# the current GA line and brings MCP Java SDK 2.0.0 (MCP spec revision 2025-11-25) plus the
+# @McpTool annotation model (org.springframework.ai.mcp.annotation). NOTE: the starter's POM declares
+# spring-boot 4.1.0 while this repo is pinned to 4.0.7 — the dependency-management plugin's Boot BOM
+# wins for every spring-boot-* artifact, so the example builds and runs on the repo's 4.0.7 baseline.
+# See docs/to-do/.../AGENT-TOOL-AUTHZ/STATUS-01.md; a repo-wide 4.1.x bump is a separate slice.
+springAi = "2.0.0"
+
 # Example-app deps (managed by the Spring BOM where possible; pinned here when not)
 # springdoc 3.x is the Boot-4 line (2.x targets Boot 3).
 springdocOpenApi = "3.0.3"
@@ -64,6 +72,10 @@ resilience4j-core = { module = "io.github.resilience4j:resilience4j-core", versi
 keycloak-admin-client = { module = "org.keycloak:keycloak-admin-client", version.ref = "keycloak" }
 # Constraint target only (see the commonsIo version comment): forced onto the transitive commons-io.
 commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
+
+# --- Example app: the MCP server (Phase 9) ---
+spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "springAi" }
+spring-ai-starter-mcp-server-webmvc = { module = "org.springframework.ai:spring-ai-starter-mcp-server-webmvc", version.ref = "springAi" }
 
 # --- Example app (codegen support deps the spring generator references) ---
 springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdocOpenApi" }

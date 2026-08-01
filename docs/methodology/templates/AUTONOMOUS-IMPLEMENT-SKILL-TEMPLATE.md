@@ -33,8 +33,13 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
 
 ## The invariant core (keep in every instantiation)
 
-1. **Prerequisite gate.** A complete, *verified* package (run the phase-② verify script). No
-   package, or red gates → STOP and run `/decompose`; never improvise the plan here.
+1. **Prerequisite gate.** A complete package that passed **both** phase-② gates — the mechanical
+   verify script *and* the adversarial validation pass (seam existence · unpinned semantics ·
+   cross-doc consistency). Re-run the script here; for the adversarial gate, confirm it was run and
+   its run-stoppers closed, because that is the one that establishes the tickets name APIs which
+   actually exist. No package, red gates, or an adversarial gate that never ran → STOP and route to
+   `/decompose`; never improvise the plan here. **A green script alone is not a verified package** —
+   it checks shape, not claims.
 2. **The three failure modes are the design brief.** Every structural element counters one:
 
    | Failure mode | The counter in the loop |
@@ -45,8 +50,16 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
 
 3. **The per-ticket loop, in order, no skipping**: prime → build → tests → compile + unit
    green → **★ architecture review + refactor (BEFORE integration/e2e)** → integration/e2e →
-   docs (tick the index, fill the STATUS stub) → Mulch → **one focused commit** →
-   **CHECKPOINT: stop and report**. Do not batch tickets.
+   docs (tick the index, fill the STATUS stub, **and land the ticket's guide delta**) → Mulch →
+   **one focused commit** → **CHECKPOINT: stop and report**. Do not batch tickets.
+   The **documentation delta ships in the same commit as the mechanism it documents** — a deliverable,
+   not an epilogue. Guides are what the next slice's prompt reads as context and what phase ④ reviews
+   against, so deferring them to a final docs ticket means a run that stops early ships mechanism
+   nothing can explain or check. Write to the destination the ticket names (planning already chose
+   between a Mulch record, a section in an existing guide — the default — and a new guide); **do not
+   promote a delta to a new guide on your own initiative**, that is a phase-① decision and guide
+   sprawl is its own failure. `"No delta — covered by «guide»"` is a valid, explicit answer; silently
+   skipping it is not.
 4. **The ★gate escalates by ticket risk** (slot 3): low-risk → focused manual self-review
    against the named template; domain-surface → the repo's targeted review skill; headline /
    high-risk → commit first, then the adversarial multi-lens review workflow on the committed
@@ -55,15 +68,41 @@ Companion to [`DECOMPOSE-SKILL-TEMPLATE.md`](DECOMPOSE-SKILL-TEMPLATE.md) (phase
    cause survives ≥3 focused attempts, a design fork the docs don't cover changes
    externally-visible behavior, or a local prerequisite is unrecoverable. Report the block;
    never silently scope-cut.
+5a. **A ticket that names a seam reality disagrees with is a REPORTED deviation, never a silent
+   adaptation.** When a named third-party class/method/property/endpoint/policy path turns out not
+   to exist, to have a different signature, or to behave differently: confirm against the artifact
+   (disassemble the jar, read the shipped types, run the policy engine, call the endpoint), then
+   **write the deviation into the ticket's STATUS *Decisions* section in your own words** before
+   proceeding — and escalate to a stop-and-ask if the correction changes externally-visible
+   behavior. This is the failure mode `fix-until-green` most easily swallows: the agent quietly
+   adapts, the run stays green, and a **planning defect that would recur in every future slice
+   disappears without a trace**. The whole outer loop depends on it surfacing.
 6. **The decided forks are binding** ("do NOT re-ask"); a *new* behavior-changing fork is a
    stop-and-ask, an internal detail with a sane default is decide-and-record-in-STATUS.
 7. **Never push, open PRs/MRs, or touch the default branch.** Local + the named branch(es)
    only. Phase ④ is the maintainer's.
 8. **Close-out**: final summary (all tickets, the headline proof, the full-suite result), the
    maintainer-only handoff list, offer the phase-④ review, move the package to
-   `implemented/` — and **record a run retrospective** to Mulch (one record per run: what the
+   `implemented/` — and **record a run retrospective to the repo's DEDICATED retrospective domain.**
+
+   That domain is an **invariant of the method, not a per-repo slot**: it is the outer loop's memory,
+   the only artifact that survives a context window, and the substrate the phase-② unpinned-semantics
+   critic reads. Two properties are load-bearing and both fail quietly:
+   - **Dedicated, never folded into a general store.** Mixed in with technical records it becomes
+     unprimeable in practice — you cannot pull "the pause history" without dragging in everything
+     else, so nobody does.
+   - **Read as well as written.** If phase ② doesn't prime it (decompose invariant 1b), records
+     accumulate that nothing consumes, and the loop *looks* closed while nothing flows back.
+     Verify both directions at instantiation, not once the packages exist.
+
+   One record per run: what the
    structure caught, where the run stalled or asked, which invariant earned its keep, what
-   the next package should pin earlier).
+   the next package should pin earlier). **Classify every pause and every reported deviation (5a)
+   into a named class**, so runs are comparable and a class recurring twice can be converted into a
+   gate rather than restated as advice. The classes this method has accumulated: *blast radius too
+   large to enumerate* · *a fail-open/contract semantic left unpinned* · *a third-party seam named
+   from a mental model* · *a rig/test-harness gotcha discovered mid-run*. An unclassified
+   retrospective is a diary entry; a classified one is an input to the next package's gates.
 
 ## The slots (what each repo decides)
 
@@ -95,7 +134,7 @@ effort: high
 > The package's AUTONOMOUS-IMPLEMENTATION-PROMPT.md is the marching orders; this skill is
 > the runner discipline around it.
 ## The three failure modes this structure defeats   ← the table, verbatim
-## Phase 0 — Load & verify    ← resolve package; verify script green or STOP → /decompose
+## Phase 0 — Load & verify    ← resolve package; BOTH phase-② gates green or STOP → /decompose
 ## Phase 1 — Set up           ← slot 1 branch/identity; decided forks binding; slot 4 rig
 ## Phase 2 — The per-ticket loop  ← the 10 steps; slot 2 commands; slot 3 ★gate table
 ## Phase 3 — Close out        ← summary, handoff list, retrospective (slot 7), move package
@@ -109,10 +148,22 @@ effort: high
       where they overlap** — the skill must never contradict the prompt it runs.
 - [ ] 3. Add the repo's review skills to the ★gate table (slot 3); confirm the heavy path
       reviews committed diff.
-- [ ] 4. Check `ml status` for an existing retrospective domain first — the name varies per repo
-      (this repo's is `autonomous-runs`); `ml add run-retrospective` only if none exists.
+- [ ] 4. **Confirm a DEDICATED retrospective domain exists, and create one if it does not** — the
+      name varies per repo (this repo's is `autonomous-runs`), but a general-purpose domain does
+      **not** satisfy this: "we file retrospectives into the main store" is the failure, not the
+      workaround. **Keep it separate from the *method* domain too** — they are different kinds of
+      knowledge (append-only dated observations vs. superseded rules; linear growth vs. stepwise;
+      primed at planning vs. primed while working), and merged, any shelf-life setting is wrong for
+      half the records. See the flow guide / methodology "why the method and the run history are two
+      domains" for the composition evidence and the three-stage pipeline between them. Then verify the loop is closed in **both** directions — the phase-② skill primes
+      it (decompose invariant 1b) *and* close-out writes to it (invariant 8). A repo that only writes
+      has half a loop and will re-earn lessons it already paid for.
 - [ ] 5. Dry-run against the most recently shipped package: Phase 0 must pass its verify
       gates; the loop's commands must be copy-paste runnable.
+- [ ] 6. Check the alignment the loop depends on in **both** directions: the ★gate's escalation
+      table names review skills that exist, and invariant 5a's deviation rule appears in the §4
+      prompt's hard rules too. A runner that reports wrong-seam deviations while the prompt tells
+      the agent to work around them will follow whichever it read last.
 
 ## Related
 

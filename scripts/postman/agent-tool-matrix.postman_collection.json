@@ -1,0 +1,3078 @@
+{
+ "info": {
+  "name": "Agent tool-call authorization matrix (Phase 9)",
+  "description": "The AGENT-TOOL-AUTHZ slice proven end to end through the gateway, with the collection itself as a deterministic scripted MCP client (streamable HTTP, POST /mcp: `initialize` answers plain application/json and assigns Mcp-Session-Id as a response header; `notifications/initialized` answers 202 with an empty body; every later request is SSE-framed). Cells E1–E11 of docs/to-do/implemented/AGENT-TOOL-AUTHZ/10-QA-TEST-CASES.md. Every assertion is on the actual cut — which tool names, which denials, which LAYER — never on response shape alone. E6 (PDP kill), E7 (agent-gate off) and E11 (revocation) are drills the runner orchestrates around the rig: run this collection with scripts/postman/run-agent-tool-matrix.sh, not standalone.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "event": [
+  {
+   "listen": "prerequest",
+   "script": {
+    "type": "text/javascript",
+    "exec": [
+     "// One deterministic MCP client, written as Postman scripts. Postman has no module system, so",
+     "// the shared streamable-HTTP framing helpers live in a collection variable and are eval'd by",
+     "// each script that needs them.",
+     "pm.collectionVariables.set('mcpHelpers', [",
+     "    \"function mcpNode(res) {\",",
+     "    \"    var ct = (res.headers.get('Content-Type') || '').toLowerCase();\",",
+     "    \"    var raw = res.text() || '';\",",
+     "    \"    if (ct.indexOf('text/event-stream') < 0) {\",",
+     "    \"        return raw.trim() ? JSON.parse(raw) : null;\",",
+     "    \"    }\",",
+     "    \"    var lines = raw.split('\\\\n');\",",
+     "    \"    for (var i = 0; i < lines.length; i++) {\",",
+     "    \"        if (lines[i].indexOf('data:') !== 0) { continue; }\",",
+     "    \"        var node = JSON.parse(lines[i].slice(5).trim());\",",
+     "    \"        if (node && (node.result !== undefined || node.error !== undefined)) { return node; }\",",
+     "    \"    }\",",
+     "    \"    return null;\",",
+     "    \"}\",",
+     "    \"function mcpSse(label, res) {\",",
+     "    \"    pm.test(label + ': SSE-framed, as a streamable-HTTP request answer must be', function () {\",",
+     "    \"        pm.response.to.have.status(200);\",",
+     "    \"        pm.expect((res.headers.get('Content-Type') || '').toLowerCase())\",",
+     "    \"            .to.include('text/event-stream');\",",
+     "    \"        pm.expect(res.text() || '', 'a data: frame').to.include('data:');\",",
+     "    \"    });\",",
+     "    \"}\",",
+     "    \"function mcpTools(res) {\",",
+     "    \"    var node = mcpNode(res) || {};\",",
+     "    \"    var tools = (node.result && node.result.tools) || [];\",",
+     "    \"    return tools.map(function (t) { return t.name; }).sort();\",",
+     "    \"}\",",
+     "    \"function mcpCall(res) {\",",
+     "    \"    var node = mcpNode(res) || {};\",",
+     "    \"    var result = node.result || {};\",",
+     "    \"    var meta = result._meta || result.meta || {};\",",
+     "    \"    var content = result.content || [];\",",
+     "    \"    var text = content.length ? (content[0].text || '') : '';\",",
+     "    \"    var parsed = null;\",",
+     "    \"    try { parsed = JSON.parse(text); } catch (e) { parsed = null; }\",",
+     "    \"    return { isError: result.isError === true, layer: meta.layer || null,\",",
+     "    \"             code: meta.code || null, text: text, json: parsed };\",",
+     "    \"}\",",
+     "    \"// E8: every deny is a STRUCTURED tool error naming its layer and a stable code \\u2014 never a\",",
+     "    \"// stack trace, never a bare transport fault, never a silent empty result.\",",
+     "    \"function mcpDenied(label, res, layer, code) {\",",
+     "    \"    var r = mcpCall(res);\",",
+     "    \"    pm.test(label, function () {\",",
+     "    \"        pm.expect(r.isError, 'isError').to.eql(true);\",",
+     "    \"        pm.expect(r.layer, 'the denying layer').to.eql(layer);\",",
+     "    \"        pm.expect(r.code, 'the stable error code').to.eql(code);\",",
+     "    \"        pm.expect(r.text, 'a safe message').to.not.match(/\\\\tat |Exception|Caused by/);\",",
+     "    \"    });\",",
+     "    \"    return r;\",",
+     "    \"}\",",
+     "    \"function mcpAllowed(label, res) {\",",
+     "    \"    var r = mcpCall(res);\",",
+     "    \"    pm.test(label, function () {\",",
+     "    \"        pm.expect(r.isError, 'isError (' + r.code + ': ' + r.text + ')').to.eql(false);\",",
+     "    \"    });\",",
+     "    \"    return r;\",",
+     "    \"}\",",
+     "    \"function mcpRoster(label, res, expected) {\",",
+     "    \"    mcpSse(label, res);\",",
+     "    \"    pm.test(label + ': the roster is exactly [' + expected.join(', ') + '] BY NAME', function () {\",",
+     "    \"        pm.expect(mcpTools(res)).to.eql(expected.slice().sort());\",",
+     "    \"    });\",",
+     "    \"}\",",
+     "].join(String.fromCharCode(10)));"
+    ]
+   }
+  }
+ ],
+ "item": [
+  {
+   "name": "E1 · E10 — the human's surface: REST parity, and the ceiling-only roster",
+   "item": [
+    {
+     "name": "initialize (human)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('human handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('human handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (human)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('human handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (human) — E10: the ceiling-only cut",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// E10: a token with NO actor claim is an honest HUMAN call. The SAME bulk rule decides",
+         "// it, ceiling-only — so the human sees every declared tool their own role permits, and",
+         "// the agent path can only ever narrow this set.",
+         "mcpRoster('E10 human roster', pm.response, ['get_catalog', 'get_product', 'list_catalogs', 'list_categories']);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call list_catalogs (human)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "const r = mcpAllowed('E1: the human calls list_catalogs through the tool surface', pm.response);",
+         "const ids = ((r.json && r.json.items) || []).map(function (c) { return c.id; }).sort();",
+         "pm.collectionVariables.set('tool_catalog_ids', JSON.stringify(ids));",
+         "pm.test('E1: the tool answered with the catalog list envelope', function () {",
+         "    pm.expect(r.json, 'a parsed JSON body').to.be.an('object');",
+         "    pm.expect(ids.length, 'at least the fixture catalog').to.be.above(0);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"list_catalogs\", \"arguments\": {}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "GET /api/v1/catalogs (human, REST) — E1: the tool surface adds and removes nothing",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// E1, the whole point: the tool surface is a SECOND front door onto the same",
+         "// authorization, not a bypass and not a second, stricter gate. The same token must see",
+         "// exactly the same catalogs through MCP as it does over REST.",
+         "pm.test('E1: the REST list answers 200', function () { pm.response.to.have.status(200); });",
+         "const rest = (pm.response.json().items || []).map(function (c) { return c.id; }).sort();",
+         "const viaTool = JSON.parse(pm.collectionVariables.get('tool_catalog_ids') || '[]');",
+         "pm.test('E1: MCP list_catalogs === REST /api/v1/catalogs, by id', function () {",
+         "    pm.expect(viaTool).to.eql(rest);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{gateway}}/api/v1/catalogs",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "catalogs"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_product (human, own product) — the human tier is untouched",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The contrast E2 draws is the AGENT's, not the principal's: the same human, the same",
+         "// product, is permitted here. Without this cell E2's deny could be a principal denial.",
+         "mcpAllowed('E1: the human may read the medium-risk product', pm.response);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"get_product\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\", \"categoryId\": \"{{mcp_category_id}}\", \"productId\": \"{{mcp_product_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E2 · E3 · E8 — the agent's narrowed surface, on one token",
+   "item": [
+    {
+     "name": "initialize (agent-readonly)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-readonly handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-readonly handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-readonly)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-readonly handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-readonly) — E3: the cut, by exact name",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// E3: not a count — the exact names. `list_categories` and `get_product` are absent",
+         "// because the capability caps this actor below them, NOT because the principal lacks",
+         "// them (E1 just called get_product on the same principal).",
+         "mcpRoster('E3 agent roster', pm.response, ['get_catalog', 'list_catalogs']);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call list_catalogs (agent-readonly) — E2 allow half",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "mcpAllowed('E2: the low-risk listed tool succeeds', pm.response);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"list_catalogs\", \"arguments\": {}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_catalog (agent-readonly, own catalog) — E3: every listed tool is callable",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// E3's second half: a roster entry is not decoration — both listed tools really work.",
+         "mcpAllowed('E3: the second listed tool is callable too', pm.response);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"get_catalog\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_product (agent-readonly, own product) — E2 deny half + E8",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// E2, the narrowing made visible on ONE token: the principal may read this product",
+         "// (proved in E1); the AGENT may not, because its capability is capped below the tool's",
+         "// medium risk tier. The deny is the tool-gate's — the call never left this server.",
+         "mcpDenied('E2/E8: get_product is denied at the tool-gate, structurally',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 5, \"method\": \"tools/call\", \"params\": {\"name\": \"get_product\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\", \"categoryId\": \"{{mcp_category_id}}\", \"productId\": \"{{mcp_product_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call list_categories (agent-readonly, unlisted) — the roster is a hint, the gate is the law",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// A tool omitted from the roster is not disabled — it is DENIED, per call, by the",
+         "// authoritative gate. A client that ignores the hint gains nothing.",
+         "mcpDenied('an unlisted tool is denied at call time all the same',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 6, \"method\": \"tools/call\", \"params\": {\"name\": \"list_categories\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E4 · E8 — the target-gate is a distinguishable second layer",
+   "item": [
+    {
+     "name": "initialize (agent-readonly)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-readonly handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-readonly handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-readonly)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-readonly handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_catalog (agent-readonly, FOREIGN catalog) — the catalog's own policy denies",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// E4: the tool-gate ALLOWS get_catalog for this agent (E3 listed it and called it). The",
+         "// deny here comes from the catalog service's own unchanged per-type policy, reached with",
+         "// the caller's own bearer. Two independent layers, and the caller can tell them apart —",
+         "// which is what makes 'no propagation' auditable rather than asserted.",
+         "mcpDenied('E4/E8: denied at the target-gate, not the tool-gate',",
+         "          pm.response, 'target-gate', 'ACCESS_DENIED');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"get_catalog\", \"arguments\": {\"catalogId\": \"{{foreign_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E5 — the agent never exceeds its principal (low-privilege replay + the overreach probe)",
+   "item": [
+    {
+     "name": "initialize (agent for the low-privilege principal)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent for the low-privilege principal handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent for the low-privilege principal handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{lowpriv_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent for the low-privilege principal)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent for the low-privilege principal handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{lowpriv_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent, low-privilege principal) — E5: an empty ceiling admits nothing",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// SAME agent client, SAME capability profile as E2/E3 — only the human behind it",
+         "// changed. The roster collapses to nothing, because the intersection with an empty",
+         "// ceiling is empty. The capability never adds.",
+         "mcpRoster('E5 roster for a low-privilege principal', pm.response, []);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{lowpriv_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_catalog (agent, low-privilege principal) — E5: the headline",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The exact tool + target the SAME agent was allowed in E3, replayed for a principal",
+         "// who may not reach it. Denied — and denied at the TOOL-gate, i.e. the intersection",
+         "// refused it before any downstream call was made.",
+         "mcpDenied('E5: the same agent, a weaker principal, denied at the tool-gate',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{lowpriv_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"get_catalog\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "initialize (agent-overreach)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-overreach handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-overreach handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session2', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{overreach_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-overreach)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-overreach handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{overreach_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-overreach) — a capability wider than any principal grants nothing",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// agent-overreach's profile lists WRITE, GRANT and every verb — deliberately wider",
+         "// than any demo principal. It still gets EXACTLY the human's cut: the intersection is",
+         "// bounded above by the ceiling, proved on the rig and not only in `opa test`.",
+         "mcpRoster('overreach roster', pm.response, ['get_catalog', 'get_product', 'list_catalogs', 'list_categories']);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{overreach_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_product (agent-overreach, own product)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// Allowed — because the PRINCIPAL is allowed it, not because the capability claimed it.",
+         "mcpAllowed('an over-wide capability still only reaches what the principal reaches', pm.response);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{overreach_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"get_product\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\", \"categoryId\": \"{{mcp_category_id}}\", \"productId\": \"{{mcp_product_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_catalog (agent-overreach, FOREIGN catalog)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// And the widest capability in the registry still stops at the target-gate.",
+         "mcpDenied('the overreach agent is refused by the catalog service too',",
+         "          pm.response, 'target-gate', 'ACCESS_DENIED');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{overreach_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 5, \"method\": \"tools/call\", \"params\": {\"name\": \"get_catalog\", \"arguments\": {\"catalogId\": \"{{foreign_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E6 — PDP kill: nothing is callable, and the roster says so",
+   "item": [
+    {
+     "name": "initialize (agent-readonly (PDP down))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-readonly (PDP down) handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-readonly (PDP down) handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-readonly (PDP down))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-readonly (PDP down) handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-readonly, PDP down) — an empty roster, not a stale one",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The batch primitive is contractually total and fail-closed: an outage arrives as an",
+         "// all-false vector, indistinguishable from a zero-capability agent. Serving the",
+         "// UNFILTERED list here would advertise four tools that every call is about to deny —",
+         "// so empty is the honest answer, and it pairs with the denials below.",
+         "mcpRoster('E6 roster during the outage', pm.response, []);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_catalog (allowed before the kill) — now denied",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "mcpDenied('E6: a call that succeeded before the kill now denies at the tool-gate',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"get_catalog\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_product (denied before the kill) — ZERO widening",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The direction that actually matters: no call denied BEFORE the kill may succeed",
+         "// AFTER it. An outage may only ever shrink the answer.",
+         "mcpDenied('E6: the outage never widens a decision', pm.response,",
+         "          'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 5, \"method\": \"tools/call\", \"params\": {\"name\": \"get_product\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\", \"categoryId\": \"{{mcp_category_id}}\", \"productId\": \"{{mcp_product_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "initialize (human (PDP down))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('human (PDP down) handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('human (PDP down) handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session2', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (human (PDP down))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('human (PDP down) handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (human, PDP down) — the outage narrows the human too",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// No special case for humans: the same rule, the same dead PDP, the same empty answer.",
+         "mcpRoster('E6 human roster during the outage', pm.response, []);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E6-restore — the pre-kill cut returns EXACTLY",
+   "item": [
+    {
+     "name": "initialize (agent-readonly (PDP back))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-readonly (PDP back) handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-readonly (PDP back) handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-readonly (PDP back))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-readonly (PDP back) handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-readonly, PDP back) — the same two names",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// Same names, same order-independent set as before the kill: the outage left no",
+         "// residue — no cached roster, no sticky deny, nothing to invalidate.",
+         "mcpRoster('E6-restore agent roster', pm.response, ['get_catalog', 'list_catalogs']);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_catalog (PDP back) — allowed again",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "mcpAllowed('E6-restore: the pre-kill allow is back', pm.response);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"get_catalog\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_product (PDP back) — still denied, for the ORIGINAL reason",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The full pre-kill vector, restored: the same allow AND the same deny. A restore that",
+         "// only checked the allow could not tell recovery from a fail-open.",
+         "mcpDenied('E6-restore: the pre-kill deny is back, at the same layer',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 5, \"method\": \"tools/call\", \"params\": {\"name\": \"get_product\", \"arguments\": {\"catalogId\": \"{{mcp_catalog_id}}\", \"categoryId\": \"{{mcp_category_id}}\", \"productId\": \"{{mcp_product_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "initialize (human (PDP back))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('human (PDP back) handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('human (PDP back) handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session2', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (human (PDP back))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('human (PDP back) handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (human, PDP back) — the ceiling-only cut, restored",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "mcpRoster('E6-restore human roster', pm.response, ['get_catalog', 'get_product', 'list_catalogs', 'list_categories']);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E7 — the agent-gate kill-switch: OFF is never wider than ON",
+   "item": [
+    {
+     "name": "initialize (agent-readonly (gate OFF))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-readonly (gate OFF) handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-readonly (gate OFF) handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-readonly (gate OFF))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-readonly (gate OFF) handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-readonly, gate OFF) — the ceiling-only cut, not an unfiltered one",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// OFF removes the agent NARROWING — not the ceiling. The roster widens from the",
+         "// agent's two to the principal's four, and stops there. It also proves the roster",
+         "// tracks the switch: a roster still narrowing by capability while calls did not would",
+         "// hide tools the caller can successfully call — the one direction a hint must not fail.",
+         "mcpRoster('E7 roster with the agent-gate off', pm.response, ['get_catalog', 'get_product', 'list_catalogs', 'list_categories']);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call get_product (gate OFF, FOREIGN product) — the target-gate still refuses",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The drill, exactly: a call the tool-gate denied with the switch ON is no longer",
+         "// denied THERE — and the catalog service's own policy refuses it anyway, because this",
+         "// server asserts nothing downstream. Turning the agent gate off during an incident",
+         "// cannot hand an agent more than its principal already has.",
+         "const r = mcpDenied('E7: denied at the TARGET-gate with the tool-gate switched off',",
+         "                    pm.response, 'target-gate', 'ACCESS_DENIED');",
+         "pm.test('E7: the tool-gate is genuinely out of the path', function () {",
+         "    pm.expect(r.layer, 'the denying layer').to.not.eql('tool-gate');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"get_product\", \"arguments\": {\"catalogId\": \"{{foreign_catalog_id}}\", \"categoryId\": \"{{foreign_category_id}}\", \"productId\": \"{{foreign_product_id}}\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E11 — revocation is visible end to end",
+   "item": [
+    {
+     "name": "initialize (agent-readonly (revoked))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The handshake is NOT SSE: `initialize` answers plain application/json and assigns the",
+         "// session as a RESPONSE HEADER, which every later request must echo back.",
+         "pm.test('agent-readonly (revoked) handshake: 200, plain application/json', function () {",
+         "    pm.response.to.have.status(200);",
+         "    const ct = (pm.response.headers.get('Content-Type') || '').toLowerCase();",
+         "    pm.expect(ct).to.include('application/json');",
+         "    pm.expect(ct).to.not.include('text/event-stream');",
+         "});",
+         "const sid = pm.response.headers.get('Mcp-Session-Id');",
+         "pm.test('agent-readonly (revoked) handshake: the transport assigned an Mcp-Session-Id header', function () {",
+         "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+         "});",
+         "pm.collectionVariables.set('session', sid);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-readonly (revoked))",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A JSON-RPC NOTIFICATION (no id) is acknowledged with 202 and an EMPTY body — not SSE.",
+         "// Pinned because a client that tries to parse this as a message fails on a correct server.",
+         "pm.test('agent-readonly (revoked) handshake: the notification is 202 with an empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-readonly, profile emptied) — the tool has left the roster",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// Turn 1 (the E2/E3 folder) listed list_catalogs and called it successfully. The actor's",
+         "// profile has since been rewritten to the empty capability and the pod restarted — the",
+         "// actor is still DECLARED, so this is an authoritative empty answer, not an outage.",
+         "mcpRoster('E11 roster after revocation', pm.response, []);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call list_catalogs (revoked) — and it is denied, not merely hidden",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// Both halves matter: a revocation that only cleared the roster would still let a",
+         "// client that remembered turn 1's list call the tool.",
+         "mcpDenied('E11: the revoked tool is denied at the tool-gate',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{readonly_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"list_catalogs\", \"arguments\": {}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "initialize (agent-revoked)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('agent-revoked handshake: 200', function () { pm.response.to.have.status(200); });",
+         "pm.collectionVariables.set('session2', pm.response.headers.get('Mcp-Session-Id'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "notifications/initialized (agent-revoked)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('agent-revoked handshake: 202, empty body', function () {",
+         "    pm.response.to.have.status(202);",
+         "    pm.expect((pm.response.text() || '').trim()).to.eql('');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list (agent-revoked) — a DECLARED zero-capability actor",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "// The other half of revocation, and the one the emptied-profile drill above cannot show:",
+         "// this actor is DECLARED in the registry with zero capability from the start. Its empty",
+         "// roster is therefore an AUTHORITATIVE answer, not the all-false vector a dead PDP would",
+         "// produce — the two are indistinguishable in the response, which is exactly why the",
+         "// registry declares the actor rather than letting an unknown one fall through.",
+         "mcpRoster('E11-b roster for a declared zero-capability actor', pm.response, []);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/call list_catalogs (agent-revoked)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "eval(pm.collectionVariables.get('mcpHelpers'));",
+         "mcpDenied('E11-b: a declared zero-capability actor is denied at the tool-gate',",
+         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{revoked_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "{{session2}}"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"list_catalogs\", \"arguments\": {}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
