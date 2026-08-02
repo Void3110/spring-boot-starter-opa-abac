@@ -6,7 +6,7 @@ tags:
   - area/spring
 ---
 
-# STATUS — T3: catalog-service: the `SupervisedScopeClient` HTTP edge, fail-closed and resilience-wrapped
+# STATUS — T3: confine ancestor inheritance to membership-derived roles
 
 **Status:** 📋 TODO
 

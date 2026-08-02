@@ -6,7 +6,7 @@ tags:
   - area/spring
 ---
 
-# STATUS — T5: catalog-service: the two-leg partitioned list, the read-only ceiling, and the audit event
+# STATUS — T6: e2e matrix, demo personas, and the guide
 
 **Status:** 📋 TODO
 

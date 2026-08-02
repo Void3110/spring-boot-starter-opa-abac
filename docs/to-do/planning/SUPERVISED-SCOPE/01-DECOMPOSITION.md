@@ -8,30 +8,31 @@ tags:
 
 # SUPERVISED-SCOPE — decomposition
 
-> T1…T5, in order. Each ticket is one focused commit's worth of work.
+> T1…T6, in order. Each ticket is one focused commit's worth of work.
 > Design: [[00-DESIGN]] · Contract: [[0029-supervised-read-scope|ADR 0029]] · Cases: [[10-QA-TEST-CASES]]
 
 ## Critical path
 
 ```
-T1 ──► T2 ──► T3 ──► T4 ──► T5
-(user-svc)   (user-svc)  (catalog-svc)  (catalog-svc)   (e2e + docs)
+T1 ──► T2 ──► T3 ──► T4 ──► T5 ──► T6
+(user-svc)  (user-svc)  (policy)   (catalog-svc) (catalog-svc)  (e2e + docs)
 ```
 
-**Strictly sequential.** T2 needs T1's derivation to answer the supervisor branch; T3 consumes T2's
-endpoint over HTTP; T4 composes T3's ids into the list; T5 proves the whole path through the rig. There
-is no parallel landing worth the coordination at this size.
+**Strictly sequential.** T2 needs T1's derivation to answer the supervisor branch; T3 confines the role
+T2 synthesizes; T4 consumes T2's endpoint over HTTP; T5 composes T4's ids into the list; T6 proves the
+whole path through the rig. There is no parallel landing worth the coordination at this size.
 
-**Standalone-value subset: T1 + T2.** Together they make the user-service answer "who does this subject
-supervise, and with what role" — a complete, tested capability with its own ITs, useful to the next slice
-even if the window closes before the catalog side lands. Nothing user-visible changes until T4.
+**Standalone-value subset: T1 + T2 + T3.** Together they make the user-service answer "who does this
+subject supervise, and with what role" **and** make the corpus provably deny that role any child access —
+a complete, tested capability (ITs + `opa test`, no catalog service, no rig), useful to the next slice
+even if the window closes before the catalog side lands. Nothing user-visible changes until T5.
 
-**Two deployables, in dependency order** — the user-service (T1, T2) then the catalog-service (T3, T4).
-**No library module is touched in this slice.**
+**Two deployables plus the policy corpus, in dependency order** — the user-service (T1, T2), the OPA
+policies (T3), then the catalog-service (T4, T5). **No library module is touched in this slice.**
 
 ## Two pinned semantics (so the run never stops to ask)
 
-1. **`supervised := S \ M` is computed on the catalog side, in T4** — not in the user-service. The
+1. **`supervised := S \ M` is computed on the catalog side, in T5** — not in the user-service. The
    user-service answers the raw supervised set; only the list authorizer knows both sets. The endpoint's
    contract is therefore "the catalogs this subject supervises", membership notwithstanding.
 2. **A supervised catalog whose role no longer resolves is dropped, not defaulted.** Same rule as the
@@ -118,6 +119,10 @@ read-only role instead of `204` — carrying provenance, and granting nothing on
 U14 is the boundary assertion and must be checked **against the policy, not only the Java shape** —
 assert via `opa eval` that `data.catalog.filter` is true and `data.category.allow` is false under the
 synthesized role. A Java-only assertion would pass on a role that grants nothing.
+**U14 asserts the role SHAPE and `data.catalog.filter` — not "contents are closed."** That half cannot
+hold at T2: the confinement rule lands in T3, and an ancestor-less probe would return `false` for the
+wrong reason (precisely how the original case green-lit a live fail-open — ADR 0031 §Context). The
+honest, ancestor-carrying contents assertion is **U35/U36, owned by T3**.
 
 **What NOT to touch.** The batch `/internal/effective-roles` path and its strict one-entry-per-target
 contract (ADR 0024) — it resolves per target through the same service, so verify by test that the
@@ -127,7 +132,50 @@ envelope change this slice forbids. No Rego. No library module.
 
 ---
 
-## T3 — catalog-service: the `SupervisedScopeClient` HTTP edge, fail-closed and resilience-wrapped
+## T3 — confine ancestor inheritance to membership-derived roles
+
+**Goal.** The synthesized supervisor role can reach **no** child type, while every membership-derived
+role keeps the inheritance it has today — closing the fail-open that
+[[0031-inheritance-confined-to-membership-roles|ADR 0031]] pins.
+
+**Deliverables.**
+
+- `EffectiveRoleService.resourceRole(TeamMembership, String)` (user-service) stamps
+  `attributes.provenance = "membership"` on every role it returns. It is the **single production
+  construction site** for membership-derived roles (verified: one call site, from
+  `resolveForResource`) — confirm the batch `/internal/effective-roles` path routes through it before
+  relying on that.
+- T2's synthesized supervisor role carries `attributes.provenance = "supervised"` — the **same key**
+  that satisfies the design's provenance/audit pin, one marker serving both.
+- `infra/opa/policies/category.rego` and `infra/opa/policies/product.rego`: the conjunct
+  `input.role_definition.attributes.provenance == "membership"` added to **all four** clauses —
+  `inherited_grant` and `list_inheritable_grant` in each file.
+- Rego test cases in `category_test.rego` / `product_test.rego` (the six below), plus the ~10 existing
+  inheritance-dependent fixtures updated to carry the stamp.
+- **One test at the seam** (user-service tier, alongside the existing tests that already exercise
+  `resourceRole`) asserting the stamp is applied — `opa test` fixtures are hand-written and would stay
+  green if the Java silently stopped stamping.
+- Docs delta: a subsection in `docs/guides/TEAM-BASED-AUTHORIZATION.md` (the guide that owns this
+  surface, per the design's knowledge destination) stating the invariant — inheritance requires
+  membership provenance; a synthesized role is confined to the types it names.
+
+**Acceptance.** QA **U35–U40** + **I7**. Run `opa test infra/opa/policies/` (all green, existing cases
+included) and the seam test. Then re-run the **existing** e2e matrices that read categories/products as
+a member — they are this change's regression proof; a red cell there is a stamp bug, not a flaky rig.
+
+**What NOT to touch.** `permissions.rego` and `permission_categories.json` — the conjunct may **NOT** be
+centralized into `permissions.effective_actions`: direct grants use the same helper (the supervisor
+would lose its own `catalog:view`), and both files are **byte-mirrored** into
+`example-user-management-service/src/main/resources/opa/policies/`, so editing them opens a drift
+surface for no benefit. `category_inheritable.json` / `product_inheritable.json` (the tables stay as
+shipped — the constituency that legitimately inherits keeps it). Stored role rows (no migration; the
+stamp is applied at resolution). `catalog.rego` (the root list is governed by `filter`, not
+inheritance). **Fail-closed floor:** an unstamped role, an empty `attributes`, or an unknown provenance
+value grants **no** inherited access — absence is closed, never open.
+
+---
+
+## T4 — catalog-service: the `SupervisedScopeClient` HTTP edge, fail-closed and resilience-wrapped
 
 **Goal.** The catalog service can fetch a subject's supervised catalog ids, degrading to an empty list on
 every failure class without ever throwing into the request.
@@ -149,9 +197,13 @@ every failure class without ever throwing into the request.
   and E8 unsatisfiable.
 - **Record a breaker failure only on the thrown retryable path** — a fail-closed empty result is a
   *decision*, not a transport failure (`mx-951d2f`).
-- Configuration property for the base URL following the existing catalog-side convention; the bean is
+- A **dedicated** configuration property for the supervised base URL —
+  `catalog.user-service.supervised-base-url`, **defaulting to `${catalog.user-service.base-url}`** so the
+  shipped rig is unchanged. It must be its **own** property, not the shared one: E8 faults *only* this
+  edge by repointing it, which is impossible if the supervised client reads the shared URL (B3's stub
+  swaps the whole user-service the rest of the matrix needs). The bean is
   present only when the user-service edge is configured, absent otherwise (so the list simply has no
-  second leg — see T4).
+  second leg — see T5).
 
 **Acceptance.** QA **U17–U24**. `./gradlew :example-catalog-management-service:test` green. Tests use an
 **in-process `com.sun.net.httpserver.HttpServer`** stub — never WireMock. U19–U23 are the ones that
@@ -164,7 +216,7 @@ tri-state outage signal: the **base-scope** SPI shape is fail-closed-to-empty, u
 
 ---
 
-## T4 — catalog-service: the two-leg partitioned list, the read-only ceiling, and the audit event
+## T5 — catalog-service: the two-leg partitioned list, the read-only ceiling, and the audit event
 
 **Goal.** `GET /catalogs` returns membership rows **and** supervised rows, each judged by its own role,
 with the supervised rows read-only and audited — and existing personas byte-identical.
@@ -172,7 +224,7 @@ with the supervised rows read-only and audited — and existing personas byte-id
 **Deliverables.** Package `dev.dmitriikonovalov.example.catalog.config`:
 
 - `CatalogListAuthorizer.readable` composes the two **disjoint** scopes through the **shipped**
-  `findAuthorized` 4-arg overload — the ADR-0010 base-scope-widening idiom, reused rather than
+  `findAuthorized` **paged 5-arg** overload (the unpaged 4-arg form is the `List` variant; the list endpoint is paged) — the ADR-0010 base-scope-widening idiom, reused rather than
   reinvented. `M` comes from `GovernedScopeResolver.governedIds`, `S` from `SupervisedScopeClient`,
   then **`supervised = S \ M`** (ADR 0029 §5). Three cases, all using the same shipped call:
 
@@ -226,7 +278,7 @@ fetch failure (which degrades to **membership-only**, U30). No Rego. No library 
 
 ---
 
-## T5 — e2e matrix, demo personas, and the guide
+## T6 — e2e matrix, demo personas, and the guide
 
 **Goal.** Prove the whole path through the rig against exact ids, prove nothing else regressed, and
 document the second access path.
@@ -249,15 +301,25 @@ document the second access path.
   `scripts/postman/run-supervised-scope-matrix.sh`, modelled on the shipped matrices, entering **through
   the gateway** and asserting the **actual cut** — exact ids and counts, allow-vs-deny contrast, and the
   fail-closed negatives.
-- E8 needs a fault-injected supervised edge; reuse the fault-injection approach the B3 e2e established
-  (`mx-91fa5d`) rather than inventing a second mechanism.
+- **E8's fault injection is its own edge, not B3's.** B3's mechanism (`ENABLE_RESILIENCE_STUB=1`,
+  `mx-91fa5d`) repoints `CATALOG_USER_SERVICE_BASE_URL` at the stub and therefore **replaces the whole
+  user-service the rest of this matrix needs** — it cannot fault only the supervised edge. Instead: T4
+  gives the supervised client its **own** base-URL property (defaulting to the shared
+  `catalog.user-service.base-url`), and E8 runs as a **second short pass on the same rig** with only
+  that one env var repointed at a dead port, then the catalog pods recreated. Record the two-pass shape
+  in the matrix README. **T6 owns the rig plumbing this needs**: pass the property through to the
+  catalog pods as an env var in `deploy.sh` (mirroring how `CATALOG_USER_SERVICE_BASE_URL` is already
+  passed), so the second pass is `<VAR>=http://127.0.0.1:9 ./deploy.sh up --pods 2` + a pod recreate —
+  no compose-file edit, since that file is generated.
 - Guide: a **new section in the existing** `docs/guides/TEAM-BASED-AUTHORIZATION.md` covering the two
   access paths, the precedence rule, the CONTROL-capable reach rule, and both failure classes. Per
   [[00-DESIGN]]'s knowledge destination, this does **not** earn a new guide.
 - `infra/README.md` and `scripts/postman/README.md`: the new matrix, its flags, and the personas.
 
 **Acceptance.** QA **E1–E10**, **D1–D2**. `./gradlew build` green; `opa test infra/opa/policies` green
-and **unchanged** (zero Rego edits this slice — E7); the new matrix green.
+**including T3's new cases** (this slice ships exactly one narrow policy change — ADR 0031 — and no
+other; a Rego edit outside T3's four clauses means the run has left the slice boundary); the new matrix
+green.
 
 **E7's non-regression run is an explicit list, not "the full suite"** — `scripts/postman/` ships 15
 independent `run-*.sh` with *mutually exclusive* rig flavours (the resilience matrix needs
@@ -265,7 +327,7 @@ independent `run-*.sh` with *mutually exclusive* rig flavours (the resilience ma
 there is **no aggregate runner**. On one `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`
 rig, re-run every matrix that exercises catalog listing or role resolution — at minimum the isolation (B4's own `GET /catalogs` matrix), team, tag,
 filter, hierarchy, permission-categories and resource-resolution matrices plus `./run-tests.sh` — and
-record in `STATUS-05.md` **the exact list you ran and any you deliberately skipped, with the reason**.
+record in `STATUS-06.md` **the exact list you ran and any you deliberately skipped, with the reason**.
 Silently skipping a matrix would make E7 assert less than it claims.
 
 **What NOT to touch.** Existing collections' expectations — if one needs editing, that is a regression to
@@ -274,13 +336,21 @@ investigate, not a test to adjust. The Rego policies (**zero changes**; assertin
 
 ---
 
+> **ADR 0029 §9's `GovernedScopeResolver` contract-text revision is DEFERRED, not owned here.** That
+> revision touches a **published library module**, which this slice forbids end to end; it lands when the
+> org-relation seam is promoted to a published SPI (ADR 0029's own deferred consequence). Slice A leaves
+> the library untouched and composes the supervised set **beside** the resolver — no ticket owns a
+> library edit, and a run that finds itself editing `opa-abac-spring-data` has left the slice boundary.
+
 ## Cross-cutting acceptance
 
 - `./gradlew build` green (all modules + integration tests).
-- `opa test` green and **unchanged** — this slice edits no policy.
+- `opa test infra/opa/policies/` green **including T3's six new cases** — T3 is the slice's only policy
+  change (ADR 0031); a policy edit outside its four inheritance clauses means the run has left the
+  slice boundary.
 - The existing newman matrices that touch catalog listing or role resolution: green and unchanged, run
-  on one rig flavour, with the exact list recorded in `STATUS-05.md` (there is no aggregate runner — see
-  T5's Acceptance). The new supervised-scope matrix green.
+  on one rig flavour, with the exact list recorded in `STATUS-06.md` (there is no aggregate runner — see
+  T6's Acceptance). The new supervised-scope matrix green.
 - The local Sonar scan **CLEAN** on the changed files for every `.java`-touching ticket.
 - `ddl-auto: validate` boots clean (T1's changeset).
 - **The fail-closed invariant holds on every error path**, with both classes landing where
@@ -293,4 +363,4 @@ investigate, not a test to adjust. The Rego policies (**zero changes**; assertin
 - [[00-DESIGN]] · [[10-QA-TEST-CASES]] · [[SUPERVISED-SCOPE]]
 - [[0029-supervised-read-scope]] — the contract these tickets implement.
 - [[0018-team-scoped-resource-isolation]] — the invariant being pierced without weakening.
-- [[MULTI-TENANT-ISOLATION]] — B4, whose `governedIds.get(0)` shortcut T4 retires.
+- [[MULTI-TENANT-ISOLATION]] — B4, whose `governedIds.get(0)` shortcut T5 retires.
