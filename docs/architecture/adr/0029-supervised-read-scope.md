@@ -8,7 +8,13 @@ tags:
 
 # ADR 0029 — Supervised read scope: a second, disjoint access path beside membership
 
-**Status:** Accepted — planning; implemented by slice **A**, [[SUPERVISED-SCOPE]]
+**Status:** Accepted — planning; implemented by slice **A**, [[SUPERVISED-SCOPE]].
+**Amended 2026-08-02 by [[0031-inheritance-confined-to-membership-roles|ADR 0031]]** — the mechanism row
+below ("contents are closed **by the role**, so slice A ships **zero Rego changes**") was disproven by
+`opa eval` against the shipped corpus: `catalog: ["READ"]` inherits `category:view`/`product:view`
+through the declared ancestor-inheritance tables whenever ancestors are present, which is always at
+runtime. Contents are closed by the role **plus** ADR 0031's confinement rule, and slice A ships one
+narrow policy change. Everything else in this ADR stands.
 **Date:** 2026-08-01
 **Context tags:** org-relation seam, derived id set, non-membership role resolution, partitioned list, disjoint scopes, fail-closed
 
@@ -128,11 +134,13 @@ narrower state is load-bearing rather than incidental:
 
 | Slice | `permissions` on the synthesized role | Effect |
 |---|---|---|
-| **A** — [[SUPERVISED-SCOPE]] | `catalog: ["READ"]` only — **no `category`, no `product` key** | Contents are closed **by the role**, so slice A ships **zero Rego changes** |
+| **A** — [[SUPERVISED-SCOPE]] | `catalog: ["READ"]` only — **no `category`, no `product` key** | Contents are closed **by the role + ADR 0031's confinement rule**; slice A ships **one narrow Rego change** (the amendment) |
 | **B** — `PRODUCTION-TIER` | `+ category: ["READ"]`, `+ product: ["READ"]` | Contents open, gated by the `env` tier (ADR 0030 §1–4) |
 
 Because the policies are role-definition-driven, an absent type key already denies every verb on that
-type. Slice A therefore needs no policy edit to keep contents shut — and slice B's widening is what makes
+type. **[Amended by ADR 0031 — this sentence is superseded: the shipped `catalog → child` inheritance
+tables hand that role the child verbs anyway, so slice A needs exactly one narrow policy edit.]** Slice A
+therefore needs no policy edit to keep contents shut — and slice B's widening is what makes
 the tier necessary rather than decorative.
 
 **The realm role is a UX-only eligibility marker.** A `unit-supervisor` realm claim makes the affordance
@@ -195,6 +203,11 @@ the slice carries an explicit test of the precondition rather than leaving it im
 
 `GovernedScopeResolver`'s contract text is revised accordingly: the governed set is
 "membership-**or-supervision**-derived, **never an unconditioned universe**."
+
+> **[Deferred — amended 2026-08-02.]** That revision touches a **published library module**, which slice A
+> forbids end to end. It lands when the org-relation seam is promoted to a published SPI (this ADR's own
+> deferred consequence); slice A leaves the library untouched and composes the supervised set beside the
+> resolver.
 
 ## Consequences
 

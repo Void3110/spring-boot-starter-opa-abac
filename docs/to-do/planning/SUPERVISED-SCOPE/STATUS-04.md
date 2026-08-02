@@ -6,7 +6,7 @@ tags:
   - area/spring
 ---
 
-# STATUS — T4: catalog-service: the two-leg partitioned list, the read-only ceiling, and the audit event
+# STATUS — T4: catalog-service: the `SupervisedScopeClient` HTTP edge, fail-closed and resilience-wrapped
 
 **Status:** 📋 TODO
 

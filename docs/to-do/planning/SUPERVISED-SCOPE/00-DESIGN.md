@@ -46,13 +46,13 @@ step-up-related Keycloak realm work (the `basic`/`acr` scopes, `acr.loa.map`, th
 flow, TOTP enrolment); the SPA. **No library module changes at all.**
 
 **The one realm change slice A does make:** an e2e persona *is* a Keycloak user (every matrix mints its
-token by password grant), so T5 adds the new persona accounts and the UX-only `unit-supervisor` realm
+token by password grant), so T6 adds the new persona accounts and the UX-only `unit-supervisor` realm
 role to `infra/keycloak/realm-export.json`. Nothing else in the realm is touched.
 
 ## The design
 
 ```
-GET /catalogs   →   findAuthorized(scope, ctx, subtreeSpec)   [the SHIPPED 4-arg call]
+GET /catalogs   →   findAuthorized(scope, ctx, subtreeSpec)   [the SHIPPED PAGED 5-arg call]
                       scope        = id IN (M ∪ supervised)
                       ctx role     = the membership role
                       subtreeSpec  = id IN supervised
@@ -61,7 +61,8 @@ GET /catalogs   →   findAuthorized(scope, ctx, subtreeSpec)   [the SHIPPED 4-a
                     M = membership ids · supervised = S \ M  (disjoint)
 
 GET /catalogs/{id}                    metadata — allowed on both paths
-GET /catalogs/{id}/categories/…       DENIED on the supervised path (the role grants no child verbs)
+GET /catalogs/{id}/categories/…       DENIED on the supervised path (no child verbs AND no
+                                      inherited grant — ADR 0031's confinement, T3)
 ```
 
 ### 1. The reporting relation (T1)
@@ -105,11 +106,42 @@ Required tags are **vacuous** — safe **only** because the scopes are disjoint 
 synthesized in code and never stored. Provenance rides the reserved role code plus a marker in the role's existing
 generic `attributes` map, so `input.role_definition` carries it with **zero** envelope change.
 
-**Contents close themselves.** Because the role grants no `category` or `product` verbs, the existing
-role-definition-driven policies already deny child reads — so this slice ships **zero Rego changes**.
+**Contents are closed by the role PLUS the confinement rule (T3) — not by the role alone.** The naive
+reading ("the role names no `category`/`product` key, so child reads deny") is **false against the
+shipped corpus and was proven false by evaluation**: `category_inheritable.json` declares
+`catalog → category` inheritance, and `inherited_grant` admits a leaf verb when the role's effective
+actions **on the ancestor type** contain it — so `catalog: ["READ"]` (→ `view, list, list-members`)
+inherits `category:view` and `product:view` from the very catalog the supervisor may read, whenever the
+ancestor chain is present. It always is at runtime; an ancestor-less probe returns `false`, which is
+exactly how the original U14 was written (a green-lighting trap, now re-pinned).
+
+So this slice ships **one narrow policy change**, pinned by [[0031-inheritance-confined-to-membership-roles|ADR 0031]]
+and built in **T3**: ancestor inheritance requires **membership provenance**. `resourceRole()` — the
+single production funnel for membership-derived roles — stamps `attributes.provenance = "membership"`;
+`inherited_grant` and `list_inheritable_grant` in `category.rego` **and** `product.rego` (four clauses)
+open only on that stamp. The supervisor role carries `provenance = "supervised"` and therefore inherits
+nothing, while **direct grants are untouched** — a role naming a type explicitly still reaches it with no
+stamp at all, which is why every shipped per-type role is unaffected and why slice B's tiered role (it
+adds `category`/`product` keys explicitly) needs no policy change. Absence of the stamp is **closed**, so
+slices B and C are confined by default.
+
 Slice B widens the grant; this slice must not.
 
-### 3. Precedence and disjointness (T3, T4)
+### 3. Confining inheritance to membership-derived roles (T3)
+
+Pinned by [[0031-inheritance-confined-to-membership-roles|ADR 0031]] and detailed in §2 above: the
+single membership funnel `EffectiveRoleService.resourceRole()` stamps
+`attributes.provenance = "membership"`, and the four inheritance clauses
+(`inherited_grant` + `list_inheritable_grant`, in `category.rego` **and** `product.rego`) open only on
+that stamp. **The conjunct may NOT be centralized into `permissions.effective_actions`** — direct
+grants use the same helper, so the supervisor would lose its own `catalog:view`, and `permissions.rego`
+is byte-mirrored into the user-service bundle (a drift surface for no benefit). `category.rego` and
+`product.rego` are **not** mirrored, so the drift guard stays out of play.
+
+Because `opa test` inputs are hand-written, the policy tests cannot catch the Java side silently
+ceasing to stamp — so T3 also carries **one test at the seam** asserting `resourceRole()` applies it.
+
+### 4. Precedence and disjointness (T4, T5)
 
 Where a subject is **both** a member and a supervisor of a team, **membership wins**:
 
@@ -123,14 +155,44 @@ residual applied to it is never in question and the supervisor role's vacuous ta
 widen a tag-gated membership row. Unioning the two roles' permissions is exactly that fail-open, and is
 rejected.
 
-### 4. The list (T4)
+### 5. The list (T5)
 
 `CatalogListAuthorizer` today resolves one role from `governedIds.get(0)` and compiles **one** residual,
 on the stated assumption that "every governed catalog is one the subject is a member of". This slice
-breaks that assumption. The two scopes are composed through the **shipped** `findAuthorized` 4-arg
+breaks that assumption. The two scopes are composed through the **shipped** `findAuthorized` **paged
+5-arg**
 overload — the ADR-0010 base-scope-widening idiom — with the supervised ids riding the `subtreeSpec`
 slot, so a membership row is judged by the membership residual while a supervised row is admitted by
 the widening arm. `totalElements` stays the authorized total; every branch fails closed to empty.
+
+**The composition above holds on the PURE-SQL branch only.** `findAuthorized` has four branches, and
+`subtreeSpec` reaches the query in exactly one of them (verified by reading `AbacQueryService`):
+partial-eval **disabled** → one `opaClient.allow(queryContext)` decides the whole union and
+`subtreeSpec` is **ignored**; `residual.fromError()` → **empty page** (fail-closed, unchanged);
+`!fullySupported()` + allowlist fallback → candidates are **batch-rechecked against the membership
+queryContext**, `subtreeSpec` again **ignored**; pure SQL → the documented composition.
+
+**Pinned semantic — what the two `subtreeSpec`-ignoring branches actually do.** `subtreeSpec` carries
+ids only in the **mixed** case (the case table in [[01-DECOMPOSITION]]'s T5). A **pure supervisor** rides
+`scope` with the supervisor role as context, so all four branches judge those rows correctly and the
+headline persona is unaffected; an ordinary member is byte-identically today's call. In the **mixed**
+case the two degraded branches do **not** apply the two-leg composition — and, measured against the
+shipped code, they do not silently drop the supervised rows either:
+
+- **partial-eval disabled** — one `opaClient.allow(queryContext)` gates the whole request, then the page
+  is `scope ∧ notDenied()`. The union is returned **without any residual**, so this is *wider* than the
+  composition for membership rows too. That is the shipped kill-switch degrade, unchanged by this slice.
+- **`!fullySupported()` + allowlist fallback** — every candidate is re-judged against the **membership**
+  role. Supervised catalog rows generally **survive** (the root-read tag exemption,
+  `infra/opa/policies/config.json`, makes `tags_satisfied` vacuous for `view`/`list`), so the outcome is
+  a per-row membership-role decision, not a supervised-leg drop.
+
+**Neither branch gives the supervised leg its own authority**, which is the honest limitation: on them a
+supervised row is admitted or refused by the *membership* role's verdict rather than by the supervised
+arm. Correcting that needs a **library change** this slice forbids end to end, so it is a **recorded
+limitation for the SPI-promotion slice** — documented, not detected: the app cannot observe which branch
+executed (`AbacQueryService` exposes neither `settings` nor the compiled `PartialResult`), so no WARN and
+no run-time behavior is specified here. U42 records the limitation; it asserts no drop-out.
 
 **`findAuthorized` compiles exactly ONE residual from the ONE context it is given** — there is no
 overload taking two `(scope, context)` legs. Handing it a pre-composed `legA.or(legB)` as `scope` would
@@ -139,7 +201,7 @@ composition is therefore correct **only while the supervisor role's residual is 
 (`READ` + empty `requiredTags` → `ALLOW_ALL`); U34 asserts that precondition so the coupling is visible
 if a later slice adds a tag requirement.
 
-### 5. The read-only ceiling and the audit event (T4)
+### 6. The read-only ceiling and the audit event (T5)
 
 Supervised rows are strictly read-only: every mutation denies. The affordance map follows from the role
 rather than from special-casing — a supervised row emits `{view: true, …mutations false}`. It is **not
@@ -161,7 +223,8 @@ are the consumer's.
 |---|---|
 | Org-relation source **errored / unreachable / non-200 / unparseable** | the subject's **own memberships** — leg 2 contributes nothing |
 | **Partial** derivation (a cycle, a depth-cap breach, a partly-resolvable closure) | **membership-only**, never a partial supervised set |
-| Unauthenticated · no `AbacQueryService` · no `GovernedScopeResolver` · both scopes empty | the **empty page** (unchanged from ADR 0018 §5) |
+| Unauthenticated · no `AbacQueryService` · no `GovernedScopeResolver` · both scopes empty | the **empty page** (unchanged from ADR 0018 §Consequences — “resolver absence ⇒ the safe (empty) outcome”) |
+| A role reaching a child type with **no provenance stamp** (unstamped, empty `attributes`, or an unknown value) | **no inherited grant** — ADR 0031; absence is closed, so a future synthesized role that forgets the stamp fails closed |
 
 A partial set is indistinguishable from a correct smaller one, which is why it collapses rather than
 degrades. In every branch the floor is the empty page, never the table.
@@ -191,3 +254,18 @@ A new section in the existing [[TEAM-BASED-AUTHORIZATION]] guide — this is a s
 surface that guide already owns, not a new subsystem, so it does not earn a new guide
 ([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §3's arbiter: a new guide is warranted exactly when a new row in the
 surface→guide map is).
+
+## Execution parts
+
+**Parts:** part 0 = T1–T3 · part 1 = T4–T6
+
+*(Amended 2026-08-01 after the parts port shipped — this package is the model's first real consumer —
+and re-cut 2026-08-02 when [[0031-inheritance-confined-to-membership-roles|ADR 0031]] added T3.)* Part 0
+is **the supervised role and the rule that confines it**: after T3 the user-service answers "who does
+this subject supervise, and with what role" *and* the corpus provably denies that role any child access —
+the independently-landable subset, provable with ITs plus `opa test` alone, no catalog service, no rig.
+Part 1 is the **catalog side + the e2e proof** (T4–T6). The boundary sits at the deployable handoff, not
+an even split. The two fail-open edges sit one per part — T3's confinement (part 0) and T5's
+`supervised := S \ M` set difference (part 1) — so each part-runner's inline-2A review carries exactly
+one, and the automatic whole-delivery layer-3 review re-covers both at branch scope
+([[AUTONOMOUS-IMPLEMENTATION-FLOW]] §4a).

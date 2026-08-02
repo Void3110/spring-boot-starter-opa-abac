@@ -37,7 +37,7 @@ slice only ever **widens** what the previous one closed — the safest order for
 
 | | Slice | Ships | Status |
 |---|---|---|---|
-| **A** | **SUPERVISED-SCOPE** (this) | The list + metadata, read-only. Contents entirely closed. | 📋 Planning |
+| **A** | **SUPERVISED-SCOPE** (this) | The list + metadata, read-only. Contents entirely closed (role **+** ADR 0031's confinement). | 📋 Planning |
 | **B** | PRODUCTION-TIER | `operatorManaged` tag flag + `env` + root-attribute enrichment. Supervised contents open for **non-prod**; production stays closed. | ⏳ Queued |
 | **C** | STEP-UP-ELEVATION | `deny_reason` + the RFC 9470 challenge + `auth_time` freshness. Production contents open **when freshly elevated**. | ⏳ Queued |
 
@@ -54,10 +54,13 @@ has been throughout (Mulch `mx-12760e`).
    nothing. This is what distinguishes the design from the fallback B4 removed.
 4. **Provenance rides the synthesized role** — a reserved code plus a marker in the role's existing
    `attributes` map. Zero decision-envelope change.
-5. **Contents are closed by the role, not by policy.** The synthesized supervisor role grants the coarse
-   token `catalog: ["READ"]` and **nothing on `category` or `product`** — so the existing
-   role-definition-driven policies deny child reads with **zero Rego change in this slice**. (Coarse
-   *tokens*, never fine verbs: a fine verb expands to ∅ and would grant nothing at all.)
+5. **Contents are closed by the role PLUS the confinement rule** ([[0031-inheritance-confined-to-membership-roles|ADR 0031]], T3).
+   The synthesized role grants the coarse token `catalog: ["READ"]` and **nothing on `category` or
+   `product`** — but that alone is *not* enough: the shipped `catalog → category` inheritance tables
+   would hand it `category:view`/`product:view` anyway. So ancestor inheritance is confined to
+   **membership-derived** roles by a provenance stamp, and this slice ships **one narrow policy
+   change**. (Coarse *tokens*, never fine verbs: a fine verb expands to ∅ and would grant nothing at
+   all.)
 6. **Fail-closed, two classes.** Org source errored → the subject's **own memberships**. Partial derivation
    → **membership-only**, never a partial supervised set.
 
@@ -74,28 +77,56 @@ from her next request, while a direct read of one returns **403**.
 |---|---|---|
 | T1 | user-service: the reporting relation + transitive derivation + `/internal/supervised-targets` | 📋 TODO |
 | T2 | user-service: the non-membership `effective-role` branch + the synthesized supervisor role | 📋 TODO |
-| T3 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | 📋 TODO |
-| T4 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
-| T5 | e2e matrix + demo personas + the guide | 📋 TODO |
+| T3 | **confine ancestor inheritance to membership-derived roles** (ADR 0031 — the provenance stamp + four policy clauses) | 📋 TODO |
+| T4 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | 📋 TODO |
+| T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
+| T6 | e2e matrix + demo personas + the guide | 📋 TODO |
 
-**Validated:** 2026-08-01 — mechanical [1]–[8] green · adversarial pass clean (2 run-stoppers + 10 contradictions found, fixed, re-gated).
+> ✅ **Cleared to run — with two named residual risks.** The inheritance fail-open that blocked this
+> package is closed ([[0031-inheritance-confined-to-membership-roles|ADR 0031]] + **T3**), and the last
+> full adversarial round returned **zero run-stoppers**. Validation was then stopped deliberately on a
+> cost judgement (five full rounds cost 21.4M subagent tokens; see the Mulch record), in favour of
+> targeted delta checks — each ~128k and each of which still caught a defect.
+>
+> **What that buys and what it costs:** no round ever ended *no-fix*, so the last two amendments are
+> verified by a single-agent delta check rather than a full fan-out. Two risks are named rather than
+> eliminated:
+>
+> 1. **T5's composition claims are the least-verified text in the package.** Four rounds asserted a
+>    branch semantic that turned out to be wrong in both directions before it was corrected against the
+>    shipped code. Treat `00-DESIGN` §5's pinned semantic and U42 as *documentation of measured
+>    behavior*, and **re-measure before coding T5** rather than trusting the prose.
+> 2. **The five `opa test` fixtures T3 must re-stamp are measured, not listed.** If a sixth breaks,
+>    stop — something outside the model depends on inheritance.
+>
+> **The partition contains this.** Part 0 (**T1–T3**) is the well-validated half — the role, its
+> confinement, `opa test`-provable, no rig, no list code. Both residual risks live in part 1
+> (**T4–T6**), behind a maintainer checkpoint. Run part 0 first with confidence; read its STATUS notes
+> before releasing part 1.
+
+**Validated:** 2026-08-02 — mechanical [1]–[9] green · adversarial: 4 full rounds (last: **0
+run-stoppers**, 49 agents) + 2 targeted delta checks · **stopped by cost decision, not by a clean
+round** — residual risks named above.
 
 ## Files in this folder
 
 | File | What it is |
 |---|---|
 | [[00-DESIGN]] | The mechanism, decided forks, fail-closed posture, considered-&-rejected. |
-| [[01-DECOMPOSITION]] | The ordered work list T1…T5 + the critical path. |
+| [[01-DECOMPOSITION]] | The ordered work list T1…T6 + the critical path. |
 | [[10-QA-TEST-CASES]] | Concrete U*/I*/E* cases → each ticket's Acceptance. |
 | AUTONOMOUS-IMPLEMENTATION-PROMPT | The self-contained prompt the run executes. |
-| STATUS-01 … STATUS-05 | One stub per ticket, filled at each checkpoint. |
+| STATUS-01 … STATUS-06 | One stub per ticket, filled at each checkpoint. |
 
 ## Conventions
 
-- **Fail-closed floor is the empty page**, never the table — in every branch, exactly as ADR 0018 §5.
+- **Fail-closed floor is the empty page**, never the table — in every branch, exactly as ADR 0018 §Consequences.
 - **Additive only**: no library module changes at all in this slice; both new endpoints mirror shipped
   siblings (`/internal/governed-targets`, `/internal/bootstrap/*`).
-- **Zero Rego changes** — so the mirrored-bundle drift guard is not in play here.
+- **Exactly one narrow Rego change** — T3's four inheritance clauses in `category.rego` + `product.rego`
+  (ADR 0031). Those two files are **not** part of the mirrored bundle (`permissions.rego` +
+  `permission_categories.json` are), so the drift guard stays out of play; any *other* policy edit means
+  the run has left the slice boundary.
 - Clean-room: the consumer is never named; write "the first consumer" or omit.
 
 ## Related
