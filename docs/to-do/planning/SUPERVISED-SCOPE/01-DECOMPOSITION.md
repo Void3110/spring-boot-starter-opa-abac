@@ -74,6 +74,13 @@ reporting edges through CONTROL-capable memberships, depth-capped and cycle-guar
   `InternalResolveController`.)*
 - `@PostMapping("/internal/bootstrap/reporting-edges")` on `InternalBootstrapController`, mirroring the
   shipped bootstrap endpoints, so fixtures seed edges the same way teams and memberships already are.
+- **A removal seam — E4 is unexecutable without one.** Every shipped bootstrap endpoint is
+  upsert-only (verified: four `ensure`-shaped POSTs, no delete anywhere), but E4 — the slice's headline
+  **liveness** proof — requires *removing* a report and observing access withdraw on the next request.
+  Ship the narrowest thing that satisfies it: make the bootstrap POST **declarative for a manager's
+  edge set** (the posted set replaces that manager's edges, so an empty set removes them), or add an
+  explicit `DELETE /internal/bootstrap/reporting-edges`. Pick one, state which in `STATUS-01.md`, and
+  keep it `/internal`-only — this is fixture plumbing, not a public API.
 - **OpenAPI: no change.** `/internal/**` endpoints are hand-written and deliberately absent from
   `user-mgmt-api.yaml` (which is public-API-only and drives codegen) — the four shipped internal
   endpoints are excluded the same way. Document both new contracts in the controller javadoc, exactly
@@ -141,17 +148,30 @@ role keeps the inheritance it has today — closing the fail-open that
 **Deliverables.**
 
 - `EffectiveRoleService.resourceRole(TeamMembership, String)` (user-service) stamps
-  `attributes.provenance = "membership"` on every role it returns. It is the **single production
-  construction site** for membership-derived roles (verified: one call site, from
-  `resolveForResource`) — confirm the batch `/internal/effective-roles` path routes through it before
-  relying on that.
+  `attributes.provenance = "membership"` on every role it returns — by **overwrite, never merge**.
+  A stored role's `attributes` map is **client-supplied** through the role create/update API and is
+  copied verbatim onto the wire role, so `provenance` is a **reserved, system-owned key**: strip a
+  client-supplied value on the write path (`RoleDefinitionService`, mirroring the shipped
+  `withRoleLevel()` — "the explicit value is the single source; an attributes-supplied value is
+  overwritten") and overwrite on the read path. Without both, a client could set
+  `provenance: "membership"` on a custom role and buy back the inheritance this ticket denies the
+  moment any future path returns a stored role without passing through the funnel. It is the single construction site for roles reaching the
+  **catalog-side** policies (verified: one call site, from `resolveForResource`, which the batch
+  `/internal/effective-roles` also routes through — re-confirm before relying on it).
+  `managementRole(...)` is a **second** construction site, but it serves the user-service's own
+  `team.rego` decisions and `team` has no inheritance table, so the conjunct never applies there —
+  **do not** stamp it as membership-derived by reflex; if `team.rego` ever gains inheritance, this
+  decision must be revisited.
 - T2's synthesized supervisor role carries `attributes.provenance = "supervised"` — the **same key**
   that satisfies the design's provenance/audit pin, one marker serving both.
 - `infra/opa/policies/category.rego` and `infra/opa/policies/product.rego`: the conjunct
   `input.role_definition.attributes.provenance == "membership"` added to **all four** clauses —
   `inherited_grant` and `list_inheritable_grant` in each file.
-- Rego test cases in `category_test.rego` / `product_test.rego` (the six below), plus the ~10 existing
-  inheritance-dependent fixtures updated to carry the stamp.
+- Rego test cases in `category_test.rego` / `product_test.rego` (the six below), plus the existing
+  inheritance-dependent fixtures updated to carry the stamp. **Measured, not estimated:** applying the
+  conjunct to an unmodified corpus takes `opa test infra/opa/policies/` from **266/266 to 261/266** —
+  exactly **five** existing cases rely on inheritance and need the stamp added. If a sixth breaks, stop:
+  something outside this ticket's model depends on inheritance.
 - **One test at the seam** (user-service tier, alongside the existing tests that already exercise
   `resourceRole`) asserting the stamp is applied — `opa test` fixtures are hand-written and would stay
   green if the Java silently stopped stamping.
@@ -159,9 +179,11 @@ role keeps the inheritance it has today — closing the fail-open that
   surface, per the design's knowledge destination) stating the invariant — inheritance requires
   membership provenance; a synthesized role is confined to the types it names.
 
-**Acceptance.** QA **U35–U40** + **I7**. Run `opa test infra/opa/policies/` (all green, existing cases
-included) and the seam test. Then re-run the **existing** e2e matrices that read categories/products as
-a member — they are this change's regression proof; a red cell there is a stamp bug, not a flaky rig.
+**Acceptance.** QA **U35–U41** + **I7**. Run `opa test infra/opa/policies/` (all green, existing cases
+included) and the seam test — **no rig, by design**: part 0 must stay provable with ITs plus `opa test`
+alone. The **rig-level** regression for this change (the existing matrices that read categories/products
+as a member) is **T6's** E7 run, which is where the rig comes up; a red cell there is a stamp bug, not a
+flaky rig, and that diagnostic is recorded in T6.
 
 **What NOT to touch.** `permissions.rego` and `permission_categories.json` — the conjunct may **NOT** be
 centralized into `permissions.effective_actions`: direct grants use the same helper (the supervisor

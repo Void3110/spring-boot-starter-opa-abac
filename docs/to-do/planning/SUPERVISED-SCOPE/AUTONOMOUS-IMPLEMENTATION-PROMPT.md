@@ -141,8 +141,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 
 6. **Integration / e2e validation (MANDATORY for the relevant tickets).**
    - T1: Testcontainers IT against real Postgres asserting the supervised id set **by id** (I1) and a
-     clean `ddl-auto: validate` boot (I2). T2: the four resolve branches over HTTP (I3). T4: the paged
-     union (I4), the `_actions` map (I5), and the audit event (I6). Fix-until-green.
+     clean `ddl-auto: validate` boot (I2). T2: the four resolve branches over HTTP (I3). **T3: the seam
+     test — `resourceRole(...)` stamps `attributes.provenance = "membership"` (I7)**; `opa test` alone
+     cannot catch the Java side ceasing to stamp. T5: the paged union (I4), the `_actions` map (I5), and
+     the audit event (I6). Fix-until-green.
    - T6: bring the rig up (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`), then
      `cd scripts/postman && ./run-supervised-scope-matrix.sh`, **plus the E7 non-regression run**. E7 is
      an **enumerated** list, not "the full suite": there is no aggregate runner, and the 15 `run-*.sh`
@@ -232,16 +234,17 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 
 ## Operator notes (not part of the prompt)
 
-- **The headline tickets** — **T4** (the two-leg partitioned list: the mechanism the whole slice exists
-  for, and the one place a mistake widens rather than narrows) and **T6** (E1 + E4: the derived scope is
+- **The headline tickets** — **T5** (the two-leg partitioned list: the mechanism the whole slice exists
+  for, and the one place a mistake widens rather than narrows), **T3** (the confinement rule — without it
+  the supervised path leaks child contents; ADR 0031) and **T6** (E1 + E4: the derived scope is
   exact, and revoking an edge withdraws access on the next request). **T1** is the quiet prerequisite
   whose fail-closed behavior everything downstream inherits.
-- **The fail-closed edge to eyeball** — the **set difference** in T4. If `supervised = S \ M` is skipped
+- **The fail-closed edges to eyeball** — the **set difference** in T5, and the **provenance conjunct** in T3. If `supervised = S \ M` is skipped
   or applied in the wrong direction, a doubly-reachable row gets judged by the vacuous-tag supervisor
   role instead of its tag-gated membership role: that is a genuine widening, and it is the one defect in
-  this slice that fails **open**. U27 and E9 are its assertions. Second place to look: T3's classification
+  this slice that fails **open**. U27 and E9 are its assertions. Second place to look: T4's classification
   — any failure class that returns something other than an empty list.
-- **Standalone-value subset** — **T1 + T2**. They leave the user-service able to answer "who does this
+- **Standalone-value subset** — **T1 + T2 + T3**. They leave the user-service able to answer "who does this
   subject supervise, and with what role", fully tested, with nothing user-visible changed. A good place
   to stop if the window closes.
 - **Rig / e2e specifics** — `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`. Honor the
@@ -250,11 +253,14 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   everything or a stale-allow after T3 is almost always an unreloaded policy, not a code bug. No *other*
   policy edit belongs in this slice. **E8's fault injection is its own edge, not B3's:** B3's
   `ENABLE_RESILIENCE_STUB=1` (`mx-91fa5d`) repoints the whole user-service the rest of the matrix needs —
-  instead, repoint only T4's dedicated supervised base-URL property at a dead port for a second short
+  instead, repoint only T4's *dedicated* supervised base-URL property at a dead port for a second short
   pass, then recreate the catalog pods.
 - **The slice boundary is testable, and E6 is what tests it.** If contents (categories/products) become
-  readable on the supervised path, the run has drifted into slice B. The synthesized role's missing
-  `category`/`product` keys are the only thing holding that line.
+  readable on the supervised path, the run has drifted into slice B. **Two things hold that line, not
+  one:** the synthesized role's missing `category`/`product` keys **and T3's provenance conjunct**. The
+  keys alone are NOT sufficient — the shipped `catalog → child` inheritance tables hand that role the
+  child verbs whenever ancestors are present (always, at runtime), which is the fail-open ADR 0031
+  exists to close. If E6 goes green before T3 lands, it is passing for the wrong reason.
 - **CI does not run the rig yet** — the newman matrix is a local/manual gate; a compose-up→newman CI
   job is a tracked follow-up.
 - **Context management** — if the window grows long mid-run, finish the ticket, stop at its checkpoint,

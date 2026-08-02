@@ -159,7 +159,8 @@ rejected.
 
 `CatalogListAuthorizer` today resolves one role from `governedIds.get(0)` and compiles **one** residual,
 on the stated assumption that "every governed catalog is one the subject is a member of". This slice
-breaks that assumption. The two scopes are composed through the **shipped** `findAuthorized` 4-arg
+breaks that assumption. The two scopes are composed through the **shipped** `findAuthorized` **paged
+5-arg**
 overload — the ADR-0010 base-scope-widening idiom — with the supervised ids riding the `subtreeSpec`
 slot, so a membership row is judged by the membership residual while a supervised row is admitted by
 the widening arm. `totalElements` stays the authorized total; every branch fails closed to empty.

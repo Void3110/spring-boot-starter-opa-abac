@@ -61,16 +61,29 @@ Two further facts constrain any fix:
    `"membership"` for a role resolved from a team membership, `"supervised"` for slice A's synthesized
    supervisor role, and one value per future synthesized role. The `attributes` map already exists and is
    always serialized, so the **wire contract is unchanged**.
-2. **Stamped at the funnel, not stored.** `EffectiveRoleService.resourceRole(...)` — the single production
-   construction site for membership-derived roles — stamps `provenance: "membership"`. Nothing is
+2. **Stamped at the funnel, not stored.** `EffectiveRoleService.resourceRole(...)` — the single
+   construction site for roles that reach the **catalog-side** policies (`catalog`/`category`/`product`)
+   — stamps `provenance: "membership"`. (`managementRole(...)` is a *second* construction site, but it
+   serves the user-service's own dogfooded `team.rego` decisions, and `team` has no ancestor-inheritance
+   table, so this conjunct never applies there. The reserved-key discipline below covers both, since
+   both copy stored `attributes` verbatim.) Nothing is
    migrated; no stored row changes.
-3. **The policy opens inheritance only on that stamp.** `inherited_grant` and `list_inheritable_grant` in
+3. **`provenance` is a RESERVED, system-owned attribute — never client-settable.** A stored role's
+   `attributes` map *is* client-supplied through the role create/update API, and `resourceRole()` copies
+   it verbatim onto the wire role. So the stamp must **overwrite**, not merge — exactly the discipline
+   the shipped `withRoleLevel()` already applies to `attributes.role_level` ("the explicit value is the
+   single source; an attributes-supplied value is overwritten"). A client-supplied `provenance` is
+   **stripped on the write path** and **overwritten on the read path**. Without both, "provenance means
+   the system decided this" would hold only by accident of the current call graph: any future path that
+   returns a *stored* role without passing through the funnel would let a client's own
+   `provenance: "membership"` buy back the inheritance this ADR exists to deny.
+4. **The policy opens inheritance only on that stamp.** `inherited_grant` and `list_inheritable_grant` in
    **`category.rego` and `product.rego`** (four clauses) gain the conjunct
    `input.role_definition.attributes.provenance == "membership"`.
-4. **Absence is closed.** An unstamped role, an empty `attributes`, or an unknown provenance value simply
+5. **Absence is closed.** An unstamped role, an empty `attributes`, or an unknown provenance value simply
    fails the conjunct — inheritance does not apply. A future synthesized role that forgets the stamp is
    **fail-closed** (a visible missing-access bug), never fail-open.
-5. **Direct grants are untouched.** A role naming a type explicitly still reaches it via `direct_grant`
+6. **Direct grants are untouched.** A role naming a type explicitly still reaches it via `direct_grant`
    with no stamp at all — which is why the shipped per-type demo roles need no change, and why slice B's
    tiered role (which adds `category`/`product` keys explicitly, ADR 0029's slice-**B** grant row) is unaffected by this
    ADR.
