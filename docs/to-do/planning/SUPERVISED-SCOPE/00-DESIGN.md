@@ -172,18 +172,27 @@ partial-eval **disabled** → one `opaClient.allow(queryContext)` decides the wh
 `!fullySupported()` + allowlist fallback → candidates are **batch-rechecked against the membership
 queryContext**, `subtreeSpec` again **ignored**; pure SQL → the documented composition.
 
-**Pinned semantic — it binds the MIXED case only.** `subtreeSpec` is used only when a subject has
-**both** membership and supervised ids (§4's case table); a **pure supervisor** carries the supervised
-ids in `scope` with the supervisor role as the context role, so on every branch those rows are judged
-by the supervisor role and the headline persona is unaffected. In the **mixed** case on the two
-`subtreeSpec`-ignoring branches, the supervised rows are re-judged by the **membership** role and
-therefore **drop out**: the subject sees their membership rows only. That is the fail-closed direction
-(rows are lost, never gained) and it is a **known, recorded limitation**, not a defect to fix here —
-carrying supervised ids into the batch path would require a **library change**, which this slice
-forbids end to end. It belongs to the SPI-promotion slice. **No run-time detection is specified:**
-the app cannot observe which branch executed (`AbacQueryService` exposes neither `settings` nor the
-compiled `PartialResult`, and reaching them would be exactly the library change just excluded), so
-the limitation is documented rather than logged. U42 asserts it at the case level.
+**Pinned semantic — what the two `subtreeSpec`-ignoring branches actually do.** `subtreeSpec` carries
+ids only in the **mixed** case (the case table in [[01-DECOMPOSITION]]'s T5). A **pure supervisor** rides
+`scope` with the supervisor role as context, so all four branches judge those rows correctly and the
+headline persona is unaffected; an ordinary member is byte-identically today's call. In the **mixed**
+case the two degraded branches do **not** apply the two-leg composition — and, measured against the
+shipped code, they do not silently drop the supervised rows either:
+
+- **partial-eval disabled** — one `opaClient.allow(queryContext)` gates the whole request, then the page
+  is `scope ∧ notDenied()`. The union is returned **without any residual**, so this is *wider* than the
+  composition for membership rows too. That is the shipped kill-switch degrade, unchanged by this slice.
+- **`!fullySupported()` + allowlist fallback** — every candidate is re-judged against the **membership**
+  role. Supervised catalog rows generally **survive** (the root-read tag exemption,
+  `infra/opa/policies/config.json`, makes `tags_satisfied` vacuous for `view`/`list`), so the outcome is
+  a per-row membership-role decision, not a supervised-leg drop.
+
+**Neither branch gives the supervised leg its own authority**, which is the honest limitation: on them a
+supervised row is admitted or refused by the *membership* role's verdict rather than by the supervised
+arm. Correcting that needs a **library change** this slice forbids end to end, so it is a **recorded
+limitation for the SPI-promotion slice** — documented, not detected: the app cannot observe which branch
+executed (`AbacQueryService` exposes neither `settings` nor the compiled `PartialResult`), so no WARN and
+no run-time behavior is specified here. U42 records the limitation; it asserts no drop-out.
 
 **`findAuthorized` compiles exactly ONE residual from the ONE context it is given** — there is no
 overload taking two `(scope, context)` legs. Handing it a pre-composed `legA.or(legB)` as `scope` would

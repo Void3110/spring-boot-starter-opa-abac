@@ -257,7 +257,7 @@ with the supervised rows read-only and audited — and existing personas byte-id
   | `supervised` empty (an ordinary member) | `id IN M` — **today's call, unchanged** | the membership role | `null` |
 
   The library composes `scope ∧ (residual ∨ subtreeSpec) ∧ notDenied()` **on its pure-SQL branch** (see
-  [[00-DESIGN]] §5's pinned semantic for the two branches that ignore `subtreeSpec`, and U42), so in the
+  [[00-DESIGN]] §5's pinned semantic (the branch limitation) for the two branches that ignore `subtreeSpec`, and U42), so in the
   mixed case a
   membership row is judged by the membership residual while a supervised row is admitted by the
   `subtreeSpec` arm — each row judged by the authority that earned it, with the deny-override still

@@ -63,7 +63,7 @@ tags:
 | U39 | A membership role naming `category` **explicitly**, no stamp at all, + ancestors | `allow` **true** via `direct_grant` — untouched by the conjunct; proves the change reaches only the inheritance path | T3 |
 | U40 | A role with **no `attributes`** (or an unknown `provenance` value), + ancestors | **no inherited grant** — absence is closed, so a future synthesized role that forgets the stamp fails **closed** | T3 |
 | U41 | A stored custom role created with a client-supplied `attributes.provenance = "membership"`, then resolved | the stored value is **stripped/overwritten** by the system — a client cannot forge provenance, and the wire role's `provenance` reflects only how the system resolved it | T3 |
-| U42 | **Mixed** subject (membership **and** supervised ids) on the two `subtreeSpec`-ignoring branches — partial-eval **disabled**, and `!fullySupported()` + allowlist fallback | the supervised rows **drop out** and the subject sees their **membership rows only** — rows lost, never gained (the recorded limitation; carrying them needs a library change this slice forbids). A **pure supervisor is unaffected**: its ids ride `scope` with the supervisor role, so every branch judges them correctly | T5 |
+| U42 | **Documented limitation** (not a behavioral assertion): on the two `subtreeSpec`-ignoring branches — partial-eval **disabled**, and `!fullySupported()` + allowlist fallback — a **mixed** subject's supervised rows are decided by the **membership** role's verdict, not by the supervised arm; the two-leg composition holds on the pure-SQL branch only. Assert that `00-DESIGN` records this and that **no ticket claims otherwise**. A pure supervisor is unaffected (its ids ride `scope`) | T5 |
 
 ## Integration (I*)
 
