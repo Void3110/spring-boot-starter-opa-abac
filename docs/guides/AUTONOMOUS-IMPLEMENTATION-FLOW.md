@@ -276,8 +276,16 @@ adversarial pass.
    the `autonomous-runs` pause classes), and a cross-doc consistency auditor (design ↔ decomposition ↔
    QA ↔ prompt telling one story), each finding adversarially verified before it is reported.
 
-Both must be clean before the package is committed. **On both gates passing, one line is written into
-the package index** (the `**Validated:**` convention):
+Both must be clean before the package is committed. **The adversarial fan-out runs once**; the fixes it
+prompts are then validated by a **delta check over the fix commit** — one agent, scoped to `git show
+<sha>` — looping until an iteration finds nothing. Re-running the fan-out to check a small edit is the
+expensive mistake: measured 2026-08-02, five full rounds on one package cost 21.4M subagent tokens
+while a delta check cost ~128k and caught defects the rounds had missed. Escalate back to a full round
+only when a defect appears *outside* the edited region, when the amendment was structural (a renumber,
+a new ticket), or after three consecutive delta checks find defects. The `decompose` skill owns the
+exact procedure.
+
+**On the loop ending, one line is written into the package index** (the `**Validated:**` convention):
 
 ```
 **Validated:** <date> — mechanical + adversarial clean
