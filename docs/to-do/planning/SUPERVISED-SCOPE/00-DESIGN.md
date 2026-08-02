@@ -172,13 +172,18 @@ partial-eval **disabled** → one `opaClient.allow(queryContext)` decides the wh
 `!fullySupported()` + allowlist fallback → candidates are **batch-rechecked against the membership
 queryContext**, `subtreeSpec` again **ignored**; pure SQL → the documented composition.
 
-**Pinned semantic:** on the two `subtreeSpec`-ignoring branches the **supervised leg contributes
-nothing** — the subject sees their membership rows only, never a supervised row judged by a role that
-did not earn it. That is the fail-closed direction (rows are lost, never gained), and it is a
-**silent feature-off**, so T5 logs one WARN when a supervised id set is non-empty while the executing
-branch cannot honor it. Widening the batch path to carry supervised ids would require a **library
-change**, which this slice forbids end to end — it is a recorded limitation for the SPI-promotion
-slice, not something to fix here. U42 asserts both branches.
+**Pinned semantic — it binds the MIXED case only.** `subtreeSpec` is used only when a subject has
+**both** membership and supervised ids (§4's case table); a **pure supervisor** carries the supervised
+ids in `scope` with the supervisor role as the context role, so on every branch those rows are judged
+by the supervisor role and the headline persona is unaffected. In the **mixed** case on the two
+`subtreeSpec`-ignoring branches, the supervised rows are re-judged by the **membership** role and
+therefore **drop out**: the subject sees their membership rows only. That is the fail-closed direction
+(rows are lost, never gained) and it is a **known, recorded limitation**, not a defect to fix here —
+carrying supervised ids into the batch path would require a **library change**, which this slice
+forbids end to end. It belongs to the SPI-promotion slice. **No run-time detection is specified:**
+the app cannot observe which branch executed (`AbacQueryService` exposes neither `settings` nor the
+compiled `PartialResult`, and reaching them would be exactly the library change just excluded), so
+the limitation is documented rather than logged. U42 asserts it at the case level.
 
 **`findAuthorized` compiles exactly ONE residual from the ONE context it is given** — there is no
 overload taking two `(scope, context)` legs. Handing it a pre-composed `legA.or(legB)` as `scope` would

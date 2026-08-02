@@ -95,8 +95,7 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 3. **Write/extend the tests** for the ticket (the relevant U*/I*/E* cases from `10-QA-TEST-CASES.md`).
    Core/client tests use an **in-process `com.sun.net.httpserver.HttpServer` stub** (no WireMock).
    Persistence/IT tests run against **real Postgres via Testcontainers** (never H2). Policies use
-   `opa test` — **T3 is the slice's ONLY policy change**: it adds the six U35–U40 cases and updates the
-   the five existing inheritance fixtures (measured, not estimated) to carry the provenance stamp. Every other ticket leaves the corpus
+   `opa test` — **T3 is the slice's ONLY policy change**: it adds the six U35–U40 cases and updates the five existing inheritance fixtures (measured, not estimated) to carry the provenance stamp. Every other ticket leaves the corpus
    untouched, and `opa test infra/opa/policies/` must be green at every checkpoint.
 
 4. **Compile + run unit tests until green.** `./gradlew :<module>:test` (and `./gradlew build` for the

@@ -256,7 +256,9 @@ with the supervised rows read-only and audited — and existing personas byte-id
   | `M` empty (a pure supervisor) | `id IN supervised` | the **supervisor** role | `null` |
   | `supervised` empty (an ordinary member) | `id IN M` — **today's call, unchanged** | the membership role | `null` |
 
-  The library composes `scope ∧ (residual ∨ subtreeSpec) ∧ notDenied()`, so in the mixed case a
+  The library composes `scope ∧ (residual ∨ subtreeSpec) ∧ notDenied()` **on its pure-SQL branch** (see
+  [[00-DESIGN]] §5's pinned semantic for the two branches that ignore `subtreeSpec`, and U42), so in the
+  mixed case a
   membership row is judged by the membership residual while a supervised row is admitted by the
   `subtreeSpec` arm — each row judged by the authority that earned it, with the deny-override still
   AND-ed outside.
@@ -269,11 +271,13 @@ with the supervised rows read-only and audited — and existing personas byte-id
     `subtreeSpec` is correct **only because the supervisor role's residual is unconditional**
     (`READ` with empty `requiredTags` → `ALLOW_ALL`). If a later slice gives that role a tag
     requirement, this composition must change. U34 is what makes the coupling visible.
-- **Retire `governedIds.get(0)` **and replace it explicitly**: the residual-driving role is resolved from
-  the first **membership** id (`M`), never from the `M ∪ supervised` union — a supervised id must never
-  select the residual role, or a supervised row's vacuous-tag role would judge membership rows (ADR 0029
-  §5's disjointness is what makes this well-defined; with `M` empty the membership leg contributes
-  nothing and the supervised leg stands alone). Retiring** together with the Javadoc paragraph justifying it ("every governed
+- **Retire `governedIds.get(0)` and replace it explicitly** — the case table above *is* the replacement,
+  and a wrong guess here is the slice's fail-open. Restated as a rule: **whenever `M` is non-empty the
+  residual-driving role is resolved from a MEMBERSHIP id, never from the `M ∪ supervised` union** (a
+  supervised id selecting it would let the supervisor role's vacuous tag requirement judge tag-gated
+  membership rows). Only when **`M` is empty** — the pure-supervisor case — is the role resolved from a
+  supervised id, which is correct because there are no membership rows for it to widen. Retire it
+  together with the Javadoc paragraph justifying it ("every governed
   catalog is one the subject is a member of") — that assumption is exactly what this slice breaks.
   **Build-breaker: any existing test asserting the single-role shape must be updated in this same
   commit.** Scout them first (`CatalogListAuthorizer`-referencing tests, `PaginationEnvelopeIT`).
