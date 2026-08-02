@@ -82,37 +82,31 @@ from her next request, while a direct read of one returns **403**.
 | T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
 | T6 | e2e matrix + demo personas + the guide | 📋 TODO |
 
-> ⚠️ **Fork resolved 2026-08-02 — re-validation pending.** The confirmed run-stopper (the pinned
-> `catalog: ["READ"]` role inherited `category:view`/`product:view` through the shipped
-> `catalog → child` inheritance tables whenever ancestors were present, which is always at runtime) is
-> **decided, not merely noted**: ancestor inheritance is now confined to **membership-derived** roles by
-> a provenance stamp — [[0031-inheritance-confined-to-membership-roles|ADR 0031]], which **amends
-> ADR 0029** row 131 — and this slice ships **one narrow policy change** as the new **T3**. The fix was
-> spiked against the real corpus before it was written: supervisor + ancestors → `false`, supervisor
-> type-level list → `false`, stamped wildcard member → `true`, unstamped explicit-key member → `true`
-> (direct grants untouched), supervisor `catalog:view` → `true`.
+> ✅ **Cleared to run — with two named residual risks.** The inheritance fail-open that blocked this
+> package is closed ([[0031-inheritance-confined-to-membership-roles|ADR 0031]] + **T3**), and the last
+> full adversarial round returned **zero run-stoppers**. Validation was then stopped deliberately on a
+> cost judgement (five full rounds cost 21.4M subagent tokens; see the Mulch record), in favour of
+> targeted delta checks — each ~128k and each of which still caught a defect.
 >
-> Also resolved in the same amendment: **U14's input shape** (the eval must carry the resolver's
-> ancestor chain — the ancestor-less probe is what green-lit the fail-open), **E8's fault-injection
-> mechanism** (its own supervised base-URL property + a two-pass run, since B3's approach replaces the
-> whole user-service the matrix needs), and **ADR 0029 §9's `GovernedScopeResolver` contract revision**
-> (explicitly deferred to the SPI promotion — no ticket owns a library edit).
+> **What that buys and what it costs:** no round ever ended *no-fix*, so the last two amendments are
+> verified by a single-agent delta check rather than a full fan-out. Two risks are named rather than
+> eliminated:
 >
-> **Do not run this package yet.** The amend-mode adversarial gate was re-run on the amendment
-> (65 agents, 0 errors) and returned **38 confirmed / 23 refuted — 14 run-stoppers**, all clustering
-> into three causes that the amendment itself introduced or left behind: the **autonomous prompt was
-> never updated** (it still ran T1→T5, forbade the Rego change T3 *is*, and told the run not to restart
-> OPA), the **cross-cutting "zero Rego" assertions** in three files, and residual **ticket/STATUS
-> drift**. All three are now fixed and the mechanical gate is green — but the corrected package has
-> **not yet been re-validated**, and several confirmed contradictions (E8's rig seam, the
-> `findAuthorized` arity, U14's ticket ownership) were resolved in the same pass and need the same
-> scrutiny.
+> 1. **T5's composition claims are the least-verified text in the package.** Four rounds asserted a
+>    branch semantic that turned out to be wrong in both directions before it was corrected against the
+>    shipped code. Treat `00-DESIGN` §5's pinned semantic and U42 as *documentation of measured
+>    behavior*, and **re-measure before coding T5** rather than trusting the prose.
+> 2. **The five `opa test` fixtures T3 must re-stamp are measured, not listed.** If a sixth breaks,
+>    stop — something outside the model depends on inheritance.
+>
+> **The partition contains this.** Part 0 (**T1–T3**) is the well-validated half — the role, its
+> confinement, `opa test`-provable, no rig, no list code. Both residual risks live in part 1
+> (**T4–T6**), behind a maintainer checkpoint. Run part 0 first with confidence; read its STATUS notes
+> before releasing part 1.
 
-**Validated:** ~~2026-08-01 — mechanical + adversarial clean~~ **SUPERSEDED — re-validation pending.**
-Mechanical [1]–[9] green on the amendment (6 tickets, 6 STATUS stubs, `[9]` = 2 parts covering 6 of 6).
-Adversarial history: 2026-08-01 → 20 confirmed (2 run-stoppers: the inheritance fail-open, now closed by
-ADR 0031 + T3); 2026-08-02 → 38 confirmed (14 run-stoppers, all from the amendment's own blind spots,
-now fixed). This line is restored only when a re-run comes back clean.
+**Validated:** 2026-08-02 — mechanical [1]–[9] green · adversarial: 4 full rounds (last: **0
+run-stoppers**, 49 agents) + 2 targeted delta checks · **stopped by cost decision, not by a clean
+round** — residual risks named above.
 
 ## Files in this folder
 
