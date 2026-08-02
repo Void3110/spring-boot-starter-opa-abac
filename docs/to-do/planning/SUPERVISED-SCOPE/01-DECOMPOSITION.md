@@ -124,8 +124,8 @@ read-only role instead of `204` — carrying provenance, and granting nothing on
 
 **Acceptance.** QA **U11–U16**, **I3**. `./gradlew :example-user-management-service:test` green.
 U14 is the boundary assertion and must be checked **against the policy, not only the Java shape** —
-assert via `opa eval` that `data.catalog.filter` is true and `data.category.allow` is false under the
-synthesized role. A Java-only assertion would pass on a role that grants nothing.
+assert via `opa eval` that `data.catalog.filter` is **true** under the synthesized role. A Java-only
+assertion would pass on a role that grants nothing.
 **U14 asserts the role SHAPE and `data.catalog.filter` — not "contents are closed."** That half cannot
 hold at T2: the confinement rule lands in T3, and an ancestor-less probe would return `false` for the
 wrong reason (precisely how the original case green-lit a live fail-open — ADR 0031 §Context). The
@@ -269,14 +269,22 @@ with the supervised rows read-only and audited — and existing personas byte-id
     `subtreeSpec` is correct **only because the supervisor role's residual is unconditional**
     (`READ` with empty `requiredTags` → `ALLOW_ALL`). If a later slice gives that role a tag
     requirement, this composition must change. U34 is what makes the coupling visible.
-- **Retire `governedIds.get(0)`** together with the Javadoc paragraph justifying it ("every governed
+- **Retire `governedIds.get(0)` **and replace it explicitly**: the residual-driving role is resolved from
+  the first **membership** id (`M`), never from the `M ∪ supervised` union — a supervised id must never
+  select the residual role, or a supervised row's vacuous-tag role would judge membership rows (ADR 0029
+  §5's disjointness is what makes this well-defined; with `M` empty the membership leg contributes
+  nothing and the supervised leg stands alone). Retiring** together with the Javadoc paragraph justifying it ("every governed
   catalog is one the subject is a member of") — that assumption is exactly what this slice breaks.
   **Build-breaker: any existing test asserting the single-role shape must be updated in this same
   commit.** Scout them first (`CatalogListAuthorizer`-referencing tests, `PaginationEnvelopeIT`).
 - A dedicated audit logger — the SLF4J logger named
   **`dev.dmitriikonovalov.example.catalog.audit.SupervisedRead`** (pinned so I6 can assert it by name,
-  and so a consumer can route it independently) — emitting one structured event per supervised
-  **list** read: subject, root id, access path. **No event** on a membership read. Nothing persisted.
+  and so a consumer can route it independently) — emitting **one event per supervised list REQUEST, at
+  `INFO`, only when the supervised leg contributed at least one row** (a request whose supervised leg is
+  empty emits nothing — otherwise every ordinary list by a supervisor-eligible subject would log). The
+  payload carries subject, access path, and the **supervised root ids as a list** — plural, because a
+  page can span several supervised roots, which a singular "root id" cannot express. **No event** on a
+  membership read. Nothing persisted.
   **Scope, pinned:** this slice audits the **list** path only, because that is where the supervised
   authority is applied; supervised single-`GET` auditing rides the `@OpaPreAuthorize` gate and is
   **deferred** (it lands naturally with the slice-C audit work). I6 asserts the list event; no case
@@ -286,7 +294,7 @@ with the supervised rows read-only and audited — and existing personas byte-id
   `view` is true here. **Verify the verb set against the real endpoints, never assume it**
   (`mx-3446c4` records two corrections caught exactly this way).
 
-**Acceptance.** QA **U25–U32**, **U34**, **I4–I6**. `./gradlew :example-catalog-management-service:test` green and
+**Acceptance.** QA **U25–U32**, **U34**, **U42**, **I4–I6**. `./gradlew :example-catalog-management-service:test` green and
 `./gradlew build` green. **U25 is the non-regression assertion** — with an empty supervised set the page
 must equal today's result exactly. I4 asserts paging correctness across the union (no duplicate, no row
 skipped at a boundary).
@@ -336,7 +344,10 @@ document the second access path.
 - Guide: a **new section in the existing** `docs/guides/TEAM-BASED-AUTHORIZATION.md` covering the two
   access paths, the precedence rule, the CONTROL-capable reach rule, and both failure classes. Per
   [[00-DESIGN]]'s knowledge destination, this does **not** earn a new guide.
-- `infra/README.md` and `scripts/postman/README.md`: the new matrix, its flags, and the personas.
+- `infra/README.md` and `scripts/postman/README.md`: the new matrix, its flags, and the personas —
+  **including a fixture-id prefix registered in `scripts/postman/README.md`'s registry** (`sup_*`,
+  mirroring the shipped per-matrix prefixes). The registry exists so two matrices cannot collide on a
+  fixture id; a new matrix that skips it is the collision waiting to happen.
 
 **Acceptance.** QA **E1–E10**, **D1–D2**. `./gradlew build` green; `opa test infra/opa/policies` green
 **including T3's new cases** (this slice ships exactly one narrow policy change — ADR 0031 — and no

@@ -165,6 +165,21 @@ overload — the ADR-0010 base-scope-widening idiom — with the supervised ids 
 slot, so a membership row is judged by the membership residual while a supervised row is admitted by
 the widening arm. `totalElements` stays the authorized total; every branch fails closed to empty.
 
+**The composition above holds on the PURE-SQL branch only.** `findAuthorized` has four branches, and
+`subtreeSpec` reaches the query in exactly one of them (verified by reading `AbacQueryService`):
+partial-eval **disabled** → one `opaClient.allow(queryContext)` decides the whole union and
+`subtreeSpec` is **ignored**; `residual.fromError()` → **empty page** (fail-closed, unchanged);
+`!fullySupported()` + allowlist fallback → candidates are **batch-rechecked against the membership
+queryContext**, `subtreeSpec` again **ignored**; pure SQL → the documented composition.
+
+**Pinned semantic:** on the two `subtreeSpec`-ignoring branches the **supervised leg contributes
+nothing** — the subject sees their membership rows only, never a supervised row judged by a role that
+did not earn it. That is the fail-closed direction (rows are lost, never gained), and it is a
+**silent feature-off**, so T5 logs one WARN when a supervised id set is non-empty while the executing
+branch cannot honor it. Widening the batch path to carry supervised ids would require a **library
+change**, which this slice forbids end to end — it is a recorded limitation for the SPI-promotion
+slice, not something to fix here. U42 asserts both branches.
+
 **`findAuthorized` compiles exactly ONE residual from the ONE context it is given** — there is no
 overload taking two `(scope, context)` legs. Handing it a pre-composed `legA.or(legB)` as `scope` would
 AND that single residual over the whole union, narrowing supervised rows by the membership role. The

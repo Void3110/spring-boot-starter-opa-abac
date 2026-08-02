@@ -202,6 +202,10 @@ the slice carries an explicit test of the precondition rather than leaving it im
 - Supervised rows are **strictly read-only**: every mutation is denied, and the affordance map reflects it.
 
 `GovernedScopeResolver`'s contract text is revised accordingly: the governed set is
+> **[Deferred — amended 2026-08-02.]** That revision touches a **published library module**, which slice A
+> forbids end to end. It lands when the org-relation seam is promoted to a published SPI (this ADR's own
+> deferred consequence); slice A leaves the library untouched and composes the supervised set beside the
+> resolver.
 "membership-**or-supervision**-derived, **never an unconditioned universe**."
 
 ## Consequences

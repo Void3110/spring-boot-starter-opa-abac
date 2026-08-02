@@ -13,7 +13,7 @@ tags:
 > E = e2e (asserts the actual cut, not just response shape).
 >
 > **This slice ships exactly one narrow Rego change** — T3's four inheritance clauses (ADR 0031) — so
-> `opa test` gains the six U35–U40 cases and the ~10 existing inheritance fixtures gain the provenance
+> `opa test` gains the six U35–U40 cases and the the five existing inheritance fixtures (measured, not estimated) gain the provenance
 > stamp; no other policy edit belongs here. **E7** asserts the
 > existing policy suite and the affected newman matrices still pass unchanged — that is the proof the
 > claim held. E7 is an **enumerated** list, not "the full suite": see T6's Acceptance.
@@ -63,6 +63,9 @@ tags:
 | U39 | A membership role naming `category` **explicitly**, no stamp at all, + ancestors | `allow` **true** via `direct_grant` — untouched by the conjunct; proves the change reaches only the inheritance path | T3 |
 | U40 | A role with **no `attributes`** (or an unknown `provenance` value), + ancestors | **no inherited grant** — absence is closed, so a future synthesized role that forgets the stamp fails **closed** | T3 |
 
+| U41 | A stored custom role created with a client-supplied `attributes.provenance = "membership"`, then resolved | the stored value is **stripped/overwritten** by the system — a client cannot forge provenance, and the wire role's `provenance` reflects only how the system resolved it | T3 |
+| U42 | The two `subtreeSpec`-ignoring branches of `findAuthorized` — partial-eval **disabled**, and `!fullySupported()` + allowlist fallback — with a non-empty supervised id set | the **supervised leg contributes nothing** (membership rows only, never a supervised row judged by a role that did not earn it) and **one WARN is logged**; rows are lost, never gained — the documented limitation, not a silent wrong answer | T5 |
+
 ## Integration (I*)
 
 | ID | Case | Asserts | → Ticket |
@@ -73,7 +76,6 @@ tags:
 | I4 | The two-leg page over real data, mixed scopes, paged 2-at-a-time | stable total ordering; no row twice; none skipped at a page boundary | T5 |
 | I5 | A supervised row's `_actions` map | `{view:true, update:false, delete:false, assign-tags:false}` — **present, not omitted**; verb set verified against the real endpoints | T5 |
 | I6 | A supervised read emits the audit event | one structured event carrying subject/root/access-path; **no event** on an ordinary membership read | T5 |
-| U41 | A stored custom role created with a client-supplied `attributes.provenance = "membership"`, then resolved | the stored value is **stripped/overwritten** by the system — a client cannot forge provenance, and the wire role's `provenance` reflects only how the system resolved it | T3 |
 | I7 | `EffectiveRoleService.resourceRole(...)` for a real membership | the returned role carries `attributes.provenance == "membership"` — **the seam test**: `opa test` inputs are hand-written, so the policy cases stay green if the Java silently stops stamping, and every member would lose child access in production | T3 |
 
 ## E2E (E*)
