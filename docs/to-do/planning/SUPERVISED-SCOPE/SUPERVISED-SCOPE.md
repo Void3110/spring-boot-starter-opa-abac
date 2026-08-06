@@ -75,9 +75,9 @@ from her next request, while a direct read of one returns **403**.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | user-service: the reporting relation + transitive derivation + `/internal/supervised-targets` | 📋 TODO |
-| T2 | user-service: the non-membership `effective-role` branch + the synthesized supervisor role | 📋 TODO |
-| T3 | **confine ancestor inheritance to membership-derived roles** (ADR 0031 — the provenance stamp + four policy clauses) | 📋 TODO |
+| T1 | user-service: the reporting relation + transitive derivation + `/internal/supervised-targets` | ✅ DONE |
+| T2 | user-service: the non-membership `effective-role` branch + the synthesized supervisor role | ✅ DONE |
+| T3 | **confine ancestor inheritance to membership-derived roles** (ADR 0031 — the provenance stamp + four policy clauses) | ✅ DONE |
 | T4 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | 📋 TODO |
 | T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
 | T6 | e2e matrix + demo personas + the guide | 📋 TODO |
