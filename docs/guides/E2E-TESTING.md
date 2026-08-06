@@ -201,8 +201,12 @@ reruns. Guide: [[TAG-BASED-AUTHORIZATION]].
 
 ### Data-filtering matrix (Phase 5)
 
-`run-filter-matrix.sh` proves OPA partial-evaluation **list** filtering end to end — the residual pushed
-into the SQL `WHERE` clause, so two subjects hit the **same** list endpoint and get **different row sets**.
+`run-filter-matrix.sh` proves OPA-decided **list** filtering end to end: two subjects hit the **same**
+list endpoint and get **different row sets**. The matrix asserts the *row sets over HTTP* — it cannot
+by itself distinguish the pure-SQL residual cut from the (decision-identical) allowlist-batch path, and
+pre-2026-08-06 its multi-type reader roles actually ran the batch path (the foreign-type poisoning the
+folding change removed). Since the fold the readers take the residual-in-`WHERE` path — verified at the
+mechanism level via the Postgres statement log, see [[PARTIAL-EVALUATION-FILTERING]] §"Proven by".
 It needs the full rig with the user-service (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`).
 At run time it mints tokens, seeds a demo catalog as a team-target, bootstraps two single-region-gated
 reader roles (`emea-reader`, `apac-reader`), binds an allow-all owner, leaves the `outsider` user **unbound**
@@ -215,9 +219,9 @@ reader roles (`emea-reader`, `apac-reader`), binds an allow-all owner, leaves th
 | 3 | owner (allow-all) | **all three rows** |
 | 4 | stranger (**no role definition**) | **`[]`** — the `filter` rule has no subject-roles fallback, so a missing role fails *closed* to an empty list, never the whole table |
 
-Requests 1+2 are the decisive proof: the **same endpoint** yields **different rows** because the residual
-is in the SQL, not a post-filter. Request 4 is the fail-closed boundary (the one the pre-impl audit
-flagged). All green; stable across reruns. Guide: [[PARTIAL-EVALUATION-FILTERING]].
+Requests 1+2 are the decisive contrast: the **same endpoint** yields **different rows**, decided by the
+same policy that decides single resources. Request 4 is the fail-closed boundary (the one the pre-impl
+audit flagged). All green; stable across reruns. Guide: [[PARTIAL-EVALUATION-FILTERING]].
 
 ### Hierarchy-aware list matrix (Slice 5.5-B)
 
