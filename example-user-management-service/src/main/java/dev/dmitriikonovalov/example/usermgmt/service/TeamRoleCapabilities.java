@@ -66,4 +66,19 @@ public final class TeamRoleCapabilities {
     public static List<String> forCode(String roleCode) {
         return BY_CODE.getOrDefault(roleCode, List.of(READ));
     }
+
+    /**
+     * Whether the given role code is <b>CONTROL-capable</b> — i.e. its rung of this ladder carries the
+     * {@code CONTROL} category ({@code owner} / {@code administrator} / {@code senior}). Read as "does
+     * this seat own or manage the team", which is the reach rule for the supervised read scope
+     * (ADR 0029 §3): a report contributes a team to their manager's supervised set only through a
+     * CONTROL-capable seat, so a {@code member} / {@code reader} seat — and every custom role, which
+     * projects to {@code [READ]} — does not propagate.
+     *
+     * <p>Derived from {@link #forCode} rather than from a second list of codes: one ladder, one
+     * answer. Add a rung there and this predicate follows automatically.
+     */
+    public static boolean isControlCapable(String roleCode) {
+        return forCode(roleCode).contains(CONTROL);
+    }
 }

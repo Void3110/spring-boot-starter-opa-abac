@@ -44,7 +44,15 @@ public enum UserMgmtErrorCode implements ApiErrorCode {
      * The submitted role definition violates the Phase-6.5 authoring contract (bad {@code roleLevel},
      * non-category token, category beyond the level ceiling, denial of a never-granted action).
      */
-    ROLE_DEFINITION_INVALID(HttpStatus.UNPROCESSABLE_CONTENT, "Role definition is invalid");
+    ROLE_DEFINITION_INVALID(HttpStatus.UNPROCESSABLE_CONTENT, "Role definition is invalid"),
+
+    /**
+     * The submitted reporting edge is structurally illegal — a self-edge, or one that would close a
+     * cycle in the reporting relation (SUPERVISED-SCOPE T1). Emitted only from the internal
+     * {@code /internal/bootstrap/reporting-edges} fixture surface, which is deliberately absent from
+     * {@code user-mgmt-api.yaml} (public-API-only); no documented endpoint can produce it.
+     */
+    REPORTING_EDGE_INVALID(HttpStatus.UNPROCESSABLE_CONTENT, "Reporting edge is invalid");
 
     private final HttpStatus status;
     private final String title;

@@ -9,6 +9,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionService;
+import dev.dmitriikonovalov.example.usermgmt.service.SupervisionService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,18 +35,21 @@ public class InternalBootstrapController {
     private final TeamMembershipRepository memberships;
     private final RoleDefinitionRepository roles;
     private final RoleDefinitionService roleDefinitions;
+    private final SupervisionService supervision;
 
     public InternalBootstrapController(
             UserRepository users,
             TeamRepository teams,
             TeamMembershipRepository memberships,
             RoleDefinitionRepository roles,
-            RoleDefinitionService roleDefinitions) {
+            RoleDefinitionService roleDefinitions,
+            SupervisionService supervision) {
         this.users = users;
         this.teams = teams;
         this.memberships = memberships;
         this.roles = roles;
         this.roleDefinitions = roleDefinitions;
+        this.supervision = supervision;
     }
 
     /**
@@ -121,7 +125,31 @@ public class InternalBootstrapController {
         return ResponseEntity.ok(Map.of("membershipId", membership.getId()));
     }
 
+    /**
+     * <b>Declaratively</b> set a manager's reporting edges: the posted {@code reportIds} <em>replace</em>
+     * that manager's whole edge set, so an empty list removes them. Unlike the four {@code ensure}-shaped
+     * endpoints above this is a replace, not an upsert — deliberately, because the slice's headline
+     * <em>liveness</em> proof (E4) needs to <b>remove</b> a report and observe access withdraw on the
+     * next request, and every shipped bootstrap endpoint is upsert-only. A declarative set is the
+     * narrowest seam that provides removal without adding a delete verb to this fixture surface.
+     *
+     * <p>Idempotent (the same set posted twice converges to the same rows) and validated <b>before</b>
+     * anything is written: a self-edge or an edge that would close a cycle answers {@code 422
+     * REPORTING_EDGE_INVALID} and leaves the relation untouched.
+     */
+    @PostMapping("/internal/bootstrap/reporting-edges")
+    @Transactional
+    public ResponseEntity<Map<String, Integer>> setReportingEdges(
+            @RequestBody SetReportingEdges body) {
+        int written = supervision.replaceReportsOf(body.managerId(), body.reportIds());
+        return ResponseEntity.ok(Map.of("reportCount", written));
+    }
+
     public record EnsureUser(String subject, String displayName) {
+    }
+
+    /** The declarative edge set for one manager; {@code reportIds} may be empty (removes them all). */
+    public record SetReportingEdges(UUID managerId, List<UUID> reportIds) {
     }
 
     public record EnsureTeam(String name, String targetType, UUID targetId) {
