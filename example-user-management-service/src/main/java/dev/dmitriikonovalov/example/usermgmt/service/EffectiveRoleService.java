@@ -10,6 +10,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.TagMatchMode;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -188,16 +189,47 @@ public class EffectiveRoleService {
      * {@code permissions[targetType]}. Wildcard expansion applies to {@code denied_actions} exactly
      * as to the grants (Phase 6.5) — a {@code "*"}-scoped denial must narrow the resolved role, or
      * the wire role would read WIDER than the stored one.
+     *
+     * <p><b>The membership funnel stamps provenance (ADR 0031).</b> This is the single construction
+     * site for roles that reach the <b>catalog-side</b> policies, so it marks every role it returns
+     * {@code attributes.provenance = "membership"} — the stamp {@code category.rego} and
+     * {@code product.rego} require before they will apply <em>ancestor inheritance</em>. Without it a
+     * SYNTHESIZED role naming only an ancestor type (the supervised read scope's
+     * {@code catalog: ["READ"]}) would inherit {@code category:view}/{@code product:view} from the
+     * very catalog it may read. Direct grants are unaffected — they need no stamp at all.
+     *
+     * <p>If this ever stops stamping, <b>every member loses child access at once</b>: a loud,
+     * immediately visible failure rather than a silent widening. Because {@code opa test} inputs are
+     * hand-written and would stay green, a test at this seam is required, not optional.
+     *
+     * <p>{@code managementRole} is a <b>second</b> construction site and is deliberately NOT stamped:
+     * it serves the user-service's own dogfooded {@code team.rego} decisions, and {@code team} has no
+     * ancestor-inheritance table, so the conjunct never applies there. Revisit if it ever gains one.
      */
     public RoleDefinition resourceRole(TeamMembership membership, String targetType) {
         RoleDefinitionEntity role = roleOf(membership);
         return new RoleDefinition(
                 role.getCode(),
-                role.getAttributes(),
+                withMembershipProvenance(role.getAttributes()),
                 expandWildcard(role.getPermissions(), targetType),
                 expandWildcard(role.getDeniedActions(), targetType),
                 role.getRequiredTags(),
                 parseMatchMode(role.getMatchMode()));
+    }
+
+    /**
+     * Stamp {@code provenance = "membership"} onto a stored role's attributes — by <b>overwrite,
+     * never merge</b>. A stored role's {@code attributes} map is client-supplied through the role
+     * create/update API and is copied verbatim onto the wire role, so a client-authored
+     * {@code provenance} must never survive: {@code provenance} means "the system resolved this from a
+     * membership", and overwriting here is what makes that true regardless of what was stored. (The
+     * write path strips it too — {@code RoleDefinitionService} — so the guarantee does not rest on the
+     * accident of the current call graph.)
+     */
+    private static Map<String, Object> withMembershipProvenance(Map<String, Object> attributes) {
+        Map<String, Object> stamped = new LinkedHashMap<>(attributes == null ? Map.of() : attributes);
+        stamped.put(SupervisorRoles.PROVENANCE_ATTRIBUTE, SupervisorRoles.PROVENANCE_MEMBERSHIP);
+        return Map.copyOf(stamped);
     }
 
     /**

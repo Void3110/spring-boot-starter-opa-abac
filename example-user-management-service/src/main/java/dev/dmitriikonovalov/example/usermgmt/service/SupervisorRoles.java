@@ -47,6 +47,13 @@ public final class SupervisorRoles {
      */
     public static final String PROVENANCE_ATTRIBUTE = "provenance";
 
+    /**
+     * Provenance of a role resolved from a <b>team membership</b> — the one value that opens ancestor
+     * inheritance in {@code category.rego} / {@code product.rego} (ADR 0031 §4). Stamped at the single
+     * membership funnel, {@code EffectiveRoleService.resourceRole}.
+     */
+    public static final String PROVENANCE_MEMBERSHIP = "membership";
+
     /** Provenance of a role synthesized from the supervised (org-relation) path. */
     public static final String PROVENANCE_SUPERVISED = "supervised";
 

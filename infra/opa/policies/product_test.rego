@@ -257,7 +257,7 @@ test_default_deny_no_roles_no_role_def if {
 # A role resolved on the governing root (a Catalog) grants READ on the catalog type only.
 catalog_root_role := {
 	"code": "catalog-viewer",
-	"attributes": {},
+	"attributes": {"provenance": "membership"}, # ADR 0031 — membership-derived, so inheritance applies
 	"permissions": {"catalog": ["READ"]},
 }
 
@@ -270,7 +270,7 @@ deep_product_input(role_def) := {
 	"resource": {
 		"type": "product",
 		"id": "p1",
-		"attributes": {},
+		"attributes": {"provenance": "membership"},
 		"ancestors": [{"type": "catalog", "id": "c1"}, {"type": "category", "id": "k1"}],
 	},
 	"role_definition": role_def,
@@ -322,6 +322,8 @@ test_no_ancestors_is_direct_only_deny if {
 }
 
 # DIRECT grant still works alongside inheritance (a product-typed permission, no ancestors needed).
+# Deliberately carries NO provenance stamp: ADR 0031 confines only the INHERITANCE path, so a role
+# naming the type explicitly reaches it with no stamp at all.
 test_direct_grant_unaffected_by_inheritance if {
 	product.allow with input as {
 		"subject": {"id": "u1", "roles": ["catalog-viewer"]},
@@ -338,7 +340,7 @@ test_direct_grant_unaffected_by_inheritance if {
 test_inheritable_but_no_ancestor_grant_denies if {
 	not product.allow with input as deep_product_input({
 		"code": "r",
-		"attributes": {},
+		"attributes": {"provenance": "membership"},
 		"permissions": {"catalog": ["WRITE"]}, # WRITE expands without view
 	})
 		with data.product.inheritable as product_inherits_catalog
@@ -348,7 +350,7 @@ test_inheritable_but_no_ancestor_grant_denies if {
 test_inherited_grant_respects_ancestor_denial if {
 	not product.allow with input as deep_product_input({
 		"code": "no-view-root",
-		"attributes": {},
+		"attributes": {"provenance": "membership"},
 		"permissions": {"catalog": ["READ"]},
 		"denied_actions": {"catalog": ["view"]},
 	})
@@ -439,7 +441,7 @@ test_tag_fallback_path_update_now_denied if {
 # tag-gated role only authorizes a product whose tags satisfy the requirement.
 tag_gated_root_role := {
 	"code": "regional-catalog-writer",
-	"attributes": {},
+	"attributes": {"provenance": "membership"}, # ADR 0031 — membership-derived, so inheritance applies
 	"permissions": {"catalog": ["READ", "WRITE"]},
 	"required_tags": {"region": ["emea"]},
 	"match_mode": "ANY_OF",
@@ -658,4 +660,38 @@ test_filter_stale_flat_token_denies if {
 		"role_definition": stale_flat_role,
 		"environment": {},
 	}
+}
+
+# --- ADR 0031: ancestor inheritance is confined to membership-derived roles (U36) ------------------
+#
+# The category sibling carries the full case set (U35, U37–U40); products need the same confinement
+# proven independently, because BOTH leaf policies declare `catalog` inheritable and a fix applied to
+# only one would leave the other leaking. This probe returned TRUE before the conjunct.
+
+supervisor_role := {
+	"code": "supervisor-readonly",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {"catalog": ["READ"]},
+}
+
+# U36 — the supervisor role + a product carrying its catalog ancestor → no inherited grant.
+test_supervised_role_cannot_inherit_product_view if {
+	not product.allow with input as deep_product_input(supervisor_role)
+		with data.product.inheritable as product_inherits_catalog
+}
+
+# The membership constituency keeps it (the product-side mirror of U38).
+test_membership_role_keeps_product_inheritance if {
+	product.allow with input as deep_product_input({
+		"code": "catalog-owner",
+		"attributes": {"provenance": "membership"},
+		"permissions": {"catalog": ["READ", "WRITE", "TAG", "GRANT"]},
+	})
+		with data.product.inheritable as product_inherits_catalog
+}
+
+# Absence is closed on the product side too.
+test_absent_provenance_grants_no_product_inheritance if {
+	not product.allow with input as deep_product_input({"code": "no-attrs", "permissions": {"catalog": ["READ"]}})
+		with data.product.inheritable as product_inherits_catalog
 }
