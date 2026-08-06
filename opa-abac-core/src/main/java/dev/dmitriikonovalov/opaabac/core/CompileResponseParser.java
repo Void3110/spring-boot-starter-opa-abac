@@ -31,7 +31,30 @@ import java.util.List;
  * <h2>Unsupported → deny</h2>
  * Any expression whose operator is outside the closed set, that references something other than
  * {@code input.resource.*}, or whose operand is not a recognized literal, makes the <em>whole</em>
- * residual {@link PartialResult#denyAll()}. Narrow-but-correct beats wide-but-wrong.
+ * residual {@link PartialResult#denyAll()} — unless its entire disjunct is folded away by a
+ * foreign-type binding (next section), in which case the discarded disjunct poisons nothing.
+ * Narrow-but-correct beats wide-but-wrong.
+ *
+ * <h2>Foreign-type disjuncts fold away (multi-type roles)</h2>
+ * A role granting permissions on several resource types compiles to a DNF with disjuncts for
+ * <em>every</em> granted type, each guarded by {@code eq(<type>, input.resource.type)}. Every row this
+ * residual is applied to has {@code type == resourceType} (the same premise that makes the matching
+ * binding a tautology), so a disjunct bound to a <em>different</em> definite type is identically false
+ * here — it is <strong>dropped</strong>, not treated as unsupported. Dropping a disjunct only ever
+ * narrows the OR, so the fold is fail-closed by construction. Only the exact shape
+ * {@code EQ(type, <definite STRING literal ≠ resourceType>)} folds — the discriminator the parser
+ * compares against is a string, and the parser only folds what it can positively prove contradictory.
+ * Any other constraint on {@code type} (negated, non-{@code EQ}, a non-string or unrecognized
+ * literal, a null parser type) still poisons the residual as before.
+ *
+ * <p><strong>If every disjunct folds away, the residual is {@link PartialResult#unsupported()}, not a
+ * clean deny.</strong> An all-foreign DNF means the compiled {@code filter} rule says nothing about
+ * this type at all — but the full policy still might: a role with no direct grant on this type may
+ * admit rows through policy-side <em>inheritance</em> (an inheritable ancestor grant the {@code filter}
+ * entrypoint deliberately does not model), and a type-vocabulary drift between the application's
+ * resource types and the policy's would also look exactly like this. Both need the caller's exact,
+ * hierarchy-aware batch re-check — the pre-fold behavior for this shape — not a definitive empty list
+ * that would diverge from what a single-resource {@code allow} decides.
  */
 final class CompileResponseParser {
 
@@ -66,6 +89,7 @@ final class CompileResponseParser {
         }
 
         List<Conjunction> disjuncts = new ArrayList<>();
+        boolean folded = false;
         for (JsonNode query : queries) {
             ConjunctionResult cj = parseQuery(query);
             if (cj.unsupported()) {
@@ -73,11 +97,24 @@ final class CompileResponseParser {
                 // not-fully-SQL so a caller with the allowlist on can batch-recheck instead of returning empty.
                 return PartialResult.unsupported();
             }
+            if (cj.alwaysFalse()) {
+                // A disjunct bound to a DIFFERENT resource type can never match a row of this type —
+                // dropping it narrows the OR (fail-closed), it does not poison the residual.
+                folded = true;
+                continue;
+            }
             if (cj.alwaysTrue()) {
                 // An empty/tautological conjunction means this disjunct holds for every row → ALLOW_ALL.
                 return PartialResult.allowAll();
             }
             disjuncts.add(new Conjunction(cj.conditions()));
+        }
+        if (disjuncts.isEmpty() && folded) {
+            // EVERY disjunct was foreign-type: the compiled filter says nothing about this type, but the
+            // full policy might (inheritance the filter rule does not model; or a type-vocabulary drift).
+            // Not-fully-SQL → the caller's exact, hierarchy-aware batch re-check — never a definitive
+            // empty list that could diverge from the single-resource decision. See the class doc.
+            return PartialResult.unsupported();
         }
         return PartialResult.conditional(disjuncts);
     }
@@ -87,18 +124,29 @@ final class CompileResponseParser {
             return ConjunctionResult.notSupported();
         }
         List<Condition> conditions = new ArrayList<>();
+        boolean sawUnsupported = false;
         for (JsonNode expr : query) {
             ExprResult er = parseExpression(expr);
+            if (er.contradiction()) {
+                // X AND false = false regardless of the siblings — even unsupported ones — so a
+                // foreign-type binding anywhere makes the whole disjunct droppable.
+                return ConjunctionResult.asAlwaysFalse();
+            }
             if (er.unsupported()) {
-                return ConjunctionResult.notSupported();
+                // Keep scanning: a later foreign-type binding would still fold this disjunct away.
+                sawUnsupported = true;
+                continue;
             }
             // er.tautology() → drop (e.g. the resource-type binding); contributes no condition.
             if (er.condition() != null) {
                 conditions.add(er.condition());
             }
         }
+        if (sawUnsupported) {
+            return ConjunctionResult.notSupported();
+        }
         // No conditions survived (all tautologies / empty query) → the disjunct is unconditionally true.
-        return new ConjunctionResult(conditions, conditions.isEmpty(), false);
+        return new ConjunctionResult(conditions, conditions.isEmpty(), false, false);
     }
 
     /** Parse one expression {@code {"terms": [opRef, operand, operand]}}. */
@@ -138,13 +186,8 @@ final class CompileResponseParser {
             return ExprResult.notSupported();
         }
 
-        // The resource-type binding (eq on input.resource.type against the known type) is a tautology here.
         if ("type".equals(refPath)) {
-            Object lit = literalValue(literal);
-            if (operator == Operator.EQ && resourceType != null && resourceType.equals(lit)) {
-                return ExprResult.asTautology();
-            }
-            return ExprResult.notSupported(); // any other constraint on type is not SQL-expressible safely
+            return typeBindingResult(operator, literal);
         }
 
         Object value = (operator == Operator.IN) ? literalList(literal) : literalValue(literal);
@@ -153,6 +196,22 @@ final class CompileResponseParser {
         }
         String path = mapPath(refPath);
         return ExprResult.of(new Condition(path, operator, value));
+    }
+
+    /**
+     * Classify a constraint on {@code input.resource.type}. The binding {@code eq} against the known
+     * type is a tautology (dropped from its conjunction); the same binding against a <em>different</em>
+     * definite <em>string</em> literal is a contradiction — every row this residual is applied to has
+     * {@code type == resourceType}, so the whole disjunct folds away (see the class doc). Anything else
+     * (an unknown parser type, a non-string/unrecognized literal, a non-{@code EQ} operator) is not
+     * something the parser will vouch for → unsupported.
+     */
+    private ExprResult typeBindingResult(Operator operator, JsonNode literal) {
+        Object lit = literalValue(literal);
+        if (operator == Operator.EQ && resourceType != null && lit instanceof String) {
+            return resourceType.equals(lit) ? ExprResult.asTautology() : ExprResult.asContradiction();
+        }
+        return ExprResult.notSupported();
     }
 
     /** The operator var name from the terms[0] ref ({@code [{var: "eq"}]} or {@code [{var:"internal"},{string:"member_2"}]}). */
@@ -288,25 +347,40 @@ final class CompileResponseParser {
         return out.isEmpty() ? null : out;
     }
 
-    /** Outcome of parsing one expression: a condition, a dropped tautology, or unsupported. */
-    private record ExprResult(Condition condition, boolean tautology, boolean unsupported) {
+    /**
+     * Outcome of parsing one expression: a condition, a dropped tautology, a contradiction (a
+     * foreign-type binding — folds its whole disjunct away), or unsupported.
+     */
+    private record ExprResult(Condition condition, boolean tautology, boolean contradiction, boolean unsupported) {
         static ExprResult of(Condition c) {
-            return new ExprResult(c, false, false);
+            return new ExprResult(c, false, false, false);
         }
 
         static ExprResult asTautology() {
-            return new ExprResult(null, true, false);
+            return new ExprResult(null, true, false, false);
+        }
+
+        static ExprResult asContradiction() {
+            return new ExprResult(null, false, true, false);
         }
 
         static ExprResult notSupported() {
-            return new ExprResult(null, false, true);
+            return new ExprResult(null, false, false, true);
         }
     }
 
-    /** Outcome of parsing one query (conjunction): conditions, "always true", or unsupported. */
-    private record ConjunctionResult(List<Condition> conditions, boolean alwaysTrue, boolean unsupported) {
+    /**
+     * Outcome of parsing one query (conjunction): conditions, "always true", "always false" (a
+     * foreign-type disjunct — dropped from the DNF), or unsupported.
+     */
+    private record ConjunctionResult(
+            List<Condition> conditions, boolean alwaysTrue, boolean alwaysFalse, boolean unsupported) {
         static ConjunctionResult notSupported() {
-            return new ConjunctionResult(List.of(), false, true);
+            return new ConjunctionResult(List.of(), false, false, true);
+        }
+
+        static ConjunctionResult asAlwaysFalse() {
+            return new ConjunctionResult(List.of(), false, true, false);
         }
     }
 }

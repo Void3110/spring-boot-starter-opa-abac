@@ -87,6 +87,24 @@ class AbacQueryServiceTest {
         assertThat(result).isEmpty();
     }
 
+    @Test // U21b (2026-08-06 pin) — a fully-supported DENY_ALL is a POLICY answer: even with the
+    // allowlist fallback ON it must take the pure-SQL route — no scope-wide candidate fetch, no
+    // allowAll bulk round-trip. Guards the routing seam the residual-folding change leans on:
+    // fullySupported decides the path, and a mocked empty scope fetch must not mask a wrong route.
+    void denyAll_fullySupported_neverBatches_evenWithAllowlistOn() {
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of());
+
+        OpaClient client = spy(stub(PartialResult.denyAll(), null, false));
+        List<Row> result = service(client, AbacQueryService.PartialEvalSettings.defaults())
+                .findAuthorized(repo, (r, q, cb) -> null, context());
+
+        assertThat(result).isEmpty();
+        verify(client, never()).allowAll(any());
+        // exactly the one findAll with the always-false composed spec — not a scope-only candidate fetch
+        verify(repo, times(1)).findAll(any(Specification.class));
+    }
+
     @Test // U22 — CONDITIONAL → scope.and(authzSpec) passed to findAll; no batch
     void conditional_andsScopeWithAuthzSpec() {
         JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);

@@ -102,6 +102,31 @@ equality) **and** an array element — so a `CONTAINS` residual matches both a s
 an array `region=["emea","amer"]` row, **agreeing** with the single-decision Rego (whose `resource_tag_values`
 normalizes a scalar to a singleton set). The list and a single-GET decide the **same** rows.
 
+> **Multi-type roles fold, they don't degrade (2026-08-06).** A role granting permissions on several
+> resource types compiles to a DNF with disjuncts for **every** granted type, each guarded by
+> `eq(<type>, input.resource.type)`. The parser folds the binding that matches the queried type away as
+> a tautology, and **drops** a disjunct bound to a *different* definite **string** type as a
+> contradiction — every row the residual is applied to has this table's type, so that disjunct is
+> identically false here, and dropping a disjunct only ever narrows the OR (fail-closed). Before this
+> fold the foreign-type binding poisoned the whole residual, so any multi-type role (e.g. the filter
+> matrix's readers: catalog+category+product READ) silently took the allowlist-batch path — with the
+> allowlist fallback **on** (the default) that was decision-identical but not the pure-SQL cut; with it
+> **off**, it was an over-deny (an empty list). Only the exact `EQ(type, <definite string literal>)`
+> shape folds; any other constraint on `type` still poisons, as does an unsupported condition in a
+> same-type disjunct.
+>
+> **If every disjunct folds away, the residual is `unsupported` (→ the batch re-check), NOT a clean
+> `DENY_ALL`.** An all-foreign DNF means the compiled `filter` rule says nothing about this type — but
+> the full policy still might: a role with no direct grant on the queried type can admit rows through
+> policy-side **inheritance** (the `filter` entrypoint deliberately does not model hierarchy — the
+> widening is `subtreeSpec`'s job, and the shipped authorizers decline that widening for tag-gated and
+> denial-carrying roles *on the documented assumption that the batch recheck covers them*). A clean
+> deny here would permanently empty exactly those lists while a single-GET on the same rows still
+> allows — the adversarial review of this change confirmed that divergence empirically before it
+> shipped. A type-vocabulary drift between the app's resource types and the policy's would produce the
+> same all-foreign shape; routing it to the batch keeps it self-healing (per-row decisions on the rows'
+> own types) instead of a silent, definitive empty list.
+
 ## The rego `filter` rule (the fail-closed boundary)
 
 `category.rego` gains a **`filter`** entrypoint (and a `bulk` rule), additive — `allow` is untouched. Two
@@ -176,10 +201,12 @@ opa:
 ## The load-bearing safety property
 
 **Every failure mode lands on deny or on an exact batch re-check — never on "return everything."** A
-compile error → `DENY_ALL` (empty page); a batch error → all-false; an unsupported residual → deny, or (with
-the allowlist on) an exact batch re-check over a recognized-conjunct pre-filter; a list with no role
-definition → empty. The operator set is small and closed because a mistranslated predicate is a silent data
-leak: narrow-but-correct beats wide-but-wrong.
+compile error → `DENY_ALL` (empty page); a batch error → all-false; an unsupported residual → deny, or
+(with the allowlist on) an exact batch re-check — the fallback fetches **all scoped candidates**
+(scope-only, per ADR [[adr/0012-pagination-envelope|0012]]) and batch-decides each row; the
+untranslatable conjuncts do **not** pre-narrow the fetch. A list with no role definition → empty. The
+operator set is small and closed because a mistranslated predicate is a silent data leak:
+narrow-but-correct beats wide-but-wrong.
 
 ## Proven by
 
@@ -189,7 +216,11 @@ leak: narrow-but-correct beats wide-but-wrong.
   `AbacQueryService` returning **different row sets** for two subjects + the AND-with-scope no-leak proof.
 - **The e2e filter matrix** ([[E2E-TESTING]]): two tag-gated readers hit the same list endpoint through the
   gateway and get different row sets; an allow-all owner sees all; a stranger with no role definition sees
-  none. Run with `scripts/postman/run-filter-matrix.sh`.
+  none. Run with `scripts/postman/run-filter-matrix.sh`. The matrix's reader roles are **multi-type**
+  (catalog+category+product READ), so since the foreign-type fold (2026-08-06) this matrix exercises the
+  **pure-SQL** residual path — verified against the live rig via the Postgres statement log: the readers'
+  category *and* product lists carry the `jsonb` residual in `WHERE`, and no scope-only candidate fetch
+  (the batch path's signature) occurs. Before the fold it proved the same row sets via the batch fallback.
 
 ## Hierarchy-aware list widening (Slice 5.5-B)
 

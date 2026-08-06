@@ -368,6 +368,213 @@ class HttpOpaClientCompileTest {
         assertThat(input.has("resource")).isFalse();
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Multi-type folding (2026-08-06). A role granting several resource types compiles to a DNF with
+    // disjuncts for EVERY granted type, each guarded by eq(<type>, input.resource.type) — the REAL
+    // /v1/compile shape for the e2e filter matrix's reader roles (catalog+category+product READ),
+    // verified against OPA 1.x on the rig. Before the fold, the foreign-type binding poisoned the
+    // whole residual → every multi-type role silently degraded to the allowlist-batch path.
+    // ---------------------------------------------------------------------------------------------
+
+    // The foreign resource-type binding {input.resource.type == "product"} (parsing for "category").
+    private static final String PRODUCT_TYPE_BINDING =
+            "{\"index\":0,\"terms\":["
+                    + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"eq\"}]},"
+                    + "{\"type\":\"string\",\"value\":\"product\"},"
+                    + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"input\"},"
+                    + "{\"type\":\"string\",\"value\":\"resource\"},"
+                    + "{\"type\":\"string\",\"value\":\"type\"}]}]}";
+
+    // The membership residual {"emea" in input.resource.attributes.region} (literal LEFT → CONTAINS).
+    private static final String COND_REGION_CONTAINS_EMEA =
+            "{\"index\":1,\"terms\":["
+                    + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"internal\"},"
+                    + "{\"type\":\"string\",\"value\":\"member_2\"}]},"
+                    + "{\"type\":\"string\",\"value\":\"emea\"},"
+                    + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"input\"},"
+                    + "{\"type\":\"string\",\"value\":\"resource\"},"
+                    + "{\"type\":\"string\",\"value\":\"attributes\"},"
+                    + "{\"type\":\"string\",\"value\":\"region\"}]}]}";
+
+    // An unsupported operator expression (gt on a tag attribute).
+    private static final String UNSUPPORTED_GT_EXPR =
+            "{\"index\":1,\"terms\":["
+                    + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"gt\"}]},"
+                    + "{\"type\":\"ref\",\"value\":[{\"type\":\"var\",\"value\":\"input\"},"
+                    + "{\"type\":\"string\",\"value\":\"resource\"},"
+                    + "{\"type\":\"string\",\"value\":\"attributes\"},"
+                    + "{\"type\":\"string\",\"value\":\"score\"}]},"
+                    + "{\"type\":\"number\",\"value\":5}]}";
+
+    @Test // MT1 — the real multi-type shape: foreign-type disjuncts FOLD AWAY, same-type ones survive →
+    // CONDITIONAL and fully SQL (the pure-SQL path), not the pre-fix silent batch degradation.
+    void conditional_multiTypeRole_foreignTypeDisjunctsFold() throws IOException {
+        String body = "{\"result\":{\"queries\":["
+                + "[" + TYPE_BINDING + "," + COND_REGION_EQ_EMEA + "],"
+                + "[" + TYPE_BINDING + "," + COND_REGION_CONTAINS_EMEA + "],"
+                + "[" + PRODUCT_TYPE_BINDING + "," + COND_REGION_EQ_EMEA + "],"
+                + "[" + PRODUCT_TYPE_BINDING + "," + COND_REGION_CONTAINS_EMEA + "]"
+                + "]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.CONDITIONAL);
+        assertThat(result.fullySupported()).isTrue();
+        assertThat(result.clauses()).hasSize(2); // the two product-bound disjuncts folded away
+        Condition eq = result.clauses().get(0).conditions().get(0);
+        assertThat(eq.operator()).isEqualTo(Condition.Operator.EQ);
+        assertThat(eq.path()).isEqualTo("tags.region");
+        Condition contains = result.clauses().get(1).conditions().get(0);
+        assertThat(contains.operator()).isEqualTo(Condition.Operator.CONTAINS);
+        assertThat(contains.path()).isEqualTo("tags.region");
+    }
+
+    @Test // MT2 — EVERY disjunct is foreign-type (the role has no direct grant on this type) → NOT a
+    // clean deny: the compiled filter says nothing about this type, but the full policy might (an
+    // inheritable ancestor grant the filter rule does not model, or a type-vocabulary drift). Deny,
+    // flagged not-fully-SQL, so the caller's hierarchy-aware batch re-check decides — the adversarial
+    // review (2026-08-06) confirmed a clean DENY_ALL here empties lists whose rows a single-GET allows.
+    void unsupported_whenEveryDisjunctIsForeignType() throws IOException {
+        String body = "{\"result\":{\"queries\":["
+                + "[" + PRODUCT_TYPE_BINDING + "," + COND_REGION_EQ_EMEA + "],"
+                + "[" + PRODUCT_TYPE_BINDING + "," + COND_REGION_CONTAINS_EMEA + "]"
+                + "]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+        assertThat(result.fromError()).isFalse();
+    }
+
+    @Test // MT3 — a foreign-type disjunct folds even when it ALSO carries an unsupported expression:
+    // X AND false = false regardless of the siblings, so the contradiction wins over the poison.
+    void foreignTypeDisjunctFolds_evenWithUnsupportedSibling() throws IOException {
+        String body = "{\"result\":{\"queries\":["
+                + "[" + PRODUCT_TYPE_BINDING + "," + UNSUPPORTED_GT_EXPR + "],"
+                + "[" + TYPE_BINDING + "," + COND_REGION_EQ_EMEA + "]"
+                + "]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.CONDITIONAL);
+        assertThat(result.fullySupported()).isTrue();
+        assertThat(result.clauses()).hasSize(1);
+    }
+
+    @Test // MT4 — the poison is PRESERVED where it belongs: an unsupported expression in a SAME-type
+    // disjunct still denies not-fully-supported (the caller's allowlist path batch-rechecks).
+    void failClosed_unsupportedInSameTypeDisjunct_stillPoisons() throws IOException {
+        String body = "{\"result\":{\"queries\":[["
+                + TYPE_BINDING + "," + UNSUPPORTED_GT_EXPR
+                + "]]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+        assertThat(result.fromError()).isFalse();
+    }
+
+    @Test // MT5 — only the exact EQ-on-type shape folds: a NEGATED type binding (neq) still poisons —
+    // the parser does not reason about what a negated binding implies for this table.
+    void failClosed_negatedTypeBinding_stillPoisons() throws IOException {
+        String negatedTypeBinding = PRODUCT_TYPE_BINDING.replace(
+                "{\"index\":0,\"terms\"", "{\"index\":0,\"negated\":true,\"terms\"");
+        String body = "{\"result\":{\"queries\":[["
+                + negatedTypeBinding + "," + COND_REGION_EQ_EMEA
+                + "]]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+        assertThat(result.fromError()).isFalse();
+    }
+
+    @Test // MT6 — the deferred-poison scan: an unsupported expression BEFORE the foreign-type binding in
+    // the same conjunction. The loop must keep scanning past the unsupported expression and still fold
+    // the disjunct (X AND false = false); a regression to the pre-fold immediate-poison return would
+    // pass every other MT test but fail this one.
+    void foreignTypeDisjunctFolds_whenUnsupportedComesFirst() throws IOException {
+        String body = "{\"result\":{\"queries\":["
+                + "[" + UNSUPPORTED_GT_EXPR + "," + PRODUCT_TYPE_BINDING + "],"
+                + "[" + TYPE_BINDING + "," + COND_REGION_EQ_EMEA + "]"
+                + "]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.CONDITIONAL);
+        assertThat(result.fullySupported()).isTrue();
+        assertThat(result.clauses()).hasSize(1);
+    }
+
+    @Test // MT7 — the curator shape: foreign disjuncts folding must not disturb a same-type disjunct
+    // that is PURE tautology (an unconditional grant on this type) → ALLOW_ALL, not deny.
+    void allowAll_foldedForeignDisjunctsPlusUnconditionalSameType() throws IOException {
+        String body = "{\"result\":{\"queries\":["
+                + "[" + PRODUCT_TYPE_BINDING + "],"
+                + "[" + TYPE_BINDING + "]"
+                + "]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.ALLOW_ALL);
+    }
+
+    @Test // MT8a — the fold's literal boundary is STRING-ONLY: a non-string literal on type (a number)
+    // is not something the parser will vouch a contradiction for → poison, not fold. Pins the
+    // deliberate `lit instanceof String` tightening (2026-08-06): loosening it to any non-equal
+    // literalValue result would fold shapes the parser cannot positively prove contradictory.
+    void failClosed_nonStringTypeLiteral_stillPoisons() throws IOException {
+        String numberTypeBinding = PRODUCT_TYPE_BINDING.replace(
+                "{\"type\":\"string\",\"value\":\"product\"}", "{\"type\":\"number\",\"value\":5}");
+        String body = "{\"result\":{\"queries\":["
+                + "[" + numberTypeBinding + "],"
+                + "[" + TYPE_BINDING + "," + COND_REGION_EQ_EMEA + "]"
+                + "]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+    }
+
+    @Test // MT8b — an UNRECOGNIZED literal on type (a set) likewise poisons: the parser only folds what
+    // it can positively prove contradictory (a definite, unequal STRING literal).
+    void failClosed_unrecognizedTypeLiteral_stillPoisons() throws IOException {
+        String setTypeBinding = PRODUCT_TYPE_BINDING.replace(
+                "{\"type\":\"string\",\"value\":\"product\"}",
+                "{\"type\":\"set\",\"value\":[{\"type\":\"string\",\"value\":\"product\"}]}");
+        String body = "{\"result\":{\"queries\":[[" + setTypeBinding + "]]}}";
+        String base = startServer(ex -> respond(ex, 200, body));
+
+        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+    }
+
+    @Test // MT9 — a NULL parser resource type (reachable: HttpOpaClient passes null when the context has
+    // no resource) cannot judge foreign-vs-matching → EVERY type binding poisons, none folds. Pins the
+    // guard against a "null-safe cleanup" (Objects.equals) that would silently fold everything.
+    void failClosed_nullResourceType_typeBindingPoisons() {
+        String body = "{\"result\":{\"queries\":[[" + PRODUCT_TYPE_BINDING + "]]}}";
+
+        PartialResult result = new CompileResponseParser(null).parse(MAPPER.readTree(body));
+
+        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
+        assertThat(result.fullySupported()).isFalse();
+    }
+
     @FunctionalInterface
     private interface StubHandler {
         void handle(HttpExchange exchange) throws IOException;

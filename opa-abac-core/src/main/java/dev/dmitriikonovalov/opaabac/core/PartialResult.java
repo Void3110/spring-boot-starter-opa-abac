@@ -29,11 +29,16 @@ import java.util.List;
  * <p>No OPA types leak through this record — it is pure data, Spring-free, JSON-free.
  *
  * <h2>The "fully supported" flag (the allowlist escape hatch)</h2>
- * When the residual contained an expression the translator could not map to SQL, {@link #fullySupported()}
- * is {@code false}. The residual still <strong>defaults to {@link Decision#DENY_ALL}</strong> (fail-closed),
- * but the flag lets a caller with the post-fetch allowlist enabled choose an <em>exact batch re-check</em>
- * over the candidate set instead of an empty list — never a wider one. When the fallback is off, the
- * unsupported residual simply denies. A fully-translatable residual has {@code fullySupported == true}.
+ * When the residual contained an expression the translator could not map to SQL — in a disjunct that
+ * <em>survived</em> parsing — {@link #fullySupported()} is {@code false}. The residual still
+ * <strong>defaults to {@link Decision#DENY_ALL}</strong> (fail-closed), but the flag lets a caller with
+ * the post-fetch allowlist enabled choose an <em>exact batch re-check</em> over the candidate set
+ * instead of an empty list — never a wider one. When the fallback is off, the unsupported residual
+ * simply denies. A fully-translatable residual has {@code fullySupported == true}. Note this is
+ * <em>not</em> an iff over the raw compile output: an unrepresentable expression inside a disjunct that
+ * the foreign-type fold discards (see {@code CompileResponseParser}) poisons nothing, and a residual
+ * whose disjuncts <em>all</em> fold away is reported {@code false} (batch-recheckable) even though no
+ * single expression was unrepresentable.
  *
  * <h2>The "from error" flag (an outage is not a policy answer)</h2>
  * A {@link Decision#DENY_ALL} can mean two very different things: the policy is <em>unsatisfiable</em>
@@ -48,8 +53,9 @@ import java.util.List;
  * @param decision       which of the three outcomes this residual is
  * @param clauses        the DNF disjuncts (each a conjunction of conditions); meaningful only for
  *                       {@link Decision#CONDITIONAL}, otherwise an empty list
- * @param fullySupported {@code false} iff the compile output contained an expression the translator could
- *                       not represent (so a batch finish may be needed); {@code true} otherwise
+ * @param fullySupported {@code false} when a batch finish may be needed: a surviving disjunct carried an
+ *                       expression the translator could not represent, or every disjunct was folded away
+ *                       as foreign-type (see the class doc); {@code true} otherwise
  * @param fromError      {@code true} iff this residual reports a failed Compile call rather than a policy
  *                       answer; callers must not let any widening or fallback outlive a {@code true} here
  */

@@ -49,8 +49,12 @@ Concretely:
    cannot silently inherit a fail-**open** filter.
 2. **A neutral residual model in `opa-abac-core`** (Spring-free): `PartialResult{Decision
    ALLOW_ALL|DENY_ALL|CONDITIONAL, List<Conjunction>}` as DNF (OR-of-ANDs);
-   `Condition{path, Operator EQ|NEQ|IN|CONTAINS, value}`. Mapping: empty `result` → `ALLOW_ALL`;
-   `result.queries == []` → `DENY_ALL`; non-empty → `CONDITIONAL`.
+   `Condition{path, Operator EQ|NEQ|IN|CONTAINS, value}`. Mapping — **corrected 2026-08-06; the
+   original text here had the first two outcomes inverted, which as written would be a fail-open
+   whole-table leak (the shipped parser was never wrong — see the boxed correction in
+   [[PARTIAL-EVALUATION-FILTERING]])**: an **empty `result` (`{}`) means UNSATISFIABLE → `DENY_ALL`**;
+   an explicit **empty conjunction (`queries: [[]]`) means unconditionally true → `ALLOW_ALL`**;
+   non-empty conditions → `CONDITIONAL`.
 3. **`ResidualSpecificationFactory` in `opa-abac-spring-data`** translates the residual to a
    `Specification`: `EQ`/`IN` over `jsonb_extract_path_text(tags,'k')`; `CONTAINS` (array tag) via the
    `?` existence op (`jsonb_exists(tags->'k','v')`) — the same scalar-vs-array normalize as the ADR-0004
@@ -63,9 +67,18 @@ Concretely:
 
 **Fail-closed is the load-bearing invariant.** A compile/transport/parse failure → `DENY_ALL` (empty
 page). A batch failure → all-false. An expression the translator does not recognize → `DENY_ALL` (or,
-with `allowlistFallback` on, an **exact batch re-check** over a recognized-conjunct pre-filter). **No
-code path may return more rows on an error than on success.** The operator set is deliberately small and
-closed: a mistranslated predicate is a silent data leak, so narrow-but-correct beats wide-but-wrong.
+with `allowlistFallback` on, an **exact batch re-check** — the fallback fetches all *scoped* candidates
+and batch-decides each row; the untranslatable conjuncts do not pre-narrow the fetch). **No code path
+may return more rows on an error than on success.** The operator set is deliberately small and closed:
+a mistranslated predicate is a silent data leak, so narrow-but-correct beats wide-but-wrong.
+
+> **Amendment (2026-08-06, foreign-type folding).** One exception to "an unrecognized expression
+> poisons the residual": a DNF disjunct guarded by `eq(<type>, input.resource.type)` against a
+> *different* definite string type is identically false for rows of the queried type and is **dropped**
+> (narrowing-safe), unrecognized siblings included. A residual whose disjuncts *all* fold away is
+> reported **not fully supported** (→ the batch re-check), because an all-foreign `filter` residual
+> cannot speak for policy-side inheritance. See [[PARTIAL-EVALUATION-FILTERING]] §"Multi-type roles
+> fold".
 
 ## Considered options
 

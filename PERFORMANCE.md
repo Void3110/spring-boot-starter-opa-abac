@@ -133,6 +133,14 @@ two bulk evaluations (query-time allowlist finisher + response-time affordance b
 bound), and under load OPA's bulk answers stretch into the hundreds of milliseconds on this shared
 VM. That is the next tuning frontier, and it is an OPA/policy cost, not a per-row library fan-out.
 
+> **Stale as of 2026-08-06 (foreign-type folding) — re-measure.** The query-time allowlist finisher
+> in these runs was triggered by the perf role's **multi-type** shape poisoning the residual — i.e.
+> these numbers measured the category list on the **allowlist-batch** path, not the SQL-residual
+> path this section names. Since the fold, that role's residual is fully supported: the finisher
+> bulk no longer runs, the designed bound for these list scenarios is **one** bulk evaluation (the
+> response-time affordance batch), and the "OPA batch-eval latency" share of the ceiling should
+> shrink accordingly. The queued quiet-host re-run should re-pin this section's numbers.
+
 - **The 7.2 disaster mode is gone: OPA survives the 50 req/s stage.** A dedicated 60 s stage at
   50 req/s saturates hard (p50 3.8 s, 27 % failed, dropped iterations) but OPA is **not**
   OOM-killed (7.2: killed), and the failure shape is **fail-closed**: bulk evals that time out

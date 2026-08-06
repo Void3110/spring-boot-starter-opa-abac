@@ -44,15 +44,18 @@ import urllib.request
 # the honest EXCEEDED finding against this pin (resolve = M+1 per page) — that artifact IS the
 # "before" (QA P3). Same-root scenarios stay at 1: there every caller shares one key, the request
 # memo collapses them, and a fully-hit batch never even delegates.
-# batch-eval is pinned 2 on the category-list scenarios (Slice 7.3 re-pin): the query-time
-# allowlist FINISHER and the response-time AFFORDANCE batch are two different questions at two
-# lifecycle points (row inclusion vs verb map) — a wrong pin, not wrong code (ADR 0024 rejected
-# merging them on layering). The catalogs list (multi-root) runs only the affordance batch — its
-# residual fully reduces to SQL, so no finisher bulk: batch-eval pinned 1 there.
+# batch-eval on the category-list scenarios: RE-PINNED 2 → 1 (2026-08-06, foreign-type folding).
+# The Slice-7.3 pin of 2 (query-time allowlist FINISHER + response-time AFFORDANCE batch) was
+# measuring the pre-fold behavior: the perf role is multi-type, its foreign-type disjuncts
+# poisoned the residual, and the finisher bulk ran on every page. Since the fold the residual is
+# fully supported and the finisher does not run — the designed bound is ONE bulk (the affordance
+# batch), same as the catalogs list (multi-root), whose residual always fully reduced. A run
+# reading 2 here now means the finisher is BACK (a fold regression) and must be investigated,
+# which is exactly why this pin must not stay at the stale upper bound.
 EXPECTED = {
     "gate-overhead": {"resolve": 1, "decide": 1},
-    "list-filter": {"resolve": 1, "compile": 1, "batch-eval": 2},
-    "enrichment": {"resolve": 1, "batch-eval": 2},
+    "list-filter": {"resolve": 1, "compile": 1, "batch-eval": 1},
+    "enrichment": {"resolve": 1, "batch-eval": 1},
     "multi-root-list": {"resolve": 2, "compile": 1, "batch-eval": 1},
 }
 
