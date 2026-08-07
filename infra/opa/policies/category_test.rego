@@ -562,7 +562,7 @@ test_bulk_empty if {
 # A role resolved on the governing root (a Catalog) grants READ on the catalog type only.
 cat_root_role := {
 	"code": "catalog-viewer",
-	"attributes": {},
+	"attributes": {"provenance": "membership"}, # ADR 0031 — membership-derived, so inheritance applies
 	"permissions": {"catalog": ["READ"]},
 }
 
@@ -618,7 +618,7 @@ test_inherited_grant_respects_ancestor_denial if {
 	not category.allow with input as deep_category_input(
 		{
 			"code": "no-view-root",
-			"attributes": {},
+			"attributes": {"provenance": "membership"},
 			"permissions": {"catalog": ["READ"]},
 			"denied_actions": {"catalog": ["view"]},
 		},
@@ -630,7 +630,7 @@ test_inherited_grant_respects_ancestor_denial if {
 # TAG MATCH ON THE INHERITED PATH: a tag-gated root role only inherits where the LEAF's tags satisfy it.
 cat_root_role_tagged := {
 	"code": "regional-catalog-reader",
-	"attributes": {},
+	"attributes": {"provenance": "membership"}, # ADR 0031 — membership-derived, so inheritance applies
 	"permissions": {"catalog": ["READ"]},
 	"required_tags": {"region": ["emea"]},
 	"match_mode": "ANY_OF",
@@ -714,9 +714,98 @@ test_list_gate_does_not_affect_single_resource if {
 test_list_gate_respects_ancestor_denial if {
 	not category.allow with input as list_gate_input({
 		"code": "no-list-root",
-		"attributes": {},
+		"attributes": {"provenance": "membership"},
 		"permissions": {"catalog": ["READ"]},
 		"denied_actions": {"catalog": ["list"]},
 	})
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# --- ADR 0031: ancestor inheritance is confined to membership-derived roles (U35, U37–U40) ---------
+#
+# The defect this closes was PROVEN BY EVALUATION, not argued: with the shipped inheritance tables, a
+# synthesized role granting only `catalog: ["READ"]` inherited `category:view` from the very catalog it
+# may read, because inheritance keys on the VERB NAME across types. Before the conjunct these probes
+# returned true. NOTE the shape: the ancestor chain must be PRESENT, because an ancestor-less probe
+# returns false for the wrong reason — which is exactly how the fail-open was green-lit in planning.
+
+# The synthesized supervisor role of ADR 0029: the coarse READ token on the ancestor type only, and the
+# provenance marker saying it was NOT derived from a membership.
+supervisor_role := {
+	"code": "supervisor-readonly",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {"catalog": ["READ"]},
+}
+
+# U35 — the supervisor role + a category CARRYING ITS CATALOG ANCESTOR (the runtime input shape).
+# This same probe returned TRUE before ADR 0031.
+test_supervised_role_cannot_inherit_category_view if {
+	not category.allow with input as deep_category_input(supervisor_role, {})
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# U37 — the COARSE type-level gate is confined too, so it cannot open what the fine cut would deny.
+test_supervised_role_cannot_open_the_type_level_list_gate if {
+	not category.allow with input as list_gate_input(supervisor_role)
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# U38 — THE REGRESSION CASE for the whole change: a WILDCARD-derived membership role (the resolve API
+# expands "*" to the requested type, so it arrives byte-identical in shape to the supervisor role) is
+# stamped `membership` and KEEPS the inheritance it has today. This is the constituency that
+# legitimately depends on the mechanism.
+test_wildcard_membership_role_keeps_inheritance if {
+	category.allow with input as deep_category_input(
+		{
+			"code": "catalog-owner",
+			"attributes": {"provenance": "membership"},
+			# what a stored {"*": [...]} role looks like AFTER resolve-side wildcard expansion
+			"permissions": {"catalog": ["READ", "WRITE", "TAG", "GRANT"]},
+		},
+		{},
+	)
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# U39 — a role naming `category` EXPLICITLY reaches it through `direct_grant` with NO stamp at all:
+# the conjunct touches only the inheritance path, which is why every shipped per-type role is
+# unaffected and why a later slice that widens the synthesized role by naming child types needs no
+# policy change.
+test_direct_grant_needs_no_provenance_stamp if {
+	category.allow with input as deep_category_input(
+		{
+			"code": "category-editor",
+			"attributes": {},
+			"permissions": {"category": ["READ"]},
+		},
+		{},
+	)
+		with data.category.inheritable as category_inherits_catalog
+}
+
+# U40 — ABSENCE IS CLOSED. No `attributes` at all, an empty map, and an UNKNOWN provenance value each
+# fail the conjunct, so a future synthesized role that forgets the stamp fails CLOSED (a visible
+# missing-access bug) rather than open.
+test_absent_or_unknown_provenance_grants_no_inheritance if {
+	not category.allow with input as deep_category_input(
+		{"code": "no-attrs", "permissions": {"catalog": ["READ"]}},
+		{},
+	)
+		with data.category.inheritable as category_inherits_catalog
+
+	not category.allow with input as deep_category_input(
+		{"code": "empty-attrs", "attributes": {}, "permissions": {"catalog": ["READ"]}},
+		{},
+	)
+		with data.category.inheritable as category_inherits_catalog
+
+	not category.allow with input as deep_category_input(
+		{
+			"code": "future-role",
+			"attributes": {"provenance": "elevated"}, # a value this policy does not know
+			"permissions": {"catalog": ["READ"]},
+		},
+		{},
+	)
 		with data.category.inheritable as category_inherits_catalog
 }

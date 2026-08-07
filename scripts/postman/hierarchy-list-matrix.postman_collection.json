@@ -24,7 +24,7 @@
       "event": [{
         "listen": "test",
         "script": {"type": "text/javascript", "exec": [
-          "pm.test('200 OK (the coarse list gate let the inheritable grant through)', () => pm.response.code === 200);",
+          "pm.test('200 OK (the coarse list gate let the inheritable grant through)', () => pm.response.to.have.status(200));",
           "const ids = pm.response.json().items.map(c => c.id);",
           "const phase = pm.variables.get('phase');",
           "// The inherit reader has NO category tag grant; it sees these rows ONLY because the Catalog grant",
@@ -53,7 +53,7 @@
       "event": [{
         "listen": "test",
         "script": {"type": "text/javascript", "exec": [
-          "pm.test('200 OK', () => pm.response.code === 200);",
+          "pm.test('200 OK', () => pm.response.to.have.status(200));",
           "const ids = pm.response.json().items.map(c => c.id);",
           "// The region reader is tag-gated to region=emea (and has its own category:read), so it sees only",
           "// the emea row via the residual — NOT the apac row the inherit reader sees pre-reparent. A different cut.",

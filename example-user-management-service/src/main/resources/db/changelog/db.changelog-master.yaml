@@ -11,3 +11,5 @@ databaseChangeLog:
       file: db/changelog/changes/0005-add-role-required-tags.yaml
   - include:
       file: db/changelog/changes/0006-permission-categories.yaml
+  - include:
+      file: db/changelog/changes/0007-create-reporting-edge.yaml

@@ -1,0 +1,79 @@
+databaseChangeLog:
+  # Slice A (SUPERVISED-SCOPE) T1 — the reporting relation. One row per (manager, report) edge of the
+  # org structure, seeded as a fixture through /internal/bootstrap/reporting-edges. Purely additive:
+  # no existing table is touched, so every shipped persona's resolution is byte-identical.
+  #
+  # The pair is UNIQUE so a re-posted edge converges to one row (idempotent seeding); manager_id is
+  # indexed because the transitive derivation expands a BFS frontier by manager_id on every request.
+  # Both endpoints FK to app_user with ON DELETE CASCADE — removing a principal removes its edges,
+  # so a stale edge can never widen a supervisor's reach to a deleted user's memberships.
+
+  - changeSet:
+      id: 0007-create-reporting-edge
+      author: user-management-service
+      changes:
+        - createTable:
+            tableName: reporting_edge
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: manager_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: report_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              # base-entity columns (AbstractAuditableEntity)
+              - column:
+                  name: version
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: last_modified_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_modified_at
+                  type: timestamptz
+        - addUniqueConstraint:
+            constraintName: uq_reporting_edge_pair
+            tableName: reporting_edge
+            columnNames: manager_id, report_id
+        - addForeignKeyConstraint:
+            constraintName: fk_reporting_edge_manager
+            baseTableName: reporting_edge
+            baseColumnNames: manager_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_reporting_edge_report
+            baseTableName: reporting_edge
+            baseColumnNames: report_id
+            referencedTableName: app_user
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_reporting_edge_manager
+            tableName: reporting_edge
+            columns:
+              - column:
+                  name: manager_id

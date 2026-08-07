@@ -41,7 +41,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E1 200 OK', () => pm.response.code === 200);",
+              "pm.test('E1 200 OK', () => pm.response.to.have.status(200));",
               "const items = pm.response.json().items;",
               "pm.test('E1 alice sees NO catalogs (no realm-fallback leak)', () => pm.expect(items.length).to.eql(0));"
             ]
@@ -83,7 +83,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E2a 201 Created (catalog:create via the narrow editor fallback)', () => pm.response.code === 201);",
+              "pm.test('E2a 201 Created (catalog:create via the narrow editor fallback)', () => pm.response.to.have.status(201));",
               "const id = pm.response.json().id;",
               "pm.collectionVariables.set('alice_catalog_id', id);",
               "pm.test('E2a catalog has an id', () => pm.expect(id).to.be.a('string'));"
@@ -126,7 +126,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E2b 201 Created (alice OWNS the catalog she just created -> ownership check passes)', () => pm.response.code === 201);",
+              "pm.test('E2b 201 Created (alice OWNS the catalog she just created -> ownership check passes)', () => pm.response.to.have.status(201));",
               "const id = pm.response.json().id;",
               "pm.collectionVariables.set('alice_team_id', id);"
             ]
@@ -160,7 +160,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E2c 200 OK', () => pm.response.code === 200);",
+              "pm.test('E2c 200 OK', () => pm.response.to.have.status(200));",
               "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('E2c alice sees exactly her catalog', () => pm.expect(ids).to.eql([pm.collectionVariables.get('alice_catalog_id')]));"
             ]
@@ -194,7 +194,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E3 200 OK', () => pm.response.code === 200);",
+              "pm.test('E3 200 OK', () => pm.response.to.have.status(200));",
               "pm.test('E3 bob sees NO catalogs', () => pm.expect(pm.response.json().items.length).to.eql(0));"
             ]
           }
@@ -233,7 +233,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E4a bob added to Alice team (200)', () => pm.response.code === 200);"
+              "pm.test('E4a bob added to Alice team (200)', () => pm.response.to.have.status(200));"
             ]
           }
         }
@@ -265,7 +265,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E4b 200 OK', () => pm.response.code === 200);",
+              "pm.test('E4b 200 OK', () => pm.response.to.have.status(200));",
               "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('E4b bob sees ALICE\\'s catalog (the team\\'s, not his own)', () => pm.expect(ids).to.eql([pm.collectionVariables.get('alice_catalog_id')]));"
             ]
@@ -305,7 +305,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E5a carol added to Alice team (200)', () => pm.response.code === 200);"
+              "pm.test('E5a carol added to Alice team (200)', () => pm.response.to.have.status(200));"
             ]
           }
         }
@@ -337,7 +337,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E5b 200 OK', () => pm.response.code === 200);",
+              "pm.test('E5b 200 OK', () => pm.response.to.have.status(200));",
               "const ids = pm.response.json().items.map(c => c.id);",
               "pm.test('E5b carol sees exactly TWO catalogs (multi-team union)', () => pm.expect(ids.length).to.eql(2));",
               "pm.test('E5b includes her own catalog', () => pm.expect(ids).to.include(pm.variables.get('carol_catalog_id')));",
@@ -374,7 +374,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E6 bob CANNOT deep-link Carol\\'s catalog (403)', () => pm.response.code === 403);"
+              "pm.test('E6 bob CANNOT deep-link Carol\\'s catalog (403)', () => pm.response.to.have.status(403));"
             ]
           }
         }
@@ -414,7 +414,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('E7 bob\\'s squat on Alice\\'s catalog is DENIED (403)', () => pm.response.code === 403);",
+              "pm.test('E7 bob\\'s squat on Alice\\'s catalog is DENIED (403)', () => pm.response.to.have.status(403));",
               "pm.test('E7 the 403 carries ACCESS_DENIED', () => { const b = pm.response.json(); pm.expect(b.errorCode).to.eql('ACCESS_DENIED'); });"
             ]
           }

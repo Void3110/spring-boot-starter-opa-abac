@@ -326,6 +326,16 @@ carries a fabricated all-`false` map). The team `_actions` degrades to absent on
 Reports land under `build/reports/postman/<run_id>/`. The CLI reporter prints the assertion summary;
 the JSON reporter is kept for post-mortem.
 
+**Assertion style (load-bearing):** a `pm.test` callback must **throw** on failure — use
+`pm.response.to.have.status(N)` or `pm.expect(...)`. Never write
+`pm.test('...', () => pm.response.code === N)`: newman ignores a returned boolean, so that cell
+passes unconditionally — a deny cell written this way asserts nothing and will stay green on a total
+fail-open. This class was latent in four collections (39 cells, including deny cells in the
+isolation, data-filter and supervised matrices) until the SUPERVISED-SCOPE layer-3 review made
+them real (`docs/code-review/SUPERVISED-SCOPE-REVIEW.md`, finding 1). Bare top-level
+`pm.expect(...)` calls outside any `pm.test` are the inverse smell: they fail as an unnamed script
+error and abort the request's remaining checks — wrap them.
+
 ## Environment
 
 `local.postman_environment.example.json` is the committed template;

@@ -7,14 +7,15 @@ import tools.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.dmitriikonovalov.example.catalog.config.HttpRoleDefinitionSupplier;
+import dev.dmitriikonovalov.example.catalog.config.SupervisedScopeClient;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionClient;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionFetchException;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionView;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
-import dev.dmitriikonovalov.opaabac.security.resilience.CallGuard;
 import dev.dmitriikonovalov.opaabac.security.resilience.Resilience4jCallGuard;
 import dev.dmitriikonovalov.opaabac.security.resilience.ResilienceConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -77,7 +79,7 @@ class EdgeResilienceTest {
     }
 
     /** A guard with the resolve/tag default-ish shape: 2 retries, 50ms, 6s, breaker opens after 5. */
-    private CallGuard guard(String name) {
+    private Resilience4jCallGuard guard(String name) {
         ResilienceConfig cfg = new ResilienceConfig(true, 2, Duration.ofMillis(50), Duration.ofSeconds(6),
                 5, Duration.ofSeconds(10), 1);
         return new Resilience4jCallGuard(name, cfg, clock, advancingSleeper);
@@ -89,6 +91,10 @@ class EdgeResilienceTest {
 
     private TagDefinitionClient tagClient(String base) {
         return new TagDefinitionClient(MAPPER, base, 500, guard("tag"));
+    }
+
+    private SupervisedScopeClient supervisedClient(String base) {
+        return new SupervisedScopeClient(MAPPER, base, 500, guard("supervised"));
     }
 
     private static final String VALID_ROLE =
@@ -191,6 +197,69 @@ class EdgeResilienceTest {
         assertThatThrownBy(() -> tagClient(base).fetchApplicable("category", "c-1"))
                 .isInstanceOf(TagDefinitionFetchException.class);
         assertThat(requests.get()).as("4xx is permanent — no retry").isEqualTo(1);
+    }
+
+    // --- U24: the supervised-scope wrapper (ADR 0029) ------------------------------------
+
+    @Test // U24a — a transient 5xx is retried, then recovers to the supervised ids
+    void supervised_transientThenRecovers() throws IOException {
+        String ids = "[\"11111111-1111-1111-1111-111111111111\"]";
+        AtomicInteger n = new AtomicInteger();
+        String base = startServer(ex -> {
+            int attempt = n.incrementAndGet();
+            respond(ex, attempt < 2 ? 503 : 200, attempt < 2 ? "down" : ids);
+        });
+
+        assertThat(supervisedClient(base).supervisedIds("sup-anna", "catalog"))
+                .containsExactly(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        assertThat(n.get()).as("recovered on the second attempt").isEqualTo(2);
+    }
+
+    @Test // U24b — an EXHAUSTED transient still fails closed to empty (never a throw into the request)
+    void supervised_exhaustedTransientIsEmpty_noThrow() throws IOException {
+        String base = startServer(ex -> respond(ex, 503, "down"));
+
+        assertThat(supervisedClient(base).supervisedIds("sup-anna", "catalog")).isEmpty();
+        assertThat(requests.get()).as("3 attempts = 2 retries + 1").isEqualTo(3);
+    }
+
+    @Test // U24c — a fail-closed EMPTY result is a DECISION, not a breaker failure (mx-951d2f)
+    void supervised_failClosedEmptyIsNotABreakerFailure() throws IOException {
+        // A 4xx and an authoritative empty array are both terminal decisions: no retry, and the breaker
+        // must stay CLOSED with zero recorded failures however many times they occur. Otherwise a
+        // misconfigured path (or a genuinely report-less manager) would self-open the breaker.
+        AtomicInteger n = new AtomicInteger();
+        String base = startServer(ex -> {
+            int attempt = n.incrementAndGet();
+            respond(ex, attempt % 2 == 0 ? 404 : 200, attempt % 2 == 0 ? "nope" : "[]");
+        });
+        Resilience4jCallGuard guard = guard("supervised");
+        SupervisedScopeClient client = new SupervisedScopeClient(MAPPER, base, 500, guard);
+
+        for (int i = 0; i < 10; i++) {
+            assertThat(client.supervisedIds("sup-anna", "catalog")).isEmpty();
+        }
+
+        assertThat(requests.get()).as("terminal decisions are never retried").isEqualTo(10);
+        assertThat(guard.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(guard.breaker().getMetrics().getNumberOfFailedCalls())
+                .as("a fail-closed empty result is a decision, not a transport failure")
+                .isZero();
+    }
+
+    @Test // U24d — a THROWN transient IS a breaker failure, and an open breaker still fails closed to empty
+    void supervised_transientOutageTripsItsOwnBreaker_stillEmpty() throws IOException {
+        String base = startServer(ex -> respond(ex, 503, "down"));
+        Resilience4jCallGuard guard = guard("supervised"); // failureThreshold = 5
+        SupervisedScopeClient client = new SupervisedScopeClient(MAPPER, base, 500, guard);
+
+        assertThat(client.supervisedIds("sup-anna", "catalog")).isEmpty(); // 3 recorded failures
+        assertThat(client.supervisedIds("sup-anna", "catalog")).isEmpty(); // trips at 5, then short-circuits
+
+        assertThat(guard.breaker().getState()).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(client.supervisedIds("sup-anna", "catalog"))
+                .as("an open breaker fails closed to empty — never a throw, never wider")
+                .isEmpty();
     }
 
     @FunctionalInterface

@@ -79,7 +79,7 @@ public class RoleDefinitionService {
         validateContract(roleLevel, permissions, deniedActions, requiredTags, matchMode);
         RoleDefinitionEntity role = new RoleDefinitionEntity(
                 UUID.randomUUID(), code, false, teamId,
-                withRoleLevel(attributes, roleLevel), permissions,
+                withSystemOwnedAttributes(attributes, roleLevel), permissions,
                 requiredTags, normalizeMatchMode(requiredTags, matchMode));
         role.setDeniedActions(deniedActions);
         return roles.save(role);
@@ -101,7 +101,7 @@ public class RoleDefinitionService {
         permissions = permissions == null ? Map.of() : permissions;
         deniedActions = deniedActions == null ? Map.of() : deniedActions;
         validateContract(roleLevel, permissions, deniedActions, requiredTags, matchMode);
-        role.setAttributes(withRoleLevel(attributes, roleLevel));
+        role.setAttributes(withSystemOwnedAttributes(attributes, roleLevel));
         role.setPermissions(permissions);
         role.setDeniedActions(deniedActions);
         role.setRequiredTags(requiredTags);
@@ -263,12 +263,27 @@ public class RoleDefinitionService {
     }
 
     /**
-     * The explicit {@code roleLevel} is the single source of {@code attributes.role_level} — an
-     * attributes-supplied value is overwritten (documented in the OpenAPI description).
+     * Normalize the <b>system-owned</b> attribute keys on a client-supplied {@code attributes} map.
+     * Two reserved keys, same discipline — the system is the single source and a client-supplied value
+     * never survives:
+     *
+     * <ul>
+     *   <li>{@code role_level} — the explicit {@code roleLevel} argument is the single source; an
+     *       attributes-supplied value is <b>overwritten</b> (documented in the OpenAPI description);</li>
+     *   <li>{@code provenance} — reserved and system-owned (ADR 0031 §3), so a client-supplied value
+     *       is <b>stripped</b> here on the write path. It is also overwritten on the read path
+     *       ({@code EffectiveRoleService.resourceRole}). <b>Both are required.</b> With only the read
+     *       path, "provenance means the system decided this" would hold merely by accident of the
+     *       current call graph: any future path returning a <em>stored</em> role without passing
+     *       through the funnel would let a client's own {@code provenance: "membership"} buy back the
+     *       ancestor inheritance ADR 0031 exists to deny.</li>
+     * </ul>
      */
-    private static Map<String, Object> withRoleLevel(Map<String, Object> attributes, Integer roleLevel) {
+    private static Map<String, Object> withSystemOwnedAttributes(
+            Map<String, Object> attributes, Integer roleLevel) {
         Map<String, Object> merged = new java.util.LinkedHashMap<>(
                 attributes == null ? Map.of() : attributes);
+        merged.remove(SupervisorRoles.PROVENANCE_ATTRIBUTE);
         merged.put("role_level", roleLevel);
         return Map.copyOf(merged);
     }

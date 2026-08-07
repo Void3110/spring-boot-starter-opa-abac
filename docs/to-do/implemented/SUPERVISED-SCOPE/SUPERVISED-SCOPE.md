@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/spring
@@ -8,7 +8,11 @@ tags:
 
 # SUPERVISED-SCOPE — a supervisor sees their unit, without being on any team
 
-> **Status: Planning.** Adds a **second, disjoint** access path beside team membership: a manager who is
+> ✅ **SHIPPED 2026-08-07** — branch `feature/void3110/supervised-scope`, T1–T6 all green, orchestrated
+> two-part autonomous run + layer-3 adversarial review (Approved with fixes —
+> [[../../../code-review/SUPERVISED-SCOPE-REVIEW|review note]]). `./gradlew build` ✅ · `opa test`
+> **276/276** · supervised matrix **44 assertions, 0 failed** (deny cells made real at review) ·
+> Sonar CLEAN. Adds a **second, disjoint** access path beside team membership: a manager who is
 > a member of **no** team sees the catalogs of the teams their reports own or manage — read-only, live,
 > and derived entirely from the reporting structure. Contents (categories, products) stay **closed** in
 > this slice; opening them is the next one.
@@ -37,7 +41,7 @@ slice only ever **widens** what the previous one closed — the safest order for
 
 | | Slice | Ships | Status |
 |---|---|---|---|
-| **A** | **SUPERVISED-SCOPE** (this) | The list + metadata, read-only. Contents entirely closed (role **+** ADR 0031's confinement). | 📋 Planning |
+| **A** | **SUPERVISED-SCOPE** (this) | The list + metadata, read-only. Contents entirely closed (role **+** ADR 0031's confinement). | ✅ Shipped |
 | **B** | PRODUCTION-TIER | `operatorManaged` tag flag + `env` + root-attribute enrichment. Supervised contents open for **non-prod**; production stays closed. | ⏳ Queued |
 | **C** | STEP-UP-ELEVATION | `deny_reason` + the RFC 9470 challenge + `auth_time` freshness. Production contents open **when freshly elevated**. | ⏳ Queued |
 
@@ -75,12 +79,12 @@ from her next request, while a direct read of one returns **403**.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | user-service: the reporting relation + transitive derivation + `/internal/supervised-targets` | 📋 TODO |
-| T2 | user-service: the non-membership `effective-role` branch + the synthesized supervisor role | 📋 TODO |
-| T3 | **confine ancestor inheritance to membership-derived roles** (ADR 0031 — the provenance stamp + four policy clauses) | 📋 TODO |
-| T4 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | 📋 TODO |
-| T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
-| T6 | e2e matrix + demo personas + the guide | 📋 TODO |
+| T1 | user-service: the reporting relation + transitive derivation + `/internal/supervised-targets` | ✅ DONE |
+| T2 | user-service: the non-membership `effective-role` branch + the synthesized supervisor role | ✅ DONE |
+| T3 | **confine ancestor inheritance to membership-derived roles** (ADR 0031 — the provenance stamp + four policy clauses) | ✅ DONE |
+| T4 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | ✅ DONE |
+| T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | ✅ DONE |
+| T6 | e2e matrix + demo personas + the guide | ✅ DONE |
 
 > ✅ **Cleared to run — with two named residual risks.** The inheritance fail-open that blocked this
 > package is closed ([[0031-inheritance-confined-to-membership-roles|ADR 0031]] + **T3**), and the last

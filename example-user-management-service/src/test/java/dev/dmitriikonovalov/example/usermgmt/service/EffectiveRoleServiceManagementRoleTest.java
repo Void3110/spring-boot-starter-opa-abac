@@ -31,7 +31,8 @@ class EffectiveRoleServiceManagementRoleTest {
             roles,
             mock(TeamRepository.class),
             mock(UserRepository.class),
-            mock(TeamTargetMatcher.class));
+            mock(TeamTargetMatcher.class),
+            mock(SupervisionService.class));
 
     private static final UUID TEAM = UUID.randomUUID();
     private static final UUID USER = UUID.randomUUID();

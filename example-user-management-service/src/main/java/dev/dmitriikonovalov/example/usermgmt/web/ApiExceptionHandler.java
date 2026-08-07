@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.usermgmt.web;
 
+import dev.dmitriikonovalov.example.usermgmt.service.InvalidReportingEdgeException;
 import dev.dmitriikonovalov.example.usermgmt.service.InvalidTagDefinitionException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipConflictException;
 import dev.dmitriikonovalov.example.usermgmt.service.MembershipNotFoundException;
@@ -116,6 +117,12 @@ public class ApiExceptionHandler extends AbstractProblemAdvice {
     public ResponseEntity<ProblemDetail> handleRoleDefinitionInvalid(
             RoleDefinitionInvalidException ex, HttpServletRequest request) {
         return problem(UserMgmtErrorCode.ROLE_DEFINITION_INVALID, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidReportingEdgeException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidReportingEdge(
+            InvalidReportingEdgeException ex, HttpServletRequest request) {
+        return problem(UserMgmtErrorCode.REPORTING_EDGE_INVALID, ex.getMessage(), request);
     }
 
     // --- 400 validation group → library VALIDATION_FAILED ---------------------

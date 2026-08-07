@@ -38,6 +38,13 @@ ENABLE_OIDC=1 ./deploy.sh up --pods 2
 #   viewer/viewer -> catalog-viewer only  (reads allowed, writes 403)
 #   editor/editor -> catalog-editor (+viewer)  (reads + writes allowed)
 #   outsider/outsider -> catalog-viewer  (a non-member, for the team matrix's "no team -> deny" case)
+#
+# Supervised-scope personas (ADR 0029 — password == username for each; see the section below):
+#   sup-anna, sup-victor      -> catalog-viewer + unit-supervisor  (members of NO team; the headline)
+#   sup-noreports             -> catalog-viewer + unit-supervisor  (the claim with ZERO reports: E10)
+#   pm-bob, pm-carol, pm-dave, pm-erin -> catalog-editor           (the reports whose seats propagate)
+#   outsider-eve              -> catalog-viewer                    (neither member nor supervisor: E3)
+#   The `unit-supervisor` realm role is a UX-only eligibility marker and grants NOTHING.
 
 # no token -> 302 redirect to Keycloak login (unauth_action: auth)
 curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 302
@@ -268,6 +275,39 @@ non-member resolves no role and is denied. After this change the `permission-cat
 `resource-resolution` matrices bind their fixture creators to a real catalog-WRITE role (the fallback that
 used to let a bare realm user create is gone); re-running the **full** existing suite stays green
 (resilience excepted — it needs the mutually-exclusive `ENABLE_RESILIENCE_STUB` profile below).
+
+## Supervised read scope (Slice A of the supervisor epic, ADR 0029)
+
+The **supervised-scope** matrix proves the second, **disjoint** access path beside team membership: a
+**unit manager who is a member of no team** sees the catalogs of the teams their reports own or manage,
+derived per request from a **reporting relation** and never from a realm grant. Read-only, live, and
+with the contents (categories, products) still **closed**.
+
+The personas are new realm accounts in `keycloak/realm-export.json` — **`sup-anna`**, **`sup-victor`**,
+**`sup-noreports`**, **`outsider-eve`**, **`pm-bob`**, **`pm-carol`**, **`pm-dave`**, **`pm-erin`** — plus
+the **UX-only `unit-supervisor` realm role**, which grants **nothing** (E10 asserts exactly that: the
+claim with zero reports sees an empty page). Because they are new, the rig must come **down** first so
+Keycloak re-imports the realm.
+
+```bash
+./deploy.sh down                                    # so Keycloak RE-IMPORTS the realm (new personas)
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+./deploy.sh build                                   # catalog image (T4/T5)
+docker build -t opa-abac-usermgmt:local -f example-user-management-service/Dockerfile .   # T1-T3
+cd scripts/postman && ./run-supervised-scope-matrix.sh
+```
+
+The runner **restarts OPA itself** before minting tokens: this slice's one narrow Rego change
+(ADR 0031's confinement clauses in `category.rego` + `product.rego`) is what keeps the contents closed,
+and `--watch` does not reliably reload — a stale allow would pass the boundary cell for the wrong reason.
+
+**Two passes, one rig.** The outage cell (E8) faults the supervised edge **alone**: T4 gave it its own
+`catalog.user-service.supervised-base-url` (env `CATALOG_USER_SERVICE_SUPERVISED_BASE_URL`, defaulting to
+the shared user-service URL), so the runner recreates just the catalog pods with it repointed at a dead
+port, asserts the degrade, and restores the rig on exit. **Do not use `ENABLE_RESILIENCE_STUB=1` for
+this** — that repoints the *whole* user-service the rest of the matrix needs. The proof it is confined:
+during the faulted pass a supervisor degrades to their own memberships (an empty page here) while an
+ordinary member's page is **unchanged**.
 
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 

@@ -51,6 +51,14 @@ ENABLE_OIDC="${ENABLE_OIDC:-0}"
 # (the app-resolved path). Off by default — opt in with ENABLE_USER_SERVICE=1 ./deploy.sh up.
 # When on, the catalog pods get CATALOG_ROLE_SOURCE=http pointed at http://usermgmt:8080.
 ENABLE_USER_SERVICE="${ENABLE_USER_SERVICE:-0}"
+# ADR 0029: the supervised-scope edge (/internal/supervised-targets) has its OWN base URL so it can be
+# fault-injected ALONE — repointing it at a dead port degrades a supervisor to their own memberships
+# while role resolve and tag definitions keep working. Defaults to the shared user-service URL, so the
+# rig is unchanged unless you set it. This is what the supervised-scope matrix's second (E8) pass uses:
+#   CATALOG_USER_SERVICE_SUPERVISED_BASE_URL=http://127.0.0.1:9 ./deploy.sh up --pods 2
+# (do NOT use ENABLE_RESILIENCE_STUB for this — that repoints the WHOLE user-service the rest of the
+# supervised matrix needs).
+CATALOG_USER_SERVICE_SUPERVISED_BASE_URL="${CATALOG_USER_SERVICE_SUPERVISED_BASE_URL:-http://usermgmt:8080}"
 # ADR 0022: the root-read tag exemption ships ON via infra/opa/policies/config.json (members always
 # read/list the governing root; required_tags gate mutations + everything below the root). Set
 # ROOT_READ_TAG_EXEMPTION=0|1 to override the LIVE flag right after OPA starts — an in-memory
@@ -175,7 +183,8 @@ HEADER
         # mutations) go through the gateway usermgmt-pool, which round-robins BOTH pods onto the shared
         # DB — that is where cross-pod @Version/locked-write contention is exercised.
         role_source_env="      CATALOG_ROLE_SOURCE: \"http\"
-      CATALOG_USER_SERVICE_BASE_URL: \"http://usermgmt:8080\""
+      CATALOG_USER_SERVICE_BASE_URL: \"http://usermgmt:8080\"
+      CATALOG_USER_SERVICE_SUPERVISED_BASE_URL: \"$CATALOG_USER_SERVICE_SUPERVISED_BASE_URL\""
       fi
       local otel_env=""
       if [ "$ENABLE_TRACING" = "1" ]; then

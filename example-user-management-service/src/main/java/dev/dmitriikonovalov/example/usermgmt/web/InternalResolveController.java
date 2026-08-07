@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.usermgmt.web;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import dev.dmitriikonovalov.example.usermgmt.openapi.model.TagDefinition;
 import dev.dmitriikonovalov.example.usermgmt.service.EffectiveRoleService;
+import dev.dmitriikonovalov.example.usermgmt.service.SupervisionService;
 import dev.dmitriikonovalov.example.usermgmt.service.TagDefinitionService;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import java.util.ArrayList;
@@ -41,11 +42,15 @@ public class InternalResolveController {
 
     private final EffectiveRoleService effectiveRoles;
     private final TagDefinitionService tagDefinitions;
+    private final SupervisionService supervision;
 
     public InternalResolveController(
-            EffectiveRoleService effectiveRoles, TagDefinitionService tagDefinitions) {
+            EffectiveRoleService effectiveRoles,
+            TagDefinitionService tagDefinitions,
+            SupervisionService supervision) {
         this.effectiveRoles = effectiveRoles;
         this.tagDefinitions = tagDefinitions;
+        this.supervision = supervision;
     }
 
     @GetMapping("/internal/effective-role")
@@ -144,6 +149,30 @@ public class InternalResolveController {
             @RequestParam("subject") String subject,
             @RequestParam("resourceType") String resourceType) {
         return ResponseEntity.ok(effectiveRoles.governedTargets(subject, resourceType));
+    }
+
+    /**
+     * The <b>supervised target ids</b> of a type the subject supervises through the reporting relation
+     * — the second, disjoint access path beside membership (SUPERVISED-SCOPE, ADR 0029), consumed by
+     * the catalog's {@code SupervisedScopeClient}. Derived per request from the subject's transitive
+     * reports, filtered to their <b>CONTROL-capable</b> seats ({@code owner}/{@code administrator}/
+     * {@code senior}), projected to those teams' governed targets.
+     *
+     * <p>Always a {@code 200} with a JSON array, mirroring {@code /internal/governed-targets} exactly;
+     * an <b>empty array</b> (never {@code 204}, never an error) is the authoritative "supervises
+     * nothing" — for an unknown subject, a subject with no reports, and for <em>every</em> breach of
+     * the derivation (a cycle, a depth-cap breach), which collapses the whole set rather than
+     * returning a partial one. Distinct ids.
+     *
+     * <p><b>The raw set, not the difference.</b> {@code supervised := S \ M} (membership always wins,
+     * ADR 0029 §5) is applied on the catalog side, the only place that knows both sets; this endpoint
+     * answers what the subject supervises, membership notwithstanding.
+     */
+    @GetMapping("/internal/supervised-targets")
+    public ResponseEntity<List<UUID>> supervisedTargets(
+            @RequestParam("subject") String subject,
+            @RequestParam("resourceType") String resourceType) {
+        return ResponseEntity.ok(supervision.supervisedTargets(subject, resourceType));
     }
 
     /**

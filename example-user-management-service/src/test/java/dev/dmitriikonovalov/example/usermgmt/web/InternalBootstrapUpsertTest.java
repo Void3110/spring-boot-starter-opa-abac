@@ -13,6 +13,7 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.User;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.example.usermgmt.service.RoleDefinitionService;
+import dev.dmitriikonovalov.example.usermgmt.service.SupervisionService;
 import dev.dmitriikonovalov.example.usermgmt.web.InternalBootstrapController.EnsureUser;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,7 +35,8 @@ class InternalBootstrapUpsertTest {
             mock(TeamRepository.class),
             mock(TeamMembershipRepository.class),
             mock(RoleDefinitionRepository.class),
-            mock(RoleDefinitionService.class));
+            mock(RoleDefinitionService.class),
+            mock(SupervisionService.class));
 
     private final UUID existingId = UUID.randomUUID();
     private final User existing = new User(existingId, "sub-seeded", "Old Name");

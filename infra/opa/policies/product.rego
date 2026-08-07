@@ -67,8 +67,28 @@ is_type_level_request if not input.resource.id
 is_type_level_request if input.resource.id == null
 
 list_inheritable_grant if {
+	membership_derived
 	some ancestor_type, _ in data.product.inheritable[input.resource.type]
 	verb in permissions.effective_actions(input.role_definition, ancestor_type)
+}
+
+# ADR 0031 — ANCESTOR INHERITANCE IS CONFINED TO MEMBERSHIP-DERIVED ROLES.
+#
+# Both inheritance clauses (this coarse type-level gate and the fine `inherited_grant`) open ONLY on a
+# provenance stamp applied at the single membership funnel (EffectiveRoleService.resourceRole). Without
+# it, a SYNTHESIZED role naming only an ancestor type — the supervised read scope's `catalog: ["READ"]`
+# (ADR 0029), and the tiered/elevated roles of the later slices — would inherit `product:view` from the
+# very catalog it may read, because inheritance keys on the VERB NAME across types and `READ` expands to
+# `view, list, list-members` on both. Measured, not argued: before this conjunct the supervisor role
+# returned allow=true for `product:view` with a catalog ancestor present, which is always the case at
+# runtime. (An ancestor-LESS probe returns false, which is exactly how the defect survived planning.)
+#
+# DIRECT grants are untouched — a role naming this type explicitly still reaches it through
+# `direct_grant` with no stamp at all. ABSENCE IS CLOSED: an unstamped role, an empty `attributes`, or
+# an unknown provenance value fails this conjunct, so a future synthesized role that forgets the stamp
+# fails closed rather than open. Mirrors category.rego exactly (per-type sibling parity).
+membership_derived if {
+	input.role_definition.attributes.provenance == "membership"
 }
 
 # The fine action verb is the part after the ":" in input.action (e.g. "product:view" -> "view").
@@ -110,7 +130,9 @@ direct_grant if {
 # An ancestor grant satisfies the leaf action when:
 #   - the ancestor's type is declared inheritable for the leaf type (OPT-IN, default-off), and
 #   - the root-resolved role's EFFECTIVE actions on that ancestor type contain the verb.
+# Confined to membership-derived roles (ADR 0031) — see the note on `membership_derived` above.
 inherited_grant if {
+	membership_derived
 	some ancestor in input.resource.ancestors
 	data.product.inheritable[input.resource.type][ancestor.type]
 	verb in permissions.effective_actions(input.role_definition, ancestor.type)
