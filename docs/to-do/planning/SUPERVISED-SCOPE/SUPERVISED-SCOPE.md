@@ -78,9 +78,9 @@ from her next request, while a direct read of one returns **403**.
 | T1 | user-service: the reporting relation + transitive derivation + `/internal/supervised-targets` | ✅ DONE |
 | T2 | user-service: the non-membership `effective-role` branch + the synthesized supervisor role | ✅ DONE |
 | T3 | **confine ancestor inheritance to membership-derived roles** (ADR 0031 — the provenance stamp + four policy clauses) | ✅ DONE |
-| T4 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | 📋 TODO |
-| T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | 📋 TODO |
-| T6 | e2e matrix + demo personas + the guide | 📋 TODO |
+| T4 | catalog-service: the `SupervisedScopeClient` HTTP edge (fail-closed, resilience-wrapped) | ✅ DONE |
+| T5 | catalog-service: the two-leg partitioned list + the read-only ceiling + the audit event | ✅ DONE |
+| T6 | e2e matrix + demo personas + the guide | ✅ DONE |
 
 > ✅ **Cleared to run — with two named residual risks.** The inheritance fail-open that blocked this
 > package is closed ([[0031-inheritance-confined-to-membership-roles|ADR 0031]] + **T3**), and the last
