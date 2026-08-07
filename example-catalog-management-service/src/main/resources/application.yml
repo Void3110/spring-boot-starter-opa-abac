@@ -47,6 +47,11 @@ catalog:
   user-service:
     base-url: ${CATALOG_USER_SERVICE_BASE_URL:http://localhost:8080}
     timeout-ms: ${CATALOG_USER_SERVICE_TIMEOUT_MS:2000}
+    # The supervised-scope edge (/internal/supervised-targets, ADR 0029) gets its OWN base-url so it can be
+    # fault-injected alone — repointing this at a dead port degrades a supervisor to their own memberships
+    # while the rest of the user-service edge (role resolve, tag definitions) keeps working. Defaults to the
+    # shared base-url, so the shipped rig is unchanged.
+    supervised-base-url: ${CATALOG_USER_SERVICE_SUPERVISED_BASE_URL:${catalog.user-service.base-url}}
 
 springdoc:
   swagger-ui:
