@@ -205,7 +205,7 @@ public class CatalogListAuthorizer {
         }
         Set<UUID> memberships = Set.copyOf(membershipIds);
         List<UUID> supervised = new ArrayList<>();
-        for (UUID id : new LinkedHashSet<>(client.supervisedIds(subjectId, CATALOG_TYPE))) {
+        for (UUID id : distinct(client.supervisedIds(subjectId, CATALOG_TYPE))) {
             if (!memberships.contains(id)) {
                 supervised.add(id);
             }
@@ -354,9 +354,16 @@ public class CatalogListAuthorizer {
         return (root, query, cb) -> root.get("id").in(ids);
     }
 
-    /** Order-stable de-duplication — a repeated id would otherwise be listed once but counted twice. */
+    /**
+     * Order-stable de-duplication — a repeated id would otherwise be listed once but counted twice —
+     * with {@code null} elements dropped. Neither shipped source can emit a {@code null} (both parse
+     * UUIDs and discard the whole result on a malformed element), but a scope source is an SPI: a
+     * {@code null} slipping through must narrow the scope, never become an unhandled 500.
+     */
     private static List<UUID> distinct(List<UUID> ids) {
-        return List.copyOf(new LinkedHashSet<>(ids));
+        Set<UUID> seen = new LinkedHashSet<>(ids);
+        seen.remove(null);
+        return List.copyOf(seen);
     }
 
     private static AbacContext.Subject currentSubject() {

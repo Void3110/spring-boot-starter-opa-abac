@@ -1,0 +1,785 @@
+{
+  "info": {
+    "name": "Supervised-scope matrix (Slice A - ADR 0029)",
+    "description": "A unit manager who is a member of NO team sees the catalogs of the teams their reports own or manage - read-only, live, and derived entirely from the reporting structure, never from a realm grant. Asserted on EXACT ids and counts through the gateway.\n\nRuns in ORDER. E4 is deliberately LAST: it mutates the reporting edges (the declarative bootstrap replace) and every earlier cell depends on the original org.\n\nTWO FOLDERS, TWO PASSES. 'Matrix' is E1-E6/E9/E10 on the normal rig. 'Supervised-edge outage' is E8 and needs a SECOND short pass with only CATALOG_USER_SERVICE_SUPERVISED_BASE_URL repointed at a dead port - see run-supervised-scope-matrix.sh.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:9085"
+    },
+    {
+      "key": "collection_base_url",
+      "value": "{{gateway}}/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Matrix",
+      "item": [
+        {
+          "name": "E1 \u2014 HEADLINE: sup-anna (member of NO team) GET /catalogs -> exactly her unit",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E1 200 OK', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "// Exact ids AND an exact count - not just a status code. Anna is a member of NO team, so",
+                  "// every row here came from the reporting structure and nothing else.",
+                  "pm.test('E1 anna sees EXACTLY 3 catalogs', () => pm.expect(body.count).to.eql(3));",
+                  "pm.test('E1 anna sees her direct reports\\' catalogs (bob, carol)', () => {",
+                  "  pm.expect(ids).to.include(pm.environment.get('bob_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
+                  "});",
+                  "pm.test('E1 TRANSITIVITY: her report\\'s report\\'s catalog (dave, via carol) is included', () =>",
+                  "  pm.expect(ids).to.include(pm.environment.get('dave_catalog_id')));",
+                  "pm.test('E1 REACH RULE: a report\\'s READER seat does NOT propagate', () =>",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('reader_catalog_id')));",
+                  "pm.test('E1 anna does NOT see the adjacent unit (victor\\'s)', () =>",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('erin_catalog_id')));",
+                  "pm.collectionVariables.set('anna_ids', JSON.stringify(ids.sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2 \u2014 sup-victor GET /catalogs -> a DISJOINT set",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{victor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E2 200 OK', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "pm.test('E2 victor sees EXACTLY his unit (1 catalog)', () => {",
+                  "  pm.expect(body.count).to.eql(1);",
+                  "  pm.expect(ids).to.eql([pm.environment.get('erin_catalog_id')]);",
+                  "});",
+                  "const annaIds = JSON.parse(pm.collectionVariables.get('anna_ids'));",
+                  "pm.test('E2 the two units are DISJOINT - neither leaks into the other', () =>",
+                  "  ids.forEach(id => pm.expect(annaIds).to.not.include(id)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3 \u2014 outsider-eve (neither member nor supervisor) -> empty page, 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{eve_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E3 200 OK - not 403, not 500', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "pm.test('E3 the wire count is 0 (the empty-page floor, ADR 0012)', () => pm.expect(body.count).to.eql(0));",
+                  "pm.test('E3 no items', () => pm.expect(body.items.length).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E10 \u2014 the realm marker ALONE: unit-supervisor claim + ZERO reports -> empty page",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{noreports_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E10 200 OK', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "// The realm role is a UX-only eligibility marker, never resolver input (ADR 0029). This subject",
+                  "// carries it and supervises nobody, so it must grant NOTHING - the distinction from the",
+                  "// realm-role fallback slice B4 deliberately removed.",
+                  "pm.test('E10 the claim grants nothing: count 0', () => pm.expect(body.count).to.eql(0));",
+                  "pm.test('E10 no items', () => pm.expect(body.items.length).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5a \u2014 read-only ceiling: anna GET a supervised catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E5a anna may READ a supervised catalog (200)', () => pm.response.code === 200);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5b \u2014 anna PUT the supervised catalog -> 403",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"anna should not be able to rename this\",\"description\":\"nope\"}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E5b update is DENIED (403)', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5c \u2014 anna PUT with a TAGS delta (the assign-tags dispatch) -> 403",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Sup Dave Co\",\"description\":\"Sup Dave Co description\",\"tags\":{\"region\":[\"emea\"]}}"
+            },
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A catalog's tags are assigned through PUT; the update handler's delta dispatch turns a tags",
+                  "// change into an assign-tags decision (ADR 0022). Either way the supervised ceiling denies.",
+                  "pm.test('E5c tag assignment is DENIED (403)', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5d \u2014 anna DELETE the supervised catalog -> 403",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E5d delete is DENIED (403)', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5e \u2014 the _actions affordance on a supervised row: present, view-only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E5e 200 OK', () => pm.response.code === 200);",
+                  "const row = pm.response.json().items.find(i => i.id === pm.environment.get('dave_catalog_id'));",
+                  "pm.test('E5e the supervised row is on the page', () => pm.expect(row).to.not.be.undefined);",
+                  "// PRESENT, not omitted: the omit-on-all-false degrade fires only when EVERY verb is false,",
+                  "// and `view` is true here. The verb set is the shipped CatalogEnrichable registry.",
+                  "pm.test('E5e _actions is PRESENT, not omitted', () => pm.expect(row._actions).to.not.be.undefined);",
+                  "pm.test('E5e view:true', () => pm.expect(row._actions.view).to.eql(true));",
+                  "pm.test('E5e update:false', () => pm.expect(row._actions.update).to.eql(false));",
+                  "pm.test('E5e delete:false', () => pm.expect(row._actions.delete).to.eql(false));",
+                  "pm.test('E5e assign-tags:false', () => pm.expect(row._actions['assign-tags']).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6a \u2014 CONTENTS CLOSED: anna GET the supervised catalog's categories -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The slice-boundary assertion. TWO things hold this line, not one: the synthesized role names",
+                  "// no `category` key, AND ADR 0031's confinement rule stops the shipped catalog->category",
+                  "// inheritance table handing it category:view anyway. If this ever returns 200 the run has",
+                  "// drifted into slice B.",
+                  "pm.test('E6a the category LIST is DENIED (403)', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6b \u2014 anna GET a category under the supervised catalog -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}/categories/{{dave_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}",
+                "categories",
+                "{{dave_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E6b the category READ is DENIED (403)', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6c \u2014 anna GET a product under the supervised catalog -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{dave_catalog_id}}/categories/{{dave_category_id}}/products/{{dave_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{dave_catalog_id}}",
+                "categories",
+                "{{dave_category_id}}",
+                "products",
+                "{{dave_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E6c the product READ is DENIED (403)', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E9 \u2014 DUAL-HAT: pm-carol is BOTH a member and a supervisor of one catalog",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{carol_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E9 200 OK', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "const dave = pm.environment.get('dave_catalog_id');",
+                  "const ids = body.items.map(i => i.id);",
+                  "// carol governs Sup Carol Co (administrator) and Sup Dave Co (owner); she ALSO supervises",
+                  "// Sup Dave Co through her report pm-dave. supervised := S \\\\ M removes it from the supervised",
+                  "// leg, so the row is judged by her MEMBERSHIP role and appears exactly once.",
+                  "pm.test('E9 the doubly-reachable row appears EXACTLY ONCE', () =>",
+                  "  pm.expect(ids.filter(id => id === dave).length).to.eql(1));",
+                  "pm.test('E9 the authorized total counts it once (2, not 3)', () => pm.expect(body.count).to.eql(2));",
+                  "const row = body.items.find(i => i.id === dave);",
+                  "// MEMBERSHIP WINS: her owner seat's affordances, NOT the supervisor role's read-only ceiling",
+                  "// (which E5e pinned as update:false on this very same catalog).",
+                  "pm.test('E9 the row carries the MEMBERSHIP role\\'s affordances (update:true)', () =>",
+                  "  pm.expect(row._actions.update).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4a \u2014 LIVENESS: remove pm-bob from anna's reports (declarative replace)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"managerId\":\"{{anna_uid}}\",\"reportIds\":[\"{{carol_uid}}\"]}"
+            },
+            "url": {
+              "raw": "{{user_service}}/internal/bootstrap/reporting-edges",
+              "host": [
+                "{{user_service}}"
+              ],
+              "path": [
+                "internal",
+                "bootstrap",
+                "reporting-edges"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The removal seam is a DECLARATIVE POST: the posted set REPLACES the manager's whole edge set,",
+                  "// so omitting pm-bob removes that edge (STATUS-01's decision).",
+                  "pm.test('E4a the reporting edges were replaced (200)', () => pm.response.code === 200);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4b \u2014 anna re-lists: pm-bob's catalog is GONE on the very next request",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E4b 200 OK', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "pm.test('E4b bob\\'s catalog is gone - the derivation is LIVE, not cached', () =>",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('bob_catalog_id')));",
+                  "pm.test('E4b carol\\'s branch survives (carol + dave = 2)', () => {",
+                  "  pm.expect(body.count).to.eql(2);",
+                  "  pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('dave_catalog_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4c \u2014 and the withdrawn catalog is genuinely DENIED, not merely hidden",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{bob_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{bob_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The list hiding a row and the gate denying it are two different guarantees. This is the",
+                  "// second one: revoking the edge withdraws ACCESS, not just visibility.",
+                  "pm.test('E4c a direct GET of the withdrawn catalog is 403', () => pm.response.code === 403);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Supervised-edge outage",
+      "item": [
+        {
+          "name": "E8a \u2014 supervised edge faulted: anna sees ONLY her own memberships (none) - never all catalogs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Failure class 1 (00-DESIGN): an errored/unreachable org source degrades the subject to their",
+                  "// OWN MEMBERSHIPS. Anna is a member of no team, so that floor is the empty page.",
+                  "pm.test('E8a 200 OK - no 5xx leaked out of the faulted edge', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "pm.test('E8a anna degrades to her own memberships: count 0', () => pm.expect(body.count).to.eql(0));",
+                  "pm.test('E8a and certainly not the whole table', () => pm.expect(body.items.length).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E8b \u2014 the fault is CONFINED to the supervised edge: a member's page is unchanged",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{carol_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// This is what the DEDICATED supervised base-URL buys. Role resolution and tag definitions",
+                  "// still run against the real user-service, so pm-carol's membership page is untouched. Had the",
+                  "// supervised client shared the resolve URL (or the resolve breaker), this would be empty too.",
+                  "pm.test('E8b 200 OK', () => pm.response.code === 200);",
+                  "const body = pm.response.json();",
+                  "pm.test('E8b carol still sees both her governed catalogs', () => pm.expect(body.count).to.eql(2));",
+                  "const ids = body.items.map(i => i.id);",
+                  "pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
+                  "pm.expect(ids).to.include(pm.environment.get('dave_catalog_id'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

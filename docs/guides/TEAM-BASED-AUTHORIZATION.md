@@ -154,6 +154,125 @@ team-management power: the projection forces a custom code to `[READ]`, and auth
 > This resolves the "does it expose a gateway route?" question: **internal-only** for the resolve API;
 > **secured (dogfooded)** for the management API.
 
+## The second access path — supervised read scope (Slice A, ADR [[adr/0029-supervised-read-scope|0029]])
+
+Slice B4 made **team membership the sole access path** to the catalog root list. That is exact and
+intended, and it has an exact consequence: **a subject who is a member of no team sees nothing.** A unit
+manager is precisely that subject — they need to see the catalogs of the teams their *reports* own or
+manage, without being on any of those teams.
+
+Slice A adds a **second, disjoint access path** for that case. It does **not** reintroduce the realm-role
+fallback B4 removed (that would be a fail-open backdoor); it derives reach from a **reporting relation**,
+per request, behind a fail-closed seam.
+
+### The two access paths
+
+| | **Membership** (B4) | **Supervision** (ADR 0029) |
+|---|---|---|
+| Source of reach | a `TeamMembership` on the team that governs the resource | a `reporting_edge` chain: the subject's transitive reports, then the teams **they** hold a CONTROL-capable seat on |
+| Where it is derived | `GET /internal/governed-targets` | `GET /internal/supervised-targets` (a sibling endpoint, same shape, **always `200`** + a possibly-empty array) |
+| Role driving the decision | the membership's bound `RoleDefinition` | a **synthesized, read-only supervisor role** — `permissions = {"catalog": ["READ"]}`, empty `requiredTags`, `attributes.provenance = "supervised"`. Built in code per request, **never stored** |
+| What it reaches | whatever the bound role grants | the catalog **list and metadata only** — read-only, and contents stay closed |
+
+Both legs are composed in **one** query by the catalog's `CatalogListAuthorizer`, through the shipped
+paged `AbacQueryService.findAuthorized`: the union as the base scope, the supervised ids on the
+`subtreeSpec` widening arm.
+
+### The precedence rule — membership always wins
+
+```
+supervised := S \ M          # S = the raw supervised set, M = the membership set
+```
+
+The two scopes are **disjoint by construction**, and that is load-bearing twice. It is the correct
+semantic — a dual-hatted manager must not be pushed onto the stricter branch for their *own* team's data
+— and it makes every row's provenance unambiguous, so the supervisor role's *vacuous* tag requirement can
+never end up judging a tag-gated membership row. Unioning the two roles' permissions on a doubly-reachable
+row is exactly that fail-open, and is rejected.
+
+The same rule decides which role drives the residual: **whenever `M` is non-empty the role is resolved on
+a MEMBERSHIP id**, never on one from the union. Only a *pure* supervisor (`M` empty) resolves it on a
+supervised id — correct precisely because there are no membership rows for it to widen.
+
+### The reach rule — CONTROL-capable seats only
+
+A report contributes a team **only** where they hold `OWNER` / `ADMINISTRATOR` / `SENIOR` — the
+CONTROL-capable rungs of the shipped `TeamRoleCapabilities` ladder. A `MEMBER` or `READER` seat does not
+propagate, and neither does a custom role (custom roles project to `[READ]`). Otherwise one report's
+reader seat on an unrelated team would silently widen their manager's reach into it.
+
+Derivation is per request, breadth-first, **depth-capped at 10 hops** (a direct report is hop 1) and
+cycle-guarded; a cycle-closing edge is rejected on write.
+
+### The realm claim is a UX-only marker
+
+The realm role `unit-supervisor` exists so a UI can *show* the supervised-unit affordance. It is **never
+resolver input**: claim + zero reports sees **nothing**. This is what distinguishes the design from the
+fallback B4 removed — reach comes entirely from the org relation, and the reserved role code is
+**provenance, not authority** (a custom role bearing it buys no reach; spoofing it is self-demotion).
+
+### Contents stay closed — and it takes TWO things, not one
+
+The synthesized role names **no `category` key, no `product` key, no `"*"`**. That alone is **not
+sufficient**: the shipped `catalog → category` and `catalog → product` inheritance tables would hand it
+`category:view` / `product:view` anyway, from the very catalog it may read, whenever the ancestor chain is
+present — which at runtime it always is. (An *ancestor-less* probe returns `false`, which is exactly how
+that fail-open survived review once.)
+
+So the second thing is [[adr/0031-inheritance-confined-to-membership-roles|ADR 0031]]:
+
+> **Ancestor inheritance requires membership provenance. A synthesized role is confined to the types it
+> names.**
+
+`EffectiveRoleService.resourceRole` — the single funnel for membership-derived roles reaching the
+catalog-side policies — stamps `attributes.provenance = "membership"` by **overwrite, never merge**, and
+`inherited_grant` + `list_inheritable_grant` in `category.rego` **and** `product.rego` open only on that
+stamp. **Direct** grants are untouched: a role naming a type explicitly still reaches it with no stamp at
+all, which is why every shipped per-type role is unaffected. `provenance` is a **reserved, system-owned
+key** — a client-supplied value is stripped on the write path and overwritten on the read path, so it
+cannot be forged. **Absence is closed**: an unstamped role, an empty `attributes`, or an unknown value
+grants no inherited access, so a future synthesized role that forgets the stamp fails *closed*.
+
+### Two failure classes — and they land in different places
+
+Never collapse them into one rule:
+
+| Class | Lands on |
+|---|---|
+| The org-relation source **errored / unreachable / non-200 / unparseable** | the subject's **own memberships** — the supervised leg contributes nothing |
+| A **partial** derivation (a cycle, a depth-cap breach, a malformed element) | **membership-only** — never a *partial* supervised set |
+| Unauthenticated · no `AbacQueryService` · no `GovernedScopeResolver` · both scopes empty · an unresolvable role on every leg | the **empty page** (unchanged from ADR 0018) |
+| A role reaching a child type with **no provenance stamp** | **no inherited grant** (ADR 0031) |
+
+A partial set is indistinguishable from a correct smaller one, which is why it *collapses* rather than
+degrades. In every branch the floor is the empty collection and the empty page — never a partial
+supervised set, and never the whole table.
+
+The supervised edge has its **own** `CallGuard` (its own breaker) and its **own** base-URL property
+(`catalog.user-service.supervised-base-url`, defaulting to the shared one). Sharing the resolve breaker
+would let a supervised-targets outage trip the one every persona's role resolution depends on — turning a
+degrade-to-membership-only into an empty page for everyone.
+
+### What is NOT in this slice
+
+Contents (categories, products) stay closed; opening them behind a production tier
+([[adr/0030-step-up-decision-contract|ADR 0030]] §1–4) and a second factor (§5–9) is slices **B** and
+**C**. No `env` tag, no `operatorManaged` flag, no `deny_reason`, no RFC 9470 challenge, no
+`acr`/`auth_time` ingestion. A supervised **single-`GET`** is audited by slice C; slice A audits the
+**list** path, where the supervised authority is applied.
+
+### Prove it
+
+```bash
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+cd scripts/postman && ./run-supervised-scope-matrix.sh
+```
+
+The headline cells: **`sup-anna`**, a member of no team, gets exactly her unit's catalogs *by id* —
+including her report's report's, and excluding a report's READER-seat team; **removing a reporting edge
+withdraws access on the very next request**, and the withdrawn catalog then returns `403` on a direct
+`GET` rather than merely disappearing from the list.
+
 ## Run it end to end
 
 ```bash

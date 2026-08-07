@@ -15,6 +15,10 @@
       {
         "name": "catalog-editor",
         "description": "Can modify catalog resources"
+      },
+      {
+        "name": "unit-supervisor",
+        "description": "UX-only eligibility marker: shows the supervised-unit affordance. Grants NOTHING - supervised reach is derived entirely from the reporting relation (ADR 0029), never from this claim. A holder with zero reports sees nothing."
       }
     ]
   },
@@ -422,6 +426,153 @@
       ],
       "realmRoles": [
         "catalog-editor",
+        "catalog-viewer"
+      ]
+    },
+    {
+      "username": "sup-anna",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "sup-anna@example.com",
+      "firstName": "Anna",
+      "lastName": "Supervisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sup-anna",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-viewer",
+        "unit-supervisor"
+      ]
+    },
+    {
+      "username": "sup-victor",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "sup-victor@example.com",
+      "firstName": "Victor",
+      "lastName": "Supervisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sup-victor",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-viewer",
+        "unit-supervisor"
+      ]
+    },
+    {
+      "username": "pm-bob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pm-bob@example.com",
+      "firstName": "Bob",
+      "lastName": "Manager",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pm-bob",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor"
+      ]
+    },
+    {
+      "username": "pm-carol",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pm-carol@example.com",
+      "firstName": "Carol",
+      "lastName": "Manager",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pm-carol",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor"
+      ]
+    },
+    {
+      "username": "pm-dave",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pm-dave@example.com",
+      "firstName": "Dave",
+      "lastName": "Manager",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pm-dave",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor"
+      ]
+    },
+    {
+      "username": "pm-erin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pm-erin@example.com",
+      "firstName": "Erin",
+      "lastName": "Manager",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pm-erin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor"
+      ]
+    },
+    {
+      "username": "sup-noreports",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "sup-noreports@example.com",
+      "firstName": "Nora",
+      "lastName": "Supervisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sup-noreports",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-viewer",
+        "unit-supervisor"
+      ]
+    },
+    {
+      "username": "outsider-eve",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "outsider-eve@example.com",
+      "firstName": "Eve",
+      "lastName": "Outsider",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "outsider-eve",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
         "catalog-viewer"
       ]
     }
