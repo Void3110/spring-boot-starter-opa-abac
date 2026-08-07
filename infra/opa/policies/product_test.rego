@@ -270,7 +270,7 @@ deep_product_input(role_def) := {
 	"resource": {
 		"type": "product",
 		"id": "p1",
-		"attributes": {"provenance": "membership"},
+		"attributes": {},
 		"ancestors": [{"type": "catalog", "id": "c1"}, {"type": "category", "id": "k1"}],
 	},
 	"role_definition": role_def,
@@ -693,5 +693,29 @@ test_membership_role_keeps_product_inheritance if {
 # Absence is closed on the product side too.
 test_absent_provenance_grants_no_product_inheritance if {
 	not product.allow with input as deep_product_input({"code": "no-attrs", "permissions": {"catalog": ["READ"]}})
+		with data.product.inheritable as product_inherits_catalog
+}
+
+# The COARSE type-level gate (`product:list`, no resource id) resolves through
+# `list_inheritable_grant`, a separate clause from the fine-verb path above — so its conjunct needs
+# its own probes: mutation testing showed deleting it (or the whole clause) left this file green.
+product_list_gate_input(role_def) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "product:list",
+	"resource": {"type": "product"},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# U37 (product mirror) — the type-level list gate is confined to membership-derived roles.
+test_supervised_role_cannot_open_the_type_level_product_list_gate if {
+	not product.allow with input as product_list_gate_input(supervisor_role)
+		with data.product.inheritable as product_inherits_catalog
+}
+
+# The membership constituency keeps the type-level gate. `catalog_root_role` has no `product` key,
+# so ONLY `list_inheritable_grant` can open this — deleting the clause outright fails here.
+test_membership_role_opens_the_type_level_product_list_gate if {
+	product.allow with input as product_list_gate_input(catalog_root_role)
 		with data.product.inheritable as product_inherits_catalog
 }

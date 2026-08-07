@@ -50,7 +50,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E1 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E1 200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "const ids = body.items.map(i => i.id);",
                   "// Exact ids AND an exact count - not just a status code. Anna is a member of NO team, so",
@@ -104,7 +104,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E2 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E2 200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "const ids = body.items.map(i => i.id);",
                   "pm.test('E2 victor sees EXACTLY his unit (1 catalog)', () => {",
@@ -151,7 +151,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E3 200 OK - not 403, not 500', () => pm.response.code === 200);",
+                  "pm.test('E3 200 OK - not 403, not 500', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('E3 the wire count is 0 (the empty-page floor, ADR 0012)', () => pm.expect(body.count).to.eql(0));",
                   "pm.test('E3 no items', () => pm.expect(body.items.length).to.eql(0));"
@@ -192,7 +192,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E10 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E10 200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "// The realm role is a UX-only eligibility marker, never resolver input (ADR 0029). This subject",
                   "// carries it and supervises nobody, so it must grant NOTHING - the distinction from the",
@@ -231,7 +231,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E5a anna may READ a supervised catalog (200)', () => pm.response.code === 200);"
+                  "pm.test('E5a anna may READ a supervised catalog (200)', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -272,7 +272,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E5b update is DENIED (403)', () => pm.response.code === 403);"
+                  "pm.test('E5b update is DENIED (403)', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -315,7 +315,7 @@
                 "exec": [
                   "// A catalog's tags are assigned through PUT; the update handler's delta dispatch turns a tags",
                   "// change into an assign-tags decision (ADR 0022). Either way the supervised ceiling denies.",
-                  "pm.test('E5c tag assignment is DENIED (403)', () => pm.response.code === 403);"
+                  "pm.test('E5c tag assignment is DENIED (403)', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -348,7 +348,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E5d delete is DENIED (403)', () => pm.response.code === 403);"
+                  "pm.test('E5d delete is DENIED (403)', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -386,7 +386,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E5e 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E5e 200 OK', () => pm.response.to.have.status(200));",
                   "const row = pm.response.json().items.find(i => i.id === pm.environment.get('dave_catalog_id'));",
                   "pm.test('E5e the supervised row is on the page', () => pm.expect(row).to.not.be.undefined);",
                   "// PRESENT, not omitted: the omit-on-all-false degrade fires only when EVERY verb is false,",
@@ -433,7 +433,7 @@
                   "// no `category` key, AND ADR 0031's confinement rule stops the shipped catalog->category",
                   "// inheritance table handing it category:view anyway. If this ever returns 200 the run has",
                   "// drifted into slice B.",
-                  "pm.test('E6a the category LIST is DENIED (403)', () => pm.response.code === 403);"
+                  "pm.test('E6a the category LIST is DENIED (403)', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -468,7 +468,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E6b the category READ is DENIED (403)', () => pm.response.code === 403);"
+                  "pm.test('E6b the category READ is DENIED (403)', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -505,7 +505,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E6c the product READ is DENIED (403)', () => pm.response.code === 403);"
+                  "pm.test('E6c the product READ is DENIED (403)', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -543,7 +543,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E9 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E9 200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "const dave = pm.environment.get('dave_catalog_id');",
                   "const ids = body.items.map(i => i.id);",
@@ -597,7 +597,7 @@
                 "exec": [
                   "// The removal seam is a DECLARATIVE POST: the posted set REPLACES the manager's whole edge set,",
                   "// so omitting pm-bob removes that edge (STATUS-01's decision).",
-                  "pm.test('E4a the reporting edges were replaced (200)', () => pm.response.code === 200);"
+                  "pm.test('E4a the reporting edges were replaced (200)', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -635,7 +635,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E4b 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E4b 200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "const ids = body.items.map(i => i.id);",
                   "pm.test('E4b bob\\'s catalog is gone - the derivation is LIVE, not cached', () =>",
@@ -679,7 +679,7 @@
                 "exec": [
                   "// The list hiding a row and the gate denying it are two different guarantees. This is the",
                   "// second one: revoking the edge withdraws ACCESS, not just visibility.",
-                  "pm.test('E4c a direct GET of the withdrawn catalog is 403', () => pm.response.code === 403);"
+                  "pm.test('E4c a direct GET of the withdrawn catalog is 403', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -724,7 +724,7 @@
                 "exec": [
                   "// Failure class 1 (00-DESIGN): an errored/unreachable org source degrades the subject to their",
                   "// OWN MEMBERSHIPS. Anna is a member of no team, so that floor is the empty page.",
-                  "pm.test('E8a 200 OK - no 5xx leaked out of the faulted edge', () => pm.response.code === 200);",
+                  "pm.test('E8a 200 OK - no 5xx leaked out of the faulted edge', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('E8a anna degrades to her own memberships: count 0', () => pm.expect(body.count).to.eql(0));",
                   "pm.test('E8a and certainly not the whole table', () => pm.expect(body.items.length).to.eql(0));"
@@ -768,12 +768,14 @@
                   "// This is what the DEDICATED supervised base-URL buys. Role resolution and tag definitions",
                   "// still run against the real user-service, so pm-carol's membership page is untouched. Had the",
                   "// supervised client shared the resolve URL (or the resolve breaker), this would be empty too.",
-                  "pm.test('E8b 200 OK', () => pm.response.code === 200);",
+                  "pm.test('E8b 200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('E8b carol still sees both her governed catalogs', () => pm.expect(body.count).to.eql(2));",
                   "const ids = body.items.map(i => i.id);",
-                  "pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
-                  "pm.expect(ids).to.include(pm.environment.get('dave_catalog_id'));"
+                  "pm.test('E8b the ids are carol’s and dave’s', () => {",
+                  "  pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('dave_catalog_id'));",
+                  "});"
                 ]
               }
             }

@@ -315,9 +315,11 @@ public class CatalogListAuthorizer {
      * plural, because a page can span several supervised roots, which a singular "root id" cannot express.
      * Nothing is persisted; retention and routing are the consumer's.
      *
-     * <p><b>Scope, pinned:</b> this slice audits the <b>list</b> path only, because that is where the
-     * supervised authority is applied. Supervised single-{@code GET} auditing rides the
-     * {@code @OpaPreAuthorize} gate and is deferred to the slice-C audit work.
+     * <p><b>Scope, pinned:</b> this slice audits the <b>list</b> path only. The supervised authority
+     * is applied on single-{@code GET}s too (the synthesized role passes the generic
+     * {@code @OpaPreAuthorize} gate), but that shared decision path has no supervised-specific
+     * emission point — nothing there distinguishes a supervisor's read from a member's. Adding one
+     * is the slice-C audit work; this slice only audits where it composes the page itself.
      */
     private static void auditSupervisedRead(
             AbacContext.Subject subject,

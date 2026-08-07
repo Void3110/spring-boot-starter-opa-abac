@@ -931,6 +931,10 @@ components:
         attributes:
           type: object
           additionalProperties: true
+          description: >-
+            Extensible role attributes. Two keys are system-owned and never client-authored:
+            role_level (mirrors roleLevel) and `provenance` (stamped `membership` on
+            membership-derived roles — ADR 0031).
         permissions:
           type: object
           additionalProperties:
@@ -980,7 +984,10 @@ components:
         attributes:
           type: object
           additionalProperties: true
-          description: Extensible role attributes. role_level is always overwritten from roleLevel.
+          description: >-
+            Extensible role attributes. role_level is always overwritten from roleLevel, and the
+            reserved key `provenance` is system-owned: any client-supplied value is stripped
+            (membership-derived roles are stamped `membership` by the resolve path — ADR 0031).
         permissions:
           type: object
           additionalProperties:
@@ -1026,7 +1033,10 @@ components:
         attributes:
           type: object
           additionalProperties: true
-          description: Extensible role attributes. role_level is always overwritten from roleLevel.
+          description: >-
+            Extensible role attributes. role_level is always overwritten from roleLevel, and the
+            reserved key `provenance` is system-owned: any client-supplied value is stripped
+            (membership-derived roles are stamped `membership` by the resolve path — ADR 0031).
         permissions:
           type: object
           additionalProperties:
@@ -1159,7 +1169,10 @@ components:
           description: The request path that produced the error.
         errorCode:
           type: string
-          description: The machine-stable code a consumer branches on. The union of codes this service can emit.
+          description: >-
+            The machine-stable code a consumer branches on. The union of codes the documented
+            endpoints can emit (undocumented /internal fixture endpoints may emit codes outside
+            this enum).
           enum:
             - ACCESS_DENIED
             - RESOURCE_NOT_FOUND

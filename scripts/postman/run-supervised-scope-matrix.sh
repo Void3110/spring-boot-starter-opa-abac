@@ -291,7 +291,11 @@ SUPERVISED_PASS_ACTIVE=0
 restore_rig() {
   if [ "$SUPERVISED_PASS_ACTIVE" = "1" ]; then
     echo "==> Restoring the catalog pods (supervised base-url back to the real user-service) ..."
-    ( cd "$REPO_ROOT" && ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up >/dev/null ) || true
+    # Forward the operator's optional rig flavours — hardcoding only the two required flags would
+    # silently downgrade a directory/SPA/MCP rig on recreate.
+    ( cd "$REPO_ROOT" && ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 \
+        ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}" ENABLE_SPA="${ENABLE_SPA:-0}" \
+        ENABLE_MCP="${ENABLE_MCP:-0}" ./deploy.sh up >/dev/null ) || true
     SUPERVISED_PASS_ACTIVE=0
   fi
 }
@@ -300,7 +304,9 @@ trap restore_rig EXIT
 echo "==> Recreating the catalog pods with ONLY the supervised edge repointed at $DEAD_URL ..."
 SUPERVISED_PASS_ACTIVE=1
 ( cd "$REPO_ROOT" && CATALOG_USER_SERVICE_SUPERVISED_BASE_URL="$DEAD_URL" \
-    ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up >/dev/null )
+    ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 \
+    ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}" ENABLE_SPA="${ENABLE_SPA:-0}" \
+    ENABLE_MCP="${ENABLE_MCP:-0}" ./deploy.sh up >/dev/null )
 for _ in $(seq 1 60); do
   curl -sf "$GATEWAY/api/v1/catalogs" -H "Authorization: Bearer $EVE_TOKEN" >/dev/null 2>&1 && break
   sleep 2

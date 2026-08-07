@@ -43,7 +43,7 @@
 					"script": {
 						"type": "text/javascript",
 						"exec": [
-							"pm.test('200 OK', () => pm.response.code === 200);",
+							"pm.test('200 OK', () => pm.response.to.have.status(200));",
 							"const ids = pm.response.json().items.map(c => c.id);",
 							"pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
 							"pm.test('does NOT see the APAC category', () => pm.expect(ids).to.not.include(pm.variables.get('apac_category_id')));",
@@ -82,7 +82,7 @@
 					"script": {
 						"type": "text/javascript",
 						"exec": [
-							"pm.test('200 OK', () => pm.response.code === 200);",
+							"pm.test('200 OK', () => pm.response.to.have.status(200));",
 							"const ids = pm.response.json().items.map(c => c.id);",
 							"pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
 							"pm.test('does NOT see the EMEA category', () => pm.expect(ids).to.not.include(pm.variables.get('emea_category_id')));",
@@ -120,7 +120,7 @@
 					"script": {
 						"type": "text/javascript",
 						"exec": [
-							"pm.test('200 OK', () => pm.response.code === 200);",
+							"pm.test('200 OK', () => pm.response.to.have.status(200));",
 							"const ids = pm.response.json().items.map(c => c.id);",
 							"pm.test('sees the EMEA category', () => pm.expect(ids).to.include(pm.variables.get('emea_category_id')));",
 							"pm.test('sees the APAC category', () => pm.expect(ids).to.include(pm.variables.get('apac_category_id')));",
@@ -162,7 +162,7 @@
 							"// Slice B4 (ADR 0018): a stranger with NO role definition is DENIED at the coarse",
 							"// type-level gate (membership is the sole access path) — was an empty 200 via the",
 							"// realm fallback; now a 403. The which-rows residual is moot when the gate denies.",
-							"pm.test('403 Forbidden (no role-def -> coarse gate denies; membership is the sole access path)', () => pm.response.code === 403);"
+							"pm.test('403 Forbidden (no role-def -> coarse gate denies; membership is the sole access path)', () => pm.response.to.have.status(403));"
 						]
 					}
 				}
@@ -198,7 +198,7 @@
 					"script": {
 						"type": "text/javascript",
 						"exec": [
-							"pm.test('200 OK', () => pm.response.code === 200);",
+							"pm.test('200 OK', () => pm.response.to.have.status(200));",
 							"const ids = pm.response.json().items.map(p => p.id);",
 							"pm.test('sees the EMEA product', () => pm.expect(ids).to.include(pm.variables.get('emea_product_id')));",
 							"pm.test('does NOT see the APAC product', () => pm.expect(ids).to.not.include(pm.variables.get('apac_product_id')));",
@@ -239,7 +239,7 @@
 					"script": {
 						"type": "text/javascript",
 						"exec": [
-							"pm.test('200 OK', () => pm.response.code === 200);",
+							"pm.test('200 OK', () => pm.response.to.have.status(200));",
 							"const ids = pm.response.json().items.map(p => p.id);",
 							"pm.test('sees the APAC product', () => pm.expect(ids).to.include(pm.variables.get('apac_product_id')));",
 							"pm.test('does NOT see the EMEA product', () => pm.expect(ids).to.not.include(pm.variables.get('emea_product_id')));",
@@ -280,7 +280,7 @@
 					"script": {
 						"type": "text/javascript",
 						"exec": [
-							"pm.test('200 OK', () => pm.response.code === 200);",
+							"pm.test('200 OK', () => pm.response.to.have.status(200));",
 							"const ids = pm.response.json().items.map(p => p.id);",
 							"pm.test('sees all three products', () => {",
 							"  pm.expect(ids).to.include(pm.variables.get('emea_product_id'));",
@@ -325,7 +325,7 @@
 						"exec": [
 							"// Slice B4 (ADR 0018): a stranger with NO role definition is DENIED at the coarse",
 							"// type-level product:list gate — the which-rows residual is moot when the gate denies.",
-							"pm.test('403 Forbidden (no role-def -> coarse gate denies)', () => pm.response.code === 403);"
+							"pm.test('403 Forbidden (no role-def -> coarse gate denies)', () => pm.response.to.have.status(403));"
 						]
 					}
 				}
