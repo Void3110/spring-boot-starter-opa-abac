@@ -302,6 +302,26 @@ root context, so on supervised child rows every verb computes false and the omit
 on a row the caller can actually read. Member rows are untouched. Threading root context through the
 enrichment advice is slice C's work.
 
+**Proved end to end by `scripts/postman/run-production-tier-matrix.sh`** (the `ffff…` fixture set: a
+staging, a production and an untagged catalog, one category and product each). Its headline pair is
+**liveness and unstrippability together**: the operator flips a catalog `staging → production` through
+the in-network `POST /internal/bootstrap/resource-tags` and the supervisor's **very next** child read is
+`403` — then flips it back and the next read is `200` again, so the tier is read per request in both
+directions rather than latched. Meanwhile the catalog's **own owner** — the most privileged public
+identity there is — cannot strip, re-value **or** assign `env` through the API: each attempt is a `409`
+whose `errorCode` is asserted to be `TAG_OPERATOR_MANAGED` by value, and a follow-up cell proves none of
+the three moved the tier. The matrix also pins the two contracts above as assertions rather than prose:
+the supervisor's list rows carry **no `_actions` key at all**, while the member's rows on the very
+catalog she is denied carry an honest one.
+
+**This slice deliberately rewrote three cells of slice A's matrix.** `run-supervised-scope-matrix.sh`'s
+E6a/E6b/E6c asserted that a supervisor's contents were **closed** (`403`) — the boundary of A, held by a
+role that named no child type. Under B those same requests are `200` on exact ids, because the catalog
+they use is **untagged** and untagged means non-production. The cells were flipped, not deleted, and the
+closed-contents proof **moved** to the production-tier matrix, which owns the production and unproven
+cases. A later slice that finds an older document promising "supervised contents are closed" should read
+it as the slice-A boundary, not as a regression.
+
 ### Two failure classes — and they land in different places
 
 Never collapse them into one rule:

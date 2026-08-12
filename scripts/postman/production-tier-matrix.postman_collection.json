@@ -1,0 +1,1138 @@
+{
+  "info": {
+    "name": "Production-tier matrix (Slice B - ADR 0030 \u00a71-4 + ADR 0032)",
+    "description": "The tier decides how deep oversight goes. An operator-managed `env` tag on the governing root is carried to child decisions as input.resource.root_attributes (three distinguishable states, ADR 0032); the widened supervisor role opens contents by DIRECT grant; two provenance-scoped `denied` clauses per leaf policy close the production and unproven tiers. Asserted on EXACT ids, counts and error codes through the gateway.\n\nRuns in ORDER. E4 is deliberately LAST: it flips the staging catalog's tier through the operator endpoint, and every earlier cell depends on the original tagging (it flips back, but a failure mid-cell would leave it promoted).\n\nThe E4 cells address the CATALOG SERVICE directly ({{catalog_service}}), not the gateway: the operator path is in-network only and the gateway 404s /internal/* at the edge.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:9085"
+    },
+    {
+      "key": "collection_base_url",
+      "value": "{{gateway}}/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Matrix",
+      "item": [
+        {
+          "name": "E1a \u2014 sup-anna lists the STAGING catalog's categories -> 200, exact ids",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The headline of slice B: a supervisor whose reach is derived from the reporting structure",
+                  "// now opens CONTENTS \u2014 because the governing root is tagged env=staging and the role was",
+                  "// widened to name the child types (a DIRECT grant; inheritance stays confined, ADR 0031).",
+                  "pm.test('E1a 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "pm.test('E1a exactly one category', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E1a and it is the seeded one, by id', () =>",
+                  "  pm.expect(ids).to.eql([pm.environment.get('staging_category_id')]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1b \u2014 sup-anna GETs a category under the STAGING catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories/{{staging_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories",
+                "{{staging_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E1b 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E1b it is the seeded category', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('staging_category_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1c \u2014 sup-anna lists the STAGING catalog's products -> 200, exact ids",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories/{{staging_category_id}}/products?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories",
+                "{{staging_category_id}}",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E1c 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E1c exactly one product', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E1c and it is the seeded one, by id', () =>",
+                  "  pm.expect(body.items.map(i => i.id)).to.eql([pm.environment.get('staging_product_id')]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1d \u2014 sup-anna GETs a product under the STAGING catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories/{{staging_category_id}}/products/{{staging_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories",
+                "{{staging_category_id}}",
+                "products",
+                "{{staging_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E1d 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E1d it is the seeded product', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('staging_product_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E7a \u2014 the _actions OMISSION contract: anna's category rows carry no map at all",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The pinned B contract (00-DESIGN \u00a75). The action-enrichment bulk path builds per-row inputs",
+                  "// with NO root context, so the absent-root deny turns every verb false and the shipped",
+                  "// omit-on-all-false convention omits the map entirely. OMITTED, never a fabricated",
+                  "// `view:false` on a row this same matrix just read at 200 (E1b). Threading root context",
+                  "// through the advice is slice C's work; until then this is the contract, asserted.",
+                  "pm.test('E7a 200 OK', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().items;",
+                  "pm.test('E7a there is a row to judge', () => pm.expect(rows.length).to.eql(1));",
+                  "rows.forEach((row, i) => pm.test(`E7a row ${i} has NO _actions key`, () =>",
+                  "  pm.expect(row).to.not.have.property('_actions')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E7b \u2014 the same omission on anna's product rows",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories/{{staging_category_id}}/products?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories",
+                "{{staging_category_id}}",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E7b 200 OK', () => pm.response.to.have.status(200));",
+                  "const rows = pm.response.json().items;",
+                  "pm.test('E7b there is a row to judge', () => pm.expect(rows.length).to.eql(1));",
+                  "rows.forEach((row, i) => pm.test(`E7b row ${i} has NO _actions key`, () =>",
+                  "  pm.expect(row).to.not.have.property('_actions')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2pre \u2014 the deny below is the TIER, not a missing role: anna reads the production catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The anti-vacuity cell. Every E2 assertion below is a 403, and a 403 is also what anna would",
+                  "// get if her supervised reach to THIS catalog were simply broken \u2014 the fixture bootstrap having",
+                  "// half-failed, say. Root metadata stays ungated (ADR 0030 \u00a71), so a 200 here proves the role is",
+                  "// resolved and the reach is live, which is what makes the four denials below mean the tier.",
+                  "pm.test('E2pre 200 OK \u2014 the supervised reach is live', () => pm.response.to.have.status(200));",
+                  "pm.test('E2pre it is the production catalog', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('prod_catalog_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2a \u2014 PRODUCTION contents closed: anna lists that catalog's categories -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The same request as E1a against a root the operator tagged env=production. The decision",
+                  "// lands at the COARSE type-level gate \u2014 nothing tier-related ever enters the SQL residual.",
+                  "pm.test('E2a the category LIST is DENIED (403)', () => pm.response.to.have.status(403));",
+                  "// A PLAIN deny in slice B: indistinguishable on the wire from any other deny. The structured",
+                  "// deny_reason and the RFC 9470 challenge are slice C \u2014 asserting their ABSENCE here is what",
+                  "// keeps B's envelope diff at zero.",
+                  "pm.test('E2a no deny_reason in the body (slice C owns that field)', () =>",
+                  "  pm.expect(pm.response.text()).to.not.include('deny_reason'));",
+                  "pm.test('E2a the ordinary error code', () =>",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('ACCESS_DENIED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2b \u2014 anna GETs a category under the PRODUCTION catalog -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E2b the category READ is DENIED (403)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2c \u2014 anna lists the PRODUCTION catalog's products -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E2c the product LIST is DENIED (403)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2d \u2014 anna GETs a product under the PRODUCTION catalog -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products/{{prod_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products",
+                "{{prod_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E2d the product READ is DENIED (403)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6a \u2014 MEMBERS UNAFFECTED: the owner reads the PRODUCTION catalog's categories -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The exact request E2a was denied, by a subject whose role carries provenance=membership.",
+                  "// Both tier clauses require provenance == 'supervised', so a membership decision cannot",
+                  "// REACH them \u2014 that is ADR 0030 \u00a72, asserted rather than assumed.",
+                  "pm.test('E6a 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E6a the member sees the row', () => pm.expect(body.count).to.eql(1));",
+                  "const row = body.items[0];",
+                  "// And the member's affordance map is PRESENT and honest \u2014 the omission E7 pins is scoped to",
+                  "// the supervised path, not a global regression of the enrichment.",
+                  "pm.test('E6a _actions is PRESENT on the member row', () =>",
+                  "  pm.expect(row).to.have.property('_actions'));",
+                  "pm.test('E6a view:true', () => pm.expect(row._actions.view).to.eql(true));",
+                  "pm.test('E6a update:true (the owner really can write)', () =>",
+                  "  pm.expect(row._actions.update).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6b \u2014 the owner GETs a product under the PRODUCTION catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products/{{prod_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products",
+                "{{prod_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E6b 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E6b it is the seeded product', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('prod_product_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3a \u2014 UNTAGGED defaults open: anna lists an untagged catalog's categories -> 200, exact ids",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{untagged_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{untagged_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// ADR 0030 \u00a73: an untagged root arrives as `{}` \u2014 PRESENT and empty, which is a different",
+                  "// state from absent (enrichment failed). Neither tier clause fires, so contents open. This",
+                  "// default is defensible only while `env` has no public write path \u2014 which E5 proves.",
+                  "pm.test('E3a 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E3a exactly one category', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E3a and it is the seeded one, by id', () =>",
+                  "  pm.expect(body.items.map(i => i.id)).to.eql([pm.environment.get('untagged_category_id')]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3b \u2014 anna GETs a category under the UNTAGGED catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{untagged_catalog_id}}/categories/{{untagged_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{untagged_catalog_id}}",
+                "categories",
+                "{{untagged_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E3b 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E3b it is the seeded category', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('untagged_category_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3c \u2014 anna lists the UNTAGGED catalog's products -> 200, exact ids",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{untagged_catalog_id}}/categories/{{untagged_category_id}}/products?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{untagged_catalog_id}}",
+                "categories",
+                "{{untagged_category_id}}",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E3c 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E3c exactly one product', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E3c and it is the seeded one, by id', () =>",
+                  "  pm.expect(body.items.map(i => i.id)).to.eql([pm.environment.get('untagged_product_id')]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3d \u2014 anna GETs a product under the UNTAGGED catalog -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{untagged_catalog_id}}/categories/{{untagged_category_id}}/products/{{untagged_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{untagged_catalog_id}}",
+                "categories",
+                "{{untagged_category_id}}",
+                "products",
+                "{{untagged_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E3d 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E3d it is the seeded product', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('untagged_product_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5a \u2014 UNSTRIPPABLE: the OWNER strips env from their own catalog -> 409 TAG_OPERATOR_MANAGED",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tier Staging Co\",\"description\":\"Tier Staging Co description\",\"tags\":{}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The subject here is the catalog's own OWNER \u2014 the most privileged public identity there is.",
+                  "// A catalog write is a full-map replace, so submitting no tags over a row carrying `env` IS a",
+                  "// strip, and the delta check rejects it. Asserted BY CODE, not merely by status: the whole",
+                  "// reason a new error code exists is that the cell must name WHICH guard fired.",
+                  "pm.test('E5a the strip is REJECTED (409)', () => pm.response.to.have.status(409));",
+                  "pm.test('E5a and it names the operator-managed guard', () =>",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('TAG_OPERATOR_MANAGED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5b \u2014 the owner RE-VALUES env (production -> dev) -> 409 TAG_OPERATOR_MANAGED",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tier Production Co\",\"description\":\"Tier Production Co description\",\"tags\":{\"env\":\"dev\"}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E5b the re-value is REJECTED (409)', () => pm.response.to.have.status(409));",
+                  "pm.test('E5b and it names the operator-managed guard', () =>",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('TAG_OPERATOR_MANAGED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5c \u2014 the owner ASSIGNS env on the untagged catalog -> 409 TAG_OPERATOR_MANAGED",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{untagged_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{untagged_catalog_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tier Untagged Co\",\"description\":\"Tier Untagged Co description\",\"tags\":{\"env\":\"staging\"}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The third move: an owner cannot promote their own catalog INTO a tier either. Assign,",
+                  "// re-value and strip are all delta moves on an operator-managed key, and all three close.",
+                  "pm.test('E5c the assign is REJECTED (409)', () => pm.response.to.have.status(409));",
+                  "pm.test('E5c and it names the operator-managed guard', () =>",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('TAG_OPERATOR_MANAGED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5d \u2014 ...and none of it moved the tier: the production catalog is still closed to anna",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A rejected write that still changed state would be the quiet failure this cell exists to",
+                  "// exclude \u2014 E5a-c must be rejections, not partial applications.",
+                  "pm.test('E5d the production tier still holds (403)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5e \u2014 and the OPERATOR path itself is unreachable through the gateway -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/internal/bootstrap/resource-tags",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"resourceType\":\"catalog\",\"resourceId\":\"{{untagged_catalog_id}}\",\"tags\":{\"env\":\"production\"}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The other half of 'operator-managed end to end'. E4 writes the tier through the catalog",
+                  "// service's own port; this cell proves the same request cannot arrive from outside. APISIX",
+                  "// carries a positive `internal-blocked` route at priority 70 that 404s every /internal/* path,",
+                  "// above the catalog catch-all \u2014 so the in-network-only posture is ENFORCED, not merely intended.",
+                  "pm.test('E5e the gateway does not route /internal/* (404)', () =>",
+                  "  pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4a \u2014 the OPERATOR flips the staging catalog to production (in-network only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{catalog_service}}/internal/bootstrap/resource-tags",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"resourceType\":\"catalog\",\"resourceId\":\"{{staging_catalog_id}}\",\"tags\":{\"env\":\"production\"}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The only write path there is. It reaches the catalog service's published port DIRECTLY:",
+                  "// the gateway carries a positive `internal-blocked` route that 404s every /internal/* path at",
+                  "// the edge, which is what makes 'in-network only' enforced rather than intended.",
+                  "pm.test('E4a the operator write succeeds (200)', () => pm.response.to.have.status(200));",
+                  "pm.test('E4a and the merged map carries the new tier', () =>",
+                  "  pm.expect(pm.response.json().env).to.eql('production'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4b \u2014 LIVENESS: anna's VERY NEXT child read on that catalog -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories/{{staging_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories",
+                "{{staging_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The B analogue of slice A's E4. No re-login, no cache flush, no pod restart: the tier is",
+                  "// read from the governing root on every request, so the very next one is decided by the new",
+                  "// state. This is the same request E1b answered 200 a moment ago.",
+                  "pm.test('E4b the flip is live on the next request (403)', () =>",
+                  "  pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4c \u2014 and the list closes with it -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E4c the list closes too (403)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4d \u2014 the operator flips it BACK to staging",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{catalog_service}}/internal/bootstrap/resource-tags",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"resourceType\":\"catalog\",\"resourceId\":\"{{staging_catalog_id}}\",\"tags\":{\"env\":\"staging\"}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E4d the operator write succeeds (200)', () => pm.response.to.have.status(200));",
+                  "pm.test('E4d and the tier is staging again', () =>",
+                  "  pm.expect(pm.response.json().env).to.eql('staging'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4e \u2014 anna's next read opens again -> 200 (the flip is live in BOTH directions)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{staging_catalog_id}}/categories/{{staging_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{staging_catalog_id}}",
+                "categories",
+                "{{staging_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Liveness in one direction only would be indistinguishable from a one-way latch. Closing on",
+                  "// promotion AND opening on demotion is what shows the decision is read per request.",
+                  "pm.test('E4e 200 OK again', () => pm.response.to.have.status(200));",
+                  "pm.test('E4e it is the seeded category', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('staging_category_id')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

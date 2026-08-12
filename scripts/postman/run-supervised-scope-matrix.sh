@@ -10,7 +10,11 @@
 #   E3  outsider-eve                  GET /catalogs -> 200 + count 0 (not 403, not 500)
 #   E10 sup-noreports (claim, 0 reports) -> 200 + count 0 (the realm marker grants NOTHING)
 #   E5  anna on a supervised catalog  GET 200 · PUT/PUT-with-tags/DELETE 403 · _actions view-only
-#   E6  anna on its CONTENTS          categories list / a category / a product -> each 403
+#   E6  anna on its CONTENTS          categories list / a category / a product -> each 200, by id
+#       (FLIPPED by PRODUCTION-TIER: these were 403 in slice A, whose role named no child type. B
+#        widens the role and gates the read on the root's `env` tier instead — and this catalog is
+#        UNTAGGED, i.e. non-production. The closed-contents proof MOVED to
+#        run-production-tier-matrix.sh; it did not vanish.)
 #   E9  pm-carol (member AND supervisor of one catalog) -> the row ONCE, with the MEMBERSHIP
 #                                                          role's affordances (update:true)
 #   E4  remove pm-bob from anna's reports -> his catalog gone next request; a direct GET -> 403
@@ -22,9 +26,9 @@
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 #   ./deploy.sh build                                   # fresh catalog + usermgmt images
 #
-# T3 edited category.rego + product.rego (ADR 0031's confinement, which E6 depends on), so this runner
-# RESTARTS THE OPA CONTAINER itself before minting tokens — `--watch` does not reliably reload, and a
-# stale-allow on E6 would pass the boundary check for the wrong reason.
+# Both slices edited category.rego + product.rego — A's T3 (ADR 0031's confinement) and B's T4 (the
+# tier denies E6 now rides on) — so this runner RESTARTS THE OPA CONTAINER itself before minting
+# tokens: `--watch` does not reliably reload, and a stale bundle would decide E6 for the wrong reason.
 #
 # E8's fault injection is its OWN edge, not B3's. ENABLE_RESILIENCE_STUB=1 repoints the WHOLE
 # user-service the rest of this matrix needs; instead the second pass repoints only T4's dedicated
