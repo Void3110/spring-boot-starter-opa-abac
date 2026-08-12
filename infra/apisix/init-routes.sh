@@ -157,6 +157,15 @@ if [ "${ENABLE_SPA:-0}" = "1" ]; then
       -d "{\"name\":\"$name\",\"uri\":\"$uri\",\"methods\":[$methods_json],\"upstream_id\":\"keycloak-pool\",\"priority\":50,\"status\":1}"
   done
   echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [SPA single-origin auth, public passthrough]"
+else
+  # Flag off: positively remove the passthrough ROUTES a previous SPA deploy may have left in the
+  # reused etcd (public proxy to a possibly-down keycloak:8888 otherwise lingers on non-SPA rigs).
+  # ROUTES ONLY — the Keycloak CONTAINER is shared with plain ENABLE_OIDC (the openid-connect
+  # plugin discovers in-network, not through these routes) and is deploy.sh's to manage.
+  for r in keycloak-realms keycloak-resources; do
+    curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/$r"
+  done
+  curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams/keycloak-pool"
 fi
 
 # Packaged demo SPA: serve the BUILT bundle (the `spa` nginx from infra/compose.spa.yaml, mounting
@@ -167,11 +176,14 @@ fi
 # catalog-all catch-all (0), below the Keycloak proxy (50) and the usermgmt API prefixes (60), so
 # nothing that used to reach an app can be shadowed by the static server.
 #
-# TWO-ARMED, unlike the Keycloak block above: etcd outlives a flag-flip re-up (no volume, but the
-# container is reused), so a previous SPA deploy's public routes at "/" would otherwise silently
-# shadow the OIDC redirect posture of a non-SPA rig. When the flag is off, the routes are
-# positively deleted (routes before the upstream — APISIX refuses to drop an upstream a route
-# still references; plain -s so a 404 on a never-created id is a no-op, not an errexit abort).
+# TWO-ARMED, like the other stale-prone route blocks here (the Keycloak passthrough above, the MCP
+# block below): etcd outlives a flag-flip re-up (no volume, but the container is reused), so a
+# previous SPA deploy's public routes at "/" would otherwise silently shadow the OIDC redirect
+# posture of a non-SPA rig. When the flag is off, the routes are positively deleted (routes before
+# the upstream — APISIX refuses to drop an upstream a route still references; plain -s so a 404 on
+# a never-created id is a no-op, not an errexit abort). Only the ENABLE_USER_SERVICE block stays
+# one-armed, deliberately: deploy.sh never stops its containers on a flag-flip, so its routes stay
+# live rather than stale.
 if [ "${ENABLE_SPA:-0}" = "1" ]; then
   spa_resp=$(curl -s -w "\n%{http_code}" -X PUT \
     -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
@@ -359,6 +371,13 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
     exit 1
   fi
   echo "  route 'mcp' (/mcp*) -> mcp-pool  [priority 65; NO catalog opa plugin — the tool-gate is in-app]"
+else
+  # Flag off: remove the route + upstream a previous ENABLE_MCP deploy left in the reused etcd
+  # (routes before the upstream — APISIX refuses to drop an upstream a route still references).
+  # deploy.sh mirrors this with `mcp_compose down`; the E6/E7 drills are unaffected — they recreate
+  # the mcp CONTAINER via their own compose call, never through a flag-less `deploy.sh up`.
+  curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/mcp"
+  curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams/mcp-pool"
 fi
 
 # Slice B4 hardening (deep-review): EXPLICITLY block /internal/* at the gateway. The catalog route below
