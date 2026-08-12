@@ -1,0 +1,35 @@
+# The packaged demo SPA (example-demo-ui) — an nginx serving the BUILT bundle, added to the rig when
+# ENABLE_SPA=1 ./deploy.sh up. deploy.sh builds the bundle first (`npm run build` -> dist/), so what
+# nginx serves is always the current source.
+#
+# NO published host port, deliberately: the SPA is reachable only THROUGH the gateway
+# (http://localhost:9085), which is the whole point of the packaged mode — one origin for the SPA,
+# its PKCE flow (/realms/* proxied to Keycloak) and the API (/api/**). The `spa-index`/`spa-assets`
+# routes in infra/apisix/init-routes.sh front this container at priority 40.
+#
+# The Vite DEV server on :3000 (npm run dev) remains the edit-refresh loop; this container is the
+# "clone -> one command -> open the gateway" path.
+#
+# The healthcheck probes 127.0.0.1, not localhost: busybox wget prefers ::1, and the mounted conf
+# must declare its own IPv6 listen (see spa/default.conf) — probing the v4 loopback keeps the check
+# independent of resolver ordering.
+
+name: opa-abac-example
+
+services:
+  spa:
+    # Pinned exact (sibling-compose convention). The APISIX upstream references the SERVICE name
+    # (`spa:80`, a network alias), so the container_name below can carry the rig prefix without
+    # breaking resolution — and `./deploy.sh status` (filter `name=opa-abac-`) then shows it.
+    image: nginx:1.27.5-alpine
+    container_name: opa-abac-spa
+    hostname: spa
+    volumes:
+      - ../example-demo-ui/dist:/usr/share/nginx/html:ro
+      - ./spa/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s

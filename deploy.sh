@@ -36,6 +36,7 @@ OPA_COMPOSE="$SCRIPT_DIR/infra/compose.opa.yaml"
 KEYCLOAK_COMPOSE="$SCRIPT_DIR/infra/compose.keycloak.yaml"
 USERMGMT_COMPOSE="$SCRIPT_DIR/infra/compose.usermgmt.yaml"
 MCP_COMPOSE="$SCRIPT_DIR/infra/compose.mcp.yaml"
+SPA_COMPOSE="$SCRIPT_DIR/infra/compose.spa.yaml"
 GEN_COMPOSE="$SCRIPT_DIR/build/compose.pods.generated.yaml"
 STATE_FILE="$SCRIPT_DIR/build/.deploy.state"
 IMAGE="opa-abac-catalog:local"
@@ -80,6 +81,9 @@ RESILIENCE_STUB_COMPOSE="$SCRIPT_DIR/infra/compose.resilience-stub.yaml"
 #                           returns resources with no _actions.
 # Off by default — opt in with ENABLE_SPA=1 ./deploy.sh up. (Run ./deploy.sh build first if the
 # Phase-6 enrichment code isn't yet in the app images.)
+# It also BUILDS the SPA bundle host-side (npm ci on first/stale install + npm run build — needs
+# npm on PATH, up fails otherwise) and starts the packaged `spa` nginx (infra/compose.spa.yaml),
+# which init-routes.sh fronts at the gateway origin http://localhost:9085.
 ENABLE_SPA="${ENABLE_SPA:-0}"
 if [ "$ENABLE_SPA" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
 # USER-DIRECTORY-PORT (ADR 0020): the user-service's identity-directory search via the Keycloak admin
@@ -254,6 +258,7 @@ apply_root_read_exemption() {
 keycloak_compose() { docker compose -p "$PROJECT" -f "$KEYCLOAK_COMPOSE" "$@"; }
 usermgmt_compose() { docker compose -p "$PROJECT" -f "$USERMGMT_COMPOSE" "$@"; }
 mcp_compose() { docker compose -p "$PROJECT" -f "$MCP_COMPOSE" "$@"; }
+spa_compose() { docker compose -p "$PROJECT" -f "$SPA_COMPOSE" "$@"; }
 resolve_stub_compose() { docker compose -p "$PROJECT" -f "$RESILIENCE_STUB_COMPOSE" "$@"; }
 base_compose() { docker compose -p "$PROJECT" -f "$BASE_COMPOSE" "$@"; }
 
@@ -268,6 +273,23 @@ build_mcp_image() {
   docker build -t "$MCP_IMAGE" -f "$MCP_DIR/Dockerfile" "$SCRIPT_DIR"
 }
 mcp_image_exists() { docker image inspect "$MCP_IMAGE" >/dev/null 2>&1; }
+
+# Build the demo-SPA bundle the packaged `spa` nginx serves (compose.spa.yaml mounts dist/).
+# Host-side npm (like the host-side Gradle wrapper for ./gradlew build): the bundle is a build
+# artifact, the container only serves it.
+build_spa_bundle() {
+  command -v npm >/dev/null 2>&1 || {
+    echo "ERROR: ENABLE_SPA=1 builds example-demo-ui and needs npm on PATH." >&2; exit 1; }
+  # Install when node_modules is absent OR older than the lockfile — `npm ci` wipes and re-creates
+  # node_modules, so this also self-heals a partial install from an interrupted earlier run.
+  if [ ! -d "$SCRIPT_DIR/example-demo-ui/node_modules" ] \
+     || [ "$SCRIPT_DIR/example-demo-ui/package-lock.json" -nt "$SCRIPT_DIR/example-demo-ui/node_modules" ]; then
+    echo "==> Installing demo SPA dependencies (npm ci)..."
+    npm --prefix "$SCRIPT_DIR/example-demo-ui" ci
+  fi
+  echo "==> Building the demo SPA bundle (vite build -> example-demo-ui/dist)..."
+  npm --prefix "$SCRIPT_DIR/example-demo-ui" run build
+}
 
 wait_mcp_healthy() {
   echo "==> Waiting for the MCP server to become healthy..."
@@ -410,6 +432,16 @@ case "$CMD" in
       echo "==> Starting the resilience fault-injecting resolve stub (STUB_MODE=${STUB_MODE:-transient}, STUB_FAILS=${STUB_FAILS:-1})..."
       STUB_MODE="${STUB_MODE:-transient}" STUB_FAILS="${STUB_FAILS:-1}" resolve_stub_compose up -d
     fi
+    if [ "$ENABLE_SPA" = "1" ]; then
+      build_spa_bundle
+      echo "==> Starting the packaged demo SPA (nginx, gateway-fronted)..."
+      spa_compose up -d
+    else
+      # Flag flipped off on a re-up: stop a leftover spa container from a previous SPA deploy
+      # (init-routes.sh deletes its routes the same way — the pair keeps the gateway posture at "/"
+      # a function of THIS run's flags, not of deploy history).
+      spa_compose down >/dev/null 2>&1 || true
+    fi
     echo "==> Starting APISIX + etcd..."
     apisix_compose up -d
     generate_compose "$n"
@@ -431,7 +463,7 @@ case "$CMD" in
     [ "$ENABLE_TRACING" = "1" ] && echo "    Jaeger UI: http://localhost:26686"
     [ "$ENABLE_OPA" = "1" ] && echo "    OPA:       http://localhost:28181  (allow-all gateway policy)"
     [ "$ENABLE_OIDC" = "1" ] && echo "    Keycloak:  http://localhost:28888  (admin/admin; realm catalog-demo, user demo/demo)"
-    [ "$ENABLE_SPA" = "1" ] && echo "    SPA auth:  gateway in bearer-only mode (validates Authorization: Bearer; no redirect login) + CORS for http://localhost:3000  [public client: catalog-spa]"
+    [ "$ENABLE_SPA" = "1" ] && echo "    SPA:       http://localhost:9085  (packaged bundle at the gateway origin; single-origin PKCE via /realms/*; dev loop: npm run dev on :3000). Gateway auth: bearer-only  [public client: catalog-spa]. Seed demo data: scripts/postman/seed-demo-data.sh"
     [ "$ENABLE_USER_SERVICE" = "1" ] && echo "    user-mgmt: 2 pods http://localhost:28090 + http://localhost:28092  (gateway usermgmt-pool round-robins both; resolve API at /internal/effective-role; catalog role-source=http)"
     [ "$ENABLE_MCP" = "1" ] && echo "    mcp:       agent tool surface via the gateway at http://localhost:9085/mcp  (pod http://localhost:28093; streamable transport; agent-gate=$MCP_AGENT_GATE_ENABLED roster-filter=$MCP_ROSTER_FILTER_ENABLED)"
     [ "$ENABLE_DIRECTORY" = "1" ] && echo "    directory: identity search active on the user-service (Keycloak admin via catalog-directory, view-users only)"
@@ -456,6 +488,7 @@ case "$CMD" in
     keycloak_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     usermgmt_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     mcp_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
+    spa_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     resolve_stub_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     jaeger_compose down "${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"}" || true
     # Base Postgres last: it's the final container on the project network, so tearing it
