@@ -702,6 +702,7 @@ components:
             - RESOURCE_NOT_FOUND
             - VALIDATION_FAILED
             - TAG_VALUE_ILLEGAL
+            - TAG_OPERATOR_MANAGED
             - DEPENDENCY_UNAVAILABLE
             - STATE_CONFLICT
         timestamp:

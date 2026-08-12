@@ -3,8 +3,11 @@ package dev.dmitriikonovalov.example.catalog.config;
 import dev.dmitriikonovalov.opaabac.data.model.ResourceTags;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
@@ -48,14 +51,67 @@ public class TagAssignmentService {
      */
     public ResourceTags validateAndBuild(
             String resourceType, String resourceId, Map<String, Object> submittedTags) {
-        if (submittedTags == null || submittedTags.isEmpty()) {
+        return validateAndBuild(resourceType, resourceId, submittedTags, Map.of());
+    }
+
+    /**
+     * The full public-path form: validate {@code submittedTags} <em>against the resource's current
+     * tags</em>, so operator-managed keys can be protected.
+     *
+     * <p>Writes here are <b>full-map replace</b>, which is what makes the rejection <b>delta-based</b>
+     * rather than presence-based: for every key whose definition is operator-managed, the submitted map's
+     * presence-and-value must equal the current map's. An <b>assign</b> (absent → present), a
+     * <b>re-value</b>, or a <b>strip</b> (present → absent) throws {@link TagOperatorManagedException};
+     * an <b>echo</b> — the same value on both sides, or absent on both — passes. The echo case is not a
+     * concession: rejecting it would freeze every ordinary tag edit on a resource that happens to carry
+     * an operator-managed key, and a frozen edit path is what makes people look for a workaround.
+     *
+     * <p>Note the empty-submission fast path may only skip the dictionary fetch when there is nothing to
+     * protect either: submitting {@code null}/{@code {}} over a resource that currently carries an
+     * operator-managed key <b>is a strip</b>, and must be rejected rather than shortcut.
+     *
+     * @param currentTags the resource's persisted tags ({@code {}} for a create — nothing to protect yet,
+     *     so submitting an operator-managed key on create is an assign and is rejected)
+     */
+    public ResourceTags validateAndBuild(
+            String resourceType,
+            String resourceId,
+            Map<String, Object> submittedTags,
+            Map<String, Object> currentTags) {
+        Map<String, Object> submitted = submittedTags == null ? Map.of() : submittedTags;
+        Map<String, Object> current = currentTags == null ? Map.of() : currentTags;
+        if (submitted.isEmpty() && current.isEmpty()) {
             return ResourceTags.empty();
         }
-        Map<String, TagDefinitionView> byKey =
-                tagDefinitions.fetchApplicable(resourceType, resourceId).stream()
-                        .collect(Collectors.toMap(
-                                TagDefinitionView::key, d -> d, (a, b) -> a));
+        Map<String, TagDefinitionView> byKey = applicableByKey(resourceType, resourceId);
+        rejectOperatorManagedDelta(byKey, submitted, current);
+        return validateAgainst(byKey, submitted);
+    }
 
+    /**
+     * The <b>operator's</b> form: validate values against the dictionary but run <em>no</em>
+     * operator-managed delta check — this path <b>is</b> the operator, so there is nothing for it to be
+     * rejected by. The bypass is by construction (a separate entry point that never calls the check)
+     * rather than by a flag a caller could pass, so no public request can reach it.
+     *
+     * <p>Values are still fully validated: an unknown key or an illegal enum value is rejected here
+     * exactly as on the public path.
+     */
+    public ResourceTags validateAsOperator(
+            String resourceType, String resourceId, Map<String, Object> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return ResourceTags.empty();
+        }
+        return validateAgainst(applicableByKey(resourceType, resourceId), tags);
+    }
+
+    private Map<String, TagDefinitionView> applicableByKey(String resourceType, String resourceId) {
+        return tagDefinitions.fetchApplicable(resourceType, resourceId).stream()
+                .collect(Collectors.toMap(TagDefinitionView::key, d -> d, (a, b) -> a));
+    }
+
+    private static ResourceTags validateAgainst(
+            Map<String, TagDefinitionView> byKey, Map<String, Object> submittedTags) {
         Map<String, Object> validated = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : submittedTags.entrySet()) {
             String key = entry.getKey();
@@ -67,6 +123,32 @@ public class TagAssignmentService {
             validated.put(key, validatedValue(def, entry.getValue()));
         }
         return ResourceTags.fromMap(validated);
+    }
+
+    /**
+     * The delta check, over the <b>union</b> of submitted and current keys — a strip only shows up on the
+     * current side, an assign only on the submitted side, so iterating either map alone would miss half
+     * the ways an operator-managed key can move.
+     */
+    private static void rejectOperatorManagedDelta(
+            Map<String, TagDefinitionView> byKey,
+            Map<String, Object> submitted,
+            Map<String, Object> current) {
+        Set<String> touched = new LinkedHashSet<>(submitted.keySet());
+        touched.addAll(current.keySet());
+        for (String key : touched) {
+            TagDefinitionView def = byKey.get(key);
+            if (def == null || !def.isOperatorManaged()) {
+                continue;
+            }
+            boolean wasPresent = current.containsKey(key);
+            boolean isPresent = submitted.containsKey(key);
+            if (wasPresent != isPresent || !Objects.equals(current.get(key), submitted.get(key))) {
+                throw new TagOperatorManagedException("Tag '" + key
+                        + "' is operator-managed: its value cannot be assigned, changed or removed"
+                        + " through the API");
+            }
+        }
     }
 
     private static Object validatedValue(TagDefinitionView def, Object raw) {

@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.example.catalog.web;
 
 import dev.dmitriikonovalov.example.catalog.config.IllegalTagAssignmentException;
 import dev.dmitriikonovalov.example.catalog.config.TagDefinitionFetchException;
+import dev.dmitriikonovalov.example.catalog.config.TagOperatorManagedException;
 import dev.dmitriikonovalov.opaabac.security.AbstractProblemAdvice;
 import dev.dmitriikonovalov.opaabac.security.LibraryErrorCode;
 import dev.dmitriikonovalov.opaabac.security.ProblemDetail;
@@ -21,8 +22,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * {@code AccessDeniedException} → {@code 403 ACCESS_DENIED} mapping (so a denied {@code @OpaPreAuthorize}
  * call also lands as {@code problem+json}). The status for each exception is <strong>unchanged</strong>
  * from before — only the body shape and the typed code are new. Every catalog failure maps cleanly to a
- * {@link LibraryErrorCode}; see {@link CatalogErrorCode} for the (currently empty) app-specific extension
- * point.
+ * {@link LibraryErrorCode}; {@link CatalogErrorCode} carries the app-specific ones (today:
+ * {@code TAG_OPERATOR_MANAGED}).
  */
 @RestControllerAdvice
 public class ApiExceptionHandler extends AbstractProblemAdvice {
@@ -70,6 +71,18 @@ public class ApiExceptionHandler extends AbstractProblemAdvice {
     public ResponseEntity<ProblemDetail> handleIllegalTag(
             IllegalTagAssignmentException ex, HttpServletRequest request) {
         return problem(LibraryErrorCode.TAG_VALUE_ILLEGAL, ex.getMessage(), request);
+    }
+
+    /**
+     * A public write that would assign, re-value or strip an <b>operator-managed</b> key (ADR 0030 §3).
+     * → 409 with the catalog's own {@code TAG_OPERATOR_MANAGED}: a conflict, not a validation failure —
+     * the submitted map is well-formed and the key legal; it is the resource's current state the caller
+     * may not move.
+     */
+    @ExceptionHandler(TagOperatorManagedException.class)
+    public ResponseEntity<ProblemDetail> handleOperatorManagedTag(
+            TagOperatorManagedException ex, HttpServletRequest request) {
+        return problem(CatalogErrorCode.TAG_OPERATOR_MANAGED, ex.getMessage(), request);
     }
 
     /** The dictionary could not be fetched — fail-closed: reject the write rather than store untagged. */

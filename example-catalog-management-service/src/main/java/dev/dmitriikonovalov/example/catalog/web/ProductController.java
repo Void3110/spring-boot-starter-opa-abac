@@ -152,7 +152,7 @@ public class ProductController implements ProductApi {
         // the locked transaction below (and AFTER authorization, so an unauthorized caller learns
         // nothing from the 422 vocabulary). Addressed by the governing root (see createProduct).
         var tags = tagAssignment.validateAndBuild(
-                "catalog", catalogId.toString(), request.getTags());
+                "catalog", catalogId.toString(), request.getTags(), current.getTags().asMap());
         // Version binding (Phase 5.97): the guard runs INSIDE mutate's locked transaction, against the
         // row it locked — the decision basis is checked under the same protection the write holds
         // (decide-under-protection). Drift → 409; the snapshot is never persisted.

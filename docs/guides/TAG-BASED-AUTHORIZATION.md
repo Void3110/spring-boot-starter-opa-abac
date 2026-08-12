@@ -82,6 +82,29 @@ The flag travels to the catalog service through the internal projection
 (`GET /internal/tag-definitions`) — enforcement lives where tag **values** are written, and the catalog
 service cannot enforce what it never receives.
 
+**Enforcement, and the one path that can write.** The catalog's `TagAssignmentService` rejects any
+*public* write that **moves** an operator-managed key — an **assign** (absent → present), a
+**re-value**, or a **strip** (present → absent) — with **`409 TAG_OPERATOR_MANAGED`**. The check is
+**delta-based**, not presence-based, because these writes are full-map replace: an **echo** (the same
+value on both sides) passes, since rejecting it would freeze every ordinary tag edit on a resource that
+happens to carry the key. Two consequences worth knowing:
+
+- Submitting `{}`/`null` over a resource that carries the key **is a strip** and is rejected — the
+  empty-submission shortcut may only skip the dictionary fetch when there is nothing to protect either.
+  So a tags-clearing write on a **tagged** resource now consults the dictionary, and a dictionary outage
+  makes it **503** rather than silently succeeding: whether the cleared key was operator-managed is a
+  question only the dictionary answers, and an unanswerable question fails closed.
+- The 409 is deliberately *not* `TAG_DEFINITION_IMMUTABLE`: that code names protection of a
+  definition's **shape**, and a caller must be able to tell which guard answered.
+
+The **operator path** is the catalog service's in-network
+**`POST /internal/bootstrap/resource-tags`** — a **merge-upsert** (`{resourceType, resourceId, tags}`;
+only the posted keys change, a posted `null` removes one, everything else survives, and posting the same
+map twice converges). It bypasses the rejection **by construction** — a separate service entry point
+that never runs the delta check, rather than a flag a public caller could pass — while still validating
+values against the dictionary. Like every `/internal/**` surface it is **gateway-unreachable**: APISIX
+carries a positive `internal-blocked` route that 404s `/internal/*` at the edge.
+
 > **The trust dependency, stated so it is not silently broken** (ADR 0030 §3): an **untagged** root counts
 > as **non-production** and therefore opens. That default is defensible *only* while `env` has no public
 > write path — otherwise a supervised owner could dodge the tier by leaving a catalog untagged. If `env`
