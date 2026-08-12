@@ -97,11 +97,19 @@ states, `NON_NULL` serialization:
 | `{}` | root fetched, untagged | non-production → open |
 | `{"env": …}` | root fetched, tagged | as tagged |
 
-Library surface (both **additive**): `core`'s `AbacContext.Resource` gains the fifth component +
-compat constructors (the `ancestors` evolution pattern — old inputs byte-identical); the
-`AbacResource` SPI gains a `rootAttributes()` **default method** returning `null`;
-`OpaPreAuthorizeAuthorizationManager` threads it through. Every existing library test stays
-unchanged-green — that is the additivity proof, stated as acceptance, not hoped.
+Library surface (both **additive**, per the amended ADR 0032 — the SPI is untouched): `core`'s
+`AbacContext.Resource` gains the fifth component + compat constructors (the `ancestors` evolution
+pattern — old inputs byte-identical), and `OpaPreAuthorizeAuthorizationManager` populates it by
+**resolving the governing target it already computes** through the existing resolver SPI —
+instance path: `ancestors.get(0)` when distinct from the leaf; type-level path: the
+`roleResourceType`/`roleResourceId` override target (the child list gates); leaf-is-root or any
+failure: **absent**. The root resolve is read-through-memoized in the existing
+`RequestAttributesResourceCache`. *(Verified against source at decomposition: there are no app-side
+child authorizers — single-GET inputs are built in the manager's `resolveInstance`, the SPI's
+implementors are entities with no root reference, and the type-level gates have no instance — so
+the originally-sketched `rootAttributes()` default method was rejected; see ADR 0032 §Population.)*
+Every existing library test stays unchanged-green — that is the additivity proof, stated as
+acceptance, not hoped.
 
 ### 3. The role widens — authority stays in the role
 
@@ -135,18 +143,30 @@ clauses, which is how ADR 0030 §2 survives even an enrichment outage. An untagg
 `not root_attributes.env == "production"` is wrong** (absent `env` passes a negated comparison);
 the two-clause shape above is the reference.
 
-### 5. Enrichment wiring (catalog service)
+### 5. Enrichment wiring (the manager, generically — verified at decompose)
 
-Enrichment is attempted **unconditionally** on the four child endpoints (ADR 0030 §1's table: the
-two child GETs and the two child lists) — the service cannot know provenance before resolution, and
-member requests are indifferent to the field. The governing root's id is **already in the path**
-(`/catalogs/{catalogId}/…`); the root is fetched by id **once per request**, memoized through the
-existing resolve-memo machinery, and its tag map becomes `rootAttributes`. On **any** fetch failure
-the input ships **without** the field — no exception, no 5xx: the supervised deny closes the gated
-path while a member's read proceeds (the request-time failure lands on the *narrower result*, the
-slice-A discipline). For the two **list** gates the check is type-level (no leaf instance), so the
-root id comes from the gate's `roleResourceId` rather than a resolved instance — **a named seam to
-verify against the shipped gate code at decompose, not from memory.**
+Enrichment happens **in the authorization manager, for every check with a governing target distinct
+from the decided leaf** — which covers exactly the four child endpoints (ADR 0030 §1's table): the
+two child GETs arrive through `resolveInstance` (governing root = `ancestors.get(0)`), the two
+child lists through the type-level branch whose `roleResourceType='catalog'` override both shipped
+gates already declare (verified: `CategoryController.java:54`, `ProductController.java:56`). The
+manager resolves that target through the app's `CatalogResourceResolver` (which already resolves
+`"catalog"` by id), read-through-memoized in `RequestAttributesResourceCache`, and threads its tag
+map as `rootAttributes`. On **any** failure — resolver empty, throw, no resolution support — the
+input ships **without** the field: no exception, no 5xx; the supervised deny closes the gated path
+while a member's read proceeds (the request-time failure lands on the *narrower result*, the
+slice-A discipline). A root's own read (leaf == governing target) is never enriched — root
+metadata stays ungated (ADR 0030 §1) and the tier clauses live only in the two child-type policy
+files anyway (`catalog.rego` is untouched).
+
+**The `_actions` affordance pin (settled 2026-08-07):** the action-enrichment bulk path builds
+per-row inputs with **no root context**, so on supervised child rows the absent-⇒-deny clause turns
+every verb false and the shipped **omit-on-all-false** convention omits the map entirely. That is
+the **pinned B contract**: supervised child rows carry **no `_actions` map** — omitted, never
+fabricated, never a lying `view:false` on a readable row; member rows are structurally untouched
+(the deny keys on supervised provenance). Threading root context through
+`ActionEnrichmentAdvice` is **slice C's** work, alongside its `deny_reason` envelope change. The
+e2e asserts the omission as the contract.
 
 ### 6. E2e ownership and the E6 flip
 
@@ -202,6 +222,14 @@ verify against the shipped gate code at decompose, not from memory.**
   internal endpoint and duplicates the prod-closed proof.
 - **`NON_EMPTY` serialization for `root_attributes`**: silently merges "untagged" with "fetch
   failed" — the exact fail-open the three-state contract exists to prevent (ADR 0032).
+- **An `AbacResource.rootAttributes()` default method** (the design's original §2 sketch): rejected
+  when verified against source — the SPI's implementors are the JPA entities (no root reference to
+  fetch with), a resolver-side wrapper breaks the manager's typed write-through cache, and the
+  type-level list gates have no instance to call it on. Replaced by manager-side governing-target
+  resolution (ADR 0032 §Population, amended).
+- **Fixing the supervised `_actions` gap in B** (threading root context through
+  `ActionEnrichmentAdvice`): a second, riskier library seam in an already library-touching slice;
+  deferred to slice C, which changes the envelope anyway — B pins the omission as contract (§5).
 - **Parts as substrate/feature (T1–T3 / T4–T6)**: concentrates both fail-open edges in part 1 and
   lands nothing user-visible in part 0. Rejected for the cut below.
 

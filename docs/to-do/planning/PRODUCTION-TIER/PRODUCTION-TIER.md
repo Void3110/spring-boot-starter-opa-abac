@@ -50,6 +50,9 @@ makes it so (`409 TAG_OPERATOR_MANAGED`).
 6. **The E6 flip is deliberate**: A's matrix cells asserting untagged supervised contents 403 are
    rewritten to the B contract (untagged ⇒ open); the closed-contents proof **moves** to B's matrix
    (production cells + the tier-flip liveness cell), it does not vanish.
+7. **Supervised child rows carry no `_actions` map in B** — the bulk path has no root context, so
+   omit-on-all-false omits it (never a fabricated `view:false`); members untouched; asserted in e2e
+   as the contract. Threading root context through the enrichment advice is slice C's work ([[00-DESIGN]] §5).
 
 ## Headline proof
 
@@ -65,7 +68,7 @@ attempt to strip `env` from his own catalog returns `409 TAG_OPERATOR_MANAGED`, 
 |---|---|---|
 | T1 | user-service: the `operatorManaged` dictionary flag + the `env` seed + `TagDefinitionView` carries it | 📋 TODO |
 | T2 | catalog-service: operator-managed write rejection (`TAG_OPERATOR_MANAGED` 409) + the `/internal/bootstrap/resource-tags` operator endpoint | 📋 TODO |
-| T3 | library (additive): `Resource.root_attributes` + the `AbacResource.rootAttributes()` default + manager threading (ADR 0032) | 📋 TODO |
+| T3 | library (additive): `Resource.root_attributes` + manager-side governing-target enrichment (ADR 0032, amended §Population) | 📋 TODO |
 | T4 | the widened supervisor role + the four tier-deny clauses + `opa test` (three states, member-unaffected, one mutation guard per clause site) | 📋 TODO |
 | T5 | catalog-service: enrichment wiring on the four child endpoints (memoized root fetch; list-gate root id) + ITs | 📋 TODO |
 | T6 | e2e: the `ffff…` production-tier matrix + the E6 flip in A's matrix + non-regression enumeration + the guide delta | 📋 TODO |
