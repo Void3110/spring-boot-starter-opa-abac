@@ -21,8 +21,8 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 > **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
 > engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
 > `plan → decompose → autonomous-implement → review` — where each pass leaves artifacts (in **Mulch**
-> and this vault) that make the next one sharper. **22 feature slices, 28 ADRs, 972 unit/IT tests +
-> `opa test` 266/266 + a 15-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
+> and this vault) that make the next one sharper. **24 feature slices, 31 ADRs, 1069 unit/IT tests +
+> `opa test` 276/276 + a 15-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
 > security review** — all delivered this way, with the prompts and per-slice retrospectives kept
 > verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
 
@@ -393,9 +393,9 @@ verified — nothing is hidden behind "the AI did it."
 
 | | |
 |---|---|
-| **22** feature slices | each planned → decomposed → autonomously implemented → reviewed |
-| **28** ADRs | every structural fork pinned as an immutable decision record |
-| **972** unit/IT tests · `opa test` **266/266** · **15**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
+| **24** feature slices | each planned → decomposed → autonomously implemented → reviewed |
+| **31** ADRs | every structural fork pinned as an immutable decision record |
+| **1069** unit/IT tests · `opa test` **276/276** · **15**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
 | **+0.79 ms** ABAC gate at p50 | measured on the real rig, statistically flat at the tail ([PERFORMANCE.md](PERFORMANCE.md)) |
 | **0 Critical** security review | pre-publish 8-angle review + secret scan + CVE sweep, findings fixed |
 
