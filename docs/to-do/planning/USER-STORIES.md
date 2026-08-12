@@ -259,23 +259,23 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 > Team membership is the **sole** access path to a catalog (Epic B / slice B4), so a unit manager who sits
 > *above* several teams sees nothing at all. These stories capture the second, **disjoint** access path —
 > derived from the reporting structure, read-only, and audited — plus the second factor that gates
-> production detail. Split across three slices: **A** [[SUPERVISED-SCOPE]] (Phase 10-A), **B**
-> `PRODUCTION-TIER` and **C** `STEP-UP-ELEVATION`. Planned, not yet shipped.
+> production detail. Split across three slices: **A** [[SUPERVISED-SCOPE]] (Phase 10-A, ✅ shipped
+> 2026-08-07), **B** [[PRODUCTION-TIER]] (📋 planning) and **C** `STEP-UP-ELEVATION` (⏳).
 
 - **K1** *As a unit manager on no team*, I see the catalogs of the teams my reports own or manage —
-  including my reports' reports' — and **nothing** adjacent to my unit. — **Phase 10-A** 📋 (the headline
+  including my reports' reports' — and **nothing** adjacent to my unit. — **Phase 10-A** ✅ (the headline
   cut, asserted on exact ids)
 - **K2** *As a manager*, my access is **read-only**: I can open a catalog's metadata, and every mutation is
-  refused — the UI shows me no buttons I cannot press. — **Phase 10-A** 📋
+  refused — the UI shows me no buttons I cannot press. — **Phase 10-A** ✅
 - **K3** *As an organization*, revoking a reporting line takes effect **immediately**: the moment someone
-  stops reporting to me, their catalogs leave my list and a direct read is refused. — **Phase 10-A** 📋
+  stops reporting to me, their catalogs leave my list and a direct read is refused. — **Phase 10-A** ✅
 - **K4** *As a security officer*, a manager who holds the supervisor marker but has **no** reports sees
-  **nothing** — the claim itself grants no access, only eligibility. — **Phase 10-A** 📋
+  **nothing** — the claim itself grants no access, only eligibility. — **Phase 10-A** ✅
 - **K5** *As an operator*, when the reporting source is unreachable a manager degrades to their **own**
-  memberships — never to everything, and never to a partial, silently-wrong unit. — **Phase 10-A** 📋
+  memberships — never to everything, and never to a partial, silently-wrong unit. — **Phase 10-A** ✅
   (the fail-closed drill)
 - **K6** *As a manager who also sits on a team*, my own team's data behaves exactly as it always has — being
-  a supervisor never makes my own work harder to reach. — **Phase 10-A** 📋
+  a supervisor never makes my own work harder to reach. — **Phase 10-A** ✅
 - **K7** *As a product owner*, the fact that a catalog holds **production** data cannot be edited away by
   the people being supervised — the tier is set by an operator and is not assignable through the API. —
   **Phase 10-B** 📋
@@ -286,6 +286,15 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   event — the reads are the exact risk the second factor exists for. — **Phase 10-C** 📋
 - **K10** *As an identity team*, we can swap the second factor (TOTP → passkey, say) as a **configuration**
   change, with no application change and no redeploy. — **Phase 10-C** 📋
+- **K11** *As a manager*, I can open the **contents** of my reports' non-production catalogs — categories
+  and products, staging and dev — without ceremony: routine oversight needs no second factor. —
+  **Phase 10-B** 📋 (the headline tier cut)
+- **K12** *As a security officer*, a supervisor's read of **production** contents is refused in this phase
+  — the gate exists before the elevation does, and an untagged catalog is non-production only because
+  tagging is operator-controlled. — **Phase 10-B** 📋
+- **K13** *As a team member*, the tier changes nothing for me: reading my own team's production catalog
+  works exactly as it always has, elevated or not — even when the tier machinery itself is failing. —
+  **Phase 10-B** 📋 (the fail-closed drill: enrichment outage narrows the supervisor, never the member)
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so

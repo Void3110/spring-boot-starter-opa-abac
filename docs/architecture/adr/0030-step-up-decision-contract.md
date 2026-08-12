@@ -120,6 +120,14 @@ So the dictionary gains a **new, additive `operatorManaged` boolean**, defaultin
 There is **no runtime path** to set `env` — seed and fixtures only. The tier is therefore
 non-self-strippable *by construction* rather than by a check being correct.
 
+> *(Amended at slice-B decomposition, 2026-08-07 — the fixture mechanics forced a precision: matrix
+> catalogs are created through the API at run time, so their ids are unknowable to a seed script.
+> The sole runtime write path is the catalog service's **in-network**
+> `POST /internal/bootstrap/resource-tags` — operator-only, merge-upsert, gateway-unreachable —
+> which **is** the "operator" this section reserves tagging to. "No runtime path" reads precisely as
+> "no path through the public API"; the untagged-defaults dependency below is unchanged, since the
+> supervised population still cannot reach the tag.)*
+
 **Untagged defaults to non-production**, and unelevated detail is allowed. This is defensible **only
 because** tagging is operator-controlled: a supervised owner cannot create an untagged catalog to dodge the
 gate. The dependency is stated here so it is not silently broken later — if `env` ever becomes writable at
