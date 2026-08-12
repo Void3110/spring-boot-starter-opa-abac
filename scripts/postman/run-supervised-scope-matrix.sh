@@ -292,7 +292,10 @@ restore_rig() {
   if [ "$SUPERVISED_PASS_ACTIVE" = "1" ]; then
     echo "==> Restoring the catalog pods (supervised base-url back to the real user-service) ..."
     # Forward the operator's optional rig flavours — hardcoding only the two required flags would
-    # silently downgrade a directory/SPA/MCP rig on recreate.
+    # silently downgrade a directory/SPA/MCP rig on recreate. Forwarding sees only EXPORTED flags:
+    # since the flag-off arms tear their routes/containers down, an operator who brought the rig up
+    # with a non-exported `ENABLE_SPA=1 ...` and then runs this matrix gets that surface removed —
+    # export the flavour flags to keep them across matrix re-ups.
     ( cd "$REPO_ROOT" && ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 \
         ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}" ENABLE_SPA="${ENABLE_SPA:-0}" \
         ENABLE_MCP="${ENABLE_MCP:-0}" ./deploy.sh up >/dev/null ) || true

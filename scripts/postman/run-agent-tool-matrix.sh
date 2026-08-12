@@ -32,6 +32,8 @@
 #
 # Prereq: the full rig is up WITH the MCP server (the flag force-enables OIDC + OPA + the user-service):
 #   ENABLE_MCP=1 ./deploy.sh up --pods 2
+#   (EXPORT the flag — `export ENABLE_MCP=1` — if another matrix will re-up the rig afterwards:
+#   a flag-less `deploy.sh up` now positively tears the MCP route + container down, by design.)
 #
 # THREE CELLS ARE RIG DRILLS, NOT COLLECTION STEPS, and this runner orchestrates them: it stops and
 # restarts the OPA container around the E6 folders, recreates the MCP pod with

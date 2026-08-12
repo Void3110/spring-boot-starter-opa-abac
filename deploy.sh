@@ -427,6 +427,11 @@ case "$CMD" in
       mcp_image_exists || build_mcp_image
       echo "==> Starting the MCP server (agent tool surface)..."
       mcp_compose up -d
+    else
+      # Flag flipped off on a re-up: stop a leftover mcp container (init-routes.sh deletes its
+      # route/upstream the same way). The E6/E7 kill-switch drills are unaffected — they recreate
+      # the container via their own compose call, not through a flag-less `deploy.sh up`.
+      mcp_compose down >/dev/null 2>&1 || true
     fi
     if [ "$ENABLE_RESILIENCE_STUB" = "1" ]; then
       echo "==> Starting the resilience fault-injecting resolve stub (STUB_MODE=${STUB_MODE:-transient}, STUB_FAILS=${STUB_FAILS:-1})..."
