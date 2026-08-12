@@ -235,8 +235,11 @@ e2e asserts the omission as the contract.
 - **Fixing the supervised `_actions` gap in B** (threading root context through
   `ActionEnrichmentAdvice`): a second, riskier library seam in an already library-touching slice;
   deferred to slice C, which changes the envelope anyway — B pins the omission as contract (§5).
-- **Parts as substrate/feature (T1–T3 / T4–T6)**: concentrates both fail-open edges in part 1 and
-  lands nothing user-visible in part 0. Rejected for the cut below.
+- **Parts as substrate/feature (T1–T3 / T4–T6)**: splits the two fail-open code edges across the
+  parts (T3's failure-to-absent in its part 0, T4's deny clauses in its part 1), so no single
+  part's inline review sees them together — and its part 0 lands no tier behavior at all, only
+  plumbing. Rejected for the cut below, which keeps both edges under one review and makes the
+  boundary a proof handoff.
 
 ## Knowledge destination
 
