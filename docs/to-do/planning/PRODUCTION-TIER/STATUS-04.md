@@ -168,4 +168,93 @@ subsection, on `feature/void3110/production-tier`.
 
 ## Part review (layer 2)
 
-_Filled at the part boundary, after T4's commit._
+**Scope:** the whole of part 0 — T1–T4 as one diff (`main...HEAD`, 42 files, +2762/-84, four feature
+commits) — reviewed at the part boundary after T4's commit.
+
+**Path taken, and the downgrade this records.** The **2A lens set applied INLINE, in the part-runner's
+own context** — no review sub-agent was spawned. This is the deep-review skill's own routing for a
+part-runner (its path table: *running inside a spawned subagent → 2A applied inline, any size, any risk;
+2B unreachable*, since `Workflow` does not exist where a subagent runs). **T3 and T4 are headline
+tickets** — the input contract every adopter sees, and the tier mechanism whose careless shape fails
+open — and both would normally take the multi-lens 2B path on a diff this size and this risk. **They
+took inline-2A instead. Layer 3 (the whole-delivery `/deep-review` from the main session, after part 1)
+re-covers both**, and should treat them as first-priority scope rather than as already-reviewed.
+
+### What was checked, with the evidence
+
+- **Fail-closed (the lens that matters most here).** Every error/empty branch traced to deny/absent:
+  the six enrichment-failure paths (T3) all land on **absent**, and absent is a **deny** for the
+  supervised population (T4) — verified end to end by `opa eval` against the real corpus before any test
+  was written, not inferred: supervised + absent → `false`, `{}` → `true`, `staging` → `true`,
+  `production` → `false`; membership → `true` in every state. The dictionary-outage branch (T2) rejects
+  the write (503) rather than skipping the operator-managed check. **No path in the part returns more
+  access on error than on success.**
+- **The forbidden shape is guarded, measurably.** Beyond the four required clause-deletion mutations
+  (each fails exactly 2 tests), the naive single-negation form was substituted into the corpus and
+  **fails 6 tests**, and dropping the provenance conjunct **fails 24** (21 pre-existing). The slice's two
+  named fail-open shapes are therefore caught by tests rather than by review attention.
+- **Security audit.** (i) *IDOR/scope*: the instance path enriches from the **ancestor chain's** root,
+  not from the URL, so a child in another catalog is judged by its real governing root (the URL-scope
+  404 is unchanged). (ii) *An authz artifact served across subjects/requests*: the memo is
+  `RequestAttributesResourceCache` — request-scoped, single-subject; nothing crosses either boundary.
+  (iii) *The cache-contract amendment*: every cache **read** in the example app is keyed on the
+  request's own leaf (`cachedCatalog`/`cachedCategory`/`cachedProduct` at their handlers), never on an
+  ancestor id, so **no handler can read the decision-independent root memo** — checked by grep, not
+  assumed. (iv) *Gateway exposure* of the new internal write endpoint: APISIX carries a positive
+  `internal-blocked` route at priority 70 that 404s `/internal/*`. (v) *Injection surfaces*: none added
+  (no SpEL/SQL/JSONB built from user input in the part).
+- **Concurrency / idempotency (the invariant, not the mechanics).** The delta-rejection decides on the
+  **same loaded entity the write persists** at all three update call sites, each of which already
+  version-guards in its mutating path (drift → 409); the operator merge-upsert converges under retry
+  (asserted); a root-tag change mid-request cannot yield a mixed gate/instance view because the memo
+  pins one snapshot (asserted on **both** captured contexts).
+- **Wiring.** Every new seam has a non-test caller and a non-happy-path test: the column → mapper →
+  internal projection (I2 asserts it over the wire); the widened `validateAndBuild` (three call sites,
+  U4); the exception → advice → enum → yaml chain (I3 asserts the **code**, not just the status); the
+  internal controller (I4, four failure modes); the record component → the manager → the four rego
+  clauses (U6–U11).
+- **Core boundary / additivity / AND-not-replace.** `opa-abac-core` imports only Jackson + `java.util`.
+  `opa-abac-spring-data`, `AbacResource`, `AbacResourceResolver`, `ParentRef` and both ancestor
+  resolvers are **byte-unchanged** (`git diff --name-only`), so nothing tier-related can reach the
+  residual — and `filter` is asserted **true** on the very gate input the tier denies, making "the
+  decision lands at the gate" a test rather than a claim. **Zero library tests were modified across the
+  whole part** (`git diff --name-status main...HEAD -- 'opa-abac-*/src/test'` is empty); the two
+  example-app tests that changed are the two that asserted the supervisor role's pre-B shape.
+- **Rego.** `default allow := false` intact in both files, no unconditional allow added, `filter` still
+  has no subject-roles fallback, the mirrored bundle and `catalog.rego`/`team.rego`/`agent_tools.rego`
+  untouched. Exactly one policy change, exactly four clauses — invariant (5) holds.
+- **Schema.** Entity ↔ Liquibase ↔ real Postgres agree: the ITs boot under `ddl-auto: validate`.
+- **Autonomous-run lens.** *Laziness*: every ticket's cited QA cases are implemented and named in its
+  STATUS note; the tests assert the **cut** (allow/deny, 409-with-code, exact tag maps), not shapes.
+  *Self-preferential bias*: three of the four ★gates recorded a real refactor (a removed setter, a
+  removed save-switch, a consolidated enrichment point plus a redundant assertion) and none claimed
+  "nothing found" while the diff said otherwise. *Goal drift*: the load-bearing invariants were re-checked
+  **at the part boundary, not just per ticket** — additive-only, core Spring-free, one policy change,
+  nothing in `filter`, provenance-scoping — all hold above.
+
+### Finding, and what was done about it
+
+**One finding, Low, documented rather than coded around — the root memo inherits the trust level of the
+cache entry it reads.** `resolveRootAttributes` reads through the request cache, and the allow
+write-through stores the resolved instance — which for the `@OpaPreAuthorize(resource = "#x")` form is an
+object the **caller** supplied rather than one the resolver loaded. An application that used that form
+for a type which is also a governing root, and then made a child check on that same root later in the
+same request, would take `root_attributes` from the caller's object — a tier downgrade. This is an
+extension of a trust boundary slice 5.97 already accepted ("the caller holds the instance") from "a
+handler may reuse this snapshot" to "a later decision may read it", which is what makes it worth stating.
+
+*Verified unreachable in this repository*: `grep` finds **no** `@OpaPreAuthorize(resource = …)` in either
+example service's main code, and all six governing-root overrides are the `roleResourceType='catalog'`
+gates. Not fixed in code: the namespaced-memo alternative contradicts the decomposition's explicitly
+pinned decision to share the cache and amend its contract, and skipping the read would break the
+one-resolve-per-request requirement (U15/I8). **Fix applied: an adopter caveat in
+`resolveRootAttributes`'s javadoc**, naming the condition and the guidance (resolve governing roots
+through the resolver, not through the `resource()` form). Recorded here so layer 3 can weigh it with the
+whole delivery in view.
+
+**No cross-part escalation.** Nothing found reaches an already-completed part — part 0 is the first part,
+and every finding above lands inside T1–T4, which this runner owns.
+
+**Re-tested after the review:** `./gradlew build` (all modules) green, `opa test infra/opa/policies/`
+301/301, local Sonar 16 findings all in documented by-design FP classes.
+

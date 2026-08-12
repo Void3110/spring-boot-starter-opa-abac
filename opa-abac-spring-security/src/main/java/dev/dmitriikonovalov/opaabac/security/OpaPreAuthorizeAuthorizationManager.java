@@ -316,6 +316,16 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      * Resolve the governing target's attributes, <b>read-through-memoized</b> in the request cache so a
      * request pays at most one extra resolver call across its gate and instance checks.
      *
+     * <p><b>Adopter caveat about that memo.</b> The read-through takes whatever the request cache holds
+     * for {@code (rootType, rootId)}, and the allow-write-through above stores the resolved instance —
+     * which, for the {@link OpaPreAuthorize#resource()} form, is an object the <em>caller</em> supplied
+     * rather than one the resolver loaded. So in an application that (a) uses that annotation form for a
+     * type which is also a governing root, and (b) makes a child check on the same root later in the
+     * same request, the child's {@code root_attributes} would come from the caller's object. The scope
+     * is one request and one subject — nothing crosses either — and no such call site exists in this
+     * repository, but an adopter relying on root attributes for a security decision should resolve
+     * governing roots through the resolver rather than through the {@code resource()} form.
+     *
      * @return the target's attributes, or {@code null} on <em>any</em> failure — resolver empty, resolver
      *     throw, or a target that reports null attributes. A tag lookup must never become a member-facing
      *     outage, so nothing here propagates. Note the direction of the null-attributes case: it lands on
