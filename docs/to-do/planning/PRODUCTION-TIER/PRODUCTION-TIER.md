@@ -9,7 +9,12 @@ tags:
 
 # PRODUCTION-TIER — the tier decides how deep oversight goes
 
-> **Status: Planning.** Slice **B of three** in the supervisor epic (Phase 10 of [[POC-ROADMAP]]).
+> **Status: Planning — validated, cleared to run.**
+> **Validated:** 2026-08-07 — mechanical + adversarial clean; 2 delta checks after 2 amendments
+> (full fan-out: 37 agents, 30 confirmed findings incl. 2 run-stoppers, all fixed; the terminal
+> delta check returned no defects).
+>
+> Slice **B of three** in the supervisor epic (Phase 10 of [[POC-ROADMAP]]).
 > Implements [[0030-step-up-decision-contract|ADR 0030]] **§1–4**: an operator-managed `env` tag on the
 > governing root, carried to child decisions by root-attribute enrichment
 > ([[0032-root-attribute-enrichment-input-contract|ADR 0032]]), opens supervised **non-production**
