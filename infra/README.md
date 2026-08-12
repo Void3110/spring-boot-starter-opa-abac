@@ -82,6 +82,17 @@ enrichment the SPA renders). It also proxies Keycloak through the gateway at `/r
 `/resources/*` so the browser does its whole PKCE flow single-origin against `:9085` (no
 `/etc/hosts`, no host-port issuer mismatch). The browser SPA lives in `example-demo-ui/`.
 
+`ENABLE_SPA=1` also serves the **packaged SPA itself**: `deploy.sh` builds the bundle host-side
+(`npm ci` on first/stale install + `npm run build` — npm on PATH is a hard prerequisite) and starts
+an nginx sidecar (`compose.spa.yaml` + `spa/default.conf`, no published host port). `init-routes.sh`
+fronts it with two **public GET/HEAD** routes at priority 40 — `spa-index` (`/`, `/index.html`, the
+favicons) and `spa-assets` (`/assets/*`) — above the catalog catch-all, below the Keycloak proxy and
+the usermgmt prefixes, so no protected surface is shadowed. On a re-up **without** the flag, both the
+routes and the sidecar are positively torn down (the gateway's posture at `/` follows this run's
+flags, not deploy history). Open the demo at `http://localhost:9085`, then seed:
+`scripts/postman/seed-demo-data.sh`. The Vite dev server on `:3000` (`npm run dev`) stays the
+edit-refresh loop.
+
 ```bash
 ./deploy.sh build                              # ensure the Phase-6 enrichment code is in the images
 ENABLE_SPA=1 ./deploy.sh up --pods 2          # brings up Keycloak + user-service + bearer gateway
@@ -164,8 +175,10 @@ target catalog, 403 otherwise; ADR 0019). The user-service must run with `ABAC_O
 public `createTeam` fails closed to 403.
 
 > **`/internal/**` is NEVER gateway-exposed — the load-bearing invariant.** The gateway proxies ONLY
-> `/api/v1/teams*`, `/api/v1/users*`, `/api/v1/catalogs*` (catch-all), and the Keycloak `/realms/*` +
-> `/resources/*` paths. The user-service's `/internal/**` (resolve, governed-targets, bootstrap) and the
+> `/api/v1/teams*`, `/api/v1/users*`, `/api/v1/catalogs*` (catch-all), the Keycloak `/realms/*` +
+> `/resources/*` paths (`ENABLE_SPA`), `/mcp*` (`ENABLE_MCP`), and the packaged-SPA static paths
+> `/` + `/index.html` + favicons + `/assets/*` (GET/HEAD only, `ENABLE_SPA`).
+> The user-service's `/internal/**` (resolve, governed-targets, bootstrap) and the
 > catalog's `/internal/catalog/{id}/created-by` are `permitAll` + in-network only — exposing them through
 > the gateway would let anyone forge a `sub` or read a creator id. Verify:
 > `curl :9085/internal/governed-targets` → **404 (not routed)**; `curl -H 'Authorization: Bearer <jwt>'
@@ -364,6 +377,7 @@ done | sort | uniq -c
 | `compose.keycloak.yaml` + `keycloak/realm-export.json` | Keycloak (opt-in); imports the `catalog-demo` realm/client/user on startup. |
 | `compose.usermgmt.yaml` + `../example-user-management-service/Dockerfile` | The user-management service + its own Postgres (opt-in via `ENABLE_USER_SERVICE=1`); the app-resolved role source for the catalog. |
 | `compose.resilience-stub.yaml` + `resilience-stub/resolve_stub.py` | A tiny **fault-injecting** stand-in for the resolve endpoint (opt-in via `ENABLE_RESILIENCE_STUB=1`), for the Slice B3 resilience e2e. Returns N transient `503`s then the role (`STUB_MODE=transient`) or always `503` (`STUB_MODE=down`); the catalog's `role-source=http` points at it instead of the real user-mgmt. See the B3 section below. |
+| `compose.spa.yaml` + `spa/default.conf` | The **packaged demo SPA** (opt-in via `ENABLE_SPA=1`): nginx serving the built `example-demo-ui/dist` bundle, fronted through the gateway by the public `spa-index`/`spa-assets` routes (no published host port). `deploy.sh` builds the bundle host-side first; torn down on a re-up without the flag. |
 | `opa/policies/team.rego` | The team-management policy the user-service dogfoods (a copy of the service's source policy, mounted into the rig's OPA). |
 | `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa, openid-connect). |
 | `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds openid-connect + opentelemetry + opa plugins (toggleable). |

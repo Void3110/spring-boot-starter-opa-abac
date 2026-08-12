@@ -159,6 +159,52 @@ if [ "${ENABLE_SPA:-0}" = "1" ]; then
   echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [SPA single-origin auth, public passthrough]"
 fi
 
+# Packaged demo SPA: serve the BUILT bundle (the `spa` nginx from infra/compose.spa.yaml, mounting
+# example-demo-ui/dist) THROUGH the gateway, so the whole demo lives at one origin
+# (http://localhost:9085): the SPA itself, its PKCE flow (/realms/* above) and the API (/api/**).
+# The static routes are PUBLIC (no auth plugins) — they hand out only the compiled bundle; every
+# data-bearing call still goes through the bearer-validated API routes. Priority 40: above the
+# catalog-all catch-all (0), below the Keycloak proxy (50) and the usermgmt API prefixes (60), so
+# nothing that used to reach an app can be shadowed by the static server.
+#
+# TWO-ARMED, unlike the Keycloak block above: etcd outlives a flag-flip re-up (no volume, but the
+# container is reused), so a previous SPA deploy's public routes at "/" would otherwise silently
+# shadow the OIDC redirect posture of a non-SPA rig. When the flag is off, the routes are
+# positively deleted (routes before the upstream — APISIX refuses to drop an upstream a route
+# still references; plain -s so a 404 on a never-created id is a no-op, not an errexit abort).
+if [ "${ENABLE_SPA:-0}" = "1" ]; then
+  spa_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/upstreams/spa-static" \
+    -d '{"type":"roundrobin","scheme":"http","nodes":{"spa:80":1}}')
+  code=$(printf '%s' "$spa_resp" | tail -n1)
+  if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+    echo "  ERROR: upstream 'spa-static' PUT failed ($code): $(printf '%s' "$spa_resp" | head -n1)" >&2; exit 1
+  fi
+  spa_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/routes/spa-index" \
+    -d '{"name":"spa-index","uris":["/","/index.html","/favicon.svg","/favicon.ico"],"methods":["GET","HEAD"],"upstream_id":"spa-static","priority":40,"status":1}')
+  code=$(printf '%s' "$spa_resp" | tail -n1)
+  if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+    echo "  ERROR: route 'spa-index' PUT failed ($code): $(printf '%s' "$spa_resp" | head -n1)" >&2; exit 1
+  fi
+  spa_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/routes/spa-assets" \
+    -d '{"name":"spa-assets","uri":"/assets/*","methods":["GET","HEAD"],"upstream_id":"spa-static","priority":40,"status":1}')
+  code=$(printf '%s' "$spa_resp" | tail -n1)
+  if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+    echo "  ERROR: route 'spa-assets' PUT failed ($code): $(printf '%s' "$spa_resp" | head -n1)" >&2; exit 1
+  fi
+  echo "  routes 'spa-index' (/ + index.html + favicons) + 'spa-assets' (/assets/*) -> spa:80  [packaged demo SPA at the gateway origin]"
+else
+  for r in spa-index spa-assets; do
+    curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/$r"
+  done
+  curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams/spa-static"
+fi
+
 # Slice B4 (ADR 0019): route the PUBLIC user-management self-service prefixes through the gateway so
 # the user-service's CallerIdentity gets the gateway-validated subject (createTeam owner-on-create + the
 # ownership squat-check both need the real `sub`). Two routes, /api/v1/teams* and /api/v1/users*, at a
@@ -173,7 +219,8 @@ fi
 # catch-all (/*, below) that WOULD otherwise match /internal/catalog/{id}/created-by — so an explicit
 # `internal-blocked` route (priority 70, defined just before the catch-all) 404s every /internal/* path at
 # the edge. The gateway thus proxies ONLY /api/v1/teams*, /api/v1/users*, /api/v1/catalogs* (catch-all),
-# and the Keycloak realms/resources paths; /internal/* is positively blocked.
+# the Keycloak realms/resources paths (ENABLE_SPA), /mcp* (ENABLE_MCP), and the packaged-SPA static
+# paths / + /index.html + favicons + /assets/* (GET/HEAD only, ENABLE_SPA); /internal/* is positively blocked.
 #
 # Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — only wired when the usermgmt pod is up.
 if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
