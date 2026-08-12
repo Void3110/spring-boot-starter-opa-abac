@@ -162,6 +162,56 @@ apps that want a coarse request rule.
 > *mirrors* enforcement (same resolved attributes, same governing-root role) so the buttons match what the
 > gate would allow.
 
+### Root-attribute enrichment — `input.resource.root_attributes` (ADR 0032)
+
+Tags are **leaf-scoped**: `input.resource.attributes` on a product is the product's own tag map, and
+nothing is inherited. So a policy that wants to gate a *child* read on something written on the
+**governing root** (the production tier is the first such case — see [[TAG-BASED-AUTHORIZATION]]) needs
+the root's tags in the input.
+
+With resource resolution on, the manager supplies them. Whenever the **governing target is distinct
+from the decided leaf** — the ancestor chain's root on an instance check, the
+`roleResourceType`/`roleResourceId` override target on a type-level child gate — it resolves that target
+through the app's existing `AbacResourceResolver` and threads its tag map into the context as
+`input.resource.root_attributes`. The resolve is **read-through-memoized** in the request cache, so a
+request pays at most one extra resolver call however many checks it runs, and every check in that
+request sees **one coherent snapshot** of the root.
+
+**Three states, and the whole contract is that they stay distinguishable:**
+
+| Wire state | Meaning |
+|---|---|
+| key **absent** | enrichment failed, or was never attempted — the root's state is **unproven** |
+| `{}` | the root was fetched and carries **no tags** |
+| `{"env": "production", …}` | the root was fetched and is tagged |
+
+Hence the field is serialized `NON_NULL` and **never `NON_EMPTY`**: under `NON_EMPTY` an untagged root's
+empty map would vanish and become indistinguishable from a failed fetch — merging the two states the
+contract exists to separate, in the open direction.
+
+**Failure is narrow by construction.** A resolver that returns empty, throws, or is not configured
+leaves the field **absent** — never an exception out of the manager, never a deny by itself, never a
+5xx. The policy decides what absence means, and that is the point: a decision that never reads the field
+is untouched, while a decision that gates on it treats "unproven" as closed.
+
+> **The Rego trap, worth repeating.** Testing the field with a bare
+> `not input.resource.root_attributes.env == "production"` reads naturally and is **wrong** — an absent
+> value passes a negated comparison. Give the absent state its own clause:
+>
+> ```rego
+> denied if { …; not input.resource.root_attributes }               # unproven
+> denied if { …; input.resource.root_attributes.env == "production" } # proven production
+> ```
+
+The field is **additive**: `AbacContext.Resource` keeps its prior constructor arities, an unenriched
+resource serializes byte-for-byte as before, and nothing enters the partial-evaluation `filter` input —
+a list's tier decision belongs at the coarse gate, never in the SQL residual.
+
+*One consequence to know if you read the request cache:* the root memo is written **decision-
+independently** (after a successful resolve, before the OPA call), so a cache entry is a *resolved*
+snapshot and is no longer necessarily an *authorized* one. The decided leaf is still always resolved
+fresh, so no decision can read its own cached answer.
+
 ## Per-type policies
 
 One rego document per resource type (`infra/opa/policies/{catalog,category,product}.rego`),

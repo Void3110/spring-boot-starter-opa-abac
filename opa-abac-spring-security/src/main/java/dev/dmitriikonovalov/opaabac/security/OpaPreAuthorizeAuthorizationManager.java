@@ -47,9 +47,23 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * attribute-less context, which could skip attribute-keyed deny rules); ancestor resolution throws →
  * the chain <strong>collapses to empty</strong> and the decision proceeds direct-grant-only (never a
  * partial chain, never a stripped direct grant). On allow the instance is written through to the
- * {@link AbacResourceCache} for handler reuse — the gate itself never reads the cache. Without
- * support (or with the kill-switch off), the built context is byte-identical to the pre-resolution
- * manager's; type-level checks (no {@code resourceId}) never engage the resolver.
+ * {@link AbacResourceCache} for handler reuse. Without support (or with the kill-switch off), the
+ * built context is byte-identical to the pre-resolution manager's; type-level checks (no
+ * {@code resourceId}) never engage the resolver.
+ *
+ * <h2>Root-attribute enrichment (ADR 0032)</h2>
+ * When the governing target is <em>distinct</em> from the decided leaf, the manager also resolves that
+ * target and threads its attributes into the context as {@code resource.root_attributes} — the input
+ * a policy needs to gate a child decision on ancestor state. Any failure leaves the field
+ * <b>absent</b> (never an exception, never a deny by itself); the three wire states are absent =
+ * unproven, <code>&#123;&#125;</code> = fetched-and-untagged, populated = as tagged.
+ *
+ * <p><b>This amends the cache contract, deliberately.</b> The root resolve is read-through-memoized in
+ * the same {@link AbacResourceCache}, and its {@code put} is <em>decision-independent</em> — after a
+ * successful resolve, before the OPA call. So an entry is a <b>resolved</b> snapshot, no longer
+ * necessarily an <b>authorized</b> one, and a cache hit must never be read as proof that anything was
+ * allowed. The older "the gate never reads the cache" note still holds where it matters — for the
+ * <em>decided leaf</em>, which is always resolved fresh; the memo covers only the governing root.
  *
  * <h2>Fail-closed</h2>
  * Unauthenticated, an unresolvable resource, a declared {@code resourceId} expression that resolves to
@@ -111,7 +125,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 return DENY;
             }
 
-            ResolvedCheck resolved = resolveCheck(annotation, invocation);
+            ResolvedCheck resolved = enrichWithRootAttributes(resolveCheck(annotation, invocation));
             if (resolved == null) {
                 log.debug("OPA pre-authorize denied: resource could not be resolved for action '{}'",
                         annotation.action());
@@ -127,8 +141,10 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
 
             boolean allowed = opaClient.allow(context);
             if (allowed && resolutionSupport != null && resolved.instance() != null) {
-                // Write-through on allow only: the handler may reuse the authorized snapshot. The gate
-                // itself never reads this cache, so it can never become an input to a decision.
+                // Write-through on allow only: the handler may reuse the authorized snapshot. The DECIDED
+                // LEAF is never read back by the gate — it is always resolved fresh, so this entry can
+                // never become an input to its own decision. (The governing ROOT is a separate, and
+                // deliberately decision-independent, memo — see the class javadoc.)
                 resolutionSupport.cache().put(resolved.resource().type(), resolved.resource().id(),
                         resolved.instance());
             }
@@ -251,6 +267,84 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             return null;
         }
         return new ResolvedCheck(base.resource(), roleType, roleId, base.instance());
+    }
+
+    /**
+     * Root-attribute enrichment (ADR 0032): thread the <b>governing target's</b> tag map into the decided
+     * resource as {@code root_attributes}, so a policy can gate a child decision on ancestor state.
+     *
+     * <p><b>One rule for both paths</b>, because both already computed the same thing: the governing
+     * target is exactly the {@code (type, id)} the role is looked up on — the ancestor chain's root on
+     * the instance path, the {@code roleResource} override target on the type-level child gates. Doing it
+     * here, after the override has been applied, is what keeps the two consistent: the enriched
+     * attributes always describe the same resource the role was resolved on, so a policy can never read
+     * {@code root_attributes} as belonging to some other ancestor.
+     *
+     * <p>The field stays <b>absent</b> when there is nothing to prove or nothing proved it: no resolution
+     * support, a type-level check with no override, a leaf that <em>is</em> its own governing root (its
+     * own attributes already carry its tags, and ADR 0030 §1 keeps a root's own read ungated), or
+     * <b>any</b> failure resolving the target. Absence is never a deny by itself and never an exception
+     * out of the manager — the policy decides what absence means: a membership decision is indifferent to
+     * it, while a supervised decision treats an unproven tier as closed.
+     */
+    private ResolvedCheck enrichWithRootAttributes(ResolvedCheck check) {
+        if (check == null || resolutionSupport == null) {
+            return check;
+        }
+        String rootType = check.roleType();
+        String rootId = check.roleId();
+        if (rootType == null || rootId == null) {
+            return check; // a type-level check with no governing target
+        }
+        AbacContext.Resource leaf = check.resource();
+        if (rootType.equals(leaf.type()) && rootId.equals(leaf.id())) {
+            return check; // the leaf IS the root — its own attributes already carry its tags
+        }
+        Map<String, Object> rootAttributes = resolveRootAttributes(rootType, rootId);
+        if (rootAttributes == null) {
+            return check; // unproven — the absent state, state one of ADR 0032's three
+        }
+        return new ResolvedCheck(
+                new AbacContext.Resource(
+                        leaf.type(), leaf.id(), leaf.attributes(), leaf.ancestors(), rootAttributes),
+                rootType,
+                rootId,
+                check.instance());
+    }
+
+    /**
+     * Resolve the governing target's attributes, <b>read-through-memoized</b> in the request cache so a
+     * request pays at most one extra resolver call across its gate and instance checks.
+     *
+     * @return the target's attributes, or {@code null} on <em>any</em> failure — resolver empty, resolver
+     *     throw, or a target that reports null attributes. A tag lookup must never become a member-facing
+     *     outage, so nothing here propagates. Note the direction of the null-attributes case: it lands on
+     *     <b>absent</b> (unproven, closed), never on an empty map (untagged, open) — when in doubt about
+     *     what the root says, the honest answer is that we do not know.
+     */
+    private Map<String, Object> resolveRootAttributes(String rootType, String rootId) {
+        try {
+            AbacResource cached =
+                    resolutionSupport.cache().get(rootType, rootId, AbacResource.class).orElse(null);
+            if (cached != null) {
+                return cached.abacAttributes();
+            }
+
+            AbacResource root = resolutionSupport.resolver().resolve(rootType, rootId).orElse(null);
+            if (root == null) {
+                log.debug("root-attribute enrichment: '{}/{}' did not resolve — tier left unproven",
+                        rootType, rootId);
+                return null;
+            }
+            // Decision-INDEPENDENT put (see the cache note in this class's javadoc): the root is memoized
+            // as resolved, not as authorized.
+            resolutionSupport.cache().put(rootType, rootId, root);
+            return root.abacAttributes();
+        } catch (RuntimeException e) {
+            log.debug("root-attribute enrichment for '{}/{}' failed ({}) — tier left unproven",
+                    rootType, rootId, e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     /**
