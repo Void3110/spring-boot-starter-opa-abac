@@ -809,3 +809,135 @@ test_absent_or_unknown_provenance_grants_no_inheritance if {
 	)
 		with data.category.inheritable as category_inherits_catalog
 }
+
+# --- PRODUCTION TIER (ADR 0030 §3–4, ADR 0032) — U6, U7, U10 ---------------------------------------
+#
+# The supervisor role WIDENED by slice B: it now names `category` and `product` explicitly, so child
+# reads reach through `direct_grant` — no inheritance, so ADR 0031's conjuncts above are untouched and
+# their tests still assert exactly what they asserted. What decides how deep the read goes is the
+# governing root's env tag, carried as input.resource.root_attributes.
+tiered_supervisor_role := {
+	"code": "supervisor-readonly",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {
+		"catalog": ["READ"],
+		"category": ["READ"],
+		"product": ["READ"],
+	},
+}
+
+# The same shape, but membership-derived — the control for "members are structurally unaffected".
+tiered_member_role := {
+	"code": "catalog-owner",
+	"attributes": {"provenance": "membership"},
+	"permissions": {
+		"catalog": ["READ"],
+		"category": ["READ"],
+		"product": ["READ"],
+	},
+}
+
+# A role with NO provenance at all — the other half of "cannot reach the tier clauses".
+unstamped_role := {
+	"code": "category-editor",
+	"permissions": {"category": ["READ"]},
+}
+
+# The instance shape: a category carrying its catalog ancestor, plus a root_attributes STATE.
+# `root_state` is an object patched over the resource, so the ABSENT case is a genuinely missing key
+# rather than a null — the distinction the whole contract rests on.
+tier_input(role_def, root_state) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "category:view",
+	"resource": object.union(
+		{
+			"type": "category",
+			"id": "k1",
+			"attributes": {},
+			"ancestors": [{"type": "catalog", "id": "c1"}],
+		},
+		root_state,
+	),
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# The type-level coarse gate shape with a root_attributes state (the child LIST path).
+tier_gate_input(role_def, root_state) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "category:list",
+	"resource": object.union({"type": "category"}, root_state),
+	"role_definition": role_def,
+	"environment": {},
+}
+
+absent_root := {}
+
+untagged_root := {"root_attributes": {}}
+
+staging_root := {"root_attributes": {"env": "staging"}}
+
+production_root := {"root_attributes": {"env": "production"}}
+
+# U6 — the instance shape, all four tier states.
+test_tier_instance_absent_root_denies if {
+	not category.allow with input as tier_input(tiered_supervisor_role, absent_root)
+}
+
+test_tier_instance_untagged_root_allows if {
+	category.allow with input as tier_input(tiered_supervisor_role, untagged_root)
+}
+
+test_tier_instance_staging_root_allows if {
+	category.allow with input as tier_input(tiered_supervisor_role, staging_root)
+}
+
+test_tier_instance_production_root_denies if {
+	not category.allow with input as tier_input(tiered_supervisor_role, production_root)
+}
+
+# U7 — the SAME four states through the coarse type-level list gate.
+test_tier_gate_absent_root_denies if {
+	not category.allow with input as tier_gate_input(tiered_supervisor_role, absent_root)
+}
+
+test_tier_gate_untagged_root_allows if {
+	category.allow with input as tier_gate_input(tiered_supervisor_role, untagged_root)
+}
+
+test_tier_gate_staging_root_allows if {
+	category.allow with input as tier_gate_input(tiered_supervisor_role, staging_root)
+}
+
+test_tier_gate_production_root_denies if {
+	not category.allow with input as tier_gate_input(tiered_supervisor_role, production_root)
+}
+
+# U10 — MEMBERS ARE STRUCTURALLY UNAFFECTED (ADR 0030 §2). A membership-derived role reads its own
+# team's PRODUCTION catalog's contents, and keeps reading them during an enrichment outage (absent
+# root_attributes) — the state that closes every supervised read. Same for a role carrying no
+# provenance at all. Both clauses require provenance == "supervised", so neither decision can reach
+# them: this is the conjunct's whole job.
+test_member_unaffected_by_production_tier if {
+	category.allow with input as tier_input(tiered_member_role, production_root)
+	category.allow with input as tier_gate_input(tiered_member_role, production_root)
+}
+
+test_member_unaffected_by_absent_root_attributes if {
+	category.allow with input as tier_input(tiered_member_role, absent_root)
+	category.allow with input as tier_gate_input(tiered_member_role, absent_root)
+}
+
+test_unstamped_role_unaffected_by_the_tier if {
+	category.allow with input as tier_input(unstamped_role, production_root)
+	category.allow with input as tier_input(unstamped_role, absent_root)
+}
+
+# The supervised path keeps its READ-only ceiling under the tier: a write verb is denied on a
+# perfectly open (staging) root, so the widening opened reads and nothing else.
+test_tier_does_not_widen_the_read_only_ceiling if {
+	not category.allow with input as object.union(
+		tier_input(tiered_supervisor_role, staging_root),
+		{"action": "category:update"},
+	)
+}
