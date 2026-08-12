@@ -17,9 +17,11 @@ tags:
 ## Critical path
 
 ```
-T1 ──► T2 ──► T4 ─┐
-      T3 ─────────┼──► T5 ──► T6
+T1 ──► T2 ─────────┐
+ └───► T4 ─────────┼──► T5 ──► T6
+       T3 ─────────┘
 ```
+*(dependency graph — the execution order is still strictly T1→T6; T4 depends on T1 only)*
 
 - **Sequential:** T1 → T2 (the flag must exist and travel in `TagDefinitionView` before the catalog
   side can enforce it). T4 after T1 only because its opa fixtures reference the seeded `env` values —
@@ -78,10 +80,14 @@ changeset and the entity move in the same commit.
 rejection is distinguishable on the wire, and the operator has an in-network path that can.
 
 **Deliverables.**
-- `TagDefinitionView` (`…catalog.config.TagDefinitionView`) gains an `operatorManaged` boolean
-  component (record is `@JsonIgnoreProperties(ignoreUnknown = true)`; a **missing** field — an old
-  user-service — deserializes to `false`, back-compat by construction). *(Seam verified: record
-  read; it currently carries `key/valueType/cardinality/allowedValues/valuePattern` only.)*
+- `TagDefinitionView` (`…catalog.config.TagDefinitionView`) gains an `operatorManaged` component
+  declared as the **`Boolean` wrapper, normalized in the compact constructor**
+  (`operatorManaged = operatorManaged != null && operatorManaged` — the record's existing
+  `allowedValues` null-normalizing idiom). **Not a primitive `boolean`**: Jackson 3 *throws* on a
+  missing primitive record component (verified empirically against the shipped jars), so the
+  wrapper+normalize is what makes a missing field — an old user-service — read as `false`,
+  back-compat by construction. *(Seam verified: record read; it currently carries
+  `key/valueType/cardinality/allowedValues/valuePattern` only.)*
 - `TagAssignmentService.validateAndBuild` gains the **current tag map** parameter
   (`Map<String, Object> currentTags`; the existing 3-arg signature delegates with an empty map so
   create paths stay source-compatible). **The rejection is delta-based:** for every key whose
@@ -89,12 +95,18 @@ rejection is distinguishable on the wire, and the operator has an in-network pat
   map's — an **assign** (absent → present), **re-value** (value change), or **strip** (present →
   absent) throws the new `TagOperatorManagedException`; an **echo** (unchanged value, or absent on
   both sides) passes, because writes are full-map-replace and an echo-rejection would freeze every
-  tag edit on a tagged resource. *(Seam verified: `validateAndBuild(resourceType, resourceId,
-  submittedTags)` returns the full `ResourceTags` to persist — it never sees current tags today.)*
-- **Every call site passes the loaded entity's current tags** — the create+update paths in
-  `CatalogController`, `CategoryController` (`:97`, `:160`), `ProductController` (`:92`, `:154`);
-  enumerate by grep at implementation and update them **in this commit** (the widened signature is
-  the build-breaker; the delegating overload contains it).
+  tag edit on a tagged resource. **The empty/null-submitted fast path (`:51-53`) becomes
+  conditional: it may only skip the definitions fetch when `currentTags` is ALSO empty** —
+  submitting `null`/`{}` over a resource that currently carries an operator-managed key **is a
+  strip** and must throw; without this, strip-via-empty-map bypasses the whole rejection.
+  *(Seam verified: `validateAndBuild(resourceType, resourceId, submittedTags)` returns the full
+  `ResourceTags` to persist — it never sees current tags today, and returns `ResourceTags.empty()`
+  before any check when the submitted map is empty.)*
+- **Every call site passes the loaded entity's current tags** — the update path in
+  `CatalogController` (`:128`; create rejects tags outright before assignment) and the
+  create+update paths in `CategoryController` (`:97`, `:160`), `ProductController` (`:92`,
+  `:154`); enumerate by grep at implementation and update them **in this commit** (the widened
+  signature is the build-breaker; the delegating overload contains it).
 - `CatalogErrorCode` gains its **first constant**: `TAG_OPERATOR_MANAGED(HttpStatus.CONFLICT,
   "Operator-managed tag key")` — and its `status()` stub (`UnsupportedOperationException` today) is
   implemented. `ApiExceptionHandler` maps `TagOperatorManagedException` → 409 problem+json with
@@ -108,7 +120,10 @@ rejection is distinguishable on the wire, and the operator has an in-network pat
   tags}`; semantics: **merge-upsert** — only the posted keys change; a posted `null` value removes
   that key; every other key on the resource is preserved. Values are still dictionary-validated
   (enum legality via the same `fetchApplicable`+`validatedValue` path) but the operator-managed
-  rejection is **bypassed by construction**. Consumers: T6's runner (and any operator). 404 for an
+  rejection is **bypassed by construction**. **Dictionary addressing is by the posted
+  `(resourceType, resourceId)` as-is** — B's only operator use is `env` (GLOBAL) on catalogs, where
+  root == self; operator writes of team-scoped keys on non-root resources are out of scope in B
+  (an unresolvable key is the ordinary 422). Consumers: T6's runner (and any operator). 404 for an
   unknown resource; 422 for an unknown key or illegal value.
 - **Documentation delta (this commit):** extend T1's guide subsection with the enforcement point +
   the operator path (one paragraph); note in `scripts/postman/README.md` is T6's.
@@ -118,7 +133,7 @@ rejection is distinguishable on the wire, and the operator has an in-network pat
 operator path itself.
 
 **NOT to touch.** No policy files. No library modules. The public tag flows' behavior for
-non-operator-managed keys is byte-identical (U5's control case). `TagDefinitionClient` fetch/guard
+non-operator-managed keys is byte-identical (U4's non-managed-key control case). `TagDefinitionClient` fetch/guard
 behavior unchanged (no caching added — it has none today, verified).
 
 ---
@@ -135,11 +150,17 @@ every existing consumer, input, and test unchanged.
   `root_attributes` — match the existing snake_case wire naming; verify the record's naming
   strategy against `ancestors`' serialization before assuming an annotation is needed) + compat
   constructors so the existing 3-arg and 4-arg callers compile and serialize **byte-identically**
-  (the `ancestors` evolution pattern). Canonical-constructor copy defends as the others do.
+  (the `ancestors` evolution pattern). **Canonical-constructor copy defends null-PRESERVINGLY for
+  this one component** — `rootAttributes == null ? null : Map.copyOf(rootAttributes)` —
+  deliberately unlike `attributes`/`ancestors`, whose null→empty normalization would merge the
+  absent and untagged states and turn enrichment failure into the untagged-OPEN tier.
   **NON_NULL, never NON_EMPTY** — `{}` (untagged root, fetched) must serialize; `null` (no
-  enrichment) must not. *(Seam verified: record read at `AbacContext.java:55-73`; 4-arg callers:
-  the manager `:188/:206/:219/:285`, `OpaAuthorizationManager:72`, `ActionEnrichmentAdvice:227`,
-  both list authorizers — all compile via compat ctors, none change.)*
+  enrichment) must not; the wire name needs an explicit `@JsonProperty("root_attributes")` (the
+  record uses per-field naming, no strategy — verified). *(Seam verified: record read at
+  `AbacContext.java:55-73`; existing constructor call sites, 3- and 4-arg: the manager
+  `:188/:206/:219` (3-arg) and `:285` (4-arg), `OpaAuthorizationManager:72` (3-arg),
+  `ActionEnrichmentAdvice:227` (4-arg), both list authorizers — all compile via compat ctors,
+  none change.)*
 - `opa-abac-spring-security` — `OpaPreAuthorizeAuthorizationManager` populates it, **one rule, both
   paths** (ADR 0032 §Population as amended):
   - `resolveInstance` (`:262-287`): after computing `governingRoot` (`:283`), when it is
@@ -156,6 +177,12 @@ every existing consumer, input, and test unchanged.
     idiom (`:16-41`; get before resolve, put after) so a request pays at most one extra resolver
     call across gate + instance checks. *(Seam verified: cache class + manager write-through read
     from source.)*
+  - **The root memo put is decision-independent** (put after a successful resolve, before the OPA
+    call) — this **deliberately amends the cache contract**: entries become *resolved* snapshots,
+    no longer only *authorized-on-allow* snapshots (the manager's `:129-134` write-through). Update
+    the manager javadoc (`:50`) and the `:130-133` comment **in this commit** so the two stories
+    don't diverge; the gate-never-reads-the-cache note applies to the *decided leaf*, not the root
+    memo.
 - **Documentation delta (this commit):** the *Root-attribute enrichment* section in
   `docs/guides/ABAC-AUTHORIZATION.md` — the three states, the NON_NULL rationale, the
   naive-negation trap (`not root_attributes.env == "production"` is wrong in Rego), pointing at
@@ -297,7 +324,10 @@ matrix updated to the B-era contract it knowingly changes.
   if a matrix preflight-requires `ENABLE_DIRECTORY=1`, run the whole set on that superset flavour
   instead).
 - **Documentation delta (this commit):** the e2e/E6-flip paragraph appended to T4's guide
-  subsection (that paragraph only — T4 owns the rest of the section), and the registry row above.
+  subsection (that paragraph only — T4 owns the rest of the section), the registry row above, and
+  the **existing supervised-scope row** in `scripts/postman/README.md` updated — it currently pins
+  E6 as "contents closed … each 403"; post-flip it must say untagged supervised contents are OPEN
+  (200, exact ids) and point at this matrix as the owner of the closed-contents proof.
 
 **Acceptance.** **E1–E8**. The headline cells: E4 (tier-flip liveness) and E5 (the strip attempt
 asserting `TAG_OPERATOR_MANAGED` by code, not just 409).

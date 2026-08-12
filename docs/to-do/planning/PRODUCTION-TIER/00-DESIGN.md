@@ -78,10 +78,11 @@ indistinguishable on the wire from any other deny — deliberately: distinguishi
   contrast `REPORTING_EDGE_INVALID`, which stays internal-only). Reusing
   `TAG_DEFINITION_IMMUTABLE` was rejected: it names definition-mutation protection, and the e2e
   strip cell must be able to assert *which* guard fired.
-- **The operator path** is the catalog service's **first internal endpoint**:
+- **The operator path** is the catalog service's **first internal *bootstrap* (write) endpoint**
+  (its only existing internal surface is the read-only ownership resolve):
   `POST /internal/bootstrap/resource-tags` — a **narrow merge-upsert** (`{resourceType, resourceId,
   tags}`; only the posted keys change, so it never fights the public flows managing team keys on the
-  same rows). In-network only, same routing posture as the user-service's four internal endpoints
+  same rows). In-network only, same routing posture as the user-service's internal endpoints
   (the gateway routes only the public prefixes). It bypasses the operator-managed rejection **by
   construction** — it *is* the operator. There remains **no runtime path** through the public API,
   which is what keeps §3's untagged-defaults-to-non-production sound.
@@ -146,7 +147,10 @@ the two-clause shape above is the reference.
 ### 5. Enrichment wiring (the manager, generically — verified at decompose)
 
 Enrichment happens **in the authorization manager, for every check with a governing target distinct
-from the decided leaf** — which covers exactly the four child endpoints (ADR 0030 §1's table): the
+from the decided leaf** — the rule is **verb-agnostic** (ADR 0032): among reads it covers exactly
+the four child endpoints the tier gates (ADR 0030 §1's table), and it also fires on child
+mutations/creates, where the added field is policy-neutral in B (no clause reads it outside the two
+supervised tier denies, and the supervised role has no write verbs). On the tier's read paths: the
 two child GETs arrive through `resolveInstance` (governing root = `ancestors.get(0)`), the two
 child lists through the type-level branch whose `roleResourceType='catalog'` override both shipped
 gates already declare (verified: `CategoryController.java:54`, `ProductController.java:56`). The
@@ -186,8 +190,9 @@ e2e asserts the omission as the contract.
   (input-shape cases) and IT level (a resolver whose root fetch throws). Promising a rig cell here
   would be theater.
 - Rig flavour: same as A (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1`); reuse the `sup-*` realm accounts;
-  **zero realm diff**. Non-regression: the E7-style **enumerated** list, which now **must include
-  A's supervised matrix** (the role and policy both changed under it).
+  **zero realm diff**. Non-regression: the **enumerated** re-run list (B's **E8** cell; the pattern A's
+  matrix established), which now **must include A's supervised matrix** (the role and policy both
+  changed under it).
 
 ## Fail-closed posture
 
@@ -239,7 +244,8 @@ The guide delta lands in `docs/guides/TEAM-BASED-AUTHORIZATION.md` (the supervis
 grows the tier: the three input states, the deny shape, the operator path, the E6 flip) and
 `docs/guides/ABAC-AUTHORIZATION.md` (the `root_attributes` input contract, per ADR 0032's
 consequence note). Mulch: `opa-abac-authz-model` (the tier model), `rego-policy` (the two-clause
-deny shape vs the naive negation), `spring-security-integration` (the SPI default-method evolution),
+deny shape vs the naive negation), `spring-security-integration` (manager-side governing-target enrichment via the resolver SPI + the
+request-scoped memo; why the SPI default method was rejected),
 `opa-abac-e2e-suite` (the E6-flip pattern: a later slice deliberately rewriting an earlier matrix's
 cells).
 
@@ -248,11 +254,14 @@ cells).
 **Parts:** part 0 = T1–T4 · part 1 = T5–T6
 
 Part 0 is everything provable **without the rig** — the dictionary flag + seed (T1), the catalog-side
-enforcement + operator endpoint (T2, IT-provable), the library input contract (T3, unit-provable +
-old-tests-unchanged), and the role widening + tier denies (T4, `opa test`-provable). Part 1 is the
-enrichment wiring (T5, ITs) and the e2e proof + the E6 flip (T6, rig). The two fail-open edges sit
-**one per part** — T4's deny clauses (part 0) and T5's population-or-absence (part 1) — so each
-part-runner's inline review carries exactly one, and the intermediate state between the parts is the
-**closed-by-absence** safe state (§Fail-closed posture). The boundary is the deployable handoff:
-after part 0 the corpus and both services' units/ITs are green while supervised contents remain
-closed; part 1 opens them and proves it end to end.
+enforcement + operator endpoint (T2, IT-provable), the library input contract + population (T3,
+unit-provable + old-tests-unchanged), and the role widening + tier denies (T4, `opa test`-provable).
+Part 1 is the proof: the catalog-service ITs (T5) and the e2e + the E6 flip (T6, rig). **Both
+fail-open *code* edges land in part 0** — T3's failure-to-absent population discipline and T4's deny
+clauses — each covered by part 0's inline review; **part 1 carries no new code edge**: its inline
+review checks the *proofs* (the recorded input shapes, both failure-state populations, the safe
+intermediate state) rather than new mechanism. The boundary is the deployable handoff: after part 0
+the corpus and both services' units are green while supervised contents remain closed (the
+**closed-by-absence** safe state, §Fail-closed posture — the manager ships the population code, but
+nothing exercises it in anger until part 1 proves it); part 1 proves the open/closed split end to
+end.

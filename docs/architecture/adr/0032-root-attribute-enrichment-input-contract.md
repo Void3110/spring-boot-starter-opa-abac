@@ -38,7 +38,8 @@ public record Resource(
         String id,
         Map<String, Object> attributes,
         @JsonInclude(JsonInclude.Include.NON_EMPTY) List<ParentRef> ancestors,
-        @JsonInclude(JsonInclude.Include.NON_NULL) Map<String, Object> rootAttributes) { … }
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @JsonProperty("root_attributes") Map<String, Object> rootAttributes) { … }
 ```
 
 serialized as `input.resource.root_attributes`, with the evolution pattern the `ancestors` component

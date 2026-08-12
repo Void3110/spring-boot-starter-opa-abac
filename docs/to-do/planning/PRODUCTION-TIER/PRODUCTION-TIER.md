@@ -46,7 +46,8 @@ makes it so (`409 TAG_OPERATOR_MANAGED`).
    closes, a member's read proceeds. No new 5xx class.
 5. **`operatorManaged` is not client-authorable**: it appears in no request schema; `env` is seeded
    (`is_system` + `operatorManaged`); the only write path is the catalog service's **first internal
-   endpoint**, `POST /internal/bootstrap/resource-tags` (merge-upsert, in-network only).
+   *bootstrap* (write) endpoint**, `POST /internal/bootstrap/resource-tags` (merge-upsert,
+   in-network only; its one existing internal surface is the read-only ownership resolve).
 6. **The E6 flip is deliberate**: A's matrix cells asserting untagged supervised contents 403 are
    rewritten to the B contract (untagged ⇒ open); the closed-contents proof **moves** to B's matrix
    (production cells + the tier-flip liveness cell), it does not vanish.
@@ -56,21 +57,22 @@ makes it so (`409 TAG_OPERATOR_MANAGED`).
 
 ## Headline proof
 
-**E-tier** — `sup-anna` reads categories and products of a report's `staging` catalog (200, exact
-ids), is refused on the `production` sibling (403), and is refused on the very next request after the
-operator flips `staging → production` (the liveness cell). **E-strip** — the supervised owner's
-attempt to strip `env` from his own catalog returns `409 TAG_OPERATOR_MANAGED`, asserted on the code.
-**E-member** — a member reads their own team's production contents unelevated, unchanged (200).
+**E-tier (E1/E2/E4)** — `sup-anna` reads categories and products of a report's `staging` catalog
+(200, exact ids), is refused on the `production` sibling (403), and is refused on the very next
+request after the operator flips `staging → production` (the liveness cell). **E-strip (E5)** — the
+supervised owner's attempt to strip `env` from his own catalog returns `409 TAG_OPERATOR_MANAGED`,
+asserted on the code. **E-member (E6)** — a member reads their own team's production contents
+unelevated, unchanged (200).
 
 ## Tickets (status table)
 
 | # | Title | Status |
 |---|---|---|
-| T1 | user-service: the `operatorManaged` dictionary flag + the `env` seed + `TagDefinitionView` carries it | 📋 TODO |
-| T2 | catalog-service: operator-managed write rejection (`TAG_OPERATOR_MANAGED` 409) + the `/internal/bootstrap/resource-tags` operator endpoint | 📋 TODO |
+| T1 | user-service: the `operatorManaged` dictionary flag + the `env` seed + the internal projection carries it | 📋 TODO |
+| T2 | catalog-service: `TagDefinitionView` carries the flag + operator-managed write rejection (`TAG_OPERATOR_MANAGED` 409) + the `/internal/bootstrap/resource-tags` operator endpoint | 📋 TODO |
 | T3 | library (additive): `Resource.root_attributes` + manager-side governing-target enrichment (ADR 0032, amended §Population) | 📋 TODO |
 | T4 | the widened supervisor role + the four tier-deny clauses + `opa test` (three states, member-unaffected, one mutation guard per clause site) | 📋 TODO |
-| T5 | catalog-service: enrichment wiring on the four child endpoints (memoized root fetch; list-gate root id) + ITs | 📋 TODO |
+| T5 | catalog-service ITs: the four child endpoints' tier behavior below the rig (recorded input shapes, failure states, the memo ride — I5–I8) | 📋 TODO |
 | T6 | e2e: the `ffff…` production-tier matrix + the E6 flip in A's matrix + non-regression enumeration + the guide delta | 📋 TODO |
 
 ## Files in this folder

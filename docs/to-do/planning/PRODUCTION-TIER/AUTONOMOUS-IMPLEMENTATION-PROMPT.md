@@ -13,9 +13,11 @@ tags:
 > ticket by ticket, with an architecture-review gate and a checkpoint after each ticket. The design and
 > work list it refers to live alongside it in this folder.
 >
-> **Before you run it:** create the branch — `git checkout -b feature/void3110/production-tier` off a
-> clean `main`. Confirm `git config --local user.email` is `void31102025@gmail.com`. Then paste the
-> **PROMPT** section below to the agent.
+> **Before you run it:** the planning package must already be **on the base branch** (this folder +
+> ADR 0032 merged to `main` — they exist only on the planning branch until then). Create the branch —
+> `git checkout -b feature/void3110/production-tier` off a clean `main`. Confirm
+> `git config --local user.email` is `void31102025@gmail.com`. Then paste the **PROMPT** section
+> below to the agent.
 
 ---
 
