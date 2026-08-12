@@ -77,8 +77,8 @@ unelevated, unchanged (200).
 | T2 | catalog-service: `TagDefinitionView` carries the flag + operator-managed write rejection (`TAG_OPERATOR_MANAGED` 409) + the `/internal/bootstrap/resource-tags` operator endpoint | ✅ DONE |
 | T3 | library (additive): `Resource.root_attributes` + manager-side governing-target enrichment (ADR 0032, amended §Population) | ✅ DONE |
 | T4 | the widened supervisor role + the four tier-deny clauses + `opa test` (three states, member-unaffected, one mutation guard per clause site) | ✅ DONE |
-| T5 | catalog-service ITs: the four child endpoints' tier behavior below the rig (recorded input shapes, failure states, the memo ride — I5–I8) | 📋 TODO |
-| T6 | e2e: the `ffff…` production-tier matrix + the E6 flip in A's matrix + non-regression enumeration + the guide delta | 📋 TODO |
+| T5 | catalog-service ITs: the four child endpoints' tier behavior below the rig (recorded input shapes, failure states, the memo ride — I5–I8) | ✅ DONE |
+| T6 | e2e: the `ffff…` production-tier matrix + the E6 flip in A's matrix + non-regression enumeration + the guide delta | ✅ DONE |
 
 ## Files in this folder
 
