@@ -69,8 +69,32 @@ public class TagDefinition extends AbstractAuditableEntity {
     @Column(name = "is_system", nullable = false)
     private boolean system;
 
+    /**
+     * True when <em>values</em> under this key may only be written by the operator — never through any
+     * public API path. Distinct from {@link #system}, which protects the <em>definition</em> from
+     * mutation: a key can be immutable-by-definition yet freely assignable (both seeded GLOBAL keys are),
+     * and this flag is what makes {@code env} the opposite — assignable in principle, but only by the
+     * operator's in-network path. Defaults to {@code false}, so every pre-existing key is untouched.
+     */
+    @Column(name = "operator_managed", nullable = false)
+    private boolean operatorManaged;
+
     protected TagDefinition() {
         // JPA
+    }
+
+    /** Convenience overload for the ordinary, non-operator-managed key ({@code operatorManaged = false}). */
+    public TagDefinition(
+            UUID id,
+            String key,
+            TagScope scope,
+            UUID teamId,
+            TagValueType valueType,
+            TagCardinality cardinality,
+            List<String> allowedValues,
+            String valuePattern,
+            boolean system) {
+        this(id, key, scope, teamId, valueType, cardinality, allowedValues, valuePattern, system, false);
     }
 
     public TagDefinition(
@@ -82,7 +106,8 @@ public class TagDefinition extends AbstractAuditableEntity {
             TagCardinality cardinality,
             List<String> allowedValues,
             String valuePattern,
-            boolean system) {
+            boolean system,
+            boolean operatorManaged) {
         super(id);
         this.key = key;
         this.scope = scope;
@@ -92,6 +117,7 @@ public class TagDefinition extends AbstractAuditableEntity {
         this.allowedValues = allowedValues == null ? List.of() : List.copyOf(allowedValues);
         this.valuePattern = valuePattern;
         this.system = system;
+        this.operatorManaged = operatorManaged;
     }
 
     public String getKey() {
@@ -156,5 +182,15 @@ public class TagDefinition extends AbstractAuditableEntity {
 
     public void setSystem(boolean system) {
         this.system = system;
+    }
+
+    /**
+     * Deliberately <b>read-only</b> — no setter, unlike every sibling field. The flag exists to say "these
+     * values are not writable through the API"; a public mutator on it would be the first affordance a
+     * future caller reached for. A key becomes operator-managed by being seeded that way, never by being
+     * set that way at runtime.
+     */
+    public boolean isOperatorManaged() {
+        return operatorManaged;
     }
 }

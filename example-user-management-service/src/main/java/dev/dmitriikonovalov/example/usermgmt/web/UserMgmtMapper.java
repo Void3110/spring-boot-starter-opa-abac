@@ -108,7 +108,8 @@ public final class UserMgmtMapper {
                                 .valueOf(e.getCardinality().name()))
                 .allowedValues(e.getAllowedValues())
                 .valuePattern(e.getValuePattern())
-                .system(e.isSystem());
+                .system(e.isSystem())
+                .operatorManaged(e.isOperatorManaged());
     }
 
     // --- the list envelope (ADR 0012): count = the page's totalElements; page/perPage echo the request.

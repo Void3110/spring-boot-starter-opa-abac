@@ -58,6 +58,35 @@ legal to assign; the two paths serve identical rows, and only the team-scoped on
 by `@OpaPreAuthorize(team:define-tags)` — **owner or administrator** (admins curate the vocabulary writers
 assign from). Global/system keys are immutable (409).
 
+### Operator-managed keys (`operatorManaged`)
+
+A definition also carries **`operatorManaged`** (boolean, default `false`) — a second, additive flag that
+answers a **different question** from `system`:
+
+| Flag | Protects | Seeded `sensitivity` / `region` | Seeded `env` |
+|---|---|---|---|
+| `system` | the **definition** — its shape is immutable through the API | `true` | `true` |
+| `operatorManaged` | the **values** — no public API path may write them on any resource | `false` | `true` |
+
+Both existing global keys are `system=true` yet freely assignable, which is exactly why the new meaning
+needed its own flag rather than a reinterpretation of the old one. The flag is **never client-authorable**:
+it appears in **no** request schema (and GLOBAL definitions have no public create path at all — only
+`createTeamTagDefinition` exists), so a key becomes operator-managed by seeding, never by a client asking.
+
+Its first user is **`env`** — the production tier ([[0030-step-up-decision-contract|ADR 0030]] §3):
+GLOBAL, `ENUM`/`SINGLE` over `production | staging | dev`, seeded `system=true` **and**
+`operatorManaged=true`. A supervisor's read of a catalog's *contents* is gated on the governing catalog's
+`env`, so the tag must not be strippable by the people being supervised.
+
+The flag travels to the catalog service through the internal projection
+(`GET /internal/tag-definitions`) — enforcement lives where tag **values** are written, and the catalog
+service cannot enforce what it never receives.
+
+> **The trust dependency, stated so it is not silently broken** (ADR 0030 §3): an **untagged** root counts
+> as **non-production** and therefore opens. That default is defensible *only* while `env` has no public
+> write path — otherwise a supervised owner could dodge the tier by leaving a catalog untagged. If `env`
+> ever becomes publicly writable, the default must flip to deny-until-tagged.
+
 ## Layer 2 — assignment (validated against the dictionary)
 
 On Category create/update the caller supplies a `tags` map. Before persisting, the catalog fetches the
