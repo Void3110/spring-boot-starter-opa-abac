@@ -60,8 +60,9 @@ and docs are written in this loop.
 3. `01-DECOMPOSITION.md` — the 6 tickets, each with Goal / Deliverables / Acceptance /
    What-NOT-to-touch. **This is your work list.**
 4. **The pinned decisions** — `docs/architecture/adr/0030-step-up-decision-contract.md` **§5–9 AND
-   §Amendments** (the five 2026-08-13 amendments are load-bearing: sole-blocker, elevation-proof
-   unproven tier, the mirrored window, the human-only supervised path, the diagnosis note),
+   §Amendments** (the six 2026-08-13 amendments are load-bearing: sole-blocker, elevation-proof
+   unproven tier, the mirrored window, the human-only supervised path, the refined §8 event list,
+   the diagnosis note),
    `0032-root-attribute-enrichment-input-contract.md` (the input contract you consume — and its
    §Consequences note that `HierarchicalAuthorizer` is tier-unaware), `0031` (inheritance stays
    confined), `0029` (the scope machinery), and `0028` (the agent-surface line: the tool-gate
@@ -286,7 +287,7 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   risk), and **T6** (E2 round-trip liveness + E3 loop-prevention: the two cells that justify the
   design; E6 the human-only proof).
 - **The fail-closed edges to eyeball** — the **`elevated` undefined-input discipline** in T2 (a
-  type-coerced `auth_time` or a truthiness `actor` test would fail open), the
+  type-coerced `auth_time` or a truthiness `act_chain` test would fail open), the
   **`ResilientOpaClient.decide` override** in T3 (forgetting it silently swallows every reason —
   or worse, a naive override fabricates one during an outage), and the **partial-reason 403
   fallback** in T4 (a half-formed challenge is the §7 infinite loop).

@@ -340,7 +340,7 @@ The floor is deny, and elevation can only *narrow* what deny covers — never wi
   fields → **plain deny / plain 403** at each layer. A challenge is only ever emitted from a
   well-formed, sole-blocker reason.
 - The agent deny is provenance-scoped and presence-tested: no membership decision can reach it, and
-  `actor: false` cannot slip past it.
+  `act_chain: false` (or `[]`) cannot slip past it.
 - Audit emission failure changes nothing about the decision.
 - The one request-time failure class B pinned (enrichment failure ⇒ absent ⇒ supervised closes,
   members proceed) is inherited unchanged — C adds no new failure class to that path.
