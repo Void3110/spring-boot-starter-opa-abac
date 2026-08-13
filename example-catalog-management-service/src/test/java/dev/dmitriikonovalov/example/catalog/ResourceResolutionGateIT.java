@@ -38,7 +38,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import dev.dmitriikonovalov.example.catalog.config.TagDefinitionClient;
+import dev.dmitriikonovalov.example.catalog.config.TagDefinitionView;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -377,6 +380,26 @@ class ResourceResolutionGateIT {
         @Bean
         RaceInjector raceInjector() {
             return new RaceInjector();
+        }
+
+        /**
+         * The dictionary this suite's writes now consult. A tags-clearing write (this file's PUTs submit
+         * no tags over a tagged category) can no longer shortcut the fetch: under full-map-replace
+         * semantics that IS a strip, and whether the stripped key is operator-managed is a question only
+         * the dictionary answers (PRODUCTION-TIER T2). Without a stub the real client would reach for an
+         * absent user-service and the write would fail closed with 503 — correct, but not what this
+         * suite is testing.
+         */
+        @Bean
+        @Primary
+        TagDefinitionClient gateTagDefinitionClient() {
+            return new TagDefinitionClient(new tools.jackson.databind.ObjectMapper(), "http://unused", 100) {
+                @Override
+                public List<TagDefinitionView> fetchApplicable(String resourceType, String resourceId) {
+                    return List.of(new TagDefinitionView(
+                            "region", "ENUM", "SINGLE", List.of("emea", "amer", "apac"), null));
+                }
+            };
         }
     }
 

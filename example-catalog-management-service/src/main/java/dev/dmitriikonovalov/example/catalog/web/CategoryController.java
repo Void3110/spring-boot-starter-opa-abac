@@ -158,7 +158,7 @@ public class CategoryController implements CategoryApi {
         // unauthorized caller learns nothing from the 422 vocabulary). Addressed by the governing
         // root (see createCategory) so the team's custom keys resolve.
         var tags = tagAssignment.validateAndBuild(
-                "catalog", catalogId.toString(), request.getTags());
+                "catalog", catalogId.toString(), request.getTags(), entity.getTags().asMap());
         if (!Objects.equals(entity.getParentId(), request.getParentId())) {
             if (request.getParentId() != null) {
                 // New parent must exist within the same catalog.

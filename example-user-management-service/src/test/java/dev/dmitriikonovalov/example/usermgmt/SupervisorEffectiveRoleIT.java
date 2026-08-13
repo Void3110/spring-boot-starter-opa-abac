@@ -87,8 +87,18 @@ class SupervisorEffectiveRoleIT extends AbstractSecuredPostgresIT {
         var res = rest.getForEntity(url(anna, target), RoleDefinition.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(res.getBody().code()).isEqualTo(SupervisorRoles.SUPERVISOR_CODE);
-        assertThat(res.getBody().permissions()).isEqualTo(Map.of("catalog", List.of("READ")));
-        assertThat(res.getBody().permissions()).doesNotContainKeys("category", "product", "*");
+        // PRODUCTION-TIER (U5) widened the synthesized role: contents open through a DIRECT grant on
+        // the child types, and how far that read reaches is decided by the tier clauses in
+        // category.rego/product.rego — not by withholding the grant, as slice A did.
+        assertThat(res.getBody().permissions()).isEqualTo(Map.of(
+                "catalog", List.of("READ"),
+                "category", List.of("READ"),
+                "product", List.of("READ")));
+        // The wildcard stays out, and the role stays READ-only: A's ceiling is unchanged.
+        assertThat(res.getBody().permissions()).doesNotContainKey("*");
+        assertThat(res.getBody().permissions().values())
+                .hasSize(3)
+                .allSatisfy(tokens -> assertThat(tokens).containsExactly("READ"));
         assertThat(res.getBody().requiredTags()).isEmpty();
         assertThat(res.getBody().attributes())
                 .containsEntry(

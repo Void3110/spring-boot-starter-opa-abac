@@ -35,6 +35,15 @@ import org.slf4j.LoggerFactory;
  * and the decision can only come from the <em>direct</em> leaf grant — degrading to the pre-hierarchy
  * decision, never wider, never stripping a direct grant. An unresolved role / no subject → deny. The role
  * is resolved <strong>once on the root</strong>, never per-ancestor (per-node grants are Phase 8 / ReBAC).
+ *
+ * <h2>Tier-unaware (ADR 0032)</h2>
+ * This seam never populates {@code input.resource.root_attributes} — root-attribute enrichment is pinned
+ * to the annotation gate's authorization manager (ADR 0032 §Population), and this class has no resolver
+ * seam to load the root's tags through ({@link ParentRef} carries type and id only). Consequence, in the
+ * fail-closed direction: a role stamped {@code provenance == "supervised"} hits the unproven-tier deny
+ * (absent {@code root_attributes}, ADR 0030 §3) on every child read through this seam, even on a
+ * non-production root. The supervised path's supported seam is {@code @OpaPreAuthorize}; an adopter
+ * routing supervised traffic here gets a spurious deny, never a widening.
  */
 public class HierarchicalAuthorizer {
 

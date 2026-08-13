@@ -58,6 +58,58 @@ legal to assign; the two paths serve identical rows, and only the team-scoped on
 by `@OpaPreAuthorize(team:define-tags)` — **owner or administrator** (admins curate the vocabulary writers
 assign from). Global/system keys are immutable (409).
 
+### Operator-managed keys (`operatorManaged`)
+
+A definition also carries **`operatorManaged`** (boolean, default `false`) — a second, additive flag that
+answers a **different question** from `system`:
+
+| Flag | Protects | Seeded `sensitivity` / `region` | Seeded `env` |
+|---|---|---|---|
+| `system` | the **definition** — its shape is immutable through the API | `true` | `true` |
+| `operatorManaged` | the **values** — no public API path may write them on any resource | `false` | `true` |
+
+Both existing global keys are `system=true` yet freely assignable, which is exactly why the new meaning
+needed its own flag rather than a reinterpretation of the old one. The flag is **never client-authorable**:
+it appears in **no** request schema (and GLOBAL definitions have no public create path at all — only
+`createTeamTagDefinition` exists), so a key becomes operator-managed by seeding, never by a client asking.
+
+Its first user is **`env`** — the production tier ([[0030-step-up-decision-contract|ADR 0030]] §3):
+GLOBAL, `ENUM`/`SINGLE` over `production | staging | dev`, seeded `system=true` **and**
+`operatorManaged=true`. A supervisor's read of a catalog's *contents* is gated on the governing catalog's
+`env`, so the tag must not be strippable by the people being supervised.
+
+The flag travels to the catalog service through the internal projection
+(`GET /internal/tag-definitions`) — enforcement lives where tag **values** are written, and the catalog
+service cannot enforce what it never receives.
+
+**Enforcement, and the one path that can write.** The catalog's `TagAssignmentService` rejects any
+*public* write that **moves** an operator-managed key — an **assign** (absent → present), a
+**re-value**, or a **strip** (present → absent) — with **`409 TAG_OPERATOR_MANAGED`**. The check is
+**delta-based**, not presence-based, because these writes are full-map replace: an **echo** (the same
+value on both sides) passes, since rejecting it would freeze every ordinary tag edit on a resource that
+happens to carry the key. Two consequences worth knowing:
+
+- Submitting `{}`/`null` over a resource that carries the key **is a strip** and is rejected — the
+  empty-submission shortcut may only skip the dictionary fetch when there is nothing to protect either.
+  So a tags-clearing write on a **tagged** resource now consults the dictionary, and a dictionary outage
+  makes it **503** rather than silently succeeding: whether the cleared key was operator-managed is a
+  question only the dictionary answers, and an unanswerable question fails closed.
+- The 409 is deliberately *not* `TAG_DEFINITION_IMMUTABLE`: that code names protection of a
+  definition's **shape**, and a caller must be able to tell which guard answered.
+
+The **operator path** is the catalog service's in-network
+**`POST /internal/bootstrap/resource-tags`** — a **merge-upsert** (`{resourceType, resourceId, tags}`;
+only the posted keys change, a posted `null` removes one, everything else survives, and posting the same
+map twice converges). It bypasses the rejection **by construction** — a separate service entry point
+that never runs the delta check, rather than a flag a public caller could pass — while still validating
+values against the dictionary. Like every `/internal/**` surface it is **gateway-unreachable**: APISIX
+carries a positive `internal-blocked` route that 404s `/internal/*` at the edge.
+
+> **The trust dependency, stated so it is not silently broken** (ADR 0030 §3): an **untagged** root counts
+> as **non-production** and therefore opens. That default is defensible *only* while `env` has no public
+> write path — otherwise a supervised owner could dodge the tier by leaving a catalog untagged. If `env`
+> ever becomes publicly writable, the default must flip to deny-until-tagged.
+
 ## Layer 2 — assignment (validated against the dictionary)
 
 On Category create/update the caller supplies a `tags` map. Before persisting, the catalog fetches the

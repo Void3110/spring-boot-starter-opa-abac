@@ -1,0 +1,42 @@
+databaseChangeLog:
+  # The production tier (ADR 0030 §3). Two additive things:
+  #
+  #   1. tag_definition.operator_managed — "values under this key are not writable through any public
+  #      API path; only the operator's in-network path sets them". NOT the same question as is_system,
+  #      which protects the DEFINITION from mutation: both seeded GLOBAL keys (sensitivity, region) are
+  #      is_system=true yet freely assignable, and they stay operator_managed=false here.
+  #   2. the `env` seed — the tier key itself: GLOBAL / ENUM / SINGLE over production|staging|dev,
+  #      is_system=true (definition immutable) AND operator_managed=true (values unwritable publicly).
+  #      Mirrors the 0004 seed shape; the id continues that block's ...00a1/...00a2 sequence.
+
+  - changeSet:
+      id: 0008-add-operator-managed
+      author: user-management-service
+      changes:
+        - addColumn:
+            tableName: tag_definition
+            columns:
+              - column:
+                  name: operator_managed
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 0008-seed-tag-env
+      author: user-management-service
+      changes:
+        - insert:
+            tableName: tag_definition
+            columns:
+              - column: {name: id, value: "00000000-0000-0000-0000-0000000000a3"}
+              - column: {name: key, value: env}
+              - column: {name: scope, value: GLOBAL}
+              - column: {name: team_id, value: null}
+              - column: {name: value_type, value: ENUM}
+              - column: {name: cardinality, value: SINGLE}
+              - column: {name: allowed_values, value: "[\"production\", \"staging\", \"dev\"]"}
+              - column: {name: is_system, valueBoolean: true}
+              - column: {name: operator_managed, valueBoolean: true}
+              - column: {name: version, valueNumeric: 0}

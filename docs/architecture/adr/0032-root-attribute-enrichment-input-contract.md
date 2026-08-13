@@ -96,7 +96,14 @@ opts in.
 **Costs.** The published input schema grows a field whose three-state semantics must be documented
 wherever policy authors read (`ABAC-AUTHORIZATION` guide); a policy that tests it with a bare
 `not root_attributes.env == "production"` reads naturally but is **wrong** (absent env passes a
-negated comparison in Rego) — the shipped clauses and their tests are the reference shape.
+negated comparison in Rego) — the shipped clauses and their tests are the reference shape. A second
+cost of pinning population to the manager: **every other decision seam is tier-unaware.**
+`HierarchicalAuthorizer` (the programmatic single-GET seam) builds its context without
+`root_attributes` — it has no resolver seam to load the root's tags through — so a role stamped
+`provenance == "supervised"` hits the unproven-tier deny on every child read there, even on a
+non-production root. The divergence is in the fail-closed direction (a spurious deny, never a
+widening) and is documented on the class; the supervised path's supported seam is the annotation
+gate.
 
 **Rejected.** Widening `ParentRef` with attributes (forces entity loads on the optimized ancestor
 path; changes a published record plus its supplier SPI — ADR 0030 §4 already declined this);

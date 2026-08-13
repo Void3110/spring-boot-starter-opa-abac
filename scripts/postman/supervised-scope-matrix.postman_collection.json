@@ -402,7 +402,7 @@
           ]
         },
         {
-          "name": "E6a \u2014 CONTENTS CLOSED: anna GET the supervised catalog's categories -> 403",
+          "name": "E6a \u2014 CONTENTS OPEN (slice B): anna lists the supervised catalog's categories -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -429,18 +429,26 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// The slice-boundary assertion. TWO things hold this line, not one: the synthesized role names",
-                  "// no `category` key, AND ADR 0031's confinement rule stops the shipped catalog->category",
-                  "// inheritance table handing it category:view anyway. If this ever returns 200 the run has",
-                  "// drifted into slice B.",
-                  "pm.test('E6a the category LIST is DENIED (403)', () => pm.response.to.have.status(403));"
+                  "// FLIPPED BY SLICE B (PRODUCTION-TIER), deliberately and in that slice's own plan. In slice A the",
+                  "// synthesized role named no `category` key, so this was a 403 \u2014 the boundary of A. B widens the",
+                  "// role to name the child types (a DIRECT grant; ADR 0031's inheritance confinement is untouched)",
+                  "// and gates the read on the governing root's `env` tier instead. This catalog is UNTAGGED, which",
+                  "// ADR 0030 \u00a73 defines as non-production, so contents OPEN.",
+                  "// The closed-contents proof did not vanish \u2014 it MOVED to run-production-tier-matrix.sh, which owns",
+                  "// the production (403) cells and the tier-flip liveness cell; the unproven/absent state closes at",
+                  "// the module layers (the rego absent-clause tests + the enrichment IT's outage cases).",
+                  "pm.test('E6a the category LIST is OPEN (200)', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E6a exactly the seeded category, by id', () =>",
+                  "  pm.expect(body.items.map(i => i.id)).to.eql([pm.environment.get('dave_category_id')]));",
+                  "pm.test('E6a and the count agrees', () => pm.expect(body.count).to.eql(1));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "E6b \u2014 anna GET a category under the supervised catalog -> 403",
+          "name": "E6b \u2014 anna GETs a category under the supervised catalog -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -468,14 +476,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E6b the category READ is DENIED (403)', () => pm.response.to.have.status(403));"
+                  "pm.test('E6b the category READ is OPEN (200)', () => pm.response.to.have.status(200));",
+                  "pm.test('E6b it is the seeded category', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('dave_category_id')));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "E6c \u2014 anna GET a product under the supervised catalog -> 403",
+          "name": "E6c \u2014 anna GETs a product under the supervised catalog -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -505,7 +515,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E6c the product READ is DENIED (403)', () => pm.response.to.have.status(403));"
+                  "pm.test('E6c the product READ is OPEN (200)', () => pm.response.to.have.status(200));",
+                  "pm.test('E6c it is the seeded product', () =>",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.environment.get('dave_product_id')));"
                 ]
               }
             }
@@ -772,7 +784,7 @@
                   "const body = pm.response.json();",
                   "pm.test('E8b carol still sees both her governed catalogs', () => pm.expect(body.count).to.eql(2));",
                   "const ids = body.items.map(i => i.id);",
-                  "pm.test('E8b the ids are carol’s and dave’s', () => {",
+                  "pm.test('E8b the ids are carol\u2019s and dave\u2019s', () => {",
                   "  pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
                   "  pm.expect(ids).to.include(pm.environment.get('dave_catalog_id'));",
                   "});"

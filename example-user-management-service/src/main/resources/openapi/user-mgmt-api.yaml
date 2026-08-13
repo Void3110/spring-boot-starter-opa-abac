@@ -1100,6 +1100,13 @@ components:
         system:
           type: boolean
           description: True for the immutable global/system keys.
+        operatorManaged:
+          type: boolean
+          description: >-
+            Values under this key are not writable through any public API; only the operator path sets
+            them. Distinct from `system`, which makes the DEFINITION immutable while leaving values
+            freely assignable. Read-only, and not accepted on any request — a key becomes
+            operator-managed by seeding, never by a client.
 
     TagDefinitionRequest:
       type: object

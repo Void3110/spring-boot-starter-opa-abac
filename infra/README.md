@@ -293,8 +293,11 @@ used to let a bare realm user create is gone); re-running the **full** existing 
 
 The **supervised-scope** matrix proves the second, **disjoint** access path beside team membership: a
 **unit manager who is a member of no team** sees the catalogs of the teams their reports own or manage,
-derived per request from a **reporting relation** and never from a realm grant. Read-only, live, and
-with the contents (categories, products) still **closed**.
+derived per request from a **reporting relation** and never from a realm grant. Read-only and live.
+The contents (categories, products) **open on a non-production root and close by the `env` tier**
+since slice B (PRODUCTION-TIER, ADR 0030 §1–4): absent/unproven and `production` roots stay closed,
+untagged and `staging` roots open — proven by `run-production-tier-matrix.sh` (see below); the A
+matrix's E6 cells assert the open half.
 
 The personas are new realm accounts in `keycloak/realm-export.json` — **`sup-anna`**, **`sup-victor`**,
 **`sup-noreports`**, **`outsider-eve`**, **`pm-bob`**, **`pm-carol`**, **`pm-dave`**, **`pm-erin`** — plus
@@ -310,9 +313,10 @@ docker build -t opa-abac-usermgmt:local -f example-user-management-service/Docke
 cd scripts/postman && ./run-supervised-scope-matrix.sh
 ```
 
-The runner **restarts OPA itself** before minting tokens: this slice's one narrow Rego change
-(ADR 0031's confinement clauses in `category.rego` + `product.rego`) is what keeps the contents closed,
-and `--watch` does not reliably reload — a stale allow would pass the boundary cell for the wrong reason.
+The runner **restarts OPA itself** before minting tokens: both supervisor slices land narrow Rego
+changes in `category.rego` + `product.rego` (slice A's ADR 0031 confinement clauses, slice B's
+provenance-scoped tier denies), and `--watch` does not reliably reload — a stale policy would pass a
+boundary cell for the wrong reason.
 
 **Two passes, one rig.** The outage cell (E8) faults the supervised edge **alone**: T4 gave it its own
 `catalog.user-service.supervised-base-url` (env `CATALOG_USER_SERVICE_SUPERVISED_BASE_URL`, defaulting to
@@ -321,6 +325,26 @@ port, asserts the degrade, and restores the rig on exit. **Do not use `ENABLE_RE
 this** — that repoints the *whole* user-service the rest of the matrix needs. The proof it is confined:
 during the faulted pass a supervisor degrades to their own memberships (an empty page here) while an
 ordinary member's page is **unchanged**.
+
+## Production tier (Slice B of the supervisor epic, ADR 0030 §1–4)
+
+The **production-tier** matrix proves how far the supervised path's oversight goes: an
+**operator-managed `env` tag** on the governing catalog (written only through the in-network
+`/internal/bootstrap/resource-tags` endpoint — the gateway 404s it) is carried to child decisions as
+`input.resource.root_attributes`, and two provenance-scoped `denied` clauses per leaf policy close
+**production** and **unproven** (absent) tiers while untagged/staging contents stay open. Same
+personas, zero realm diff. The headline cells: the tier flips **live** in both directions (E4), and
+nothing the supervised population can do through the public API moves the tag (E5 — each write
+answers 409 `TAG_OPERATOR_MANAGED`).
+
+```bash
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+cd scripts/postman && ./run-production-tier-matrix.sh
+```
+
+The runner restarts OPA before minting tokens (the tier denies are policy, `--watch` is unreliable)
+and needs the catalog service's **published host port** for the operator curl (`BASE_PORT=28080` +
+pod index — `docker ps` shows `catalog-1` at `28081`).
 
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 

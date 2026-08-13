@@ -213,7 +213,13 @@ fallback B4 removed — reach comes entirely from the org relation, and the rese
 
 ### Contents stay closed — and it takes TWO things, not one
 
-The synthesized role names **no `category` key, no `product` key, no `"*"`**. That alone is **not
+> **Superseded in part by slice B** — see *[The production tier](#the-production-tier--how-deep-oversight-goes-slice-b-adr-0030-14)* below. B opens **non-production** contents by widening the
+> synthesized role to name the child types **directly**. What this subsection describes is still exactly
+> true and still load-bearing: **inheritance** stays closed to synthesized roles, and that is why
+> widening the role — rather than re-opening inheritance — was the only safe way to open anything.
+
+The synthesized role named **no `category` key, no `product` key, no `"*"`** (in slice A; B adds the two
+child keys, still no `"*"`). That alone is **not
 sufficient**: the shipped `catalog → category` and `catalog → product` inheritance tables would hand it
 `category:view` / `product:view` anyway, from the very catalog it may read, whenever the ancestor chain is
 present — which at runtime it always is. (An *ancestor-less* probe returns `false`, which is exactly how
@@ -232,6 +238,89 @@ all, which is why every shipped per-type role is unaffected. `provenance` is a *
 key** — a client-supplied value is stripped on the write path and overwritten on the read path, so it
 cannot be forged. **Absence is closed**: an unstamped role, an empty `attributes`, or an unknown value
 grants no inherited access, so a future synthesized role that forgets the stamp fails *closed*.
+
+### The production tier — how deep oversight goes (Slice B, ADR [[adr/0030-step-up-decision-contract|0030]] §1–4)
+
+Oversight that can never open anything is a directory, not oversight. Slice **B** lets a supervisor open
+a report's contents **when the environment is routine**, and keeps **production** detail shut.
+
+**The role widens; authority stays in the role.** `SupervisorRoles.readOnlyFor("catalog")` now grants
+`{catalog: [READ], category: [READ], product: [READ]}`, so child reads pass through the ordinary
+**direct-grant** path. This is deliberately *not* a new inheritance path: ADR 0031 stays exactly as exact
+as it was, and the role stays READ-only, so the ceiling cells (`PUT`/`DELETE` → 403) are untouched. Any
+supervised type other than `catalog` keeps the single-key shape.
+
+**The tier lives on the governing root.** An operator-managed `env` tag (`production | staging | dev`) is
+written on the catalog and reaches child decisions as `input.resource.root_attributes` — see
+[[TAG-BASED-AUTHORIZATION]] for the flag and the operator path, and [[ABAC-AUTHORIZATION]] for the
+enrichment contract. Nothing a catalog's own owner can do through the API touches that tag
+(`409 TAG_OPERATOR_MANAGED`).
+
+**The decision is two deny clauses per leaf policy** (`category.rego` + `product.rego`), and the *shape*
+is the point:
+
+```rego
+denied if {                       # tier UNPROVEN — enrichment failed or was never attempted
+    input.role_definition.attributes.provenance == "supervised"
+    not input.resource.root_attributes
+}
+
+denied if {                       # tier proven PRODUCTION
+    input.role_definition.attributes.provenance == "supervised"
+    input.resource.root_attributes.env == "production"
+}
+```
+
+| Root state | Supervised child read |
+|---|---|
+| `root_attributes` **absent** | **denied** — an unproven tier is a closed tier |
+| `{}` (fetched, untagged) | **open** — untagged means non-production (ADR 0030 §3) |
+| `{"env": "staging"}` / `dev` | **open** |
+| `{"env": "production"}` | **denied** — a plain `403` in B; slice C makes it a step-up challenge |
+
+> **Do not "simplify" this into one clause.** `not input.resource.root_attributes.env == "production"`
+> reads naturally and is **wrong**: an *absent* value passes a negated comparison, so an enrichment
+> outage would **open** the tier instead of closing it. The absent state needs its own positive clause.
+> Each of the four clause sites carries its own deletion-mutation guard in the test suite for exactly
+> this reason.
+
+**Members are structurally unaffected** (ADR 0030 §2). Both clauses require
+`provenance == "supervised"`, so a membership decision **cannot reach them** — a member reads their own
+team's production contents exactly as before, and keeps reading them during an enrichment outage, when
+every supervised child read closes. That is the slice's one request-time failure class, and it lands on
+two different answers on purpose: **the supervised path closes, the member's request proceeds unchanged**
+— never a 5xx, never an exception out of the manager.
+
+**Where the decision lands, and where it must not.** The list's tier decision happens at the **coarse
+type-level gate** (which consults `denied`); it never enters the partial-evaluation `filter` residual —
+a `root_attributes` predicate in the SQL would be both a dead end for the compiler and a slice-boundary
+breach.
+
+**One known affordance gap, pinned as contract:** the `_actions` enrichment builds per-row inputs with no
+root context, so on supervised child rows every verb computes false and the omit-on-all-false convention
+**omits the map entirely**. That is the intended B behavior — omitted, never a fabricated `view: false`
+on a row the caller can actually read. Member rows are untouched. Threading root context through the
+enrichment advice is slice C's work.
+
+**Proved end to end by `scripts/postman/run-production-tier-matrix.sh`** (the `ffff…` fixture set: a
+staging, a production and an untagged catalog, one category and product each). Its headline pair is
+**liveness and unstrippability together**: the operator flips a catalog `staging → production` through
+the in-network `POST /internal/bootstrap/resource-tags` and the supervisor's **very next** child read is
+`403` — then flips it back and the next read is `200` again, so the tier is read per request in both
+directions rather than latched. Meanwhile the catalog's **own owner** — the most privileged public
+identity there is — cannot strip, re-value **or** assign `env` through the API: each attempt is a `409`
+whose `errorCode` is asserted to be `TAG_OPERATOR_MANAGED` by value, and a follow-up cell proves none of
+the three moved the tier. The matrix also pins the two contracts above as assertions rather than prose:
+the supervisor's list rows carry **no `_actions` key at all**, while the member's rows on the very
+catalog she is denied carry an honest one.
+
+**This slice deliberately rewrote three cells of slice A's matrix.** `run-supervised-scope-matrix.sh`'s
+E6a/E6b/E6c asserted that a supervisor's contents were **closed** (`403`) — the boundary of A, held by a
+role that named no child type. Under B those same requests are `200` on exact ids, because the catalog
+they use is **untagged** and untagged means non-production. The cells were flipped, not deleted, and the
+closed-contents proof **moved** to the production-tier matrix, which owns the production and unproven
+cases. A later slice that finds an older document promising "supervised contents are closed" should read
+it as the slice-A boundary, not as a regression.
 
 ### Two failure classes — and they land in different places
 
@@ -255,9 +344,10 @@ degrade-to-membership-only into an empty page for everyone.
 
 ### What is NOT in this slice
 
-Contents (categories, products) stay closed; opening them behind a production tier
-([[adr/0030-step-up-decision-contract|ADR 0030]] §1–4) and a second factor (§5–9) is slices **B** and
-**C**. No `env` tag, no `operatorManaged` flag, no `deny_reason`, no RFC 9470 challenge, no
+*(This subsection scopes **slice A**. Slice B has since shipped ADR 0030 §1–4 — see *The production
+tier* above; §5–9 remain slice C's.)* Contents (categories, products) stayed closed in A; opening them
+behind a production tier ([[adr/0030-step-up-decision-contract|ADR 0030]] §1–4) and a second factor
+(§5–9) is slices **B** and **C**. No `env` tag, no `operatorManaged` flag, no `deny_reason`, no RFC 9470 challenge, no
 `acr`/`auth_time` ingestion. A supervised **single-`GET`** is audited by slice C; slice A audits the
 **list** path, where the supervised authority is applied.
 

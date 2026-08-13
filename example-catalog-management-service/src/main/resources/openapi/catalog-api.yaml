@@ -530,7 +530,9 @@ components:
           additionalProperties: true
           description: >
             Tags to assign, validated against the tag dictionary (422 on an unknown key or illegal
-            value; nothing silently dropped). Accepted on UPDATE only — a create carrying tags is
+            value; nothing silently dropped). An operator-managed key (e.g. `env`) has no public
+            write path: assigning, re-valuing or stripping it is rejected 409 `TAG_OPERATOR_MANAGED`
+            (echoing the current value passes). Accepted on UPDATE only — a create carrying tags is
             rejected 422: the type-level assign-tags decision resolves through the governing team,
             and a new catalog has no team until the owner-on-create step binds one.
 
@@ -594,7 +596,9 @@ components:
           description: >
             Tags to assign, validated against the tag dictionary. Each value is a string (single-valued
             key) or an array of strings (multi-valued key). An unknown key or illegal value is rejected
-            with 422; nothing is silently dropped.
+            with 422; nothing is silently dropped. An operator-managed key has no public write path —
+            assigning, re-valuing or stripping it is rejected 409 `TAG_OPERATOR_MANAGED` (an echo of
+            the current value passes).
 
     Product:
       type: object
@@ -667,9 +671,11 @@ components:
           description: >
             Tags to assign, validated against the tag dictionary. Each value is a string (single-valued
             key) or an array of strings (multi-valued key). An unknown key or illegal value is rejected
-            with 422; nothing is silently dropped. Accepted on CREATE and UPDATE alike — unlike a
-            catalog, a new product already has a governing team (its catalog's), so tag-on-create asks
-            the type-level assign-tags decision through it.
+            with 422; nothing is silently dropped. An operator-managed key has no public write path —
+            assigning, re-valuing or stripping it is rejected 409 `TAG_OPERATOR_MANAGED` (on CREATE a
+            carried operator-managed key is an assign and is rejected too). Accepted on CREATE and
+            UPDATE alike — unlike a catalog, a new product already has a governing team (its
+            catalog's), so tag-on-create asks the type-level assign-tags decision through it.
 
     ProblemDetail:
       type: object
@@ -702,6 +708,7 @@ components:
             - RESOURCE_NOT_FOUND
             - VALIDATION_FAILED
             - TAG_VALUE_ILLEGAL
+            - TAG_OPERATOR_MANAGED
             - DEPENDENCY_UNAVAILABLE
             - STATE_CONFLICT
         timestamp:

@@ -126,7 +126,7 @@ public class CatalogController implements CatalogApi {
         // Dictionary validation (slow, fail-closed remote call) — after authorization, before the
         // write. The catalog IS the governing root, so it addresses the dictionary by itself.
         var tags = tagAssignment.validateAndBuild(
-                "catalog", catalogId.toString(), request.getTags());
+                "catalog", catalogId.toString(), request.getTags(), entity.getTags().asMap());
         entity.setName(request.getName());
         entity.setDescription(request.getDescription());
         entity.setTags(tags);

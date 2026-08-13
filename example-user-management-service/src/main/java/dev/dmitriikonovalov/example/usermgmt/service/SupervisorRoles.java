@@ -17,13 +17,20 @@ import java.util.Map;
  * ∅-expansion — so the role would grant nothing at all and the supervised page would be silently
  * empty. This role therefore grants exactly {@code {<supervised type>: ["READ"]}}.
  *
- * <h2>What it does NOT name, and why that is not sufficient on its own</h2>
- * The role names <b>no {@code category} key, no {@code product} key and no {@code "*"} key</b>. That
- * alone does <em>not</em> close contents: the shipped {@code catalog → child} inheritance tables would
- * hand it {@code category:view}/{@code product:view} whenever the ancestor chain is present — which is
- * always, at runtime. Contents are closed by this shape <b>plus</b> ADR 0031's confinement rule
- * (ancestor inheritance requires {@code provenance == "membership"}), which is why the role carries
- * {@link #PROVENANCE_SUPERVISED}.
+ * <h2>Contents open by DIRECT grant, never by inheritance (ADR 0030 §1)</h2>
+ * For the governing type teams target — {@code catalog} — the role names {@code category} and
+ * {@code product} <b>explicitly</b>, so child reads resolve through the ordinary {@code direct_grant}
+ * path. That is the whole point of the shape: authority stays in the <em>role</em>, and ADR 0031's
+ * confinement rule (ancestor inheritance requires {@code provenance == "membership"}) stays exactly as
+ * exact as it was. The role still names no {@code "*"} key, still carries
+ * {@link #PROVENANCE_SUPERVISED}, and is still READ-only — so the read-only ceiling is unchanged and
+ * inheritance remains closed to it.
+ *
+ * <p><b>How far that read goes is decided in policy, not here</b> (ADR 0030 §3–4): the leaf policies
+ * carry two provenance-scoped {@code denied} clauses that close contents whose governing root is
+ * tagged {@code env=production} — or whose tier could not be established at all. Widening the role is
+ * therefore not widening access to production detail; it moves the decision to where the tier is
+ * visible.
  *
  * <h2>Provenance</h2>
  * Provenance rides the <b>existing</b> generic {@code attributes} map plus the reserved code, so
@@ -60,6 +67,13 @@ public final class SupervisorRoles {
     /** The single coarse token the supervised path grants — read, and nothing else. */
     private static final List<String> READ_ONLY = List.of("READ");
 
+    /** The governing type teams target; the only one whose contents the tier gates (ADR 0030 §1). */
+    private static final String CATALOG_TYPE = "catalog";
+
+    private static final String CATEGORY_TYPE = "category";
+
+    private static final String PRODUCT_TYPE = "product";
+
     private SupervisorRoles() {
     }
 
@@ -79,6 +93,22 @@ public final class SupervisorRoles {
         return new RoleDefinition(
                 SUPERVISOR_CODE,
                 Map.of(PROVENANCE_ATTRIBUTE, PROVENANCE_SUPERVISED),
-                Map.of(resourceType, READ_ONLY));
+                permissionsFor(resourceType));
+    }
+
+    /**
+     * {@code catalog} — the only governing type teams target today — also grants READ on its two child
+     * types, so a supervisor can open contents through the ordinary direct-grant path (ADR 0030 §1).
+     * Every other supervised type keeps the single-key shape: naming children there would grant reach
+     * over a hierarchy nobody has declared.
+     */
+    private static Map<String, List<String>> permissionsFor(String resourceType) {
+        if (!CATALOG_TYPE.equals(resourceType)) {
+            return Map.of(resourceType, READ_ONLY);
+        }
+        return Map.of(
+                CATALOG_TYPE, READ_ONLY,
+                CATEGORY_TYPE, READ_ONLY,
+                PRODUCT_TYPE, READ_ONLY);
     }
 }

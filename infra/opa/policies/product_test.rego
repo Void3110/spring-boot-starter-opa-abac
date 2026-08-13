@@ -719,3 +719,152 @@ test_membership_role_opens_the_type_level_product_list_gate if {
 	product.allow with input as product_list_gate_input(catalog_root_role)
 		with data.product.inheritable as product_inherits_catalog
 }
+
+# --- PRODUCTION TIER (ADR 0030 §3–4, ADR 0032) — U8, U9, U10 ---------------------------------------
+#
+# The product mirror of category_test's tier block. Same widened supervisor role, same four states,
+# same member control — per-type policies drift, so each file carries its own proof rather than
+# trusting the sibling's (the sibling-drift lesson).
+tiered_supervisor_role := {
+	"code": "supervisor-readonly",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {
+		"catalog": ["READ"],
+		"category": ["READ"],
+		"product": ["READ"],
+	},
+}
+
+tiered_member_role := {
+	"code": "catalog-owner",
+	"attributes": {"provenance": "membership"},
+	"permissions": {
+		"catalog": ["READ"],
+		"category": ["READ"],
+		"product": ["READ"],
+	},
+}
+
+unstamped_role := {
+	"code": "product-editor",
+	"permissions": {"product": ["READ"]},
+}
+
+# The instance shape: a product carrying its full chain, plus a root_attributes STATE patched over
+# the resource (so ABSENT is a missing key, never a null).
+tier_input(role_def, root_state) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "product:view",
+	"resource": object.union(
+		{
+			"type": "product",
+			"id": "p1",
+			"attributes": {},
+			"ancestors": [{"type": "catalog", "id": "c1"}, {"type": "category", "id": "k1"}],
+		},
+		root_state,
+	),
+	"role_definition": role_def,
+	"environment": {},
+}
+
+tier_gate_input(role_def, root_state) := {
+	"subject": {"id": "u1", "roles": []},
+	"action": "product:list",
+	"resource": object.union({"type": "product"}, root_state),
+	"role_definition": role_def,
+	"environment": {},
+}
+
+absent_root := {}
+
+untagged_root := {"root_attributes": {}}
+
+staging_root := {"root_attributes": {"env": "staging"}}
+
+production_root := {"root_attributes": {"env": "production"}}
+
+# U8 — the instance shape, all four tier states.
+test_tier_instance_absent_root_denies if {
+	not product.allow with input as tier_input(tiered_supervisor_role, absent_root)
+}
+
+test_tier_instance_untagged_root_allows if {
+	product.allow with input as tier_input(tiered_supervisor_role, untagged_root)
+}
+
+test_tier_instance_staging_root_allows if {
+	product.allow with input as tier_input(tiered_supervisor_role, staging_root)
+}
+
+test_tier_instance_production_root_denies if {
+	not product.allow with input as tier_input(tiered_supervisor_role, production_root)
+}
+
+# U9 — the same four states through the coarse type-level list gate.
+test_tier_gate_absent_root_denies if {
+	not product.allow with input as tier_gate_input(tiered_supervisor_role, absent_root)
+}
+
+test_tier_gate_untagged_root_allows if {
+	product.allow with input as tier_gate_input(tiered_supervisor_role, untagged_root)
+}
+
+test_tier_gate_staging_root_allows if {
+	product.allow with input as tier_gate_input(tiered_supervisor_role, staging_root)
+}
+
+test_tier_gate_production_root_denies if {
+	not product.allow with input as tier_gate_input(tiered_supervisor_role, production_root)
+}
+
+# U10 — members structurally unaffected, in THIS file too (ADR 0030 §2).
+test_member_unaffected_by_production_tier if {
+	product.allow with input as tier_input(tiered_member_role, production_root)
+	product.allow with input as tier_gate_input(tiered_member_role, production_root)
+}
+
+test_member_unaffected_by_absent_root_attributes if {
+	product.allow with input as tier_input(tiered_member_role, absent_root)
+	product.allow with input as tier_gate_input(tiered_member_role, absent_root)
+}
+
+test_unstamped_role_unaffected_by_the_tier if {
+	product.allow with input as tier_input(unstamped_role, production_root)
+	product.allow with input as tier_input(unstamped_role, absent_root)
+}
+
+# The supervised READ-only ceiling holds under the tier here too.
+test_tier_does_not_widen_the_read_only_ceiling if {
+	not product.allow with input as object.union(
+		tier_input(tiered_supervisor_role, staging_root),
+		{"action": "product:update"},
+	)
+}
+
+# THE SHAPE TRAP's cardinality twin: an array-shaped env must deny exactly as the scalar does — a
+# bare scalar `==` failed OPEN on ["production"] (neither deny clause fired). A non-production array
+# stays open: the normalization must not over-close either.
+array_production_root := {"root_attributes": {"env": ["production", "staging"]}}
+
+array_non_production_root := {"root_attributes": {"env": ["staging", "dev"]}}
+
+test_tier_instance_array_production_root_denies if {
+	not product.allow with input as tier_input(tiered_supervisor_role, array_production_root)
+}
+
+test_tier_gate_array_production_root_denies if {
+	not product.allow with input as tier_gate_input(tiered_supervisor_role, array_production_root)
+}
+
+test_tier_array_non_production_root_allows if {
+	product.allow with input as tier_input(tiered_supervisor_role, array_non_production_root)
+}
+
+# The tier decision lands at the coarse gate and NEVER in the list residual: `filter` does not consult
+# `denied`, so a root_attributes predicate can never reach the SQL. Asserted on the shape a supervised
+# list actually compiles with — production root, which the gate above denies — so the two are visibly
+# decided in different places.
+test_tier_never_enters_the_filter_residual if {
+	product.filter with input as tier_gate_input(tiered_supervisor_role, production_root)
+}

@@ -151,6 +151,65 @@ denied if {
 }
 
 # ---------------------------------------------------------------------------
+# ADR 0030 §3–4 — THE PRODUCTION TIER, scoped to the supervised path.
+#
+# A supervisor (ADR 0029) reaches a catalog's CONTENTS through the ordinary direct grant on
+# `category`/`product` that the synthesized role now carries — no inheritance, no ADR 0031
+# involvement, no new allow clause. What decides how deep that oversight goes is the governing
+# ROOT's `env` tag, carried here by root-attribute enrichment (ADR 0032) as
+# input.resource.root_attributes. Two deny clauses, because deny-overrides is the corpus's
+# strongest idiom: no allow clause anywhere can bypass them.
+#
+# BOTH clauses require `provenance == "supervised"`. That conjunct is not decoration — it is what
+# makes ADR 0030 §2 structurally true: a MEMBERSHIP decision cannot reach either clause, so a member
+# reading their own team's production catalog is unaffected, and stays unaffected even during an
+# enrichment outage (when every supervised read closes).
+#
+# THE THREE INPUT STATES, and why this needs TWO clauses rather than one negation:
+#   absent  -> the root was never established (enrichment failed) -> UNPROVEN -> closed, below;
+#   {}      -> the root was fetched and carries no tags -> non-production (ADR 0030 §3) -> OPEN:
+#              `not input.resource.root_attributes` is FALSE for {} (in Rego only false and
+#              undefined are falsy), and `{}.env` is undefined, so neither clause fires;
+#   tagged  -> as tagged.
+#
+# THE SHAPE TRAP, stated so it is not "simplified" later: a single naive clause
+#   `not input.resource.root_attributes.env == "production"`
+# is WRONG — an ABSENT env passes a negated comparison, so an enrichment outage would OPEN the tier
+# instead of closing it. The absent state needs its own positive clause, which is the first one here.
+#
+# Deliberately NOT in `filter`: the list's tier decision lands at the coarse type-level gate (which
+# consults `denied`), never in the SQL residual — a root_attributes predicate there would be a
+# partial-evaluation dead end and a slice-boundary breach.
+
+# Tier UNPROVEN — enrichment failed or was never attempted. An unproven tier is a closed tier.
+denied if {
+	input.role_definition.attributes.provenance == "supervised"
+	not input.resource.root_attributes
+}
+
+# Tier proven PRODUCTION — oversight stops at the door until slice C's freshly-elevated exception.
+# Shape-tolerant on cardinality: a tag value in this corpus is a scalar string OR a string array
+# (the header contract `resource_tag_values` normalizes for), and a bare scalar `==` would fail
+# OPEN on an array-shaped env — the SHAPE TRAP's cardinality twin. `root_env_values` mirrors
+# `resource_tag_values` for the root map; an absent env leaves it undefined, which belongs to the
+# untagged/open state ({} root) or the absent clause above (no root at all), never to this one.
+denied if {
+	input.role_definition.attributes.provenance == "supervised"
+	"production" in root_env_values
+}
+
+# The root's env value(s) as a set: an array tag -> the set of its elements; a scalar -> {scalar}.
+root_env_values := {v | some v in value} if {
+	value := input.resource.root_attributes.env
+	is_array(value)
+}
+
+root_env_values := {value} if {
+	value := input.resource.root_attributes.env
+	not is_array(value)
+}
+
+# ---------------------------------------------------------------------------
 # Tag-based grant (the Phase-4.5 match, ported from category.rego in Phase 5.97).
 # ---------------------------------------------------------------------------
 
