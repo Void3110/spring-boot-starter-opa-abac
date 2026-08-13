@@ -260,7 +260,8 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 > *above* several teams sees nothing at all. These stories capture the second, **disjoint** access path —
 > derived from the reporting structure, read-only, and audited — plus the second factor that gates
 > production detail. Split across three slices: **A** [[SUPERVISED-SCOPE]] (Phase 10-A, ✅ shipped
-> 2026-08-07), **B** [[PRODUCTION-TIER]] (📋 planning) and **C** `STEP-UP-ELEVATION` (⏳).
+> 2026-08-07), **B** [[PRODUCTION-TIER]] (Phase 10-B, ✅ shipped 2026-08-13) and **C**
+> [[STEP-UP-ELEVATION]] (📋 design settled 2026-08-13, decomposition pending).
 
 - **K1** *As a unit manager on no team*, I see the catalogs of the teams my reports own or manage —
   including my reports' reports' — and **nothing** adjacent to my unit. — **Phase 10-A** ✅ (the headline
@@ -278,7 +279,7 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   a supervisor never makes my own work harder to reach. — **Phase 10-A** ✅
 - **K7** *As a product owner*, the fact that a catalog holds **production** data cannot be edited away by
   the people being supervised — the tier is set by an operator and is not assignable through the API. —
-  **Phase 10-B** 📋
+  **Phase 10-B** ✅
 - **K8** *As a manager*, opening **production** content asks me for a second factor, once, and then lets me
   work for a bounded window — and refreshing my session does **not** silently extend it. — **Phase 10-C**
   📋 (the headline step-up round trip)
@@ -288,13 +289,20 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   change, with no application change and no redeploy. — **Phase 10-C** 📋
 - **K11** *As a manager*, I can open the **contents** of my reports' non-production catalogs — categories
   and products, staging and dev — without ceremony: routine oversight needs no second factor. —
-  **Phase 10-B** 📋 (the headline tier cut)
+  **Phase 10-B** ✅ (the headline tier cut)
 - **K12** *As a security officer*, a supervisor's read of **production** contents is refused in this phase
   — the gate exists before the elevation does, and an untagged catalog is non-production only because
-  tagging is operator-controlled. — **Phase 10-B** 📋
+  tagging is operator-controlled. — **Phase 10-B** ✅
 - **K13** *As a team member*, the tier changes nothing for me: reading my own team's production catalog
   works exactly as it always has, elevated or not — even when the tier machinery itself is failing. —
-  **Phase 10-B** 📋 (the fail-closed drill: enrichment outage narrows the supervisor, never the member)
+  **Phase 10-B** ✅ (the fail-closed drill: enrichment outage narrows the supervisor, never the member)
+- **K14** *As a client developer*, the step-up refusal tells my client exactly how to re-authenticate
+  (`acr_values` + `max_age` in a standard RFC 9470 challenge), and following it cannot loop — while a
+  re-auth that omits `max_age` provably stays stuck on the same stale login. — **Phase 10-C** 📋
+- **K15** *As a security officer*, an AI agent cannot exercise supervisory oversight — not even with a
+  borrowed, freshly-elevated token: the supervised path answers agent calls with a plain 403, any tier,
+  and never a challenge. — **Phase 10-C** 📋 (revisitable: a supervised agent read-out would be its own
+  designed feature)
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so

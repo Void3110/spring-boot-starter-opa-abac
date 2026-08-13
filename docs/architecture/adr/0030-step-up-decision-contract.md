@@ -257,3 +257,30 @@ operator-managed — a coupling stated in §3 precisely so it is not quietly bro
 
 **Deferred.** Persisted/queryable audit; a published step-up SPI in the starter; transactional (RAR)
 elevation; and Keycloak flow automation, which stays rig configuration.
+
+## Amendments
+
+**2026-08-13 (slice C design — grill-me refinements; rationale in the slice's `00-DESIGN`):**
+
+1. **`deny_reason` is emitted only when step-up is the *sole* blocker** — the subject is `granted`
+   and no deny other than the step-up clause fires. This makes §7's fingerprinting stance
+   structural: an out-of-scope read, a write against the read-only ceiling, and an agent call all
+   answer a plain 403 with no challenge — only the case elevation would actually change gets one.
+2. **The unproven tier is elevation-proof.** The `not elevated` conjunct amends the *production*
+   deny clause only; the absent-`root_attributes` clause is untouched. An enrichment outage is a
+   closed tier for everyone — elevation proves who is present, never what the tier is.
+3. **One freshness window, stated twice, mirrored.** Keycloak's level-2 condition max age is set to
+   the same value as the policy's `max_age` (300), and the two locations cross-reference each
+   other; the policy data (`step_up` JSON: `loa`, `max_age`, `skew`) is the decision-side source.
+4. **The supervised path is human-only — closed to agent calls, any tier, for now.** A
+   provenance-scoped deny with the agent presence-test discriminator (`"actor"` key present) lands
+   beside the tier denies: supervision and elevation are human ceremonies, and a borrowed elevated
+   token in an agent call is refused (plainly, per amendment 1 — no challenge an agent cannot
+   fulfil). Revisitable: a supervised agent read-out would be its own designed feature with its own
+   audit story and capability tier, never a default. (Cross-reference: ADR 0028's model is
+   narrowing-only; this deny narrows and grants nothing.)
+5. **Diagnosis note (§Context).** The 2026-08-13 re-probe of the committed realm export confirmed
+   the §Context diagnosis end-to-end: with the literal `defaultClientScopes` list, `auth_time`/
+   `acr`/`amr` are absent from both tokens on every request-side path (including `max_age` and an
+   essential-claims request); restoring the built-in `basic` + `acr` scopes is the fix, and a
+   refresh grant preserves `auth_time` at the original login instant (re-measured).
