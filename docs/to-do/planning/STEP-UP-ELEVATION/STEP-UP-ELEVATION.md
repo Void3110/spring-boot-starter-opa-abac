@@ -43,14 +43,15 @@ differentiator, not a re-implementation ([[0030-step-up-decision-contract|ADR 00
    `OpaPreAuthorizeAuthorizationManager` only.
 5. **Advice-based emitter, library-owned**: `StepUpRequiredDecision` → the `AbstractProblemAdvice`
    401 branch + `WWW-Authenticate` (params from the reason, never local config) +
-   `ApiErrorCode.STEP_UP_REQUIRED`; partial reason → plain 403.
+   `LibraryErrorCode.STEP_UP_REQUIRED` (`ApiErrorCode` is the interface); partial reason → plain 403.
 6. **Realm declarative**: `basic`+`acr` scopes on both clients (the ADR-diagnosed fix), the
    conditional level-2 TOTP subflow with max age 300 mirroring the policy window, `sup-anna`'s
    seeded fixture OTP secret; runner documents down-first re-import.
 7. **Audit = two events on `opa.abac.audit`** (`STEP_UP_CHALLENGED` in the advice,
    `SUPERVISED_PRODUCTION_READ` in the manager); emission never affects the decision.
-8. **The supervised path is human-only**: `provenance == "supervised"` + agent presence-test →
-   deny, any tier — a borrowed `aal2` token in an agent call is a plain 403, no challenge.
+8. **The supervised path is human-only**: `provenance == "supervised"` + the `act_chain`
+   presence-test → deny, any tier, always a plain 403 (sole-blocker suppresses the challenge); the
+   wire claim is `act_chain` — `actor` is MCP-internal and never travels downstream.
 9. **The e2e token path is the scripted PKCE code flow** (stdlib python3 + RFC 6238 TOTP) — ROPC
    structurally cannot carry `auth_time`; existing runners untouched.
 
@@ -60,19 +61,20 @@ differentiator, not a re-implementation ([[0030-step-up-decision-contract|ADR 00
 challenge → one TOTP → **200**, for five minutes; re-auth *without* `max_age` reuses the SSO session
 and stays 401 (the loop-prevention negative, measured); the freshness drill shows the elevation
 expiring on the wire; an out-of-unit supervisor and an elevated `PUT` get plain 403s with no
-challenge; a member never sees any of it; and an MCP agent call carrying anna's freshest token is
-refused outright.
+challenge; a member never sees any of it; and an agent-marked MCP call (the `act_chain`
+delegation claim) is refused outright, any tier — the "elevated agent" combination is unmintable
+on this rig, and its contract is pinned by constructed-input `opa test`.
 
 ## Tickets (status table)
 
 | # | Title | Status |
 |---|---|---|
 | T1 | realm: `basic`+`acr` scopes, ACR-to-LoA map, the conditional level-2 TOTP subflow (max age 300), anna's seeded OTP credential | 📋 TODO |
-| T2 | policy: the `step_up` data JSON, `elevated`, the amended production denies, `stepup_denied` + sole-blocker `deny_reason`, the agent deny, mutation guards | 📋 TODO |
-| T3 | library envelope: `OpaDecision`/`DenyReason`, `OpaClient.decide()` default, `HttpOpaClient` parse, `ResilientOpaClient` passthrough | 📋 TODO |
-| T4 | manager + emitter + audit: `decide()` adoption, `StepUpRequiredDecision`, the advice 401 branch + `STEP_UP_REQUIRED`, both audit events, the examples' `attribute-claims` yaml | 📋 TODO |
+| T2 | policy: the `step_up` data JSON, `elevated`, the amended production denies, `stepup_denied` + sole-blocker `deny_reason`, the agent deny (all three leaf policies), mutation guards | 📋 TODO |
+| T3 | library envelope: `OpaDecision`/`DenyReason`, `OpaClient.decide()` default, `HttpOpaClient` parse, `ResilientOpaClient` **overridden** passthrough (the default-method trap) | 📋 TODO |
+| T4 | manager + emitter + audit + wiring: `decide()` adoption, `StepUpRequiredDecision`, the advice 401 branch + `STEP_UP_REQUIRED`, both audit events, the catalog service's `attribute-claims` yaml (`acr`, `auth_time`, `act_chain`), the supervised-leg agent guard in `CatalogListAuthorizer` | 📋 TODO |
 | T5 | the code-flow token miner (`mint-code-flow-token.py`, stdlib + TOTP) | 📋 TODO |
-| T6 | e2e: the step-up matrix (S1–S6 + the freshness drill + the log-grep cell), non-regression, the runner | 📋 TODO |
+| T6 | e2e: the step-up matrix (E1–E7 incl. the freshness drill + the log-grep cell), the seven enumerated production-tier C-flips, non-regression, the runner | 📋 TODO |
 
 ## Files in this folder
 

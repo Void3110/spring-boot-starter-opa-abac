@@ -299,10 +299,10 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **K14** *As a client developer*, the step-up refusal tells my client exactly how to re-authenticate
   (`acr_values` + `max_age` in a standard RFC 9470 challenge), and following it cannot loop — while a
   re-auth that omits `max_age` provably stays stuck on the same stale login. — **Phase 10-C** 📋
-- **K15** *As a security officer*, an AI agent cannot exercise supervisory oversight — not even with a
-  borrowed, freshly-elevated token: the supervised path answers agent calls with a plain 403, any tier,
-  and never a challenge. — **Phase 10-C** 📋 (revisitable: a supervised agent read-out would be its own
-  designed feature)
+- **K15** *As a security officer*, an AI agent cannot exercise supervisory oversight: any call carrying
+  the agent delegation claim is refused on the supervised path — plain 403, any tier, never a challenge —
+  even if its token were somehow elevated (a combination the realm cannot even mint). — **Phase 10-C** 📋
+  (revisitable: a supervised agent read-out would be its own designed feature)
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so

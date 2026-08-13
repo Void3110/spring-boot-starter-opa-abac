@@ -30,7 +30,8 @@ maps to a `401` with an RFC 9470 `WWW-Authenticate` challenge; the client re-aut
 next read is 200 — until the freshness window closes. The headline: `sup-anna` hits her report's
 production catalog, answers one TOTP prompt, and reads it for five minutes; her refresh tokens
 cannot stretch that window, an out-of-unit supervisor probing the same catalog learns nothing (plain
-403, no challenge), and an AI agent holding her freshest token is refused outright.
+403, no challenge), and an agent-marked call (the `act_chain` delegation claim) is refused
+outright — any tier, elevated or not.
 
 ## What this builds on, and what it must not break
 
@@ -40,8 +41,8 @@ cannot stretch that window, an out-of-unit supervisor probing the same catalog l
   tier for *everyone*, elevated or not: elevation proves who is present, never what the tier is).
 - **The subject-attribute ingestion seam exists**: `opa.abac.subject.attribute-claims`
   (`SubjectClaimsConfig` + `JwtClaimsSubjectExtractor`) copies top-level claims type-preserved into
-  `input.subject.attributes`. C ships **no library ingestion code** — only the examples' YAML gains
-  `[acr, auth_time]`. (Verified against source at design time; the extractor's number-type
+  `input.subject.attributes`. C ships **no library ingestion code** — only the catalog service's YAML gains
+  `[acr, auth_time, act_chain]`. (Verified against source at design time; the extractor's number-type
   preservation is a decompose-time seam check — the policy does arithmetic on `auth_time`.)
 - **The decision envelope is boolean everywhere** (`OpaClient.allow`, both managers, every stub).
   C evolves it **additively** (§3): a new `decide()` default method; `allow()` stays byte-identical;
@@ -91,7 +92,9 @@ proves it.
 The browser flow gains Keycloak's **conditional Level-2 subflow** with TOTP as the required
 authenticator, realm ACR-to-LoA mapping `{"aal1": 1, "aal2": 2}`, and the level-2 condition's
 **max age set to 300 — mirroring the policy's window** so exactly one freshness number exists,
-stated in two places that cross-reference each other. The flow-definition JSON is fiddly: it is
+stated in two places whose cross-reference lives in the **docs** (`infra/README.md`'s realm note
+and the step-up guide subsection — both are JSON-hosted values, and JSON holds no comments). The
+flow-definition JSON is fiddly: it is
 written from a **live-exported realm**, never from memory (decompose-time seam line).
 
 `sup-anna` gets a **seeded OTP credential with a fixed, fixture-only secret** in the realm export
@@ -111,7 +114,7 @@ place, no literals in rules:
 
 ```rego
 elevated if {
-    not is_agent_call                       # §6 — elevation is a human ceremony
+    not is_agent_call                       # §6 — elevation is a human ceremony (act_chain presence)
     data.step_up.loa[input.subject.attributes.acr] >= 2
     (time.now_ns() / 1000000000) - input.subject.attributes.auth_time
         <= data.step_up.max_age + data.step_up.skew
@@ -198,7 +201,9 @@ WWW-Authenticate: Bearer error="insufficient_user_authentication",
   acr_values="aal2", max_age="300"
 ```
 
-with a problem+json body carrying the **additive** `ApiErrorCode.STEP_UP_REQUIRED`; every other
+with a problem+json body carrying the **additive** `LibraryErrorCode.STEP_UP_REQUIRED`
+(`ApiErrorCode` is the interface; the library's constants live on the `LibraryErrorCode` enum —
+verified); every other
 denied result keeps the existing 403 path byte-identically. `acr_values`/`max_age` come **from the
 `DenyReason` fields** — the policy data is the single source; the advice holds no local copy.
 Fail-closed edge: a reason with null/partial fields → the plain 403 — never a half-formed challenge
@@ -210,11 +215,19 @@ through the advice they already extend: **zero example-side code**.
 One dedicated logger, **`opa.abac.audit`** (plain SLF4J, structured key-value payload), named so a
 consumer routes it separately. Two events:
 
-- **`STEP_UP_CHALLENGED`** — in the advice, when the 401 is minted: subject, resource type+id,
-  governing root, the challenge params.
-- **`SUPERVISED_PRODUCTION_READ`** — in the manager, when a decision is **allowed** with
-  `provenance == "supervised"` on a production-tier target and an elevated subject: subject,
-  governing root, resource, access path, `acr`, `auth_time` (ADR 0030 §8's list verbatim).
+- **`STEP_UP_CHALLENGED`** — in the advice, when the 401 is minted. Field availability is pinned:
+  `StepUpRequiredDecision` carries, besides the reason, the **resource type+id and the
+  governing-root id** (copied by the manager from its resolved check — log-only fields that never
+  re-enter a decision); the advice reads the **subject** from the security context. Payload:
+  subject, resource type+id, governing root, the challenge params. (No `acr`/`auth_time` — the
+  subject is precisely *not* elevated at challenge time.)
+- **`SUPERVISED_PRODUCTION_READ`** — in the manager, when a decision is **allowed** and
+  `provenance == "supervised"` and the target's `root_attributes.env` **contains** `"production"`
+  (normalized scalar-or-array, mirroring the policy's `root_env_values` — the cardinality twin).
+  **Elevation is implied by the allow** — the policy already required it — and is **never
+  re-derived app-side** (the loa map/window live only in policy data; a Java copy would break the
+  one-window invariant). Payload: subject, governing root, resource, access path, plus `acr` and
+  `auth_time` logged **verbatim** from the subject attributes (ADR 0030 §8's list).
 
 No token-level "elevation happened" event — the library never sees the Keycloak ceremony, only
 tokens; the elevated *read* is the elevation in use, which is the auditable fact. **Audit never
@@ -223,28 +236,56 @@ an audit bug must not become an authorization outage. Nothing is persisted (ADR 
 
 ### 6. Agents — the supervised path is human-only
 
-The supervised path — **all of it, any tier** — closes to agent calls at the target-gate policies:
+Supervision and elevation are human ceremonies: the reporting relation is between people, and the
+second factor proves a person is present. The supervised path — **all of it, any tier** — closes to
+agent calls. Seam verification (2026-08-13, against source) split the mechanism into three prongs,
+because the supervised surface is not one seam:
+
+**(i) The target gate must be able to see the agent.** ADR 0028's layering deliberately propagates
+nothing downstream — the catalog service today ingests no delegation claim, so no rego clause there
+could discriminate. **The wire claim is `act_chain`** (minted by the three `catalog-agent-*`
+clients' protocol mapper; the `actor` attribute the tool-gate sees is an MCP-server-internal
+derivation that never travels downstream — the proxy forwards the caller's raw bearer verbatim).
+The catalog service's `attribute-claims` config gains `act_chain` (the same additive ingestion
+mechanism as `acr`/`auth_time`; type-preserved, presence is what matters). This does not blur
+ADR 0028's line: the tool-gate still narrows and the target-gate still decides — the target-gate
+merely gains an input it may consult.
+
+**(ii) Single decisions close in rego.** The provenance-scoped deny lands in **all three** leaf
+policies (`catalog.rego` has the `denied`/`not denied` machinery — verified; `category` +
+`product` likewise):
 
 ```rego
 denied if {
     input.role_definition.attributes.provenance == "supervised"
-    is_agent_call        # presence-test: "actor" in object.keys(input.subject.attributes)
+    is_agent_call        # presence-test: "act_chain" in object.keys(input.subject.attributes)
 }
 ```
 
-Supervision and elevation are human ceremonies: the reporting relation is between people, and the
-second factor proves a person is present. The discriminator is the **presence-test** (the recorded
-`actor=false` escape: a bare truthiness test lets `actor: false` route to the wider branch). The
-clause lands in every leaf policy the supervised path traverses — `category` + `product`, and
-`catalog` **if** slice A's supervised catalog read traverses the policy on the agent path (a
-decompose-time seam check against the two-leg list implementation; the app-side leg may make the
-catalog clause moot — verified, not assumed, and the tool-gate roster's behavior for a memberless
-supervisor principal is checked the same way). Consequences, both automatic: a borrowed `aal2`
-token in an agent call still denies (this clause is not the step-up clause, so sole-blocker
-suppresses the challenge → plain 403, no TOTP treadmill for a thing that cannot TOTP); and B's
-"members structurally unaffected" discipline repeats — the clause is provenance-scoped, so a
-member's agent call cannot reach it (the agent surface's existing behavior for members is
-untouched).
+The discriminator is the **presence-test** on the `act_chain` key (the recorded `actor=false`
+escape generalizes: a bare truthiness test lets a falsy-valued claim route to the wider branch —
+presence, never truthiness).
+
+**(iii) The supervised *list* leg closes app-side.** Slice A's catalog list is the two-leg query
+(`id IN supervised` + the supervised arm's **filter** residual), and `filter` never consults
+`denied` — B's own pin — so no rego deny can reach that leg. `CatalogListAuthorizer` holds the
+subject (verified): when the subject carries the `act_chain` key, the **supervised leg is skipped** —
+reusing the existing supervised-source-outage degrade shape (agents degrade to membership-only,
+which for a pure supervisor is the empty page). One mechanism, already tested, now with a second
+trigger.
+
+Consequences, all automatic: an agent-marked call still denies even with elevated claims — the
+agent deny is not the step-up clause, so sole-blocker suppresses the challenge → plain 403, no TOTP
+treadmill for a thing that cannot TOTP (on this rig the combination is not even mintable: the agent
+clients are ROPC-only, so `act_chain` + `auth_time` cannot coexist in one token — the policy
+contract is pinned by `opa test` with a constructed input, U10). Stated honestly: a **human** `aal2`
+token used by an agent **without** the delegation claim is indistinguishable from the human at the
+target gate — the closure keys on the delegation claim, exactly as ADR 0028's model defines an
+agent call; members are structurally unaffected (every prong is
+provenance-scoped or supervised-leg-scoped — a member's agent call reaches none of them, and the
+agent surface's existing member behavior is untouched); and the tool-gate/roster is untouched (the
+roster is a hint — T6 asserts the calls deny regardless of what the roster shows for a memberless
+supervisor).
 
 ### 7. E2e ownership — the miner, the matrix, the drill
 
@@ -258,21 +299,35 @@ miner forces the cookie header. Existing runners and ROPC `mint_token()` are unt
 
 **The matrix** (runs in order; the runner restarts OPA and documents the down-first re-import):
 
-- **S1** — anna at `aal1` reads a production child → **401**, asserted on the `WWW-Authenticate`
+(Cell ids match `10-QA-TEST-CASES.md` — **E1–E7**; E9 is the miner's own contract.)
+
+- **E1** — anna at `aal1` reads a production child → **401**, asserted on the `WWW-Authenticate`
   params (`error`, `acr_values`, `max_age`) *and* the `STEP_UP_REQUIRED` body code.
-- **S2** — re-auth with `max_age` + essential `acr` → TOTP → same read → **200**; then the
+- **E2** — re-auth with `max_age` + essential `acr` → TOTP → same read → **200**; then the
   **log-grep cell**: both audit events present in the pod log.
-- **S3** — **the loop-prevention negative**: re-auth *without* `max_age` → SSO reuse → same stale
-  `auth_time` → still 401. ADR 0030 §7's "the client MUST forward max_age" as measured behavior.
-- **S4** — fingerprinting negatives: an out-of-unit supervisor on the same production catalog →
+- **E3** — **the loop-prevention negative**: runs **inside the drill's shrunk window** (below —
+  immediately after a fresh elevation the session is too young to prove anything): elevate under
+  the override, wait out the window, re-auth *without* `max_age` reusing the miner's persisted
+  **cookie jar** → SSO reuse → the same stale `auth_time` → still 401. ADR 0030 §7's "the client
+  MUST forward max_age" as measured behavior.
+- **E4** — fingerprinting negatives: an out-of-unit supervisor on the same production catalog →
   plain 403, no challenge header; elevated anna's `PUT` → plain 403.
-- **S5** — members unaffected: the owner reads production contents at plain `aal1`, no challenge.
-- **S6** — **the agent cell**: an MCP tool call carrying anna's freshest `aal2` token against
-  production (and non-production) supervised content → plain 403, no challenge (§6).
-- **The freshness drill** (agent-matrix PDP-kill style): push a temporary `step_up` data override
-  (`max_age: 5`) to OPA, wait past the window, assert the previously-elevated token now answers
-  401 again, restore via EXIT trap. Honest expiry on the wire without touching shipped defaults;
-  the window *arithmetic* (boundaries, skew) is `opa test`'s job with pinned clocks.
+- **E5** — members unaffected: the owner reads production contents at plain `aal1`, no challenge.
+- **E6** — **the agent cells**: an **agent-client** token (`act_chain` present; ROPC — never
+  elevatable, §6) in MCP tool calls against production **and** non-production supervised content →
+  plain 403, no challenge; agent `list_catalogs` → membership-only (the empty page for a pure
+  supervisor). The "elevated agent" combination is unmintable on this rig (agent clients are
+  ROPC-only) — that contract cell is U10's `opa test` with a constructed input.
+- **The freshness drill** (agent-matrix PDP-kill style): override the **leaf path** —
+  `PUT /v1/data/step_up/max_age` with body `5` (a whole-document PUT would clobber `loa`/`skew`
+  and make the 401 vacuous — OPA's data PUT is create/overwrite, not merge), run the **positive
+  control** (a fresh elevation still 200s under the override — proves `loa` survived), wait
+  **> max_age + skew = 35s**, assert the previously-elevated token now answers 401, restore by
+  restarting OPA (the EXIT trap). Honest expiry on the wire without touching shipped defaults;
+  the window *arithmetic* (boundaries, skew) is `opa test`'s job with pinned clocks. The
+  loop-prevention negative runs **inside this window** — after the override: elevate, wait out
+  the shrunk window, re-auth **without** `max_age` (SSO reuse via the miner's persisted cookie
+  jar) → the same stale `auth_time` → still 401.
 
 ## Fail-closed posture
 
@@ -309,7 +364,10 @@ The floor is deny, and elevation can only *narrow* what deny covers — never wi
   source of truth for fixture identities.
 - **Deferring the agent question** — rejected (Q9): C installs the lock on the back door; leaving
   the front door open by default is the wrong default. Revisitable as its own feature.
-- **A new ADR** — not needed (Q8): ADR 0030 §5–9 is the contract; the four grill-me refinements
+- **A rego-only freshness proof** (no drill) — rejected (Q6): the unit arithmetic alone never
+  shows an elevation *expiring on the wire*; the leaf-path data override + positive control keep
+  the drill honest at ~35s of wall-clock.
+- **A new ADR** — not needed (Q8): ADR 0030 §5–9 is the contract; the grill-me refinements
   ride a dated §Amendments note on 0030 (B's §Population precedent on 0032).
 
 ## Knowledge destination
@@ -328,10 +386,12 @@ Part 0 is the mechanism, provable without the full rig — the realm (T1, provab
 alone: boot + the probe script through TOTP), the policy (T2, `opa test`-provable incl. the window
 arithmetic and the agent deny), the envelope (T3, unit-provable + old-tests-unchanged), and the
 manager + emitter + audit + example config (T4, unit/IT-provable). Part 1 is the proof: the token
-miner (T5) and the step-up matrix with the freshness drill and the agent cell (T6, rig). **Every
+miner (T5) and the step-up matrix with the freshness drill and the agent cells (T6, rig). **Every
 fail-open code edge lands in part 0** — the `elevated` undefined-input discipline, the sole-blocker
 emission, the malformed-reason and resilient-passthrough rules, the half-formed-challenge guard —
 each covered by part 0's inline review; part 1 carries no new code edge: its review checks the
-proofs. The boundary is the deployable handoff: after part 0 the corpus and both services are green
-while a supervisor's production read is *still* a plain 403 on the rig (nothing mints an `aal2`
-token yet — the safe intermediate state); part 1 proves the round trip end to end.
+proofs. The boundary is the deployable handoff: after part 0 the corpus and both services are green, and
+the state is **safe because nothing can elevate** — no deployed client requests `acr_values=aal2`
+(ordinary logins land at LoA 1; the miner arrives in part 1), so a supervised production read
+answers its deny (401-shaped once part 0's images are deployed, 403 on pre-C images) and contents
+never open wider than B shipped; part 1 proves the round trip end to end.
