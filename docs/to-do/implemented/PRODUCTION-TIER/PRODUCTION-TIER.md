@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -9,7 +9,16 @@ tags:
 
 # PRODUCTION-TIER — the tier decides how deep oversight goes
 
-> **Status: Planning — validated, cleared to run.**
+> ✅ **SHIPPED 2026-08-13** — branch `feature/void3110/production-tier` (PR #105), T1–T6 all green,
+> orchestrated two-part autonomous run + layer-3 adversarial review (Approved with fixes —
+> [[../../../code-review/PRODUCTION-TIER-REVIEW|review note]]: 16 findings fixed in-branch, headline
+> the shadow-`env` guard + the array-shape tier deny). `./gradlew build` ✅ · `opa test` **308/308** ·
+> production-tier matrix **61 assertions, 0 failed** · supervised-scope **42 + 6, 0 failed** ·
+> Sonar clean (documented FP classes only). The operator-managed `env` tag on the governing root,
+> carried to child decisions as `root_attributes`, opens supervised **non-production** contents by
+> **direct grant** and closes **production** and **unproven** tiers; members structurally unaffected.
+> Slice C (STEP-UP-ELEVATION) is next.
+>
 > **Validated:** 2026-08-07 — mechanical + adversarial clean; 2 delta checks after 2 amendments
 > (full fan-out: 37 agents, 30 confirmed findings incl. 2 run-stoppers, all fixed; the terminal
 > delta check returned no defects).
