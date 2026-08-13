@@ -952,6 +952,72 @@
           ]
         },
         {
+          "name": "E5f \u2014 the operator's echo-merge reads the STAGING map back: env untouched by the rejected strip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{catalog_service}}/internal/bootstrap/resource-tags",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"resourceType\": \"catalog\", \"resourceId\": \"{{staging_catalog_id}}\", \"tags\": {}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// E5d re-read only E5b's catalog; E5a (strip) and E5c (assign) hit two OTHER catalogs whose",
+                  "// 'tier open' post-state is exactly what the surrounding cells expect \u2014 a partial application",
+                  "// would be silent. An empty-tags merge changes nothing and answers the CURRENT full map, so it",
+                  "// is a direct read of persisted state through the only path that may see the key.",
+                  "pm.test('E5f the echo-merge answers 200', () => pm.response.to.have.status(200));",
+                  "pm.test('E5f env is still exactly staging (the rejected strip moved nothing)', () =>",
+                  "  pm.expect(pm.response.json().env).to.eql('staging'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5g \u2014 and the UNTAGGED map: env still absent after the rejected assign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{catalog_service}}/internal/bootstrap/resource-tags",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"resourceType\": \"catalog\", \"resourceId\": \"{{untagged_catalog_id}}\", \"tags\": {}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E5g the echo-merge answers 200', () => pm.response.to.have.status(200));",
+                  "pm.test('E5g env is still ABSENT (the rejected assign moved nothing)', () => {",
+                  "  const map = pm.response.json();",
+                  "  pm.expect(map).to.not.have.property('env');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "E4a \u2014 the OPERATOR flips the staging catalog to production (in-network only)",
           "request": {
             "method": "POST",

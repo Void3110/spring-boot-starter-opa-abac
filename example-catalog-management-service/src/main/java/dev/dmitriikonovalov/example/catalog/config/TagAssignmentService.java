@@ -106,8 +106,13 @@ public class TagAssignmentService {
     }
 
     private Map<String, TagDefinitionView> applicableByKey(String resourceType, String resourceId) {
+        // The dictionary may return two definitions for one key (a global and a team shadow — the
+        // response carries no ordering guarantee). The operator-managed guard reads the flag off the
+        // collapsed entry, so the merge must be deterministic and may never drop the flag: a colliding
+        // operator-managed definition wins regardless of row order.
         return tagDefinitions.fetchApplicable(resourceType, resourceId).stream()
-                .collect(Collectors.toMap(TagDefinitionView::key, d -> d, (a, b) -> a));
+                .collect(Collectors.toMap(TagDefinitionView::key, d -> d,
+                        (a, b) -> b.isOperatorManaged() && !a.isOperatorManaged() ? b : a));
     }
 
     private static ResourceTags validateAgainst(

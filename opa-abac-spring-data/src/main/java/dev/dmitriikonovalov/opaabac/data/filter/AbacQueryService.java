@@ -73,7 +73,10 @@ public class AbacQueryService {
      * post-filter survivor rows into, so a downstream read-side consumer (action enrichment, Phase 6) reads
      * the same instance the query returned — no double-load, no attribute drift. {@code null} disables the
      * write-through entirely (byte-identical to the pre-Phase-6 behavior). Only ever <em>written</em> here;
-     * the cache is an attribute snapshot, never a verdict, and an authorization decision never reads it.
+     * the cache is an attribute snapshot, never a verdict. The decided leaf is never read back by a
+     * decision; since ADR 0032 the authorization manager does read the cache for the <em>governing
+     * root</em> (a decision-independent, decision-read memo feeding {@code root_attributes}) — one more
+     * reason implementations must stay strictly request-bound.
      */
     private final AbacResourceCache resourceCache;
 
@@ -328,8 +331,10 @@ public class AbacQueryService {
      * Write-through the post-filter survivor rows into the request-scoped {@link AbacResourceCache} (the
      * Phase-6 action-enrichment feed), returning the <em>same</em> list unchanged. A no-op when no cache is
      * wired. The rows written are exactly the ones being returned (the survivors) — denied/dropped rows are
-     * never written, keeping the cache an authorized-snapshot store consistent with the gate's allow-only
-     * write. Caches the same instance the query returned → no double-load, no attribute drift.
+     * never written, so this path only ever caches rows that passed the filter. (The gate's own write is
+     * allow-only for the decided leaf; the governing root is memoized decision-independently since
+     * ADR 0032 — see {@link AbacResourceCache}.) Caches the same instance the query returned → no
+     * double-load, no attribute drift.
      */
     private <T extends AbacResource> List<T> cacheSurvivors(List<T> survivors) {
         cacheEach(survivors);

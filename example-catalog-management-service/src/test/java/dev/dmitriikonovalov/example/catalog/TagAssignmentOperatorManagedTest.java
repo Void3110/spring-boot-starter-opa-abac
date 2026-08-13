@@ -152,4 +152,45 @@ class TagAssignmentOperatorManagedTest {
         assertThatThrownBy(() -> service.validateAsOperator(ROOT_TYPE, ROOT_ID, tags("nope", "x")))
                 .isInstanceOf(IllegalTagAssignmentException.class);
     }
+
+    // --- a colliding pair (global + team shadow) may never drop the flag --------
+    //
+    // The dictionary can return two definitions for one key with no ordering guarantee. The guard reads
+    // the flag off the collapsed entry, so the merge must keep operatorManaged=true in BOTH row orders —
+    // first-wins over unspecified SQL order was the hole (a team shadow winning silently disarmed the
+    // guard).
+
+    private static TagAssignmentService serviceWith(List<TagDefinitionView> definitions) {
+        return new TagAssignmentService(
+                new TagDefinitionClient(new ObjectMapper(), "http://unused", 100) {
+                    @Override
+                    public List<TagDefinitionView> fetchApplicable(String resourceType, String resourceId) {
+                        return definitions;
+                    }
+                });
+    }
+
+    private static final TagDefinitionView MANAGED_ENV = new TagDefinitionView(
+            "env", "ENUM", "SINGLE", List.of("production", "staging", "dev"), null, true);
+    private static final TagDefinitionView SHADOW_ENV = new TagDefinitionView(
+            "env", "STRING", "SINGLE", null, null, false);
+
+    @Test
+    void aCollidingShadowCannotDisarmTheGuardWhenTheManagedRowComesFirst() {
+        TagAssignmentService collided = serviceWith(List.of(MANAGED_ENV, SHADOW_ENV));
+        assertThatThrownBy(() -> collided.validateAndBuild(
+                        ROOT_TYPE, ROOT_ID, tags("env", "staging"), tags()))
+                .isInstanceOf(TagOperatorManagedException.class);
+    }
+
+    @Test
+    void aCollidingShadowCannotDisarmTheGuardWhenTheShadowRowComesFirst() {
+        TagAssignmentService collided = serviceWith(List.of(SHADOW_ENV, MANAGED_ENV));
+        assertThatThrownBy(() -> collided.validateAndBuild(
+                        ROOT_TYPE, ROOT_ID, tags("env", "staging"), tags()))
+                .isInstanceOf(TagOperatorManagedException.class);
+        assertThatThrownBy(() -> collided.validateAndBuild(
+                        ROOT_TYPE, ROOT_ID, Map.of(), tags("env", "staging")))
+                .isInstanceOf(TagOperatorManagedException.class);
+    }
 }

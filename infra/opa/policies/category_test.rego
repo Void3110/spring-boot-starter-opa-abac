@@ -941,3 +941,31 @@ test_tier_does_not_widen_the_read_only_ceiling if {
 		{"action": "category:update"},
 	)
 }
+
+# THE SHAPE TRAP's cardinality twin: an array-shaped env must deny exactly as the scalar does — a
+# bare scalar `==` failed OPEN on ["production"] (neither deny clause fired). A non-production array
+# stays open: the normalization must not over-close either.
+array_production_root := {"root_attributes": {"env": ["production", "staging"]}}
+
+array_non_production_root := {"root_attributes": {"env": ["staging", "dev"]}}
+
+test_tier_instance_array_production_root_denies if {
+	not category.allow with input as tier_input(tiered_supervisor_role, array_production_root)
+}
+
+test_tier_gate_array_production_root_denies if {
+	not category.allow with input as tier_gate_input(tiered_supervisor_role, array_production_root)
+}
+
+test_tier_array_non_production_root_allows if {
+	category.allow with input as tier_input(tiered_supervisor_role, array_non_production_root)
+}
+
+# The tier decision lands at the coarse gate and NEVER in the list residual: `filter` does not consult
+# `denied`, so a root_attributes predicate can never reach the SQL. Asserted on the shape a supervised
+# list actually compiles with — production root, which the gate above denies — so the two are visibly
+# decided in different places. (Mirror of the sibling's pin — per-type policies drift, so each file
+# carries its own proof rather than trusting the sibling's.)
+test_tier_never_enters_the_filter_residual if {
+	category.filter with input as tier_gate_input(tiered_supervisor_role, production_root)
+}

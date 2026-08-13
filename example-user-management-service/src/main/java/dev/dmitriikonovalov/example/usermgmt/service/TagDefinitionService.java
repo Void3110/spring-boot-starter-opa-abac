@@ -113,6 +113,17 @@ public class TagDefinitionService {
             throw new TagKeyConflictException(
                     "A tag key '" + key + "' already exists on team " + teamId);
         }
+        // A team key may shadow an ordinary global (the tag-dictionary design allows it), but never an
+        // operator-managed one: the shadow's definition would carry operatorManaged=false, and whichever
+        // definition wins the consumer-side key collapse would then decide whether the operator-managed
+        // write guard fires at all. The guarded namespace is closed to shadowing at the source.
+        tagDefinitions.findByTeamIdIsNullAndKey(key)
+                .filter(TagDefinition::isOperatorManaged)
+                .ifPresent(global -> {
+                    throw new TagKeyConflictException(
+                            "The tag key '" + key + "' is operator-managed at global scope and cannot"
+                                    + " be shadowed by a team key");
+                });
         return tagDefinitions.save(new TagDefinition(
                 UUID.randomUUID(), key, TagScope.TEAM, teamId,
                 valueType, cardinality, normalize(valueType, allowedValues), valuePattern, false));

@@ -69,6 +69,8 @@ export interface TagDefinition {
   allowedValues?: string[]
   valuePattern?: string | null
   system: boolean
+  /** Values under this key have no public write path (assign/re-value/strip → 409). */
+  operatorManaged?: boolean
 }
 
 export interface TagDefinitionRequest {

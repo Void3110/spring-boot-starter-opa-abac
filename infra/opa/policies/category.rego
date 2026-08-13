@@ -188,9 +188,25 @@ denied if {
 }
 
 # Tier proven PRODUCTION — oversight stops at the door until slice C's freshly-elevated exception.
+# Shape-tolerant on cardinality: a tag value in this corpus is a scalar string OR a string array
+# (the header contract `resource_tag_values` normalizes for), and a bare scalar `==` would fail
+# OPEN on an array-shaped env — the SHAPE TRAP's cardinality twin. `root_env_values` mirrors
+# `resource_tag_values` for the root map; an absent env leaves it undefined, which belongs to the
+# untagged/open state ({} root) or the absent clause above (no root at all), never to this one.
 denied if {
 	input.role_definition.attributes.provenance == "supervised"
-	input.resource.root_attributes.env == "production"
+	"production" in root_env_values
+}
+
+# The root's env value(s) as a set: an array tag -> the set of its elements; a scalar -> {scalar}.
+root_env_values := {v | some v in value} if {
+	value := input.resource.root_attributes.env
+	is_array(value)
+}
+
+root_env_values := {value} if {
+	value := input.resource.root_attributes.env
+	not is_array(value)
 }
 
 # ---------------------------------------------------------------------------

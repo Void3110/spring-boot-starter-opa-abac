@@ -272,4 +272,38 @@ class TagDefinitionManagementIT extends AbstractSecuredPostgresIT {
                 team.getId());
         assertThat(dup.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
+
+    // --- shadowing an operator-managed global is closed; ordinary shadowing stays open ---
+
+    @Test
+    void teamKeyCannotShadowAnOperatorManagedGlobal() {
+        Team team = team();
+        User owner = user("owner");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        var shadow = rest.exchange(
+                "/api/v1/teams/{t}/tag-definitions",
+                HttpMethod.POST,
+                AbacTestConfig.as(owner.getSubject(), enumReq("env", List.of("anything"))),
+                String.class,
+                team.getId());
+        assertThat(shadow.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(tagDefinitions.findByTeamIdAndKey(team.getId(), "env")).isEmpty();
+    }
+
+    @Test
+    void teamKeyMayStillShadowAnOrdinaryGlobal() {
+        Team team = team();
+        User owner = user("owner");
+        grant(team, owner, SystemRoles.OWNER_ID);
+
+        var shadow = rest.exchange(
+                "/api/v1/teams/{t}/tag-definitions",
+                HttpMethod.POST,
+                AbacTestConfig.as(owner.getSubject(), enumReq("region", List.of("north", "south"))),
+                TagDefinition.class,
+                team.getId());
+        assertThat(shadow.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(tagDefinitions.findByTeamIdAndKey(team.getId(), "region")).isPresent();
+    }
 }

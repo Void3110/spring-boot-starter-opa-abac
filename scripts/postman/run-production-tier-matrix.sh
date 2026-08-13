@@ -214,9 +214,20 @@ seed_contents() {  # $1 = catalog id, $2 = label -> prints "<categoryId> <produc
   printf '%s %s' "$category" "$product"
 }
 echo "==> Creating a category + product under each of the three catalogs (as the owner) ..."
-read -r STAGING_CATEGORY_ID STAGING_PRODUCT_ID <<<"$(seed_contents "$STAGING_CATALOG_ID" STAGING)"
-read -r PROD_CATEGORY_ID PROD_PRODUCT_ID <<<"$(seed_contents "$PROD_CATALOG_ID" PROD)"
-read -r UNTAGGED_CATEGORY_ID UNTAGGED_PRODUCT_ID <<<"$(seed_contents "$UNTAGGED_CATALOG_ID" UNTAGGED)"
+# Assignment-then-read, never read <<<"$(...)": a herestring feeds `read` the substitution's stdout
+# even when the subshell exit-1'd (read then returns 0 on the bare newline and errexit never fires),
+# so a failed seed would sail on into newman as a wall of 404s. The assignment form propagates the
+# substitution's exit status, and the non-empty check catches a silent empty print.
+seed_pair=""
+seed_pair="$(seed_contents "$STAGING_CATALOG_ID" STAGING)" || exit 1
+[ -n "$seed_pair" ] || { echo "ERROR: empty STAGING seed result" >&2; exit 1; }
+read -r STAGING_CATEGORY_ID STAGING_PRODUCT_ID <<<"$seed_pair"
+seed_pair="$(seed_contents "$PROD_CATALOG_ID" PROD)" || exit 1
+[ -n "$seed_pair" ] || { echo "ERROR: empty PROD seed result" >&2; exit 1; }
+read -r PROD_CATEGORY_ID PROD_PRODUCT_ID <<<"$seed_pair"
+seed_pair="$(seed_contents "$UNTAGGED_CATALOG_ID" UNTAGGED)" || exit 1
+[ -n "$seed_pair" ] || { echo "ERROR: empty UNTAGGED seed result" >&2; exit 1; }
+read -r UNTAGGED_CATEGORY_ID UNTAGGED_PRODUCT_ID <<<"$seed_pair"
 
 # --- the OPERATOR sets the tier (the only write path there is) ---------------
 # In-network, on the catalog service's published port. The third catalog is left UNTAGGED on purpose:

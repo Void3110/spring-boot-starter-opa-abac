@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,16 +40,19 @@ public class InternalBootstrapController {
     private final CategoryRepository categories;
     private final ProductRepository products;
     private final TagAssignmentService tagAssignment;
+    private final TransactionTemplate writeTx;
 
     public InternalBootstrapController(
             CatalogRepository catalogs,
             CategoryRepository categories,
             ProductRepository products,
-            TagAssignmentService tagAssignment) {
+            TagAssignmentService tagAssignment,
+            TransactionTemplate writeTx) {
         this.catalogs = catalogs;
         this.categories = categories;
         this.products = products;
         this.tagAssignment = tagAssignment;
+        this.writeTx = writeTx;
     }
 
     /**
@@ -66,16 +69,24 @@ public class InternalBootstrapController {
      * governing team resolves. Writing a <em>team-scoped</em> key on a non-root resource is out of scope:
      * the key would not resolve and the write answers the ordinary 422.
      *
+     * <p>The dictionary call (slow, retrying HTTP behind the tag {@code CallGuard}) runs <b>before</b> the
+     * write transaction — the same before-never-inside discipline as the three public writers — so a
+     * dictionary outage burns its retry budget without pinning a pooled connection or widening the
+     * stale-{@code @Version} window against a concurrent public tag write. The load-merge-flush is a
+     * short {@link TransactionTemplate} block.
+     *
      * @return the resource's resulting full tag map (so a caller can assert the merge rather than re-read)
      */
     @PostMapping("/internal/bootstrap/resource-tags")
-    @Transactional
     public ResponseEntity<Map<String, Object>> upsertResourceTags(
             @RequestBody UpsertResourceTags body) {
         UUID resourceId = parseId(body.resourceId());
-        AbstractSecuredEntity entity = load(body.resourceType(), resourceId)
-                .orElseThrow(() -> new NotFoundException(
-                        "Resource not found: " + body.resourceType() + " " + body.resourceId()));
+        // Existence pre-check (cheap, indexed) so an unknown resource stays a 404 rather than becoming
+        // whatever the dictionary says about the posted values. The write below re-loads authoritatively.
+        if (load(body.resourceType(), resourceId).isEmpty()) {
+            throw new NotFoundException(
+                    "Resource not found: " + body.resourceType() + " " + body.resourceId());
+        }
 
         Map<String, Object> posted = body.tags() == null ? Map.of() : body.tags();
 
@@ -92,18 +103,23 @@ public class InternalBootstrapController {
                 .validateAsOperator(body.resourceType(), body.resourceId(), assigned)
                 .asMap();
 
-        Map<String, Object> merged = new LinkedHashMap<>(entity.getTags().asMap());
-        posted.forEach((key, value) -> {
-            if (value == null) {
-                merged.remove(key);
-            } else {
-                merged.put(key, validated.get(key));
-            }
+        Map<String, Object> merged = writeTx.execute(status -> {
+            AbstractSecuredEntity entity = load(body.resourceType(), resourceId)
+                    .orElseThrow(() -> new NotFoundException(
+                            "Resource not found: " + body.resourceType() + " " + body.resourceId()));
+            Map<String, Object> result = new LinkedHashMap<>(entity.getTags().asMap());
+            posted.forEach((key, value) -> {
+                if (value == null) {
+                    result.remove(key);
+                } else {
+                    result.put(key, validated.get(key));
+                }
+            });
+            // The entity is managed by this short transaction: the tag change flushes on commit through
+            // dirty checking — no repository-per-type save switch, and no cast back down.
+            entity.setTags(ResourceTags.fromMap(result));
+            return result;
         });
-
-        // The entity was loaded inside this transaction, so it is managed: the tag change flushes on
-        // commit through dirty checking — no repository-per-type save switch, and no cast back down.
-        entity.setTags(ResourceTags.fromMap(merged));
         return ResponseEntity.ok(merged);
     }
 

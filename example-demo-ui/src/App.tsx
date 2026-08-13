@@ -639,6 +639,18 @@ function TagFields({
     <div className="mt-2 grid gap-1.5">
       {defs.map((def) => {
         const current = value[def.key]
+        if (def.operatorManaged) {
+          // No public write path (delta-based 409 on assign/re-value/strip): show, never edit.
+          return (
+            <div key={def.key} className="flex flex-wrap items-center gap-2">
+              <span className="w-24 text-xs font-medium text-[var(--color-muted)]">{def.key}</span>
+              <span className="text-xs text-[var(--color-muted)]">
+                {typeof current === 'string' ? current : Array.isArray(current) ? current.join(', ') : '—'}
+                {' '}(operator-managed)
+              </span>
+            </div>
+          )
+        }
         return (
           <div key={def.key} className="flex flex-wrap items-center gap-2">
             <span className="w-24 text-xs font-medium text-[var(--color-muted)]">{def.key}</span>
