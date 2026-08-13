@@ -9,7 +9,11 @@ tags:
 
 # STEP-UP-ELEVATION — a fresh second factor opens production, briefly
 
-> **Status: Planning — design settled, decomposition pending.**
+> **Status: Planning — validated, cleared to run.**
+> **Validated:** 2026-08-14 — mechanical + adversarial clean; 2 delta checks after 2 amendments
+> (full fan-out: 40 agents, 30 confirmed findings incl. 9 run-stoppers, all fixed; the terminal
+> delta check returned no defects).
+>
 > Design settled 2026-08-13 (grill-me: nine forks; [[00-DESIGN]] §Considered-and-rejected).
 >
 > Slice **C of three** in the supervisor epic (Phase 10 of [[POC-ROADMAP]]).
