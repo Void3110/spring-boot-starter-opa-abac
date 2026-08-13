@@ -40,7 +40,9 @@ services:
       - sonar_logs:/opt/sonarqube/logs
     healthcheck:
       # The API is up once /api/system/status returns "UP" (SonarQube boots in ~1-2 min).
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"' || exit 1"]
+      # curl, not wget: the sonarqube image ships /usr/bin/curl and no wget — a wget probe fails
+      # forever with "wget: not found" and the container reports unhealthy while the server is UP.
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 40
