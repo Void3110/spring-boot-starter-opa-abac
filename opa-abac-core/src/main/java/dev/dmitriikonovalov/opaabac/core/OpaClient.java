@@ -9,10 +9,17 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@link #allow(AbacContext)} — a single yes/no decision (the spine);</li>
+ *   <li>{@link #decide(AbacContext)} — the same single decision, keeping any structured
+ *       {@link DenyReason} the policy attached (ADR 0030 §6); a {@code default} that degrades to
+ *       {@code allow} with no reason;</li>
  *   <li>{@link #compile(AbacContext)} — partial evaluation: the residual conditions a row must satisfy,
  *       for list filtering (the resource is declared unknown);</li>
  *   <li>{@link #allowAll(List)} — a batch decision: N contexts → N booleans in one round-trip.</li>
  * </ul>
+ *
+ * <p><strong>Reasons are a single-decision concern.</strong> {@code compile} and {@code allowAll} stay
+ * boolean on purpose: a residual is a row predicate and a batch is an affordance list, and neither is a
+ * request a client could re-authenticate for.
  *
  * <p><strong>The two filtering methods are abstract, not {@code default}.</strong> A {@code default}
  * returning allow-all would let a custom {@code OpaClient} silently inherit a <em>fail-open</em> filter;
@@ -28,6 +35,33 @@ public interface OpaClient {
      * @return {@code true} if the policy allows the action
      */
     boolean allow(AbacContext context);
+
+    /**
+     * Evaluate a single authorization decision, keeping any <strong>structured</strong> deny reason the
+     * policy attached (ADR 0030 §6).
+     *
+     * <p><strong>Additive by default.</strong> This is a {@code default} method that delegates to
+     * {@link #allow(AbacContext)} with a {@code null} reason, so every implementation written before it
+     * existed compiles and behaves unchanged — the deliberate alternative to versioning the envelope.
+     * An implementation that can see the reason on the wire (the HTTP client) overrides it.
+     *
+     * <p><strong>A decorator MUST override this.</strong> A decorator that wraps a delegate and only
+     * overrides {@code allow} would inherit this default, which calls <em>its own</em> {@code allow} —
+     * so the delegate's reason is silently swallowed and every step-up deny degrades to a plain deny.
+     * Overriding it is not an optimisation; it is the difference between a challenge and a dead end.
+     *
+     * <p><strong>Fails closed, without inventing:</strong> every failure path returns
+     * {@link OpaDecision#deny()} — deny with a {@code null} reason. A reason is a promise that
+     * re-authenticating fixes the deny; during an outage that promise would be false and would send
+     * users into a re-authentication loop that changes nothing.
+     *
+     * @param context the ABAC context (serialized as OPA {@code input})
+     * @return the decision, never {@code null}; {@code denyReason} is {@code null} unless the policy
+     *         emitted a well-formed one
+     */
+    default OpaDecision decide(AbacContext context) {
+        return OpaDecision.of(allow(context));
+    }
 
     /**
      * Partially evaluate the policy's {@code filter} entrypoint for the given context with the

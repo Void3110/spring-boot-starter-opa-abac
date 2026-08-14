@@ -42,6 +42,54 @@ body, or missing/non-boolean field ⇒ `false`. `allow()` never throws for an OP
 logs a warning (path + status, never the token) and denies. The authorization manager adds a second
 fail-closed layer: any exception while building the context or calling OPA also denies.
 
+### The decision envelope — an optional, structured `deny_reason` (ADR 0030 §6)
+
+`result.allow` is a boolean across the client, both authorization managers and the policy convention.
+Some denies, though, are **answerable**: the subject would be allowed if they re-authenticated with a
+stronger, fresher factor. Rather than version the envelope, that case travels as an **optional,
+omitted-when-absent** `deny_reason` object beside `allow`:
+
+```jsonc
+{"allow": true}                                   // unchanged
+{"allow": false}                                  // unchanged — a plain deny
+{"allow": false,                                  // an ANSWERABLE deny
+ "deny_reason": {"type": "insufficient_user_authentication",
+                 "required_acr": "aal2", "max_age": 300}}
+```
+
+Every existing consumer keeps reading `allow` and is unaffected when the field is absent. A caller that
+wants the reason asks for it explicitly:
+
+```java
+OpaDecision decision = opaClient.decide(context);   // OpaDecision(boolean allow, DenyReason denyReason)
+if (!decision.allow() && decision.hasCompleteReason()) {
+    DenyReason reason = decision.denyReason();      // type, requiredAcr, maxAge
+}
+```
+
+`OpaClient.decide` is a **`default` method** delegating to `allow` with a `null` reason, so every
+implementation written before it existed compiles and behaves identically — the additive move, chosen
+over an envelope version deliberately (ADR 0030 §6).
+
+**Four fail-closed rules, each landing at the layer it arises:**
+
+| Situation | Result | Why |
+|---|---|---|
+| A **malformed** reason on the wire (wrong types, missing field, not an object) | plain deny, reason **dropped** | A reason whose types are not the contract is a policy the library does not understand. Types are checked by hand rather than coerced — Jackson would turn `"300"` into a window the library then advertises. |
+| A reason accompanying **`allow: true`** | allow, reason dropped | An allow is an allow; a document carrying both is contradictory. |
+| Transport failure, non-200, breaker open, retries exhausted | plain deny, **never a fabricated reason** | A reason promises "re-authenticating clears this". During an outage that promise is false, and the client would loop on a factor that changes nothing. |
+| A reason **missing any field** at the enforcement point | the ordinary 403 | See `hasCompleteReason()` — a challenge without its window is an infinite challenge loop (ADR 0030 §7). |
+
+**A decorator MUST override `decide`.** A wrapper that implements `OpaClient` and overrides only
+`allow` inherits the default — which calls the *wrapper's own* `allow` — so the delegate's reason is
+silently swallowed and every answerable deny degrades to a plain one, with nothing failing and nothing
+logged. `ResilientOpaClient` overrides it for exactly this reason, and a test asserts the call reaches
+the delegate.
+
+**Reasons are a single-decision concern.** `compile` (the list residual) and `allowAll` (the batch)
+stay boolean: a residual is a row predicate and a batch is an affordance list, and neither is a request
+a client could re-authenticate for.
+
 ## The decision backbone — `RoleDefinition` + `RoleDefinitionSupplier`
 
 Authorization is driven **primarily by the caller's role definition**, not by raw token roles:

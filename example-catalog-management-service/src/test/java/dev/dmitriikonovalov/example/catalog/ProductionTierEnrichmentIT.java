@@ -492,7 +492,7 @@ class ProductionTierEnrichmentIT {
         @Override
         public boolean allow(AbacContext context) {
             allowInputs.add(capture(context));
-            return decide(context);
+            return verdictFor(context);
         }
 
         @Override
@@ -503,14 +503,14 @@ class ProductionTierEnrichmentIT {
 
         @Override
         public List<Boolean> allowAll(List<AbacContext> contexts) {
-            return contexts.stream().map(TierStubOpaClient::decide).toList();
+            return contexts.stream().map(TierStubOpaClient::verdictFor).toList();
         }
 
         private static Captured capture(AbacContext context) {
             return new Captured(context, MAPPER.writeValueAsString(context));
         }
 
-        private static boolean decide(AbacContext context) {
+        private static boolean verdictFor(AbacContext context) {
             RoleDefinition role = context.roleDefinition();
             if (role == null) {
                 return false;

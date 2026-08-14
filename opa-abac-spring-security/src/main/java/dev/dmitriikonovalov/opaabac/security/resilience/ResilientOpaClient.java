@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.security.resilience;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import java.util.List;
 import java.util.Objects;
@@ -78,6 +79,40 @@ public final class ResilientOpaClient implements OpaClient {
             // Breaker open: the delegate was never called. Synthesize the same fail-closed value by hand.
             log.warn("OPA allow fail-closed: circuit breaker open (denying)");
             return false;
+        }
+    }
+
+    /**
+     * The single decision, keeping the delegate's structured {@link OpaDecision#denyReason()}.
+     *
+     * <h2>Why this override is mandatory, not optional</h2>
+     * {@code OpaClient.decide} is a {@code default} that delegates to {@code allow}. Without this
+     * override, this decorator would inherit that default and it would call <em>this class's own</em>
+     * {@code allow} — which returns a bare boolean — so the delegate's reason would be silently
+     * swallowed and every step-up deny in the system would degrade to a plain 403. Nothing would fail,
+     * nothing would log; the feature would simply not exist behind the decorator. A test asserts the
+     * call goes through the guard, so the override cannot be removed without a red build.
+     *
+     * <h2>Fail-closed, and never inventive</h2>
+     * Breaker-open synthesizes {@link OpaDecision#deny()} — deny with a {@code null} reason — by hand,
+     * exactly as {@link #allow} synthesizes {@code false}. Transport failures and exhausted retries need
+     * no special handling: the delegate has already swallowed them into its own {@code (false, null)}.
+     * A reason therefore <em>only</em> ever reaches a caller when OPA actually answered 200 with one,
+     * which is the whole point — a fabricated reason would promise that re-authenticating fixes an
+     * outage, and put the user on a treadmill of factors that change nothing.
+     */
+    @Override
+    public OpaDecision decide(AbacContext context) {
+        try {
+            // Same retry semantics as allow(): retry while the delegate reports the fail-closed shape
+            // (a deny). A genuine deny — with or without a reason — retries once and comes back
+            // identical, since an OPA decision is deterministic.
+            OpaDecision decision =
+                    guard.call(() -> delegate.decide(context), retryableError, d -> d == null || !d.allow());
+            return decision == null ? OpaDecision.deny() : decision;
+        } catch (CallNotPermittedException _) {
+            log.warn("OPA decide fail-closed: circuit breaker open (denying, no reason)");
+            return OpaDecision.deny();
         }
     }
 

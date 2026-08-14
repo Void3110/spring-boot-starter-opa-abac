@@ -391,7 +391,7 @@ class SupervisedListIT {
 
         @Override
         public boolean allow(AbacContext context) {
-            return decide(context);
+            return verdictFor(context);
         }
 
         /**
@@ -419,11 +419,11 @@ class SupervisedListIT {
 
         @Override
         public List<Boolean> allowAll(List<AbacContext> contexts) {
-            return contexts.stream().map(SupervisedStubOpaClient::decide).toList();
+            return contexts.stream().map(SupervisedStubOpaClient::verdictFor).toList();
         }
 
         /** The shipped semantics in miniature: READ grants view; mutations need a WRITE/TAG token. */
-        private static boolean decide(AbacContext context) {
+        private static boolean verdictFor(AbacContext context) {
             RoleDefinition role = context.roleDefinition();
             if (role == null) {
                 return false;
