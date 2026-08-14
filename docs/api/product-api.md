@@ -419,7 +419,7 @@ The RFC-7807 error body (`application/problem+json`). Required members: `status`
   instance?: string;  // the request path that produced the error
   errorCode: "ACCESS_DENIED" | "RESOURCE_NOT_FOUND" | "VALIDATION_FAILED"
            | "TAG_VALUE_ILLEGAL" | "DEPENDENCY_UNAVAILABLE" | "STATE_CONFLICT"
-           | "STEP_UP_REQUIRED";
+           | "TAG_OPERATOR_MANAGED" | "STEP_UP_REQUIRED";
   timestamp?: string; // date-time — when the error was produced (correlation)
 }
 ```

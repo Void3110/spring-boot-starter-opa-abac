@@ -7,7 +7,8 @@
 #   E1  sup-anna on a STAGING catalog's contents  -> the four child reads 200, on EXACT ids
 #   E7  ...and her list rows carry NO _actions map at all (the pinned B contract: omitted, never a
 #       fabricated all-false map — the bulk path has no root context, so every verb is false)
-#   E2  the same four on the PRODUCTION catalog   -> each 403 (a PLAIN deny; deny_reason is slice C)
+#   E2  the same four on the PRODUCTION catalog   -> each 401 + the RFC 9470 challenge +
+#       STEP_UP_REQUIRED (slice C's flip of B's plain 403 — the C-flip cells, asserted BY VALUE)
 #   E6  the catalog's own OWNER reads those same production contents -> 200, _actions present and
 #       honest (members are structurally unaffected: the tier denies are provenance-scoped)
 #   E3  the four on an UNTAGGED catalog           -> 200 (ADR 0030 §3's default, safe only while
@@ -20,9 +21,11 @@
 # E4 + E5 together are the slice: the tier moves on the very next request when — and only when — the
 # OPERATOR moves it, and nothing the supervised population can do through the API moves it at all.
 #
-# Prereq: the full user-service rig, with images carrying T1-T4:
+# Prereq: the full user-service rig, with images carrying slice C (the E2/E4 cells assert C's 401
+# shape) and the C realm (sup-anna's seeded TOTP factor — the miner computes her direct-grant otp):
+#   ./deploy.sh down                                    # so Keycloak re-imports the realm
+#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one)
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
-#   ./deploy.sh build                                   # fresh catalog image; build usermgmt explicitly
 #
 # T4 edited category.rego + product.rego (the four tier-deny clauses every cell here depends on), so
 # this runner RESTARTS THE OPA CONTAINER itself before minting tokens — `--watch` does not reliably
@@ -274,6 +277,7 @@ echo "==> newman: the production-tier matrix (E1, E7, E2, E6, E3, E5, then E4) .
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+  --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "catalog_service=$CATALOG_SERVICE" \
   --env-var "anna_token=$ANNA_TOKEN" \
   --env-var "editor_token=$EDITOR_TOKEN" \

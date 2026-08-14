@@ -479,7 +479,9 @@ extensions (`errorCode`, `timestamp`).
     | "VALIDATION_FAILED"
     | "TAG_VALUE_ILLEGAL"
     | "DEPENDENCY_UNAVAILABLE"
-    | "STATE_CONFLICT";
+    | "STATE_CONFLICT"
+    | "TAG_OPERATOR_MANAGED"
+    | "STEP_UP_REQUIRED";
   timestamp?: string; // date-time — when the error was produced (correlation)
 }
 ```

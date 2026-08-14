@@ -310,7 +310,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// The anti-vacuity cell. Every E2 assertion below is a 403, and a 403 is also what anna would",
+                  "// The anti-vacuity cell. Every E2 cell below answers 401 + the step-up challenge (the C-flip), which is also what anna would",
                   "// get if her supervised reach to THIS catalog were simply broken \u2014 the fixture bootstrap having",
                   "// half-failed, say. Root metadata stays ungated (ADR 0030 \u00a71), so a 200 here proves the role is",
                   "// resolved and the reach is live, which is what makes the four denials below mean the tier.",

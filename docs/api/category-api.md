@@ -428,6 +428,7 @@ Field-level truth is the OpenAPI spec; these are the shapes as documented there.
     | "TAG_VALUE_ILLEGAL"
     | "DEPENDENCY_UNAVAILABLE"
     | "STATE_CONFLICT"
+    | "TAG_OPERATOR_MANAGED"
     | "STEP_UP_REQUIRED";
   timestamp?: string;               // ISO-8601, when the error was produced (correlation)
 }

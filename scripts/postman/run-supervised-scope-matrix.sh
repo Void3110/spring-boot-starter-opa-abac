@@ -23,8 +23,8 @@
 #
 # Prereq: the FULL user-service rig, with images carrying T4/T5 and a realm carrying the personas:
 #   ./deploy.sh down                                    # so Keycloak re-imports the realm
+#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one)
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
-#   ./deploy.sh build                                   # fresh catalog + usermgmt images
 #
 # Both slices edited category.rego + product.rego — A's T3 (ADR 0031's confinement) and B's T4 (the
 # tier denies E6 now rides on) — so this runner RESTARTS THE OPA CONTAINER itself before minting
@@ -287,6 +287,7 @@ newman_run() {
     -e "$ENV_FILE" \
     --folder "$folder" \
     --env-var "gateway=$GATEWAY" \
+  --env-var "collection_base_url=$GATEWAY/api/v1" \
     --env-var "user_service=$USER_SERVICE" \
     --env-var "anna_token=$ANNA_TOKEN" \
     --env-var "victor_token=$VICTOR_TOKEN" \

@@ -25,8 +25,10 @@
 # level-2 flow. The realm CHANGED in this slice, so Keycloak must RE-IMPORT it — bring the rig
 # DOWN first; `up` alone leaves the old realm in the existing container:
 #   ./deploy.sh down
+#   ./deploy.sh build                          # fresh app images BEFORE the up — `up` reuses an
+#                                              # existing image, so building after leaves the pods
+#                                              # on pre-C code with nothing to tell you so
 #   ENABLE_MCP=1 ./deploy.sh up --pods 2      # force-enables OIDC + OPA + the user-service
-#   ./deploy.sh build                          # fresh catalog image; build usermgmt + mcp explicitly
 # The preflight below detects a stale realm and says so rather than failing deep in the matrix.
 # ENABLE_MCP is a superset of what the REST cells need, so the WHOLE set runs on one flavour.
 #
@@ -92,7 +94,7 @@ for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; br
 MCP_CONTAINER="${MCP_CONTAINER:-mcp}"
 "$RUNTIME" inspect "$MCP_CONTAINER" >/dev/null 2>&1 || {
   echo "ERROR: the MCP server is not running — E6 needs it. Bring the rig up with:" >&2
-  echo "         ./deploy.sh down && ENABLE_MCP=1 ./deploy.sh up --pods 2" >&2
+  echo "         ./deploy.sh down && ./deploy.sh build && ENABLE_MCP=1 ./deploy.sh up --pods 2" >&2
   exit 1; }
 
 # --- helpers -----------------------------------------------------------------
@@ -369,6 +371,7 @@ run_folder() {  # $1 folder, $2 report suffix, then extra --env-var pairs
     -e "$ENV_FILE" \
     --folder "$folder" \
     --env-var "gateway=$GATEWAY" \
+    --env-var "collection_base_url=$GATEWAY/api/v1" \
     --env-var "anna_aal1_token=$ANNA_AAL1_TOKEN" \
     --env-var "anna_aal2_token=$ANNA_AAL2_TOKEN" \
     --env-var "anna_agent_token=$ANNA_AGENT_TOKEN" \

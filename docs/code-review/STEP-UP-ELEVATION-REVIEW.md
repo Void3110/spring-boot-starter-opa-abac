@@ -88,6 +88,28 @@ findings) and five Lows**, all pre-existing, all fixed:
 | 24 (Low) | `category-api.md`'s `ProblemDetail` union omitted `STEP_UP_REQUIRED` — the unswept twin of round 1's `product-api.md` union fix | Added |
 | 25 (Low) | `scripts/postman/README.md`'s step-up row had the same up-before-rebuild sequencing | Reworded to the explicit order |
 
+## Round 4
+
+A fourth 8-lens pass (22 agents) returned **no code or policy defects** — every finding was a
+documentation/comment tail of the earlier fix classes, plus one runner-plumbing latency. All fixed:
+
+- **The up-before-build recipe survived in the three runner *headers*** (and the step-up runner's
+  MCP-preflight error message) after round 3 fixed the READMEs — the unswept comment siblings of a
+  fixed class. All reordered to down → build → up.
+- **`collection_base_url` shadowing**: the step-up collection's REST cells resolve their base URL
+  from the local environment file, so a non-default `GATEWAY` split the run (seeding/preflight on
+  one port, cells on another). The refuter sharpened the fix: collection-level variables are
+  *also* shadowed by the env file, so the override is runner-side — all three C-affected runners
+  now pass `--env-var "collection_base_url=$GATEWAY/api/v1"` (CLI wins). The same latent class
+  exists suite-wide in six pre-existing runners — spun off as its own follow-up task rather than
+  rewriting ten untouched runners here.
+- Stale B-era prose beside the C-flips: the production-tier runner header's E2/E4 lines, the
+  collection's E2pre anti-vacuity comment, and the postman README's production-tier row all still
+  described plain 403s — updated to the 401 + challenge shape.
+- The `ProblemDetail` union sweep completed to all three per-page docs: `TAG_OPERATOR_MANAGED`
+  added to category/product/catalog pages, `STEP_UP_REQUIRED` to catalog-api.md (the unions
+  mirror the spec's shared enum, which declares both).
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the
