@@ -69,7 +69,12 @@ if (!decision.allow() && decision.hasCompleteReason()) {
 
 `OpaClient.decide` is a **`default` method** delegating to `allow` with a `null` reason, so every
 implementation written before it existed compiles and behaves identically — the additive move, chosen
-over an envelope version deliberately (ADR 0030 §6).
+over an envelope version deliberately (ADR 0030 §6). **The one caveat is mocks**: a Mockito
+`mock(OpaClient.class)` does not run default methods, so a test that stubs only
+`when(client.allow(any()))` now gets `null` from `decide()` — which the gate reads as a fail-closed
+deny. Tests that mock `OpaClient` must stub `decide(...)` (e.g.
+`thenReturn(OpaDecision.of(true))`), or use a real stub class so the default runs; real
+implementations are unaffected.
 
 **Four fail-closed rules, each landing at the layer it arises:**
 

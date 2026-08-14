@@ -127,9 +127,11 @@ public class CatalogListAuthorizer {
      * The wire claim an agent client's token carries (the {@code catalog-agent-*} clients' protocol
      * mapper). Its <b>presence</b> is what marks a delegated call; the value is never interpreted here.
      * Note the name: {@code actor} is the MCP server's internal tool-gate attribute and never travels
-     * downstream, so this service would never see it.
+     * downstream, so this service would never see it. Package-visible so
+     * {@link StepUpClaimsWiringCheck} asserts at startup that the starter actually copies this claim
+     * into the subject — the two settings must never drift apart silently.
      */
-    private static final String AGENT_DELEGATION_CLAIM = "act_chain";
+    static final String AGENT_DELEGATION_CLAIM = "act_chain";
 
     private final CatalogRepository catalogs;
     private final RoleDefinitionSupplier roleDefinitionSupplier;

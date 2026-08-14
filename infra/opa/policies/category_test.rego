@@ -1077,6 +1077,25 @@ test_one_second_past_the_boundary_denies if {
 		with time.now_ns as stepup_now_ns
 }
 
+# …and the window is bounded BELOW too: `skew` tolerates a slightly-ahead IdP clock, but an
+# `auth_time` further in the future than `skew` fails closed — deleting the lower-bound conjunct
+# makes the beyond-skew case elevate forever (the one-sided `<=` is satisfied by any margin).
+test_future_auth_time_within_skew_still_elevates if {
+	category.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "aal2", "auth_time": stepup_now_s + 30},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
+test_future_auth_time_beyond_skew_denies if {
+	not category.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "aal2", "auth_time": stepup_now_s + 31},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
 # U7 — THE UNPROVEN TIER IS ELEVATION-PROOF (Amendment 2). The absent-root clause carries no
 # elevation conjunct, so an enrichment outage is closed for a freshly-elevated supervisor too:
 # elevation proves who is present, never what the tier is.
@@ -1108,7 +1127,30 @@ test_deny_reason_present_on_the_type_level_gate if {
 # not enforce (the freshness drill's leaf-path override rides exactly this).
 test_deny_reason_max_age_comes_from_data if {
 	category.deny_reason.max_age == 60 with input as tier_input(tiered_supervisor_role, production_root)
-		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "max_age": 60, "skew": 30}
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 60, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
+# …and so is its required_acr: a deployment that renames the level-2 ACR in `loa` must see the
+# challenge follow it — a hardcoded name would advertise an ACR the map no longer accepts and send
+# the client into ADR 0030 §7's re-auth loop.
+test_deny_reason_required_acr_comes_from_data if {
+	category.deny_reason.required_acr == "silver" with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "silver": 2}, "required_acr": "silver", "max_age": 300, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
+# The EMPTY-DOCUMENT off-state, pinned: with `data.step_up` gone (the state a whole-document PUT
+# clobber produces — the drill's footgun), elevation is impossible for a fresh aal2 AND the
+# sole-blocker reason is undefined — a plain deny, never a challenge advertising a window nobody
+# enforces. This is the "absent data.step_up leaves this undefined -> plain deny" contract stated
+# beside `deny_reason`, asserted rather than trusted.
+test_absent_step_up_data_closes_elevation_and_mutes_the_challenge if {
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with data.step_up as {}
+		with time.now_ns as stepup_now_ns
+	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {}
 		with time.now_ns as stepup_now_ns
 }
 

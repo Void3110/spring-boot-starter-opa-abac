@@ -84,8 +84,13 @@ public abstract class AbstractProblemAdvice {
     /**
      * The RFC 9470 challenge for a reason, or {@code null} when one must not be emitted.
      *
-     * <p>Two rejections, both of which fall back to the ordinary 403:
+     * <p>Three rejections, all of which fall back to the ordinary 403:
      * <ul>
+     *   <li><strong>An unrecognized reason type.</strong> The one type this library knows how to answer
+     *       is {@link DenyReason#INSUFFICIENT_USER_AUTHENTICATION} — a fresh second factor. Any other
+     *       well-formed type (a policy typo, a future reason class, a tampered data document) would mint
+     *       a 401 whose {@code error} code no RFC 9470 client can act on: an unanswerable challenge is
+     *       ADR 0030 §7's infinite loop wearing a different hat. An unknown reason is a plain deny.</li>
      *   <li><strong>An incomplete reason.</strong> A challenge without {@code max_age} lets the client
      *       re-authenticate against a still-valid session, receive the same stale {@code auth_time}, and
      *       be challenged again — ADR 0030 §7's infinite loop. A half-formed challenge is worse than
@@ -98,6 +103,9 @@ public abstract class AbstractProblemAdvice {
      * </ul>
      */
     private static String challengeFor(DenyReason reason) {
+        if (!DenyReason.INSUFFICIENT_USER_AUTHENTICATION.equals(reason.type())) {
+            return null;
+        }
         if (!reason.isComplete()) {
             return null;
         }

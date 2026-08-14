@@ -38,7 +38,8 @@ Two things about this rig that are easy to get wrong:
    That is why the miner needs no container on the compose network. The flip side is that
    every URL Keycloak then renders (form actions, redirects) names `keycloak:8888`, which is
    unreachable from the host — so this script rebases each one onto `--keycloak` before
-   following it. E9 asserts both halves: the `iss` value, and a 200 through the gateway.
+   following it. The step-up runner's E9 preflight asserts both halves: the `iss` value, and
+   a 200 through the gateway (with a tampered-token 401 as the control).
 """
 
 from __future__ import annotations

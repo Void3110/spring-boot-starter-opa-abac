@@ -1,8 +1,5 @@
 package dev.dmitriikonovalov.opaabac.core;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 /**
  * A <strong>structured</strong> reason accompanying a policy deny — the optional {@code deny_reason}
  * object of the decision envelope (ADR 0030 §6).
@@ -23,15 +20,16 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * object. A partial reason is not an error — it is simply not actionable, and callers must fall back
  * to their plain deny path rather than emit a half-formed challenge.
  *
+ * <p><strong>Not a Jackson type.</strong> The wire field names ({@code type}, {@code required_acr},
+ * {@code max_age}) are owned by {@code HttpOpaClient}'s manual parser — deliberately, so number
+ * coercion stays strict — and are pinned by its tests. Annotating them here too would be a second,
+ * unexercised declaration of the same contract, free to drift unnoticed.
+ *
  * @param type        the reason type, e.g. {@code insufficient_user_authentication}
  * @param requiredAcr the authentication-context class the subject must reach, e.g. {@code aal2}
  * @param maxAge      the freshness window in seconds — how recent the authentication must be
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
-public record DenyReason(
-        @JsonProperty("type") String type,
-        @JsonProperty("required_acr") String requiredAcr,
-        @JsonProperty("max_age") Integer maxAge) {
+public record DenyReason(String type, String requiredAcr, Integer maxAge) {
 
     /** The one reason type this library knows: a fresh second factor is required (ADR 0030 §6). */
     public static final String INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication";

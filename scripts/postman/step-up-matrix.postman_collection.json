@@ -201,7 +201,7 @@
                   "// Slice B answered this with a plain 403. C's sole-blocker rule fires \u2014 anna IS granted,",
                   "// her token is not elevated, and no other deny applies \u2014 so the decision carries a",
                   "// structured deny_reason and the library's advice mints the RFC 9470 challenge.",
-                  "stepUpChallenged('E1a the category LIST', pm.response, '300');"
+                  "stepUpChallenged('E1a the category LIST', pm.response, pm.environment.get('shipped_max_age'));"
                 ]
               }
             }
@@ -237,7 +237,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
-                  "stepUpChallenged('E1b the category READ', pm.response, '300');"
+                  "stepUpChallenged('E1b the category READ', pm.response, pm.environment.get('shipped_max_age'));"
                 ]
               }
             }
@@ -275,7 +275,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
-                  "stepUpChallenged('E1c the product READ', pm.response, '300');"
+                  "stepUpChallenged('E1c the product READ', pm.response, pm.environment.get('shipped_max_age'));"
                 ]
               }
             }
@@ -1301,7 +1301,7 @@
                   "// The very same bearer that answered 200 a moment ago. Nothing about the token changed \u2014",
                   "// no expiry, no revocation, no refresh \u2014 only wall-clock time passed. The freshness",
                   "// control is the only thing that can have moved.",
-                  "stepUpChallenged('E7b the elevation has expired on the wire', pm.response, '5');"
+                  "stepUpChallenged('E7b the elevation has expired on the wire', pm.response, pm.environment.get('drill_max_age'));"
                 ]
               }
             }
@@ -1346,7 +1346,7 @@
                   "// auth_time, because the SSO session answered and no authentication happened. ADR 0030",
                   "// \u00a77's 'the client MUST forward max_age', measured: a client that drops it loops forever.",
                   "// The runner asserted auth_time(stale) == auth_time(drill) shell-side before this ran.",
-                  "stepUpChallenged('E3 the SSO-reused token is still not elevated', pm.response, '5');",
+                  "stepUpChallenged('E3 the SSO-reused token is still not elevated', pm.response, pm.environment.get('drill_max_age'));",
                   "pm.test('E3 the stale token really is a NEWER token (iat advanced)', function () {",
                   "    pm.expect(Number(pm.environment.get('stale_iat')))",
                   "        .to.be.above(Number(pm.environment.get('drill_iat')));",

@@ -4,6 +4,7 @@
       "aal1": 1,
       "aal2": 2
     },
+    "required_acr": "aal2",
     "max_age": 300,
     "skew": 30
   }

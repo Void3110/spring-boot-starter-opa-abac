@@ -257,12 +257,18 @@ stepup_denied if {
 # clock is OPA's OWN (`time.now_ns`, mocked in tests to pin the window), and `skew` is explicit
 # rather than implied.
 #
+# The window is bounded on BOTH sides: `skew` tolerates clock disagreement in either direction, but
+# an `auth_time` further ahead of OPA's clock than `skew` fails closed — without the lower bound a
+# future-stamped `auth_time` (an IdP host clock running ahead) would satisfy the one-sided `<=` by an
+# arbitrary margin and stay elevated for the life of the session, refresh after refresh.
+#
 # `not is_agent_call` is defence in depth beside the agent deny above: elevation is a human ceremony,
 # so no combination of claims lets an agent-marked call elevate even if the deny were ever relaxed.
 elevated if {
 	not is_agent_call
 	data.step_up.loa[input.subject.attributes.acr] >= 2
 	(time.now_ns() / 1000000000) - input.subject.attributes.auth_time <= data.step_up.max_age + data.step_up.skew
+	input.subject.attributes.auth_time - (time.now_ns() / 1000000000) <= data.step_up.skew
 }
 
 # THE PRESENCE-TEST, not a truthiness test (the recorded escape: a bare `input.subject.attributes.x`
@@ -286,12 +292,14 @@ is_agent_call if {
 #   - an agent call gets a plain 403 (the agent deny is a `denied_other`) — no unfulfillable TOTP
 #     prompt, so no challenge loop;
 #   - an enrichment outage gets a plain 403 (the unproven clause is a `denied_other`).
-# `max_age` comes from the same data the check uses, so the challenge can never advertise a window
-# the policy does not enforce; `required_acr` names the level-2 ACR of the realm's `acr.loa.map`,
-# which `data.step_up.loa` mirrors. An absent `data.step_up` leaves this undefined -> plain deny.
+# `max_age` AND `required_acr` come from the same data the check uses, so the challenge can never
+# advertise a window the policy does not enforce — nor an ACR name the `loa` map no longer accepts
+# (a literal here would survive a level-2 rename in `data.step_up.loa` and send the client into the
+# §7 re-auth loop: challenged with a name that never maps to level 2, elevates nothing, challenged
+# again). An absent `data.step_up` (or a missing key) leaves this undefined -> plain deny.
 deny_reason := {
 	"type": "insufficient_user_authentication",
-	"required_acr": "aal2",
+	"required_acr": data.step_up.required_acr,
 	"max_age": data.step_up.max_age,
 } if {
 	stepup_denied

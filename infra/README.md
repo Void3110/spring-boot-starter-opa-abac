@@ -363,7 +363,13 @@ Slice C opens the production tier behind a **fresh second factor**, so the realm
 > **One freshness window, stated twice.** The level-2 condition's **max age (300 s)** and the policy
 > data's **`step_up.max_age` (300 s, `infra/opa/policies/step_up.json`)** are the *same* window. Both
 > are JSON-hosted values and JSON holds no comments, so this table is the cross-reference: **change one,
-> change the other.** The `skew` (30 s) is decision-side only.
+> change the other.** The `skew` (30 s) is decision-side only. The e2e side follows the data, not a
+> copy: the step-up matrix's challenge cells read the window off the live `data.step_up` (the runner
+> passes `shipped_max_age`/`drill_max_age` into the collection) — but
+> `scripts/postman/production-tier-matrix.postman_collection.json`'s seven C-flip cells assert the
+> challenge **literally** (`max_age="300"`), so a window change must update those cells too. The same
+> goes for `step_up.required_acr` (`aal2`): the policy's challenge reads it from data, and the same
+> seven cells plus the realm's `acr.loa.map` name it literally.
 
 Two non-obvious things, both measured on Keycloak 26.3.2 during T1 and worth keeping:
 

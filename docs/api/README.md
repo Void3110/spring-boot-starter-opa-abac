@@ -103,7 +103,7 @@ attempt to write an illegal tag value on the catalog service:
 generated client stays typed. The two services have overlapping-but-distinct vocabularies:
 
 - **Catalog service:** `ACCESS_DENIED`, `RESOURCE_NOT_FOUND`, `VALIDATION_FAILED`, `TAG_VALUE_ILLEGAL`,
-  `DEPENDENCY_UNAVAILABLE`, `STATE_CONFLICT`.
+  `DEPENDENCY_UNAVAILABLE`, `STATE_CONFLICT`, `STEP_UP_REQUIRED`.
 - **User-management service:** `ACCESS_DENIED`, `RESOURCE_NOT_FOUND`, `VALIDATION_FAILED`,
   `ROLE_SUBSET_VIOLATION`, `TEAM_TARGET_EXISTS`, `MEMBERSHIP_CONFLICT`, `ROLE_CODE_CONFLICT`,
   `ROLE_IMMUTABLE`, `TAG_KEY_CONFLICT`, `TAG_DEFINITION_IMMUTABLE`, `TAG_DEFINITION_INVALID`,
@@ -178,6 +178,7 @@ The set both services draw from, and what each means here:
 | **201 Created** | A create succeeded; the body is the new resource. |
 | **204 No Content** | A delete or a state-only mutation (e.g. `transfer-ownership`) succeeded; no body. |
 | **400 Bad Request** | Malformed or out-of-bounds request — `VALIDATION_FAILED`. Includes pagination bounds and the all-or-nothing filter-pair rules. |
+| **401 Unauthorized** | Step-up only (catalog reads, RFC 9470) — `STEP_UP_REQUIRED`: authentication freshness is the sole blocker; the `WWW-Authenticate` header carries the challenge that clears it. |
 | **403 Forbidden** | The ABAC decision denied the action — `ACCESS_DENIED`. |
 | **404 Not Found** | The addressed resource does not exist (or is not visible) — `RESOURCE_NOT_FOUND`. |
 | **409 Conflict** | A uniqueness/state conflict (user-mgmt only): e.g. `TEAM_TARGET_EXISTS`, `MEMBERSHIP_CONFLICT`, `ROLE_CODE_CONFLICT`, `TAG_KEY_CONFLICT`, or the `*_IMMUTABLE` edits. |

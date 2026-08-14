@@ -348,6 +348,21 @@ class StepUpDecisionAndChallengeTest {
         }
     }
 
+    @Test // an unrecognized reason type → the plain 403. A 401 whose error code no client can act on
+    void unknownReasonTypeFallsBackToForbidden() { // is the §7 loop wearing a different hat.
+        List<DenyReason> unknown = List.of(
+                new DenyReason("insufficient_wizardry", "aal2", 300),
+                new DenyReason("Insufficient_User_Authentication", "aal2", 300)); // case is significant
+
+        for (DenyReason reason : unknown) {
+            ResponseEntity<ProblemDetail> response =
+                    render(new StepUpRequiredDecision(reason, "category", "k-1", "c-1"));
+            assertThat(response.getStatusCode()).as("reason: %s", reason).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
+            assertThat(response.getBody().errorCode()).isEqualTo("ACCESS_DENIED");
+        }
+    }
+
     @Test // a parameter that cannot be safely quoted → the plain 403, never a spliced header
     void unquotableParametersFallBackToForbidden() {
         List<DenyReason> hostile = List.of(

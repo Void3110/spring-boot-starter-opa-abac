@@ -104,11 +104,16 @@ public final class ResilientOpaClient implements OpaClient {
     @Override
     public OpaDecision decide(AbacContext context) {
         try {
-            // Same retry semantics as allow(): retry while the delegate reports the fail-closed shape
-            // (a deny). A genuine deny — with or without a reason — retries once and comes back
-            // identical, since an OPA decision is deterministic.
-            OpaDecision decision =
-                    guard.call(() -> delegate.decide(context), retryableError, d -> d == null || !d.allow());
+            // Retry semantics: a reasonless deny is indistinguishable from the delegate's swallowed
+            // failure, so it retries like allow()'s false. A deny CARRYING a reason is provably a real
+            // 200 answer (the delegate only builds one there) — never the sentinel — so it is not
+            // retried, exactly as allowAll() refuses to retry the distinguishable MIXED block:
+            // retrying a deterministic answer buys nothing and taxes the step-up hot path (every
+            // unelevated supervisor's challenge) with an extra OPA hop plus an on-thread backoff.
+            OpaDecision decision = guard.call(
+                    () -> delegate.decide(context),
+                    retryableError,
+                    d -> d == null || (!d.allow() && d.denyReason() == null));
             return decision == null ? OpaDecision.deny() : decision;
         } catch (CallNotPermittedException _) {
             log.warn("OPA decide fail-closed: circuit breaker open (denying, no reason)");

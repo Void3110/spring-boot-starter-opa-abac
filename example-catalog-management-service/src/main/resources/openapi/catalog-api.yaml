@@ -150,6 +150,8 @@ paths:
                 $ref: '#/components/schemas/CategoryPage'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -195,6 +197,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -257,6 +261,8 @@ paths:
                 $ref: '#/components/schemas/ProductPage'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
@@ -299,6 +305,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -396,6 +404,25 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
     Forbidden:
       description: Access denied
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: >-
+        Step-up authentication required (RFC 9470) — the caller is authorized except for
+        authentication freshness: re-authenticating at the challenged ACR within the challenged
+        window turns this deny into an allow. The body carries `errorCode: STEP_UP_REQUIRED`; the
+        `WWW-Authenticate` header carries the machine-readable challenge. Emitted only on the
+        supervised production-tier read path; every other denial stays `403`.
+      headers:
+        WWW-Authenticate:
+          description: >-
+            The RFC 9470 challenge, e.g. `Bearer error="insufficient_user_authentication",
+            error_description="...", acr_values="aal2", max_age="300"`. Its parameters come from
+            the policy's deny reason, never from a service-local copy.
+          schema:
+            type: string
       content:
         application/problem+json:
           schema:

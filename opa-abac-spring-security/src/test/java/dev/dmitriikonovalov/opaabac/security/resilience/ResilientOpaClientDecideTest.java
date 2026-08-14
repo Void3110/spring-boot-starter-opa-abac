@@ -100,6 +100,19 @@ class ResilientOpaClientDecideTest {
         assertThat(delegate.decideCalls.get()).as("the sentinel was retried").isEqualTo(2);
     }
 
+    @Test // a REASON-CARRYING deny is a proven 200 answer, never the sentinel — it is NOT retried
+    void decide_reasonCarryingDenyIsNotRetried() { // (allowAll()'s MIXED discipline, applied here)
+        RecordingClient delegate = new RecordingClient(new OpaDecision(false, STEP_UP));
+        ResilientOpaClient client = new ResilientOpaClient(delegate, new RetryingGuard(3));
+
+        OpaDecision decision = client.decide(context());
+
+        assertThat(decision).isEqualTo(new OpaDecision(false, STEP_UP));
+        assertThat(delegate.decideCalls.get())
+                .as("a deterministic real answer is asked for exactly once")
+                .isEqualTo(1);
+    }
+
     @Test // a delegate that answers null cannot make the decorator NPE its way past the deny
     void decide_nullFromTheGuardIsADeny() {
         ResilientOpaClient client = new ResilientOpaClient(

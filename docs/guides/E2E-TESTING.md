@@ -169,10 +169,13 @@ Three gotchas are handled inside the script, each of which reads as a different 
   carry it, the miner **aborts** rather than printing an `aal1` token — otherwise a silent
   degradation would make a step-up *deny* cell pass for the wrong reason.
 
-Its contract is pinned by the step-up matrix's **E9** cell: `aal1` + numeric `auth_time`; `aal2`
-through the TOTP step with a fresh `auth_time`; `--no-max-age` on the same jar returning the
-**same** `auth_time` with an advanced `iat`; and a minted token reaching a 200 through the gateway
-(with a tampered-token 401 as the control, so the 200 is not a bypass).
+Its contract is pinned by the step-up **runner's preflight** (`run-step-up-matrix.sh` — the E9
+block plus the dual-identity checks; the original in-ticket check was a throwaway): `aal1` +
+numeric `auth_time`; `aal2` through the TOTP step with a fresh `auth_time`; **issuer parity** with
+the in-network mints (APISIX validates the signature, not `iss`, so this is the one place a
+`DEFAULT_ISSUER` regression would be caught); and a minted token reaching a 200 through the gateway
+with a tampered-token 401 as the control, so the 200 is not a bypass. The `--no-max-age` SSO-reuse
+half (the **same** `auth_time` back with an advanced `iat`) is measured by the drill's E3 cell.
 
 ## Running it
 

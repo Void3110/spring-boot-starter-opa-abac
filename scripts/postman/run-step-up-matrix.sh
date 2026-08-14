@@ -217,6 +217,42 @@ done
 echo "  acr aal1/aal2 confirmed on anna's pair; act_chain present on the agent token and absent"
 echo "  from every human one; auth_time absent from both ROPC tokens (structural, ADR 0030 §Context)."
 
+# E9 — the miner's contract, pinned here (the in-ticket check was a throwaway; this preflight is
+# the permanent consumer). Two halves the claims checks above cannot see:
+#   (d) ISSUER PARITY — the miner connects to the HOST port but presents the in-network authority,
+#       so its token must carry the same `iss` every in-network ROPC token does. APISIX validates
+#       the signature, not `iss` (measured), so a DEFAULT_ISSUER or Host-header regression here
+#       would be silent against THIS gateway and only surface against a stricter validator.
+#   (e) THE GATEWAY ROUND TRIP + THE TAMPER CONTROL — a minted token reaches a 200 through the
+#       gateway, and the same token with a corrupted signature answers 401: the 200 is the token
+#       being accepted, not the gateway waving everything through.
+EXPECTED_ISS="${EXPECTED_ISS:-${KEYCLOAK_TOKEN_URL%/protocol/openid-connect/token}}"
+[ "$(token_claim "$ANNA_AAL1_TOKEN" iss)" = "$EXPECTED_ISS" ] || {
+  echo "ERROR: the miner's token carries iss='$(token_claim "$ANNA_AAL1_TOKEN" iss)'," >&2
+  echo "       expected '$EXPECTED_ISS' (issuer parity with the in-network mints — E9d)." >&2
+  exit 1; }
+gateway_status() {  # $1 bearer -> the status code of an authenticated list through the gateway
+  curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $1" "$GATEWAY/api/v1/catalogs"
+}
+[ "$(gateway_status "$ANNA_AAL1_TOKEN")" = "200" ] || {
+  echo "ERROR: the miner's token did not reach a 200 through the gateway (E9e)." >&2; exit 1; }
+# Corrupt the FIRST character of the signature segment, never the last: the final base64url
+# sextet carries padding bits beyond the signature's byte length, so flipping the last character
+# can decode to the IDENTICAL bytes and the "tampered" token verifies fine (measured — the control
+# then fails against a perfectly healthy gateway). The first sextet is fully significant.
+SIG_PART="${ANNA_AAL1_TOKEN##*.}"
+HEAD_PART="${ANNA_AAL1_TOKEN%.*}"
+case "$SIG_PART" in
+  A*) TAMPERED_TOKEN="$HEAD_PART.B${SIG_PART#?}" ;;
+  *)  TAMPERED_TOKEN="$HEAD_PART.A${SIG_PART#?}" ;;
+esac
+[ "$(gateway_status "$TAMPERED_TOKEN")" = "401" ] || {
+  echo "ERROR: a signature-corrupted token was NOT refused by the gateway — the E9e 200 above" >&2
+  echo "       proves nothing. The gateway's JWT validation is off or misrouted." >&2
+  exit 1; }
+echo "  E9: iss parity confirmed ($EXPECTED_ISS); gateway 200 on the minted token; 401 on the"
+echo "  tamper control."
+
 ANNA_SUB="$(token_claim "$ANNA_AAL1_TOKEN" sub)"
 EDITOR_SUB="$(token_claim "$EDITOR_TOKEN" sub)"
 
@@ -344,6 +380,8 @@ run_folder() {  # $1 folder, $2 report suffix, then extra --env-var pairs
     --env-var "open_catalog_id=$OPEN_CATALOG_ID" \
     --env-var "open_category_id=$OPEN_CATEGORY_ID" \
     --env-var "open_product_id=$OPEN_PRODUCT_ID" \
+    --env-var "shipped_max_age=$SHIPPED_MAX_AGE" \
+    --env-var "drill_max_age=$DRILL_MAX_AGE" \
     "$@" \
     --reporter-cli \
     --reporter-json-export "$REPORT_DIR/$RUN_ID/step-up-matrix-$suffix.json"
@@ -355,19 +393,25 @@ run_folder "Matrix" matrix
 # --- E2's second half: both audit events on the wire path --------------------
 # The pool round-robins, so the challenge and the elevated read can land on different pods; grep all
 # of them. This asserts the emission POINTS exist in a live process, which no unit test can.
-echo "==> E2 (audit): grepping the catalog pods' opa.abac.audit channel ..."
+# SCOPED TO THIS RUN: the pods outlive repeat matrix runs (`docker logs` reads since container
+# start), so a bare event-name grep would be satisfied by a PREVIOUS run's lines — and would keep
+# passing with the emission points deleted. The category id is freshly created every run, and both
+# events carry it as resourceId, so filtering by it pins the assertion to this run's emissions.
+echo "==> E2 (audit): grepping the catalog pods' opa.abac.audit channel (this run's lines only) ..."
 audit_log=""
 for pod in $CATALOG_PODS; do
   audit_log="$audit_log$("$RUNTIME" logs "$pod" 2>&1 | grep 'opa.abac.audit' || true)"$'\n'
 done
+run_audit_log="$(printf '%s' "$audit_log" | grep "$PROD_CATEGORY_ID" || true)"
 for event in STEP_UP_CHALLENGED SUPERVISED_PRODUCTION_READ; do
-  printf '%s' "$audit_log" | grep -q "$event" || {
-    echo "ERROR: the audit event $event never reached opa.abac.audit on any catalog pod." >&2
+  printf '%s' "$run_audit_log" | grep -q "$event" || {
+    echo "ERROR: the audit event $event never reached opa.abac.audit on any catalog pod" >&2
+    echo "       for THIS run's category ($PROD_CATEGORY_ID)." >&2
     exit 1; }
-  echo "  $event present"
+  echo "  $event present (this run's category $PROD_CATEGORY_ID)"
 done
 # The challenge event must NOT carry the claims the subject does not have at challenge time.
-if printf '%s' "$audit_log" | grep 'STEP_UP_CHALLENGED' | grep -q 'authTime'; then
+if printf '%s' "$run_audit_log" | grep 'STEP_UP_CHALLENGED' | grep -q 'authTime'; then
   echo "ERROR: STEP_UP_CHALLENGED carries authTime — the subject is precisely NOT elevated there." >&2
   exit 1
 fi

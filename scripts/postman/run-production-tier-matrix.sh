@@ -89,6 +89,11 @@ mint_token() {   # $1 user $2 pass [$3 client $4 secret $5 otp]
 # RFC 6238 parameters live in exactly one place. Keycloak also refuses a code it has already
 # consumed, hence the next-window retry.
 MINER="${MINER:-$SELF_DIR/mint-code-flow-token.py}"
+# The miner preflight (mirrors run-step-up-matrix.sh): without it a missing/non-executable miner
+# yields an empty otp inside the command substitution (errexit does not fire there), burns the
+# three retry windows, and dies ~93s later on the "stale realm" message — the wrong diagnosis.
+command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (the token miner)." >&2; exit 1; }
+[ -x "$MINER" ] || { echo "ERROR: $MINER not found or not executable." >&2; exit 1; }
 mint_anna_token() {   # [$1 client $2 secret]
   local client="${1:-$CLIENT_ID}" secret="${2:-$CLIENT_SECRET}" token=""
   for _ in 1 2 3; do
