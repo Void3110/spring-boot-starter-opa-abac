@@ -95,6 +95,33 @@ denied if {
 }
 
 # ---------------------------------------------------------------------------
+# ADR 0030 Amendment 4 (slice C) — THE SUPERVISED PATH IS HUMAN-ONLY.
+#
+# Supervision is a human ceremony: the reporting relation is between people. An agent-marked call is
+# refused on the supervised path here too — the root type carries no tier (that lives on the
+# children), so this file gets the agent deny and nothing else: no `elevated`, no `stepup_denied`, no
+# `deny_reason`. A catalog read is metadata-only (ADR 0030 §1) and is never the sensitive act, so
+# there is nothing here a second factor would open and nothing to challenge for.
+#
+# Provenance-scoped, exactly like the child files': a MEMBER's agent call cannot reach this clause,
+# so the agent surface's existing member behaviour (ADR 0028) is untouched, as is the tool-gate —
+# the tool-gate narrows, the target-gate decides, and this is the target gate gaining an input.
+denied if {
+	input.role_definition.attributes.provenance == "supervised"
+	is_agent_call
+}
+
+# THE PRESENCE-TEST, not a truthiness test (the recorded escape: a bare reference is a truthiness
+# test and Rego's only falsy value is `false`, so `act_chain: false` would leave the rule undefined
+# and route the call to the wider human branch). Testing the KEY makes every value shape — `false`,
+# `[]`, `""`, `null`, `0` — an agent call. `act_chain` is the WIRE claim the `catalog-agent-*`
+# clients' protocol mapper mints; `actor` is the MCP server's internal tool-gate attribute and never
+# travels downstream.
+is_agent_call if {
+	"act_chain" in object.keys(input.subject.attributes)
+}
+
+# ---------------------------------------------------------------------------
 # Tag-based grant (the Phase-4.5 match, ported from category.rego in Phase 5.97).
 # ---------------------------------------------------------------------------
 

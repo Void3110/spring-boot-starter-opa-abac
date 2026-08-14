@@ -969,3 +969,258 @@ test_tier_array_non_production_root_allows if {
 test_tier_never_enters_the_filter_residual if {
 	category.filter with input as tier_gate_input(tiered_supervisor_role, production_root)
 }
+
+# --- STEP-UP ELEVATION (ADR 0030 §5–7 + Amendments 1/2/4) — U1–U11 ----------------------------
+#
+# Every window case runs on a PINNED clock (`with time.now_ns as …`), so the boundary is arithmetic
+# rather than wall-clock luck. `data.step_up` comes from `step_up.json` unless a case overrides it —
+# and one case deliberately does, to prove the reason's `max_age` is READ from data rather than
+# restated anywhere.
+
+stepup_now_s := 1786000000
+
+stepup_now_ns := 1786000000000000000
+
+# The tier fixtures' subject, patched with a claims state. The tier fixtures themselves carry NO
+# `subject.attributes` at all, which is why every pre-existing production-deny case above stays green:
+# no claims -> `elevated` undefined -> the deny holds.
+elev_input(role_def, root_state, attrs) := object.union(
+	tier_input(role_def, root_state),
+	{"subject": {"id": "u1", "roles": [], "attributes": attrs}},
+)
+
+elev_gate_input(role_def, root_state, attrs) := object.union(
+	tier_gate_input(role_def, root_state),
+	{"subject": {"id": "u1", "roles": [], "attributes": attrs}},
+)
+
+# max_age 300 + skew 30 = a 330-second window.
+fresh_aal2 := {"acr": "aal2", "auth_time": stepup_now_s - 10}
+
+stale_aal2 := {"acr": "aal2", "auth_time": stepup_now_s - 3600}
+
+boundary_aal2 := {"acr": "aal2", "auth_time": stepup_now_s - 330}
+
+past_boundary_aal2 := {"acr": "aal2", "auth_time": stepup_now_s - 331}
+
+# U1 — no `acr` claim at all: the LoA lookup is undefined, so `elevated` is, so the deny holds.
+test_elevation_undefined_without_acr if {
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, {"auth_time": stepup_now_s - 10})
+		with time.now_ns as stepup_now_ns
+}
+
+# U2 — `acr: aal2` but no `auth_time`: the arithmetic is undefined, so freshness is unproven.
+test_elevation_undefined_without_auth_time if {
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, {"acr": "aal2"})
+		with time.now_ns as stepup_now_ns
+}
+
+# U3 — an `acr` the LoA map does not name is not a level, and a mapped level BELOW 2 is not enough.
+test_elevation_undefined_on_unmapped_acr if {
+	not category.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "gold", "auth_time": stepup_now_s - 10},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
+test_elevation_denied_on_acr_below_level_two if {
+	not category.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "aal1", "auth_time": stepup_now_s - 10},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
+# The same fail-closed floor for a TYPE-COERCED auth_time — the trap a `to_number` "fix" would open.
+test_elevation_undefined_on_non_numeric_auth_time if {
+	not category.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "aal2", "auth_time": "1786000000"},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
+# U4 — THE HEADLINE: a fresh aal2 opens the production tier, on the instance shape AND the coarse
+# type-level gate. This is the ONLY clause elevation narrows.
+test_fresh_aal2_opens_production_instance if {
+	category.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+test_fresh_aal2_opens_production_gate if {
+	category.allow with input as elev_gate_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+# …and on the array-shaped env too — the cardinality twin must not become an elevation hole.
+test_fresh_aal2_opens_array_shaped_production if {
+	category.allow with input as elev_input(tiered_supervisor_role, array_production_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+# U5 — a stale `auth_time` denies: the elevation expires on its own, and a refresh cannot launder it
+# (the refreshed token carries the SAME auth_time — measured on the rig, ADR 0030 §Context).
+test_stale_auth_time_denies if {
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, stale_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+# U6 — the window boundary is inclusive: exactly max_age + skew allows, one second past denies.
+test_window_boundary_is_inclusive if {
+	category.allow with input as elev_input(tiered_supervisor_role, production_root, boundary_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+test_one_second_past_the_boundary_denies if {
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, past_boundary_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+# U7 — THE UNPROVEN TIER IS ELEVATION-PROOF (Amendment 2). The absent-root clause carries no
+# elevation conjunct, so an enrichment outage is closed for a freshly-elevated supervisor too:
+# elevation proves who is present, never what the tier is.
+test_unproven_tier_stays_closed_for_the_elevated if {
+	not category.allow with input as elev_input(tiered_supervisor_role, absent_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+	not category.allow with input as elev_gate_input(tiered_supervisor_role, absent_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+# U8 — THE SOLE-BLOCKER `deny_reason` MATRIX (Amendment 1).
+#
+# PRESENT: supervised + production + not elevated + granted + no other deny.
+test_deny_reason_present_when_step_up_is_the_sole_blocker if {
+	category.deny_reason == {
+		"type": "insufficient_user_authentication",
+		"required_acr": "aal2",
+		"max_age": 300,
+	} with input as tier_input(tiered_supervisor_role, production_root)
+		with time.now_ns as stepup_now_ns
+}
+
+test_deny_reason_present_on_the_type_level_gate if {
+	category.deny_reason.type == "insufficient_user_authentication" with input as tier_gate_input(tiered_supervisor_role, production_root)
+		with time.now_ns as stepup_now_ns
+}
+
+# …and its max_age is READ FROM DATA, so the challenge can never advertise a window the policy does
+# not enforce (the freshness drill's leaf-path override rides exactly this).
+test_deny_reason_max_age_comes_from_data if {
+	category.deny_reason.max_age == 60 with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "max_age": 60, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — an ELEVATED subject has nothing to be challenged for.
+test_no_deny_reason_when_already_elevated if {
+	not category.deny_reason with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — a WRITE verb: not `granted`, so the read-only ceiling answers plainly. A challenge here
+# would promise that a second factor unlocks a write, which it never does.
+test_no_deny_reason_for_a_write_verb if {
+	not category.deny_reason with input as object.union(
+		elev_input(tiered_supervisor_role, production_root, fresh_aal2),
+		{"action": "category:update"},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — a MEMBER: the provenance conjunct means no membership decision can reach the clause.
+test_no_deny_reason_for_a_member if {
+	not category.deny_reason with input as tier_input(tiered_member_role, production_root)
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — a non-production tier raises no step-up deny to explain.
+test_no_deny_reason_on_staging_or_untagged_roots if {
+	not category.deny_reason with input as tier_input(tiered_supervisor_role, staging_root)
+		with time.now_ns as stepup_now_ns
+	not category.deny_reason with input as tier_input(tiered_supervisor_role, untagged_root)
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — an UNPROVEN tier: the outage deny is a `denied_other`, so the answer is a plain 403 and
+# never a challenge the second factor could not satisfy.
+test_no_deny_reason_during_an_enrichment_outage if {
+	not category.deny_reason with input as elev_input(tiered_supervisor_role, absent_root, {"acr": "aal1", "auth_time": stepup_now_s - 10})
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — ANOTHER DENY FIRES: an explicit `abac_deny` on the leaf is a `denied_other`, so the
+# subject is not "exactly one elevation away from allow" and gets no challenge.
+test_no_deny_reason_when_another_deny_fires if {
+	not category.deny_reason with input as object.union(
+		tier_input(tiered_supervisor_role, production_root),
+		{"resource": {"attributes": {"abac_deny": true}}},
+	)
+		with time.now_ns as stepup_now_ns
+}
+
+# U9 — THE AGENT DENY AND ITS PRESENCE-TEST (Amendment 4). Supervised + an `act_chain` KEY denies at
+# EVERY tier, and the discriminator is the key's presence, never its truthiness.
+agent_claims := {"act_chain": ["agent-readonly"]}
+
+test_agent_call_denied_on_every_tier if {
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, agent_claims)
+	not category.allow with input as elev_input(tiered_supervisor_role, staging_root, agent_claims)
+	not category.allow with input as elev_input(tiered_supervisor_role, untagged_root, agent_claims)
+	not category.allow with input as elev_input(tiered_supervisor_role, absent_root, agent_claims)
+	not category.allow with input as elev_gate_input(tiered_supervisor_role, untagged_root, agent_claims)
+}
+
+# THE RECORDED ESCAPE: a bare truthiness test would let `act_chain: false` through to the human
+# branch. Every falsy/empty shape must still be an agent call.
+test_agent_presence_test_survives_falsy_claim_values if {
+	every value in [false, [], "", 0, null] {
+		not category.allow with input as elev_input(
+			tiered_supervisor_role, untagged_root,
+			{"act_chain": value},
+		)
+	}
+}
+
+# …and a MEMBER's agent call is untouched: every clause is provenance-scoped, so the agent surface's
+# existing member behaviour (ADR 0028) cannot be reached from here.
+test_member_agent_call_unaffected if {
+	category.allow with input as elev_input(tiered_member_role, untagged_root, agent_claims)
+	category.allow with input as elev_input(tiered_member_role, production_root, agent_claims)
+}
+
+# U10 — AGENTS NEVER SEE A CHALLENGE, on a deliberately CONSTRUCTED input: on the rig this token is
+# unmintable (the agent clients are ROPC-only, so `act_chain` and `auth_time` cannot coexist), which
+# is exactly why the contract is pinned here instead of in a matrix cell. The agent deny is a
+# `denied_other`, so the sole-blocker rule suppresses the reason — no TOTP treadmill for a caller
+# that cannot TOTP.
+test_agent_with_fresh_aal2_denied_and_never_challenged if {
+	agent_elevated := object.union(fresh_aal2, agent_claims)
+	not category.allow with input as elev_input(tiered_supervisor_role, production_root, agent_elevated)
+		with time.now_ns as stepup_now_ns
+	not category.deny_reason with input as elev_input(tiered_supervisor_role, production_root, agent_elevated)
+		with time.now_ns as stepup_now_ns
+}
+
+# Nothing elevation- or agent-related may enter the residual: `filter` still answers TRUE on the very
+# inputs the gate denies, so the two are visibly decided in different places (B's pin, re-asserted
+# against BOTH of C's new discriminators).
+test_elevation_and_agent_never_enter_the_filter_residual if {
+	category.filter with input as elev_gate_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+	category.filter with input as elev_gate_input(tiered_supervisor_role, production_root, agent_claims)
+}
+
+# …and the defence-in-depth conjunct inside `elevated` itself is asserted DIRECTLY, not only through
+# `allow`: the agent deny already closes every path, so a test that went through `allow` would stay
+# green if the conjunct were deleted (measured — that mutation caught nothing). Elevation is a human
+# ceremony, and this is the rule that says so.
+test_elevation_is_a_human_ceremony if {
+	not category.elevated with input as elev_input(
+		tiered_supervisor_role, production_root,
+		object.union(fresh_aal2, agent_claims),
+	)
+		with time.now_ns as stepup_now_ns
+	category.elevated with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with time.now_ns as stepup_now_ns
+}

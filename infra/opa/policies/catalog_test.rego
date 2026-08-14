@@ -553,3 +553,62 @@ test_bulk_empty if {
 	result := catalog.bulk with input as {"items": []}
 	result == []
 }
+
+# --- THE SUPERVISED PATH IS HUMAN-ONLY (ADR 0030 Amendment 4, slice C) — U9 --------------------
+#
+# The root type carries no tier (that lives on the children, category.rego/product.rego), so this
+# file gets ONE new clause: the provenance-scoped agent deny. No `elevated`, no `deny_reason` — a
+# catalog read is metadata-only and is never the sensitive act.
+
+supervised_catalog_role := {
+	"code": "supervisor-readonly",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {"catalog": ["READ"]},
+}
+
+member_catalog_role := {
+	"code": "catalog-owner",
+	"attributes": {"provenance": "membership"},
+	"permissions": {"catalog": ["READ"]},
+}
+
+agent_catalog_input(role_def, subject_attrs) := {
+	"subject": {"id": "u1", "roles": [], "attributes": subject_attrs},
+	"action": "catalog:view",
+	"resource": {"type": "catalog", "id": "c1", "attributes": {}},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# The control: the same supervised read WITHOUT the delegation claim is allowed, so the deny below
+# is the claim's doing and not the fixture's.
+test_supervised_human_catalog_read_allowed if {
+	catalog.allow with input as agent_catalog_input(supervised_catalog_role, {})
+}
+
+test_supervised_agent_catalog_read_denied if {
+	not catalog.allow with input as agent_catalog_input(supervised_catalog_role, {"act_chain": ["agent-readonly"]})
+}
+
+# THE RECORDED ESCAPE: a bare truthiness test would let `act_chain: false` through to the human
+# branch. Every falsy/empty shape must still be an agent call.
+test_agent_presence_test_survives_falsy_claim_values if {
+	every value in [false, [], "", 0, null] {
+		not catalog.allow with input as agent_catalog_input(supervised_catalog_role, {"act_chain": value})
+	}
+}
+
+# A MEMBER's agent call is untouched — the clause is provenance-scoped, so the agent surface's
+# existing member behaviour (ADR 0028) cannot be reached from here.
+test_member_agent_catalog_read_unaffected if {
+	catalog.allow with input as agent_catalog_input(member_catalog_role, {"act_chain": ["agent-readonly"]})
+}
+
+# The agent discriminator never enters the residual: `filter` does not consult `denied`, so the list
+# leg's agent closure is the app's job (CatalogListAuthorizer, T4) and visibly not the policy's.
+test_agent_never_enters_the_filter_residual if {
+	catalog.filter with input as object.union(
+		agent_catalog_input(supervised_catalog_role, {"act_chain": ["agent-readonly"]}),
+		{"action": "catalog:list", "resource": {"type": "catalog", "attributes": {}}},
+	)
+}
