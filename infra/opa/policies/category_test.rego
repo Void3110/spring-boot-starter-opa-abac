@@ -1213,6 +1213,14 @@ test_dead_window_mutes_the_challenge if {
 	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
 		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": -400}
 		with time.now_ns as stepup_now_ns
+
+	# THE CASE A SUM-ONLY GUARD CANNOT SEE: a SMALL negative skew leaves the sum positive (290 > 0),
+	# so a sum-only guard mints the challenge — but `elevated`'s lower bound is `auth_time - now <=
+	# skew`, which a FRESH re-auth (age 0) fails against -10. The subject would re-authenticate and
+	# be challenged again for |skew| seconds: §7's loop. The skew axis needs its own guard.
+	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": -10}
+		with time.now_ns as stepup_now_ns
 }
 
 # CONVERSELY: a window that is small but LIVE still challenges. max_age=-1 with skew=30 leaves a

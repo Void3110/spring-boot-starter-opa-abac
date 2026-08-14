@@ -19,7 +19,7 @@
       "name": "Matrix",
       "item": [
         {
-          "name": "E1 \u2014 HEADLINE: sup-anna (member of NO team) GET /catalogs -> exactly her unit",
+          "name": "E1 — HEADLINE: sup-anna (member of NO team) GET /catalogs -> exactly her unit",
           "request": {
             "method": "GET",
             "header": [
@@ -73,7 +73,7 @@
           ]
         },
         {
-          "name": "E2 \u2014 sup-victor GET /catalogs -> a DISJOINT set",
+          "name": "E2 — sup-victor GET /catalogs -> a DISJOINT set",
           "request": {
             "method": "GET",
             "header": [
@@ -120,7 +120,7 @@
           ]
         },
         {
-          "name": "E3 \u2014 outsider-eve (neither member nor supervisor) -> empty page, 200",
+          "name": "E3 — outsider-eve (neither member nor supervisor) -> empty page, 200",
           "request": {
             "method": "GET",
             "header": [
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "name": "E10 \u2014 the realm marker ALONE: unit-supervisor claim + ZERO reports -> empty page",
+          "name": "E10 — the realm marker ALONE: unit-supervisor claim + ZERO reports -> empty page",
           "request": {
             "method": "GET",
             "header": [
@@ -205,7 +205,7 @@
           ]
         },
         {
-          "name": "E5a \u2014 read-only ceiling: anna GET a supervised catalog -> 200",
+          "name": "E5a — read-only ceiling: anna GET a supervised catalog -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -238,7 +238,7 @@
           ]
         },
         {
-          "name": "E5b \u2014 anna PUT the supervised catalog -> 403",
+          "name": "E5b — anna PUT the supervised catalog -> 403",
           "request": {
             "method": "PUT",
             "header": [
@@ -279,7 +279,7 @@
           ]
         },
         {
-          "name": "E5c \u2014 anna PUT with a TAGS delta (the assign-tags dispatch) -> 403",
+          "name": "E5c — anna PUT with a TAGS delta (the assign-tags dispatch) -> 403",
           "request": {
             "method": "PUT",
             "header": [
@@ -322,7 +322,7 @@
           ]
         },
         {
-          "name": "E5d \u2014 anna DELETE the supervised catalog -> 403",
+          "name": "E5d — anna DELETE the supervised catalog -> 403",
           "request": {
             "method": "DELETE",
             "header": [
@@ -355,7 +355,7 @@
           ]
         },
         {
-          "name": "E5e \u2014 the _actions affordance on a supervised row: present, view-only",
+          "name": "E5e — the _actions affordance on a supervised row: present, view-only",
           "request": {
             "method": "GET",
             "header": [
@@ -402,7 +402,7 @@
           ]
         },
         {
-          "name": "E6a \u2014 CONTENTS OPEN (slice B): anna lists the supervised catalog's categories -> 200",
+          "name": "E6a — CONTENTS OPEN (slice B): anna lists the supervised catalog's categories -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -430,13 +430,14 @@
                 "type": "text/javascript",
                 "exec": [
                   "// FLIPPED BY SLICE B (PRODUCTION-TIER), deliberately and in that slice's own plan. In slice A the",
-                  "// synthesized role named no `category` key, so this was a 403 \u2014 the boundary of A. B widens the",
+                  "// synthesized role named no `category` key, so this was a 403 — the boundary of A. B widens the",
                   "// role to name the child types (a DIRECT grant; ADR 0031's inheritance confinement is untouched)",
                   "// and gates the read on the governing root's `env` tier instead. This catalog is UNTAGGED, which",
-                  "// ADR 0030 \u00a73 defines as non-production, so contents OPEN.",
-                  "// The closed-contents proof did not vanish \u2014 it MOVED to run-production-tier-matrix.sh, which owns",
-                  "// the production cells (401 + the RFC 9470 challenge since slice C flipped B's plain 403) and the",
-                  "// the module layers (the rego absent-clause tests + the enrichment IT's outage cases).",
+                  "// ADR 0030 §3 defines as non-production, so contents OPEN.",
+                  "// The closed-contents proof did not vanish — it MOVED to run-production-tier-matrix.sh, which owns",
+                  "// the production cells (401 + the RFC 9470 challenge, since slice C flipped B's plain 403) and",
+                  "// the tier-flip liveness cell; the unproven/absent state closes at the module layers (the rego",
+                  "// absent-clause tests + the enrichment IT's outage cases).",
                   "pm.test('E6a the category LIST is OPEN (200)', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('E6a exactly the seeded category, by id', () =>",
@@ -448,7 +449,7 @@
           ]
         },
         {
-          "name": "E6b \u2014 anna GETs a category under the supervised catalog -> 200",
+          "name": "E6b — anna GETs a category under the supervised catalog -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -485,7 +486,7 @@
           ]
         },
         {
-          "name": "E6c \u2014 anna GETs a product under the supervised catalog -> 200",
+          "name": "E6c — anna GETs a product under the supervised catalog -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -524,7 +525,7 @@
           ]
         },
         {
-          "name": "E9 \u2014 DUAL-HAT: pm-carol is BOTH a member and a supervisor of one catalog",
+          "name": "E9 — DUAL-HAT: pm-carol is BOTH a member and a supervisor of one catalog",
           "request": {
             "method": "GET",
             "header": [
@@ -576,7 +577,7 @@
           ]
         },
         {
-          "name": "E4a \u2014 LIVENESS: remove pm-bob from anna's reports (declarative replace)",
+          "name": "E4a — LIVENESS: remove pm-bob from anna's reports (declarative replace)",
           "request": {
             "method": "POST",
             "header": [
@@ -616,7 +617,7 @@
           ]
         },
         {
-          "name": "E4b \u2014 anna re-lists: pm-bob's catalog is GONE on the very next request",
+          "name": "E4b — anna re-lists: pm-bob's catalog is GONE on the very next request",
           "request": {
             "method": "GET",
             "header": [
@@ -663,7 +664,7 @@
           ]
         },
         {
-          "name": "E4c \u2014 and the withdrawn catalog is genuinely DENIED, not merely hidden",
+          "name": "E4c — and the withdrawn catalog is genuinely DENIED, not merely hidden",
           "request": {
             "method": "GET",
             "header": [
@@ -703,7 +704,7 @@
       "name": "Supervised-edge outage",
       "item": [
         {
-          "name": "E8a \u2014 supervised edge faulted: anna sees ONLY her own memberships (none) - never all catalogs",
+          "name": "E8a — supervised edge faulted: anna sees ONLY her own memberships (none) - never all catalogs",
           "request": {
             "method": "GET",
             "header": [
@@ -746,7 +747,7 @@
           ]
         },
         {
-          "name": "E8b \u2014 the fault is CONFINED to the supervised edge: a member's page is unchanged",
+          "name": "E8b — the fault is CONFINED to the supervised edge: a member's page is unchanged",
           "request": {
             "method": "GET",
             "header": [
@@ -784,7 +785,7 @@
                   "const body = pm.response.json();",
                   "pm.test('E8b carol still sees both her governed catalogs', () => pm.expect(body.count).to.eql(2));",
                   "const ids = body.items.map(i => i.id);",
-                  "pm.test('E8b the ids are carol\u2019s and dave\u2019s', () => {",
+                  "pm.test('E8b the ids are carol’s and dave’s', () => {",
                   "  pm.expect(ids).to.include(pm.environment.get('carol_catalog_id'));",
                   "  pm.expect(ids).to.include(pm.environment.get('dave_catalog_id'));",
                   "});"

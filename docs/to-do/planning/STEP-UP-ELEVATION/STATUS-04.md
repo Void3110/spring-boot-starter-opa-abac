@@ -31,7 +31,7 @@ tags:
   Everything else keeps the byte-identical 403.
 - **`AbacAuditLogger`** — the dedicated `opa.abac.audit` channel (named, not class-derived, so a
   consumer routes it separately). `STEP_UP_CHALLENGED` at 401-mint (no `acr`/`auth_time` — the subject
-  is precisely *not* elevated); `SUPERVISED_PRODUCTION_READ` on an allowed supervised read of a
+  is precisely *not* elevated); `PRIVILEGED_READ` on an allowed supervised read of a
   production root, with `acr`/`auth_time` **verbatim**. Both emit paths catch and drop their own
   exceptions.
 
@@ -60,7 +60,7 @@ fail-closed table, and the one-window cross-reference. (T6 appends only its e2e 
 | **U17** | same | a complete reason → **401** + the exact challenge string + `STEP_UP_REQUIRED`; the parameters track the **reason** (a 60-second window renders `max_age="60"`); a plain denial → the pre-C **403** + `ACCESS_DENIED` + **no** header, from both `AuthorizationDeniedException` and a bare `AccessDeniedException` |
 | **U18** | same | each of the three partial reasons → the plain 403, no header |
 | — | same | a reason whose parameters cannot be safely quoted (embedded `"`, a spliced `scope=`, a CRLF) → the plain 403 — see the review note |
-| **U19** | same | `SUPERVISED_PRODUCTION_READ` with the ADR 0030 §8 field list, including an **array-shaped** `env`; **not** emitted for a member, a staging tier, or a denied read; `STEP_UP_CHALLENGED` with the challenge fields and **no** `authTime`; not emitted for a plain 403 or a partial reason; and emission swallowing its own exception |
+| **U19** | same | `PRIVILEGED_READ` with the ADR 0030 §8 field list, including an **array-shaped** `env`; **not** emitted for a member, a staging tier, or a denied read; `STEP_UP_CHALLENGED` with the challenge fields and **no** `authTime`; not emitted for a plain 403 or a partial reason; and emission swallowing its own exception |
 | **U20** | `StepUpClaimsIngestionTest` | with the shipped claim list: `acr` a String, `auth_time` a **Number**, `act_chain`'s array value preserved; every falsy shape (`false`, `[]`, `""`) still arrives as a **key**; absent claims stay absent; the ROPC shape (acr, no `auth_time`) |
 | **I1** | `StepUpChallengeIT` | over MockMvc + Testcontainers: a stub reason becomes 401 + the header + the body code + `application/problem+json`; the parameters echo the **stub's** reason |
 | **I2** | same | no reason → 403 `ACCESS_DENIED`, no header; a **partial** reason → the same 403 (the §7 guard over real HTTP) |
@@ -119,7 +119,7 @@ Path: **inline self-review** (the ★ gate).
 - **I1/I2** — `StepUpChallengeIT`, 4 cells: the 401 + exact `WWW-Authenticate` + `STEP_UP_REQUIRED`
   body; the parameters tracking a different reason; the plain 403 contrast; the partial-reason 403.
 - **I4** — 3 cells: `STEP_UP_CHALLENGED` on the challenge flow (asserting the *absence* of `authTime`),
-  `SUPERVISED_PRODUCTION_READ` on the elevated read, and the decision input carrying `acr` + **numeric**
+  `PRIVILEGED_READ` on the elevated read, and the decision input carrying `acr` + **numeric**
   `auth_time` + the governing root's `env`.
 - **I3** — `AgentSupervisedLegIT`, 4 cells, against the real `SupervisedScopeClient` and an in-process
   stub user-service.
@@ -154,7 +154,7 @@ pagination rather than through an assertion.
   policy to emit `deny_reason`, that spec must gain the code in the same commit.
 - **The challenge's `error_description` and the problem body's `detail` are one constant.** They are two
   renderings of the same sentence, and a client comparing them must never see drift.
-- **Elevation is never re-derived app-side.** The `SUPERVISED_PRODUCTION_READ` event fires on
+- **Elevation is never re-derived app-side.** The `PRIVILEGED_READ` event fires on
   *granted ∧ supervised ∧ production* and logs `acr`/`auth_time` verbatim; elevation is implied by the
   allow. A Java copy of the LoA map or the window would be a second source of truth for the one number
   Amendment 3 says exists once.

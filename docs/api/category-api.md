@@ -348,7 +348,7 @@ on the typed `errorCode`, not on the human `detail`.**
 | `422` | `TAG_VALUE_ILLEGAL` | A `tags` payload used an unknown key or a value the dictionary forbids (on create or update) |
 | `503` | `DEPENDENCY_UNAVAILABLE` | A required dependency (e.g. the policy engine) was unavailable — the request is **fail-closed** (rejected, not allowed) |
 
-Which statuses each endpoint can emit is defined in the spec: `list` → `400/401/403`; `create` →
+Which statuses each endpoint can emit is defined in the spec: `list` → `400/401/403/404`; `create` →
 `400/403/404/409/422/503`; `get` → `401/403/404`; `update` → `400/403/404/409/422/503`; `delete` →
 `403/404/409`.
 

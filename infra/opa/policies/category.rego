@@ -329,11 +329,16 @@ deny_reason := {
 	is_number(data.step_up.max_age)
 	is_number(data.step_up.skew)
 
-	# …and the ENFORCED window must be positive. The window `elevated` actually tests is
-	# `max_age + skew`, not `max_age` alone — so guarding `max_age >= 0` was both too strict (it
-	# muted a challenge for max_age=0, which a fresh re-auth satisfies) and, as a stated invariant,
-	# simply false: max_age=-1 with skew=30 still elevates. Test the sum, which is the only value
-	# that decides whether ANY re-authentication can satisfy the challenge.
+	# …and the challenge must be answerable BY A FRESH RE-AUTHENTICATION, which is what it asks for.
+	# `elevated` has TWO freshness conjuncts, so this needs two guards, one per axis:
+	#   now - auth_time <= max_age + skew   (the upper bound — the sum)
+	#   auth_time - now <= skew             (the lower bound — skew ALONE)
+	# Guarding only `max_age >= 0` was wrong (max_age=-1 with skew=30 still elevates); guarding only
+	# the SUM is also wrong, and in the more dangerous direction: skew=-10 with max_age=300 leaves a
+	# positive sum, so a challenge IS minted, yet a re-auth at age 0 fails `0 <= -10` and the subject
+	# is challenged again — ADR 0030 §7's loop, in the rule written to prevent it. A fresh re-auth
+	# (age 0) clears the deny iff `skew >= 0 AND max_age + skew > 0`; that is exactly this pair.
+	data.step_up.skew >= 0
 	data.step_up.max_age + data.step_up.skew > 0
 }
 

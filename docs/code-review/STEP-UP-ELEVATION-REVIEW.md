@@ -9,8 +9,8 @@ tags:
 
 # Step-Up Elevation — Code Review
 
-> **Verdict**: Approved with fixes — **ten adversarial rounds**, each round's fixes committed before
-> the next ran
+> **Verdict**: Approved with fixes — **thirteen adversarial rounds**, each round's fixes committed
+> before the next ran, so every round reviewed the previous one's work
 > **Scope**: Layer-3 whole-delivery review of the STEP-UP-ELEVATION slice (T1–T6, two orchestrated
 > parts): the realm's conditional level-2 TOTP flow, the `elevated`/sole-blocker policy composition,
 > the additive `decide()` envelope, the RFC 9470 challenge emitter + audit, the token miner, and the
@@ -404,6 +404,27 @@ One commit per review round, plus the maintainer-directed hardening:
 - `bcea0a6` — round 4: the runner-header recipes, the base-url override, the C-flip prose sweep
 - `139284e` — round 5: the full-axis coherence guard, the measured issuer posture
 - `ea0c0d4` — `harden(gateway)`: the issuer-allowlist pre-function + E9's foreign-issuer control
+- `ce75e4c` — round 6: the SPA-breaking allowlist regression + the vacuous `granted` cells
+- `4594c61` — round 7: the guard's case-variant bypass, the spec's 503/409, the issuer-note sweep
+- `a7a4ddf` — `refactor(audit)`: ADR 0030 Amendment 7 (the vocabulary seam)
+- `6f3e6bf` — round 9: the library-side window guard, the newman reporter, three doc tails
+- `b41defc` — round 10: Amendment 7's sweep completed to the wire-visible half
+- `c626f82` — round 11: the window guard tested the wrong quantity
+- `4ac0095` — round 12: the compatibility shim, the third audit knob, three stale texts
+- round 13: the skew axis restored (see below)
+
+## Round 13 — the regression a fix introduced, caught by the next round
+
+Round 11 correctly found that `max_age >= 0` was a false invariant, but its replacement collapsed a
+**two-axis** guard onto one: `elevated` has *two* freshness conjuncts, and the second is keyed on
+`skew` alone. With `skew: -10, max_age: 300` the sum stays positive, so a challenge is minted — yet a
+**fresh** re-authentication fails `0 <= -10` and is challenged again for |skew| seconds. That is ADR
+0030 §7's loop, reintroduced in the very rule written to prevent it, and it slipped through because
+round 8's `skew >= 0` mutation guard had been passing only by virtue of the *sum* test since round 11.
+Both axes are restored (`skew >= 0` **and** `max_age + skew > 0` — exactly the predicate for "a fresh
+re-auth clears the deny") and **each now fails independently under mutation**. Also: the list
+operations declare their reachable 404, a truncated comment from round 10's sweep is repaired, and the
+rename reached the planning package.
 
 ## Spun-off follow-ups (deliberately out of this branch)
 
