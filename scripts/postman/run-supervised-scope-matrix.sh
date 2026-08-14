@@ -80,14 +80,31 @@ for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; br
 [ -n "$RUNTIME" ] || { echo "ERROR: need docker or podman to mint in-network tokens." >&2; exit 1; }
 
 # --- helpers -----------------------------------------------------------------
-mint_token() {
-  local user="$1" pass="$2" json
+mint_token() {   # $1 user $2 pass [$3 client $4 secret $5 otp]
+  local user="$1" pass="$2" client="${3:-$CLIENT_ID}" secret="${4:-$CLIENT_SECRET}" otp="${5:-}" json
   json="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
     -X POST "$KEYCLOAK_TOKEN_URL" \
-    -d grant_type=password -d "client_id=$CLIENT_ID" -d "client_secret=$CLIENT_SECRET" \
-    -d "username=$user" -d "password=$pass" || true)"
+    -d grant_type=password -d "client_id=$client" -d "client_secret=$secret" \
+    -d "username=$user" -d "password=$pass" ${otp:+-d "otp=$otp"} || true)"
   printf '%s' "$json" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
 }
+# sup-anna owns a TOTP factor since STEP-UP-ELEVATION (the realm seeds it so the step-up matrix can
+# elevate her), and Keycloak's DIRECT-GRANT flow demands a code from any identity that has one — a
+# plain ROPC mint for her now answers `invalid_grant / Invalid user credentials`, which reads as a
+# wrong password and is not. The code is computed by the step-up miner so the fixture secret and the
+# RFC 6238 parameters live in exactly one place. Keycloak also refuses a code it has already
+# consumed, hence the next-window retry.
+MINER="${MINER:-$SELF_DIR/mint-code-flow-token.py}"
+mint_anna_token() {   # [$1 client $2 secret]
+  local client="${1:-$CLIENT_ID}" secret="${2:-$CLIENT_SECRET}" token=""
+  for _ in 1 2 3; do
+    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")"
+    [ -n "$token" ] && break
+    sleep 31   # the current TOTP window was already spent; wait it out
+  done
+  printf '%s' "$token"
+}
+
 
 token_sub() {
   local tok="$1" payload
@@ -117,7 +134,7 @@ done
 
 # --- mint the personas' tokens in-network ------------------------------------
 echo "==> Minting the supervised-scope personas' tokens in-network ($NETWORK) ..."
-ANNA_TOKEN="$(mint_token sup-anna sup-anna)"
+ANNA_TOKEN="$(mint_anna_token)"
 VICTOR_TOKEN="$(mint_token sup-victor sup-victor)"
 EVE_TOKEN="$(mint_token outsider-eve outsider-eve)"
 NOREPORTS_TOKEN="$(mint_token sup-noreports sup-noreports)"

@@ -129,7 +129,15 @@ class ForcedCookieSession:
         if not path or not os.path.exists(path):
             return
         jar = http.cookiejar.MozillaCookieJar(path)
-        jar.load(ignore_discard=True, ignore_expires=True)
+        try:
+            jar.load(ignore_discard=True, ignore_expires=True)
+        except (http.cookiejar.LoadError, OSError) as error:
+            # An empty or unreadable jar is a cold cache, not a failure — `mktemp` hands out an
+            # empty file, which the Netscape parser rejects outright. Starting fresh is safe: the
+            # only thing lost is SSO reuse, and the caller that DEPENDS on reuse (E3) asserts the
+            # auth_time equality itself, so a silently-cold jar cannot make that cell pass.
+            print(f"    ... starting a fresh cookie jar ({error})", file=sys.stderr)
+            return
         for cookie in jar:
             self.cookies[cookie.name] = cookie.value or ""
 
@@ -346,6 +354,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="must match a redirect URI registered on the client")
     parser.add_argument("--scope", default="openid")
     parser.add_argument("--timeout", type=float, default=20.0)
+    parser.add_argument("--print-otp", action="store_true",
+                        help="print the current TOTP code for --otp-secret and exit. The realm's "
+                             "DIRECT-GRANT flow also demands a code from any identity that owns a "
+                             "factor, so the ROPC runners need this for sup-anna — and the secret "
+                             "and the RFC 6238 parameters stay in one place")
     parser.add_argument("--show-claims", action="store_true",
                         help="print the decoded access-token claims to stderr")
     parser.add_argument("--field", default="access_token",
@@ -355,6 +368,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str]) -> int:
     args = build_parser().parse_args(argv)
+    if args.print_otp:
+        print(totp(args.otp_secret))
+        return 0
     if args.password is None:
         args.password = args.user
     if args.no_max_age:

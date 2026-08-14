@@ -323,7 +323,7 @@
           ]
         },
         {
-          "name": "E2a \u2014 PRODUCTION contents closed: anna lists that catalog's categories -> 403",
+          "name": "E2a \u2014 PRODUCTION contents closed: anna lists that catalog's categories -> 401 + challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -356,23 +356,38 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// The same request as E1a against a root the operator tagged env=production. The decision",
-                  "// lands at the COARSE type-level gate \u2014 nothing tier-related ever enters the SQL residual.",
-                  "pm.test('E2a the category LIST is DENIED (403)', () => pm.response.to.have.status(403));",
-                  "// A PLAIN deny in slice B: indistinguishable on the wire from any other deny. The structured",
-                  "// deny_reason and the RFC 9470 challenge are slice C \u2014 asserting their ABSENCE here is what",
-                  "// keeps B's envelope diff at zero.",
-                  "pm.test('E2a no deny_reason in the body (slice C owns that field)', () =>",
-                  "  pm.expect(pm.response.text()).to.not.include('deny_reason'));",
-                  "pm.test('E2a the ordinary error code', () =>",
-                  "  pm.expect(pm.response.json().errorCode).to.eql('ACCESS_DENIED'));"
+                  "// The decision lands at the COARSE type-level gate \u2014 nothing tier- or elevation-related",
+                  "// ever enters the SQL residual.",
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E2a the category LIST: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E2a the category LIST: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E2a the category LIST: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "E2b \u2014 anna GETs a category under the PRODUCTION catalog -> 403",
+          "name": "E2b \u2014 anna GETs a category under the PRODUCTION catalog -> 401 + challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -400,14 +415,36 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E2b the category READ is DENIED (403)', () => pm.response.to.have.status(403));"
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E2b the category READ: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E2b the category READ: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E2b the category READ: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "E2c \u2014 anna lists the PRODUCTION catalog's products -> 403",
+          "name": "E2c \u2014 anna lists the PRODUCTION catalog's products -> 401 + challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -442,14 +479,36 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E2c the product LIST is DENIED (403)', () => pm.response.to.have.status(403));"
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E2c the product LIST: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E2c the product LIST: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E2c the product LIST: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "E2d \u2014 anna GETs a product under the PRODUCTION catalog -> 403",
+          "name": "E2d \u2014 anna GETs a product under the PRODUCTION catalog -> 401 + challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -479,7 +538,29 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E2d the product READ is DENIED (403)', () => pm.response.to.have.status(403));"
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E2d the product READ: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E2d the product READ: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E2d the product READ: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }
@@ -911,8 +992,32 @@
                 "type": "text/javascript",
                 "exec": [
                   "// A rejected write that still changed state would be the quiet failure this cell exists to",
-                  "// exclude \u2014 E5a-c must be rejections, not partial applications.",
-                  "pm.test('E5d the production tier still holds (403)', () => pm.response.to.have.status(403));"
+                  "// exclude \u2014 E5a-c must be rejections, not partial applications. Under C the tier holding",
+                  "// shows up as the CHALLENGE rather than a plain 403, which is the sharper signal: the deny",
+                  "// is specifically 'production, unelevated', not 'denied for some reason'.",
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E5d the tier still holds: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E5d the tier still holds: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E5d the tier still holds: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }
@@ -1051,7 +1156,7 @@
           ]
         },
         {
-          "name": "E4b \u2014 LIVENESS: anna's VERY NEXT child read on that catalog -> 403",
+          "name": "E4b \u2014 LIVENESS: anna's VERY NEXT child read on that catalog -> 401 + challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -1082,15 +1187,36 @@
                   "// The B analogue of slice A's E4. No re-login, no cache flush, no pod restart: the tier is",
                   "// read from the governing root on every request, so the very next one is decided by the new",
                   "// state. This is the same request E1b answered 200 a moment ago.",
-                  "pm.test('E4b the flip is live on the next request (403)', () =>",
-                  "  pm.response.to.have.status(403));"
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E4b the flip is live on the next request: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E4b the flip is live on the next request: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E4b the flip is live on the next request: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "E4c \u2014 and the list closes with it -> 403",
+          "name": "E4c \u2014 and the list closes with it -> 401 + challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -1123,7 +1249,29 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('E4c the list closes too (403)', () => pm.response.to.have.status(403));"
+                  "// C-FLIP (STEP-UP-ELEVATION, ADR 0030 \u00a75-9). Slice B answered this with a PLAIN 403 and",
+                  "// this cell asserted it. Slice C's sole-blocker rule fires here \u2014 anna IS `granted`, her",
+                  "// token is not elevated, and no other deny applies \u2014 so the decision now carries a",
+                  "// structured deny_reason and the advice mints an RFC 9470 challenge. The rewrite is a",
+                  "// STRONGER assertion than the 403 it replaces: the params are checked BY VALUE. The",
+                  "// closed-tier proof itself did not vanish \u2014 it moved to",
+                  "// step-up-matrix.postman_collection.json, whose E7 drill shows this very read closing",
+                  "// again the moment the elevation expires.",
+                  "pm.test('E4c the list closes too: 401, not the pre-C 403', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('E4c the list closes too: a well-formed RFC 9470 challenge', function () {",
+                  "    var challenge = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "    pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);",
+                  "    pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "    pm.expect(challenge).to.include('acr_values=\"aal2\"');",
+                  "    pm.expect(challenge).to.include('max_age=\"300\"');",
+                  "});",
+                  "pm.test('E4c the list closes too: problem+json carrying STEP_UP_REQUIRED', function () {",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/problem+json');",
+                  "    pm.expect(pm.response.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');",
+                  "});"
                 ]
               }
             }

@@ -390,6 +390,44 @@ note the direct grant never sets), so every existing runner's `mint_token()` kee
 before — it just also sees `acr: aal1` now, which nothing asserts on. Step-up cells need the scripted
 code flow instead.
 
+> **One measured exception to "ROPC is untouched": `sup-anna` herself.** Keycloak's **direct-grant**
+> flow demands a code from any identity that owns a factor, so a plain ROPC mint for her now answers
+> `invalid_grant / Invalid user credentials` — which reads as a wrong password and is not. The three
+> runners that mint her (`run-supervised-scope-matrix.sh`, `run-production-tier-matrix.sh`,
+> `run-step-up-matrix.sh`) pass an `otp` parameter computed by `mint-code-flow-token.py --print-otp`,
+> so the fixture secret and the RFC 6238 parameters live in exactly one place. Every other persona is
+> unaffected.
+
+### The step-up matrix
+
+```bash
+./deploy.sh down                                   # the realm changed — Keycloak must RE-IMPORT it
+ENABLE_MCP=1 ./deploy.sh up --pods 2               # force-enables OIDC + OPA + the user-service
+./deploy.sh build                                  # fresh catalog image; build usermgmt + mcp explicitly
+cd scripts/postman && ./run-step-up-matrix.sh
+```
+
+`ENABLE_MCP=1` is a **superset** of what the REST cells need, so the whole set runs on one flavour
+rather than two. The runner restarts OPA itself (T2 added `step_up.json` and amended the tier denies;
+`--watch` is unreliable) and then polls a **real decision** rather than `/health` — OPA answers
+`/health` before the bundle is loaded, and a decision asked in that window is undefined, which every
+fail-closed client here reads as *deny*. Anna's `aal1`/`aal2` tokens come from the scripted code flow;
+every other persona is minted in-network as usual. Fixture prefix `f00d…`, torn down on green.
+
+Two rig-level things the runner owns rather than assumes:
+
+- **The freshness drill overrides the LEAF path.** `PUT /v1/data/step_up/max_age` with body `5` — OPA's
+  data `PUT` is create/overwrite and **not** merge, so `PUT /v1/data/step_up {"max_age":5}` would take
+  `loa` and `skew` with it, leaving every token unelevatable and producing an instant, vacuous 401.
+  The runner asserts `loa` and `skew` survived, runs a **positive control** (a fresh elevation still
+  opens under the 5-second window), waits `> max_age + skew`, and only then asserts the expiry.
+  Restoration is a plain **OPA restart** in an `EXIT` trap — the file bundle is the source of truth —
+  so a run that dies mid-drill still leaves the shipped 300-second window behind it.
+- **The audit assertion is a log grep, not a cell.** Both `opa.abac.audit` events are grepped off
+  **every** catalog pod (the pool round-robins, so the challenge and the elevated read can land on
+  different ones), and `STEP_UP_CHALLENGED` is asserted to carry **no** `authTime` — at challenge time
+  the subject is precisely not elevated.
+
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 
 Off by default. `ENABLE_RESILIENCE_STUB=1 ./deploy.sh up` adds a **fault-injecting** stand-in for the

@@ -440,6 +440,24 @@ must not become an authorization outage.
 `max_age` are the same 300 seconds and cross-reference each other (see `infra/README.md`); the
 challenge's `acr_values`/`max_age` come **from the reason**, so the advice holds no copy of either.
 
+**Proven on the rig** by `scripts/postman/run-step-up-matrix.sh` (`ENABLE_MCP=1 ./deploy.sh up
+--pods 2`, after a `./deploy.sh down` so Keycloak re-imports the realm). Anna's tokens come from
+`mint-code-flow-token.py` — the scripted PKCE code flow, because ROPC structurally cannot carry
+`auth_time` ([[E2E-TESTING]]). The cells: **E1** her `aal1` read of a production child answers
+**401** with the challenge parameters asserted *by value* and `STEP_UP_REQUIRED` in the body;
+**E2** one TOTP later the same read is **200** on exact ids, and both audit events are grepped off
+the pod's `opa.abac.audit` channel; **E4** an out-of-unit supervisor and an *elevated* `PUT` each
+get a plain **403** with no `WWW-Authenticate`; **E5** the catalog's owner reads the same rows at
+plain `aal1` with an honest `_actions` map; **E6** an agent-client token for her own subject is
+refused on production *and* non-production content and its catalog list is the empty page, each
+paired with a human-token control on the same row; **E7** the drill overrides `data.step_up.max_age`
+to 5 s on the **leaf** path, proves a fresh elevation still opens (the positive control), waits out
+`max_age + skew`, and watches the same bearer answer **401** again; and **E3**, inside that shrunk
+window, re-authenticates *without* `max_age` over the persisted SSO session — a brand-new token,
+`iat` advanced, the **same** `auth_time`, still 401. Slice B's matrix keeps every cell it had except
+the seven this slice deliberately flips from the plain 403 to the challenge (`E2a`–`E2d`, `E4b`,
+`E4c`, `E5d`), each annotated in place.
+
 ### Prove it
 
 ```bash

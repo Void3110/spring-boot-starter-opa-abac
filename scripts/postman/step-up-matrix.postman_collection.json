@@ -1,0 +1,1366 @@
+{
+  "info": {
+    "name": "Step-up elevation matrix (Slice C, ADR 0030 \u00a75-9)",
+    "description": "A supervisor's production contents open behind a FRESH second factor, for a bounded window. E1 the challenge, E2 the round trip, E4 the fingerprinting negatives, E5 members unaffected, E6 the human-only supervised path (through MCP), E7 the freshness drill, E3 the loop-prevention negative (inside the drill's shrunk window). Driven by run-step-up-matrix.sh, which mints the aal1/aal2 tokens with mint-code-flow-token.py \u2014 ROPC cannot carry auth_time. Fixture-id prefix f00d...",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.collectionVariables.set('stepUpHelpers', [",
+          "    \"// The step-up assertions, shared. Postman has no module system, so they live in a collection\",",
+          "    \"// variable and are eval'd by each script that needs them (the agent-tool matrix's idiom).\",",
+          "    \"// EVERY pm.test callback here THROWS \\u2014 a callback that merely RETURNS a boolean is ignored by\",",
+          "    \"// newman and the cell passes unconditionally (E2E-TESTING, the assertion-style convention).\",",
+          "    \"function stepUpChallenged(label, res, maxAge) {\",",
+          "    \"    pm.test(label + ': the read answers 401', function () {\",",
+          "    \"        pm.response.to.have.status(401);\",",
+          "    \"    });\",",
+          "    \"    var challenge = res.headers.get('WWW-Authenticate') || '';\",",
+          "    \"    pm.test(label + ': a well-formed RFC 9470 challenge', function () {\",",
+          "    \"        pm.expect(challenge, 'WWW-Authenticate').to.match(/^Bearer /);\",",
+          "    \"        pm.expect(challenge).to.include('error=\\\"insufficient_user_authentication\\\"');\",",
+          "    \"        pm.expect(challenge).to.include('error_description=\\\"');\",",
+          "    \"        pm.expect(challenge).to.include('acr_values=\\\"aal2\\\"');\",",
+          "    \"        // The window is the POLICY DATA's, never a local copy \\u2014 the drill moves the data and\",",
+          "    \"        // this parameter moves with it, which is what makes invariant 7 observable.\",",
+          "    \"        pm.expect(challenge).to.include('max_age=\\\"' + maxAge + '\\\"');\",",
+          "    \"    });\",",
+          "    \"    pm.test(label + ': problem+json carrying STEP_UP_REQUIRED', function () {\",",
+          "    \"        pm.expect((res.headers.get('Content-Type') || '').toLowerCase())\",",
+          "    \"            .to.include('application/problem+json');\",",
+          "    \"        pm.expect(res.json().errorCode, 'errorCode').to.eql('STEP_UP_REQUIRED');\",",
+          "    \"    });\",",
+          "    \"}\",",
+          "    \"function plainDeny(label, res) {\",",
+          "    \"    pm.test(label + ': a PLAIN 403', function () {\",",
+          "    \"        pm.response.to.have.status(403);\",",
+          "    \"    });\",",
+          "    \"    pm.test(label + ': NO challenge is offered', function () {\",",
+          "    \"        pm.expect(res.headers.get('WWW-Authenticate') || '', 'WWW-Authenticate').to.eql('');\",",
+          "    \"        pm.expect(res.text()).to.not.include('STEP_UP_REQUIRED');\",",
+          "    \"    });\",",
+          "    \"    pm.test(label + ': the ordinary error code', function () {\",",
+          "    \"        pm.expect(res.json().errorCode, 'errorCode').to.eql('ACCESS_DENIED');\",",
+          "    \"    });\",",
+          "    \"}\",",
+          "    \"function opened(label, res, id) {\",",
+          "    \"    pm.test(label + ': 200 on the exact seeded id', function () {\",",
+          "    \"        pm.response.to.have.status(200);\",",
+          "    \"        pm.expect(res.json().id, 'id').to.eql(id);\",",
+          "    \"        pm.expect(res.headers.get('WWW-Authenticate') || '', 'WWW-Authenticate').to.eql('');\",",
+          "    \"    });\",",
+          "    \"}\",",
+          "    \"function pageOfExactly(label, res, ids) {\",",
+          "    \"    pm.test(label + ': 200 with exactly ' + ids.length + ' row(s), by id', function () {\",",
+          "    \"        pm.response.to.have.status(200);\",",
+          "    \"        var body = res.json();\",",
+          "    \"        pm.expect(body.count, 'count').to.eql(ids.length);\",",
+          "    \"        pm.expect((body.items || []).map(function (r) { return r.id; }).sort())\",",
+          "    \"            .to.eql(ids.slice().sort());\",",
+          "    \"    });\",",
+          "    \"}\",",
+          "    \"// --- the MCP client, same framing as the agent-tool matrix -------------------\",",
+          "    \"function mcpNode(res) {\",",
+          "    \"    var ct = (res.headers.get('Content-Type') || '').toLowerCase();\",",
+          "    \"    var raw = res.text() || '';\",",
+          "    \"    if (ct.indexOf('text/event-stream') < 0) {\",",
+          "    \"        return raw.trim() ? JSON.parse(raw) : null;\",",
+          "    \"    }\",",
+          "    \"    var lines = raw.split('\\\\n');\",",
+          "    \"    for (var i = 0; i < lines.length; i++) {\",",
+          "    \"        if (lines[i].indexOf('data:') !== 0) { continue; }\",",
+          "    \"        var node = JSON.parse(lines[i].slice(5).trim());\",",
+          "    \"        if (node && (node.result !== undefined || node.error !== undefined)) { return node; }\",",
+          "    \"    }\",",
+          "    \"    return null;\",",
+          "    \"}\",",
+          "    \"function mcpCall(res) {\",",
+          "    \"    var node = mcpNode(res) || {};\",",
+          "    \"    var result = node.result || {};\",",
+          "    \"    var meta = result._meta || result.meta || {};\",",
+          "    \"    var content = result.content || [];\",",
+          "    \"    var text = content.length ? (content[0].text || '') : '';\",",
+          "    \"    var parsed = null;\",",
+          "    \"    try { parsed = JSON.parse(text); } catch (e) { parsed = null; }\",",
+          "    \"    return { isError: result.isError === true, layer: meta.layer || null,\",",
+          "    \"             code: meta.code || null, text: text, json: parsed };\",",
+          "    \"}\",",
+          "    \"// A target-gate deny with the ORDINARY code is the whole agent assertion: had the policy\",",
+          "    \"// leaked a challenge, the catalog service would have answered 401, the MCP translator would\",",
+          "    \"// have labelled it 'catalog-unauthorized' with NO target-gate layer, and both expectations\",",
+          "    \"// below would fail. The agent cells therefore assert the absence of a challenge structurally.\",",
+          "    \"function mcpDenied(label, res, layer, code) {\",",
+          "    \"    var r = mcpCall(res);\",",
+          "    \"    pm.test(label, function () {\",",
+          "    \"        pm.expect(r.isError, 'isError').to.eql(true);\",",
+          "    \"        pm.expect(r.layer, 'the denying layer').to.eql(layer);\",",
+          "    \"        pm.expect(r.code, 'the stable error code').to.eql(code);\",",
+          "    \"        pm.expect(r.text, 'a safe message').to.not.match(/\\\\tat |Exception|Caused by/);\",",
+          "    \"    });\",",
+          "    \"    return r;\",",
+          "    \"}\",",
+          "    \"function mcpAllowed(label, res) {\",",
+          "    \"    var r = mcpCall(res);\",",
+          "    \"    pm.test(label, function () {\",",
+          "    \"        pm.expect(r.isError, 'isError (' + r.code + ': ' + r.text + ')').to.eql(false);\",",
+          "    \"    });\",",
+          "    \"    return r;\",",
+          "    \"}\",",
+          "].join(String.fromCharCode(10)));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Matrix",
+      "description": "E1 the challenge \u00b7 E2 the round trip \u00b7 E4 the fingerprinting negatives \u00b7 E5 members unaffected.",
+      "item": [
+        {
+          "name": "E1pre \u2014 the deny below is the TIER, not a missing role: anna reads the production CATALOG -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The root read is metadata-only and carries no tier, so it opens for a supervisor at",
+                  "// aal1 \u2014 and catalog.rego deliberately emits no deny_reason at all (a factor there would",
+                  "// open nothing). Without this cell every 401 below could be 'anna has no role'.",
+                  "pm.test('E1pre anna reaches the production catalog itself (200)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().id).to.eql(pm.environment.get('prod_catalog_id'));",
+                  "});",
+                  "pm.test('E1pre and it is NOT a challenge', function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate') || '').to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1a \u2014 THE CHALLENGE: anna at aal1 lists the production catalog's categories -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// Slice B answered this with a plain 403. C's sole-blocker rule fires \u2014 anna IS granted,",
+                  "// her token is not elevated, and no other deny applies \u2014 so the decision carries a",
+                  "// structured deny_reason and the library's advice mints the RFC 9470 challenge.",
+                  "stepUpChallenged('E1a the category LIST', pm.response, '300');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1b \u2014 anna at aal1 GETs a category under the production catalog -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "stepUpChallenged('E1b the category READ', pm.response, '300');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1c \u2014 anna at aal1 GETs a product under the production catalog -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products/{{prod_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products",
+                "{{prod_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "stepUpChallenged('E1c the product READ', pm.response, '300');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E1d \u2014 CONTROL: the same aal1 token on the UNTAGGED catalog's category -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{open_catalog_id}}/categories/{{open_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{open_catalog_id}}",
+                "categories",
+                "{{open_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// Non-production content is C-invariant: an ordinary aal1 supervisor keeps everything",
+                  "// slice B gave her. Elevation only ever NARROWS what deny covers.",
+                  "opened('E1d the untagged catalog stays open at aal1', pm.response,",
+                  "       pm.environment.get('open_category_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2a \u2014 THE ROUND TRIP: the same read with an aal2 token -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal2_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// One TOTP later, on the very same resource. Nothing was granted, nothing was tagged,",
+                  "// no pod restarted \u2014 only the token's acr + auth_time moved.",
+                  "opened('E2a the elevated category READ', pm.response,",
+                  "       pm.environment.get('prod_category_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2b \u2014 the elevated LIST opens too, on exact ids -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal2_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "pageOfExactly('E2b the elevated category LIST', pm.response,",
+                  "              [pm.environment.get('prod_category_id')]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2c \u2014 and the product below it -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal2_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products/{{prod_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products",
+                "{{prod_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "opened('E2c the elevated product READ', pm.response,",
+                  "       pm.environment.get('prod_product_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4a \u2014 FINGERPRINTING: an OUT-OF-UNIT supervisor on the same production category -> plain 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{victor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// sup-victor's unit does not reach this catalog, so his role never synthesizes and he is",
+                  "// not `granted`. The sole-blocker rule therefore withholds the reason: he learns that he",
+                  "// may not read it, and NOT that a second factor would help \u2014 which would tell him the",
+                  "// resource exists and is production.",
+                  "plainDeny('E4a the out-of-unit supervisor', pm.response);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4b \u2014 THE WRITE CEILING: ELEVATED anna PUTs the production category -> plain 403",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal2_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"step-up write attempt\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// She is elevated and still denied: a supervisor's reach is read-only, which is not an",
+                  "// elevation problem. `granted` is false for a write verb, so no reason is emitted and",
+                  "// no challenge is offered \u2014 a TOTP prompt here would be an unfulfillable promise.",
+                  "plainDeny('E4b the elevated write', pm.response);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5a \u2014 MEMBERS UNAFFECTED: the catalog's OWNER reads the production categories at plain aal1 -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The owner's token is an ordinary ROPC one: acr aal1, no auth_time at all. Every C deny",
+                  "// is provenance-scoped to `supervised`, so a member is structurally out of reach of all",
+                  "// of it \u2014 and their _actions map stays honest and present.",
+                  "pageOfExactly('E5a the owner\\'s production category list', pm.response,",
+                  "              [pm.environment.get('prod_category_id')]);",
+                  "pm.test('E5a no challenge is offered to a member', function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate') || '').to.eql('');",
+                  "});",
+                  "pm.test('E5a the owner\\'s _actions map is present and honest', function () {",
+                  "    var row = pm.response.json().items[0];",
+                  "    pm.expect(row._actions, '_actions').to.be.an('object');",
+                  "    pm.expect(row._actions.view, 'view').to.eql(true);",
+                  "    pm.expect(row._actions.update, 'update').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5b \u2014 the owner GETs the production product at plain aal1 -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products/{{prod_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products",
+                "{{prod_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "opened('E5b the owner\\'s production product read', pm.response,",
+                  "       pm.environment.get('prod_product_id'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "E6 agents",
+      "description": "The supervised path is human-only: the target-gate cells over REST with the agent-client bearer, each paired with a same-subject human control.",
+      "item": [
+        {
+          "name": "E6a \u2014 the AGENT reads the PRODUCTION category -> plain 403, no challenge",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The token is anna's own subject minted by an agent client, so it carries act_chain.",
+                  "// The deny is the provenance-scoped agent clause, NOT the step-up clause \u2014 so the",
+                  "// sole-blocker rule withholds the reason and no challenge is offered. A TOTP prompt to",
+                  "// something that cannot answer one is the \u00a77 loop, and this is where it is prevented.",
+                  "plainDeny('E6a the agent on production', pm.response);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6b \u2014 the AGENT reads the PRODUCTION product -> plain 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}/products/{{prod_product_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}",
+                "products",
+                "{{prod_product_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "plainDeny('E6b the agent on the production product', pm.response);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6c \u2014 ANY TIER: the AGENT reads the UNTAGGED catalog's category -> still plain 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{open_catalog_id}}/categories/{{open_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{open_catalog_id}}",
+                "categories",
+                "{{open_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The supervised path is human-only in WHOLE, not only where the tier is production:",
+                  "// supervision is a relation between people and a second factor proves a person is",
+                  "// present. E1d read this very row at 200 with anna's human token.",
+                  "plainDeny('E6c the agent on non-production content', pm.response);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6d \u2014 the AGENT's catalog LIST -> membership-only, i.e. the empty page",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// `filter` never consults `denied` (invariant 5), so no rego clause can reach the",
+                  "// supervised LIST leg \u2014 CatalogListAuthorizer skips it app-side when the subject",
+                  "// carries the act_chain KEY. anna is a member of no team, so membership-only IS the",
+                  "// empty page. 200 and empty, never 403: the leg is skipped, not denied.",
+                  "pm.test('E6d the agent list answers 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('E6d ...and carries no rows at all', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body.count, 'count').to.eql(0);",
+                  "    pm.expect(body.items, 'items').to.eql([]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6e \u2014 CONTROL: the SAME subject WITHOUT the claim reads that category -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{open_catalog_id}}/categories/{{open_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{open_catalog_id}}",
+                "categories",
+                "{{open_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// Without this cell E6c would be unfalsifiable: an empty reach and a closed door look",
+                  "// identical from outside. Same person, same row, same tier \u2014 only the delegation claim",
+                  "// differs, and that is what decides it.",
+                  "opened('E6e the human reaches the same row', pm.response,",
+                  "       pm.environment.get('open_category_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6f \u2014 CONTROL: the same subject's HUMAN catalog list DOES carry both rows",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// So E6d's empty page is the leg guard's doing and not an empty fixture set.",
+                  "pm.test('E6f the human page carries both step-up catalogs', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    var ids = (pm.response.json().items || []).map(function (c) { return c.id; });",
+                  "    pm.expect(ids).to.include(pm.environment.get('prod_catalog_id'));",
+                  "    pm.expect(ids).to.include(pm.environment.get('open_catalog_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "E6 agents through MCP",
+      "description": "Defence in depth, and the measured reason the cells above are REST: the tool-gate's ceiling is membership-derived, so a pure supervisor is refused there before the target-gate is ever consulted.",
+      "item": [
+        {
+          "name": "initialize (the agent, through MCP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"step-up-matrix\", \"version\": \"1.0.0\"}}}"
+            },
+            "url": {
+              "raw": "{{gateway}}/mcp",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the agent, through MCP handshake: 200 plain application/json', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/json');",
+                  "});",
+                  "var sid = pm.response.headers.get('Mcp-Session-Id');",
+                  "pm.test('the agent, through MCP handshake: the transport assigned an Mcp-Session-Id', function () {",
+                  "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+                  "});",
+                  "pm.collectionVariables.set('agent_session', sid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "notifications/initialized (the agent, through MCP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              },
+              {
+                "key": "mcp-session-id",
+                "value": "{{agent_session}}"
+              },
+              {
+                "key": "MCP-Protocol-Version",
+                "value": "2025-11-25"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+            },
+            "url": {
+              "raw": "{{gateway}}/mcp",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the agent, through MCP handshake: the notification is 202 with an empty body', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6g \u2014 through MCP the AGENT never even reaches the target-gate: tool-gate deny",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_agent_token}}"
+              },
+              {
+                "key": "mcp-session-id",
+                "value": "{{agent_session}}"
+              },
+              {
+                "key": "MCP-Protocol-Version",
+                "value": "2025-11-25"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\", \"params\": {\"name\": \"list_categories\", \"arguments\": {\"catalogId\": \"{{prod_catalog_id}}\"}}}"
+            },
+            "url": {
+              "raw": "{{gateway}}/mcp",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The tool-gate intersects the PRINCIPAL's ceiling with the agent capability, and",
+                  "// that ceiling is membership-derived (permissions.effective_actions over the",
+                  "// resolved role definition). A pure supervisor's reach comes from a reporting",
+                  "// relation instead, so her ceiling is empty and the intersection is empty. The",
+                  "// supervised path is therefore closed to agents at BOTH layers, tool-gate first.",
+                  "mcpDenied('E6g the agent is refused at the tool-gate', pm.response,",
+                  "          'tool-gate', 'tool-gate-denied');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "initialize (anna herself, through MCP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"step-up-matrix\", \"version\": \"1.0.0\"}}}"
+            },
+            "url": {
+              "raw": "{{gateway}}/mcp",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('anna herself, through MCP handshake: 200 plain application/json', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase())",
+                  "        .to.include('application/json');",
+                  "});",
+                  "var sid = pm.response.headers.get('Mcp-Session-Id');",
+                  "pm.test('anna herself, through MCP handshake: the transport assigned an Mcp-Session-Id', function () {",
+                  "    pm.expect(sid, 'Mcp-Session-Id').to.be.a('string').and.to.have.length.above(0);",
+                  "});",
+                  "pm.collectionVariables.set('human_session', sid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "notifications/initialized (anna herself, through MCP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              },
+              {
+                "key": "mcp-session-id",
+                "value": "{{human_session}}"
+              },
+              {
+                "key": "MCP-Protocol-Version",
+                "value": "2025-11-25"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"method\": \"notifications/initialized\"}"
+            },
+            "url": {
+              "raw": "{{gateway}}/mcp",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('anna herself, through MCP handshake: the notification is 202 with an empty body', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    pm.expect((pm.response.text() || '').trim(), 'body').to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6h \u2014 ...and so is anna HERSELF: the MCP ceiling is membership-derived",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              },
+              {
+                "key": "mcp-session-id",
+                "value": "{{human_session}}"
+              },
+              {
+                "key": "MCP-Protocol-Version",
+                "value": "2025-11-25"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"tools/call\", \"params\": {\"name\": \"list_categories\", \"arguments\": {\"catalogId\": \"{{open_catalog_id}}\"}}}"
+            },
+            "url": {
+              "raw": "{{gateway}}/mcp",
+              "host": [
+                "{{gateway}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The same call E6e answered 200 over REST. This is the measured reason the",
+                  "// target-gate cells above are REST rather than MCP: through the tool surface a",
+                  "// pure supervisor is refused before her provenance is ever consulted, so an MCP",
+                  "// 403 would prove the tool-gate and say nothing about C's agent deny.",
+                  "mcpDenied('E6h the pure supervisor has no tool-gate ceiling at all', pm.response,",
+                  "          'tool-gate', 'tool-gate-denied');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "E7a drill positive control",
+      "item": [
+        {
+          "name": "E7a \u2014 POSITIVE CONTROL: a FRESH elevation still opens production under the 5s override -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_drill_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The override is a LEAF PUT (/v1/data/step_up/max_age). A whole-document PUT would have",
+                  "// replaced the object and taken `loa` and `skew` with it \u2014 and then EVERY token would be",
+                  "// unelevatable and the 401 below would arrive instantly and prove nothing. This cell is",
+                  "// what makes the expiry cell honest.",
+                  "opened('E7a a fresh elevation under the shrunk window', pm.response,",
+                  "       pm.environment.get('prod_category_id'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "E7b drill expiry",
+      "item": [
+        {
+          "name": "E7b \u2014 ...and after the window closes, the SAME token answers 401 again",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_drill_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// The very same bearer that answered 200 a moment ago. Nothing about the token changed \u2014",
+                  "// no expiry, no revocation, no refresh \u2014 only wall-clock time passed. The freshness",
+                  "// control is the only thing that can have moved.",
+                  "stepUpChallenged('E7b the elevation has expired on the wire', pm.response, '5');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "E3 loop prevention",
+      "item": [
+        {
+          "name": "E3 \u2014 LOOP PREVENTION: re-auth WITHOUT max_age reuses the SSO session -> still 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_stale_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}/categories/{{prod_category_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}",
+                "categories",
+                "{{prod_category_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "eval(pm.collectionVariables.get('stepUpHelpers'));",
+                  "// A brand-new access token, minted seconds ago, carrying acr aal2 \u2014 and the SAME stale",
+                  "// auth_time, because the SSO session answered and no authentication happened. ADR 0030",
+                  "// \u00a77's 'the client MUST forward max_age', measured: a client that drops it loops forever.",
+                  "// The runner asserted auth_time(stale) == auth_time(drill) shell-side before this ran.",
+                  "stepUpChallenged('E3 the SSO-reused token is still not elevated', pm.response, '5');",
+                  "pm.test('E3 the stale token really is a NEWER token (iat advanced)', function () {",
+                  "    pm.expect(Number(pm.environment.get('stale_iat')))",
+                  "        .to.be.above(Number(pm.environment.get('drill_iat')));",
+                  "});",
+                  "pm.test('E3 ...carrying the SAME authentication instant', function () {",
+                  "    pm.expect(pm.environment.get('stale_auth_time'))",
+                  "        .to.eql(pm.environment.get('drill_auth_time'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
