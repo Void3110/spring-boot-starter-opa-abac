@@ -130,6 +130,27 @@ A fifth 8-lens pass (14 agents) — four Lows, zero refuted, all fixed:
   issuers". Gateway-side `iss` enforcement is spun off as a hardening follow-up task — a behavior
   change to the rig's auth surface does not belong at review close-out.
 
+## Gateway issuer hardening (maintainer-directed, post-round-5)
+
+Round 5's issuer finding was written up as a follow-up task; the maintainer pulled it into this
+branch instead. It could not branch off `main` as the task described — the E9 preflight, the miner,
+and the issuer notes it builds on exist only here — so it landed as its own commit on the slice
+branch.
+
+**The gap**: the openid-connect plugin validates the token signature against the realm JWKS but
+never `iss`, and Keycloak 26's `iss` follows the request's Host header. `KC_HOSTNAME_STRICT=false`
+is load-bearing (the demo SPA logs in through the host port from a browser), so hostname-v2 pinning
+was rejected in favour of gateway-side enforcement — the fork the task itself anticipated.
+
+**The fix**: an issuer-allowlist `serverless-pre-function` beside the openid-connect plugin on all
+three OIDC routes (catalog, usermgmt, MCP). A well-formed bearer whose `iss` is neither rig
+authority (`keycloak:8888` in-network, `localhost:28888` host-browser) is refused 401;
+missing/malformed bearers pass through to openid-connect, which rejects them on its own terms — the
+guard only narrows, and signature validation stays primary. E9 gained control **(f)**: a forged-Host
+mint (`curl -H 'Host: evil.example'`) yields a realm-*signed* token with
+`iss=http://evil.example:28888/…`, and the gateway must 401 it. Verified live: the control passes,
+step-up 55/55, `run-tests.sh` 22/22 (canonical-issuer traffic unaffected).
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the
@@ -219,6 +240,24 @@ rather than absorbed.
 
 ## Commits
 
-- The single review-fix commit carrying all 18 fixes and this note:
-  `fix(step-up-elevation): layer-3 review fixes — the wiring guard, the bounded window, the
-  data-sourced ACR, the 401 contract, the pinned E9, the retry discipline`
+One commit per review round, plus the maintainer-directed hardening:
+
+- `ec3c1fd` — rounds 1–2 (18 fixes): the wiring guard, the bounded window, the data-sourced ACR,
+  the 401 contract, the pinned E9, the retry discipline
+- `e3db8d4` — round 3: the type-guarded, data-tied elevation threshold
+- `bcea0a6` — round 4: the runner-header recipes, the base-url override, the C-flip prose sweep
+- `139284e` — round 5: the full-axis coherence guard, the measured issuer posture
+- `ea0c0d4` — `harden(gateway)`: the issuer-allowlist pre-function + E9's foreign-issuer control
+
+## Spun-off follow-ups (deliberately out of this branch)
+
+Two pre-existing suite-wide patterns the review surfaced, kept out rather than ballooning the
+slice's diff:
+
+1. **The newman JSON export never writes.** Every runner passes `--reporter-json-export` without
+   activating the json reporter (`-r cli,json`), so every directory under
+   `scripts/postman/build/reports/postman/` is empty — assertion counts must be read from the
+   console output.
+2. **`collection_base_url` shadowing in six other runners.** The environment file's value wins over
+   collection variables, so a non-default `GATEWAY` splits a run; the three C-affected runners are
+   fixed here via `--env-var`, the rest need the same sweep.
