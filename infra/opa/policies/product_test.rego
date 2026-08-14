@@ -1072,6 +1072,18 @@ test_unmapped_required_acr_closes_elevation_and_mutes_the_challenge if {
 		with time.now_ns as stepup_now_ns
 }
 
+# …and the WINDOW axes get the same treatment: a string-valued max_age or an absent skew leaves
+# `elevated` permanently undefined (the arithmetic type-errors / goes undefined), so the challenge
+# must be muted too — emitting one would advertise a window no re-authentication can satisfy.
+test_malformed_window_data_mutes_the_challenge if {
+	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": "300", "skew": 30}
+		with time.now_ns as stepup_now_ns
+	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300}
+		with time.now_ns as stepup_now_ns
+}
+
 test_absent_step_up_data_closes_elevation_and_mutes_the_challenge if {
 	not product.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with data.step_up as {}

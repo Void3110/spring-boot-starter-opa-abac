@@ -110,6 +110,26 @@ documentation/comment tail of the earlier fix classes, plus one runner-plumbing 
   added to category/product/catalog pages, `STEP_UP_REQUIRED` to catalog-api.md (the unions
   mirror the spec's shared enum, which declares both).
 
+## Round 5
+
+A fifth 8-lens pass (14 agents) — four Lows, zero refuted, all fixed:
+
+- **The coherence guard completed to all three data axes** (the natural tail of rounds 2–3's
+  class): `deny_reason` guarded `loa[required_acr]` but not `max_age`/`skew`, so a string-valued
+  `max_age` or absent `skew` left `elevated` permanently undefined while the challenge was still
+  emitted advertising an unsatisfiable window — the §7 loop by data malformation. Verified with
+  `opa eval` by the finder and independently by the refuter. Both policies gained
+  `is_number(data.step_up.max_age)` + `is_number(data.step_up.skew)` conjuncts with mirror test
+  cells (`opa test` 381/381).
+- **The compose issuer comment was measured-wrong by this branch's own probe**: `KC_HOSTNAME_URL`
+  is an inert removed option on Keycloak 26 (`iss` follows the request's Host header via
+  `KC_HOSTNAME_STRICT=false`, which the demo SPA's host-browser login needs), and APISIX validates
+  the signature only, never `iss` (mx-e0ec23; E9's tamper control proves it). The comment now
+  states the measured posture; the same truth was swept into the three mirrored doc sites
+  (E2E-TESTING, postman README, infra README) that still claimed "the gateway rejects mismatched
+  issuers". Gateway-side `iss` enforcement is spun off as a hardening follow-up task — a behavior
+  change to the rig's auth surface does not belong at review close-out.
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the
@@ -177,8 +197,9 @@ rather than absorbed.
   including the new wiring-check tests and the unknown-type challenge cell)
 - `./.sonar-local/sonar-local.sh`: **CLEAN — 0 open findings** on changed files (3× S5778 in the
   new test fixed, not suppressed)
-- `opa test infra/opa/policies/`: **379/379** (367 from the slice + 6 round-1 mirror cells + 2
-  round-2 off-state cells + 4 round-3 type/coherence cells); `opa check --strict` clean
+- `opa test infra/opa/policies/`: **381/381** (367 from the slice + 6 round-1 mirror cells + 2
+  round-2 off-state cells + 4 round-3 type/coherence cells + 2 round-5 window-axis cells);
+  `opa check --strict` clean
 - newman, re-run against the live rig after the fixes: `run-production-tier-matrix.sh` (the seven
   C-flip literal cells against the now data-sourced challenge) **green — 73/73**;
   `run-supervised-scope-matrix.sh` (miner preflight; both passes) **green — 48/48**;

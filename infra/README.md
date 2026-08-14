@@ -57,11 +57,13 @@ TOKEN=$(docker run --rm --network opa-abac-example_default curlimages/curl -s \
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" localhost:9085/actuator/health  # 200
 ```
 
-> **Issuer gotcha:** Keycloak is hostname-aware. In-network it issues/advertises
-> `http://keycloak:8888`; from the host it advertises `http://localhost:28888`. APISIX discovers
-> + validates in-network, so a token used through the gateway must be **minted in-network**
-> (issuer `keycloak:8888`) or via the real browser redirect flow — a token minted against
-> `localhost:28888` has a mismatched issuer and APISIX rejects it.
+> **Issuer gotcha:** Keycloak is hostname-aware — the `iss` claim follows the request's Host
+> header (`KC_HOSTNAME_STRICT=false`; see `compose.keycloak.yaml`'s issuer note). In-network mints
+> carry `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. **Measured
+> (2026-08-14): APISIX validates the signature against the realm JWKS and does not itself enforce
+> `iss`** — so in-network minting (or the code-flow miner, which presents the in-network authority)
+> is the convention that keeps every token on the canonical issuer, not something the gateway
+> forces. Mint in-network anyway: a stricter validator would reject host-issuer tokens.
 
 ## Demo SPA auth (bearer-only gateway) — opt-in
 

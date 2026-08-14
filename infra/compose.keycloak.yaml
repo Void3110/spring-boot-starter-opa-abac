@@ -6,11 +6,16 @@
 #
 # Joins the shared opa-abac-example network; reachable in-network as "keycloak".
 #
-# IMPORTANT issuer note: APISIX (in-network) discovers Keycloak at http://keycloak:8888,
-# but tokens are issued with that same issuer. We pin KC_HOSTNAME_URL to the in-network
-# address so APISIX's discovery and the token issuer agree. Browser-based login flows use
-# the host port 28888; for pure bearer-token testing (direct grant) the in-network issuer
-# is what matters and APISIX validates against the matching JWKS.
+# IMPORTANT issuer note (measured 2026-08-14, KC 26 — the step-up miner's E9 preflight pins it):
+# the `iss` claim FOLLOWS THE REQUEST's Host header. KC_HOSTNAME_STRICT=false is what decides
+# this, and KC_HOSTNAME_URL below is not a Keycloak 26 option — it is inert. In-network mints
+# therefore carry iss=keycloak:8888 by convention (they address that authority), not by pin; the
+# scripted code-flow miner presents the in-network authority from the host for the same parity.
+# APISIX validates the token SIGNATURE against the realm JWKS and does not itself enforce `iss`
+# (also measured — E9's tamper control is what proves the 200 isn't a wave-through). STRICT=false
+# stays: the demo SPA logs in through the host port from a browser, which a strict in-network
+# hostname would break. Rig-only posture — a production deployment should pin the hostname
+# (KC_HOSTNAME + KC_HOSTNAME_STRICT=true) and/or enforce `iss` at the gateway.
 
 name: opa-abac-example
 
@@ -23,7 +28,9 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HTTP_ENABLED: "true"
-      # Keep the token issuer stable and equal to APISIX's in-network discovery URL.
+      # STRICT=false makes the issuer follow the request's Host header (see the issuer note above);
+      # KC_HOSTNAME_URL is a removed v1 option on KC 26 and does nothing — kept only as a tombstone
+      # of the intended in-network authority until a hostname-v2 migration.
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_URL: "http://keycloak:8888"
       KC_HOSTNAME_ADMIN_URL: "http://localhost:28888"

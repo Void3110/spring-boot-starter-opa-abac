@@ -87,11 +87,15 @@ individual prerequisites are in the per-matrix sections below and in
 
 ## The in-network token caveat (important)
 
-Keycloak is **hostname-aware**. Inside the compose network it issues and advertises the issuer
-`http://keycloak:8888`; from the host it advertises `http://localhost:28888`. **APISIX discovers and
-validates the issuer in-network**, so a token used *through the gateway* must be minted in-network
-(issuer `keycloak:8888`) — a token obtained against `localhost:28888` has a mismatched issuer and the
-gateway rejects it.
+Keycloak is **hostname-aware**: the `iss` claim follows the request's Host header
+(`KC_HOSTNAME_STRICT=false`), so an in-network mint carries `http://keycloak:8888` and a host-port
+mint carries `http://localhost:28888`. **Measured (2026-08-14): APISIX validates the token
+signature against the realm JWKS and does not itself enforce `iss`** — a host-issuer token happens
+to pass today's gateway. The suite still mints in-network (or via the miner, which presents the
+in-network authority) so every token carries the canonical issuer: that is **parity by convention,
+not enforcement**, and it keeps the suite honest against any stricter validator. The step-up
+runner's E9 preflight pins both halves — the `iss` value, and the tamper control proving the
+gateway's 200 is signature-validated.
 
 So the suite does **not** grab the token from the host. The runner mints it from inside the shared
 compose network (`opa-abac-example_default`) and hands it to newman:

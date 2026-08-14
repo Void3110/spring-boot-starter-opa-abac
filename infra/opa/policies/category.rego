@@ -318,9 +318,13 @@ deny_reason := {
 	granted
 	not denied_other
 	# The challenge is only minted when answering it would actually elevate: `required_acr` must map
-	# to a NUMERIC level in `loa`. Incoherent data (an unmapped or string-valued name) mutes the
-	# challenge — a plain deny, never a 401 advertising an ACR that elevates nothing (the §7 loop).
+	# to a NUMERIC level in `loa`, and the WINDOW must be enforceable — `elevated`'s arithmetic needs
+	# numeric `max_age` and `skew`, so a string-valued or absent one leaves elevation permanently
+	# undefined while a guardless challenge would still advertise a window nobody can satisfy.
+	# Incoherent data on ANY axis mutes the challenge — a plain deny, never the §7 loop.
 	is_number(data.step_up.loa[data.step_up.required_acr])
+	is_number(data.step_up.max_age)
+	is_number(data.step_up.skew)
 }
 
 # The root's env value(s) as a set: an array tag -> the set of its elements; a scalar -> {scalar}.
