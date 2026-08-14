@@ -24,7 +24,9 @@
 # Prereq: the full user-service rig, with images carrying slice C (the E2/E4 cells assert C's 401
 # shape) and the C realm (sup-anna's seeded TOTP factor — the miner computes her direct-grant otp):
 #   ./deploy.sh down                                    # so Keycloak re-imports the realm
-#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one)
+#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one).
+#                                                       # NOTE: builds the catalog image (+MCP when
+#                                                       # ENABLE_MCP=1) — build usermgmt explicitly.
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 #
 # T4 edited category.rego + product.rego (the four tier-deny clauses every cell here depends on), so

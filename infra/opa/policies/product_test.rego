@@ -1104,16 +1104,27 @@ test_malformed_window_data_mutes_the_challenge if {
 		with time.now_ns as stepup_now_ns
 }
 
-# …and a NEGATIVE window is muted for the same reason: well-typed but unsatisfiable.
-test_negative_window_mutes_the_challenge if {
+# …and a DEAD window is muted: the enforced window is `max_age + skew`, so what must be unsatisfiable
+# is the SUM. A sum <= 0 can never be reached by any re-authentication, so a challenge there is the
+# §7 loop by arithmetic.
+test_dead_window_mutes_the_challenge if {
+	# negative max_age that the skew cannot rescue
 	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
-		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": -1, "skew": 30}
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": -100, "skew": 30}
 		with time.now_ns as stepup_now_ns
 
-	# …on the skew axis too: a negative skew large enough to invert the window makes elevation
-	# unreachable for everyone, so a challenge there is the §7 loop.
+	# …and a negative skew large enough to invert an otherwise sane max_age
 	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
 		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": -400}
+		with time.now_ns as stepup_now_ns
+}
+
+# CONVERSELY: a window that is small but LIVE still challenges. max_age=-1 with skew=30 leaves a
+# 29-second window that a fresh re-auth genuinely satisfies, so muting it would deny the subject the
+# one thing that would let them in — the mistake the previous `max_age >= 0` guard made.
+test_small_but_live_window_still_challenges if {
+	product.deny_reason.max_age == -1 with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": -1, "skew": 30}
 		with time.now_ns as stepup_now_ns
 }
 

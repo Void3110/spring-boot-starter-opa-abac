@@ -121,11 +121,13 @@ public abstract class AbstractProblemAdvice {
      *       re-authenticate against a still-valid session, receive the same stale {@code auth_time}, and
      *       be challenged again — ADR 0030 §7's infinite loop. A half-formed challenge is worse than
      *       none.</li>
-     *   <li><strong>A non-positive window.</strong> {@code max_age <= 0} is well-typed but
-     *       unsatisfiable — no re-authentication is ever "within zero seconds" — so the challenge would
-     *       be the same §7 loop by arithmetic rather than by omission. The example policy guards its own
-     *       data, but this library is published for adopters who write their own, so the emitter refuses
-     *       on its own terms rather than trusting the policy to have checked.</li>
+     *   <li><strong>A negative window.</strong> {@code max_age < 0} cannot be satisfied by any
+     *       re-authentication, so the challenge would be the §7 loop by arithmetic rather than by
+     *       omission. The bound is {@code < 0} and not {@code <= 0} deliberately: the policy enforces
+     *       {@code max_age + skew} and the reason carries only {@code max_age}, so a zero window is
+     *       answerable under a policy with a skew allowance — rejecting it would withhold the one
+     *       challenge that lets the subject in. The emitter refuses only what the reason itself proves
+     *       dead; the policy owns the rest of the arithmetic.</li>
      *   <li><strong>A value that cannot be safely quoted.</strong> The parameters originate in policy
      *       data, which is trusted but not this class's to trust <em>blindly</em>: a value carrying a
      *       quote or a CR/LF would break out of the quoted-string and, in the worst case, out of the
@@ -143,11 +145,12 @@ public abstract class AbstractProblemAdvice {
             log.warn("step-up challenge suppressed: incomplete deny_reason (denying 403)");
             return null;
         }
-        // A NON-POSITIVE window is well-typed but unsatisfiable — no re-authentication can ever be
-        // "within 0 seconds" — so advertising it is the §7 loop with extra steps. The example policy
-        // guards its own data, but this library is published for adopters who write their own: the
-        // emitter must refuse the unanswerable challenge on its own terms, not trust the policy to.
-        if (reason.maxAge() <= 0) {
+        // A NEGATIVE window is unanswerable and the challenge is refused. Note the boundary: the
+        // policy enforces `max_age + skew`, of which the reason advertises only `max_age`, so
+        // `max_age == 0` is NOT provably dead — a policy with a skew allowance answers it, and
+        // muting it would withhold the very challenge that would let the subject in. Only what the
+        // reason ITSELF proves unanswerable is rejected here; the policy owns the rest.
+        if (reason.maxAge() < 0) {
             log.warn("step-up challenge suppressed: non-positive max_age {} (denying 403)",
                     reason.maxAge());
             return null;

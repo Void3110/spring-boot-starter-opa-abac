@@ -329,10 +329,12 @@ deny_reason := {
 	is_number(data.step_up.max_age)
 	is_number(data.step_up.skew)
 
-	# …and NON-NEGATIVE. A negative window is well-typed but unsatisfiable: `elevated` can never
-	# hold, so a challenge would promise an elevation no re-authentication achieves.
-	data.step_up.max_age >= 0
-	data.step_up.skew >= 0
+	# …and the ENFORCED window must be positive. The window `elevated` actually tests is
+	# `max_age + skew`, not `max_age` alone — so guarding `max_age >= 0` was both too strict (it
+	# muted a challenge for max_age=0, which a fresh re-auth satisfies) and, as a stated invariant,
+	# simply false: max_age=-1 with skew=30 still elevates. Test the sum, which is the only value
+	# that decides whether ANY re-authentication can satisfy the challenge.
+	data.step_up.max_age + data.step_up.skew > 0
 }
 
 # The root's env value(s) as a set: an array tag -> the set of its elements; a scalar -> {scalar}.

@@ -34,6 +34,37 @@ class OpaAbacAutoConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(OpaAbacAutoConfiguration.class));
 
+    @Test // ADR 0030 Amendment 7 — the privileged-read audit kill-switch's THREE states, at the
+    void privilegedReadAuditIsSilentWhenUnconfigured() { // config layer (the manager-level silence
+        runner.withPropertyValues("opa.abac.enabled=true").run(context -> { // is pinned separately)
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(OpaPreAuthorizeAuthorizationManager.class);
+        });
+    }
+
+    @Test // fully configured: the context starts with the policy in place
+    void privilegedReadAuditStartsWhenFullyConfigured() {
+        runner.withPropertyValues("opa.abac.enabled=true",
+                        "opa.abac.audit.privileged-read.provenance=supervised",
+                        "opa.abac.audit.privileged-read.root-attribute=env",
+                        "opa.abac.audit.privileged-read.root-values=production")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(OpaPreAuthorizeAuthorizationManager.class);
+                });
+    }
+
+    @Test // HALF-configured is a typo, and silently disabling an audit control on a typo is how
+    void privilegedReadAuditFailsStartupWhenHalfConfigured() { // oversight quietly stops happening
+        runner.withPropertyValues("opa.abac.enabled=true",
+                        "opa.abac.audit.privileged-read.root-values=production")
+                .run(context -> assertThat(context).hasFailed());
+
+        runner.withPropertyValues("opa.abac.enabled=true",
+                        "opa.abac.audit.privileged-read.provenance=supervised")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
     @Test // U30 — enabled + security on classpath → all spine beans present
     void allBeansPresent_whenEnabled() {
         runner.withPropertyValues("opa.abac.enabled=true").run(context -> {

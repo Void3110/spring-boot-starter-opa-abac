@@ -23,7 +23,9 @@
 #
 # Prereq: the FULL user-service rig, with images carrying T4/T5 and a realm carrying the personas:
 #   ./deploy.sh down                                    # so Keycloak re-imports the realm
-#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one)
+#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one).
+#                                                       # NOTE: builds the catalog image (+MCP when
+#                                                       # ENABLE_MCP=1) — build usermgmt explicitly.
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
 #
 # Both slices edited category.rego + product.rego — A's T3 (ADR 0031's confinement) and B's T4 (the

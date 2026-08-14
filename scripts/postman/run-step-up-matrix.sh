@@ -90,8 +90,10 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (the to
 RUNTIME=""
 for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; break; }; done
 [ -n "$RUNTIME" ] || { echo "ERROR: need docker or podman to mint in-network tokens." >&2; exit 1; }
-MCP_CONTAINER="${MCP_CONTAINER:-mcp}"
-"$RUNTIME" inspect "$MCP_CONTAINER" >/dev/null 2>&1 || {
+# Probe HEALTH, not existence: `inspect` succeeds for a STOPPED container, so a wedged MCP server
+# would sail past this and fail deep inside E6 instead of here.
+MCP_HEALTH="${MCP_HEALTH:-http://localhost:28093/actuator/health}"
+curl -sf "$MCP_HEALTH" 2>/dev/null | grep -q '"status":"UP"' || {
   echo "ERROR: the MCP server is not running — E6 needs it. Bring the rig up with:" >&2
   echo "         ./deploy.sh down && ./deploy.sh build && ENABLE_MCP=1 ./deploy.sh up --pods 2" >&2
   exit 1; }

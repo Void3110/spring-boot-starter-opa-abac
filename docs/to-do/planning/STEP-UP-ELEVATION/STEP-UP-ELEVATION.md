@@ -52,7 +52,7 @@ differentiator, not a re-implementation ([[0030-step-up-decision-contract|ADR 00
    conditional level-2 TOTP subflow with max age 300 mirroring the policy window, `sup-anna`'s
    seeded fixture OTP secret; runner documents down-first re-import.
 7. **Audit = two events on `opa.abac.audit`** (`STEP_UP_CHALLENGED` in the advice,
-   `SUPERVISED_PRODUCTION_READ` in the manager); emission never affects the decision.
+   `PRIVILEGED_READ` in the manager); emission never affects the decision.
 8. **The supervised path is human-only**: `provenance == "supervised"` + the `act_chain`
    presence-test → deny, any tier, always a plain 403 (sole-blocker suppresses the challenge); the
    wire claim is `act_chain` — `actor` is MCP-internal and never travels downstream.

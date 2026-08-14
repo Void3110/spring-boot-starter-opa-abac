@@ -443,18 +443,25 @@ class StepUpDecisionAndChallengeTest {
         assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
     }
 
-    @Test // a NON-POSITIVE window → the plain 403: "re-authenticate within 0s" is unanswerable
-    void nonPositiveMaxAgeFallsBackToForbidden() {
-        List<DenyReason> unsatisfiable = List.of(
-                new DenyReason(DenyReason.INSUFFICIENT_USER_AUTHENTICATION, "aal2", 0),
-                new DenyReason(DenyReason.INSUFFICIENT_USER_AUTHENTICATION, "aal2", -1));
+    @Test // a NEGATIVE window → the plain 403: no re-authentication can land inside it
+    void negativeMaxAgeFallsBackToForbidden() {
+        ResponseEntity<ProblemDetail> response = render(new StepUpRequiredDecision(
+                new DenyReason(DenyReason.INSUFFICIENT_USER_AUTHENTICATION, "aal2", -1),
+                "category", "k-1", "c-1"));
 
-        for (DenyReason reason : unsatisfiable) {
-            ResponseEntity<ProblemDetail> response =
-                    render(new StepUpRequiredDecision(reason, "category", "k-1", "c-1"));
-            assertThat(response.getStatusCode()).as("reason: %s", reason).isEqualTo(HttpStatus.FORBIDDEN);
-            assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
-        }
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
+    }
+
+    @Test // …but a ZERO window still challenges: the policy enforces max_age + SKEW, and the reason
+    void zeroMaxAgeStillChallenges() { // carries only max_age — muting it would withhold the remedy.
+        ResponseEntity<ProblemDetail> response = render(new StepUpRequiredDecision(
+                new DenyReason(DenyReason.INSUFFICIENT_USER_AUTHENTICATION, "aal2", 0),
+                "category", "k-1", "c-1"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
+                .contains("max_age=\"0\"");
     }
 
     @Test // an unrecognized reason type → the plain 403. A 401 whose error code no client can act on

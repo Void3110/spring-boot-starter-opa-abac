@@ -435,7 +435,7 @@
                   "// and gates the read on the governing root's `env` tier instead. This catalog is UNTAGGED, which",
                   "// ADR 0030 \u00a73 defines as non-production, so contents OPEN.",
                   "// The closed-contents proof did not vanish \u2014 it MOVED to run-production-tier-matrix.sh, which owns",
-                  "// the production (403) cells and the tier-flip liveness cell; the unproven/absent state closes at",
+                  "// the production cells (401 + the RFC 9470 challenge since slice C flipped B's plain 403) and the",
                   "// the module layers (the rego absent-clause tests + the enrichment IT's outage cases).",
                   "pm.test('E6a the category LIST is OPEN (200)', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",

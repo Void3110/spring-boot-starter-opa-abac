@@ -42,7 +42,7 @@ opa:
         - act_chain
     audit:
       # THIS SERVICE's vocabulary for "a privileged read worth auditing" (ADR 0030 §8 Amendment 7).
-      # The starter emits SUPERVISED_PRODUCTION_READ only because these are set — unset, the event is
+      # The starter emits PRIVILEGED_READ only because these are set — unset, the event is
       # silent, which is what an adopter with different nouns gets by default. The other audit event,
       # STEP_UP_CHALLENGED, is vocabulary-free and needs nothing here.
       privileged-read:
