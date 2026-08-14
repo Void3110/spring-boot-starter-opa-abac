@@ -346,6 +346,50 @@ The runner restarts OPA before minting tokens (the tier denies are policy, `--wa
 and needs the catalog service's **published host port** for the operator curl (`BASE_PORT=28080` +
 pod index — `docker ps` shows `catalog-1` at `28081`).
 
+## Step-up elevation (Slice C of the supervisor epic, ADR 0030 §5–9)
+
+### The realm changes (and the down-first re-import they force)
+
+Slice C opens the production tier behind a **fresh second factor**, so the realm export
+(`keycloak/realm-export.json`) grows four things — all declarative, all fixture-only:
+
+| Change | Why |
+|---|---|
+| `basic` + `acr` added to `defaultClientScopes` of **`catalog-spa` and `catalog-gateway`** | The literal scope list *replaces* Keycloak's built-in assignment, which left the built-in `basic` scope (it carries the `auth_time` session-note mapper) and the `acr` scope assigned to **no** client — ADR 0030 §Context's diagnosis. Restoring them is the whole claims fix; no custom mapper is needed. |
+| Realm attribute `acr.loa.map` = `{"aal1":1,"aal2":2}` | Names the two levels the policy's `data.step_up.loa` mirrors. |
+| Browser flow **`browser-stepup`** (bound as the realm browser flow): `level-1` conditional subflow (password) then `level-2` conditional subflow (`Condition - Level of Authentication` **level 2, max age 300** + **OTP Form**, both REQUIRED) | Demands TOTP only when the client asks for LoA 2 (`acr_values=aal2` + `max_age`). An ordinary login is unchanged: password only, `acr: aal1`. |
+| `sup-anna` gains a seeded **`otp` credential** with a fixed, committed fixture secret | So the e2e can compute codes offline. It is public **on purpose** — this is a demo realm with fixture identities, exactly like every committed fixture password here. No other persona has a factor: a supervisor who cannot satisfy level 2 simply never elevates (fail-closed). |
+
+> **One freshness window, stated twice.** The level-2 condition's **max age (300 s)** and the policy
+> data's **`step_up.max_age` (300 s, `infra/opa/policies/step_up.json`)** are the *same* window. Both
+> are JSON-hosted values and JSON holds no comments, so this table is the cross-reference: **change one,
+> change the other.** The `skew` (30 s) is decision-side only.
+
+Two non-obvious things, both measured on Keycloak 26.3.2 during T1 and worth keeping:
+
+- **The level-1 subflow is load-bearing, not decoration.** `Condition - Level of Authentication`
+  evaluates **true whenever the session has not yet reached any level**, whatever the client asked
+  for — so a level-2 condition on its own demands TOTP on *every* fresh login. Wrapping the password
+  in a level-1 conditional subflow is what lets an ordinary login settle at LoA 1 and leaves level 2
+  for clients that actually request it.
+- **A partial `authenticationFlows` block is fine.** Declaring only the custom flows does **not**
+  suppress Keycloak's built-ins: the import still creates `browser`, `registration`, `direct grant`,
+  `reset credentials`, `clients`, `docker auth` and `first broker login`, so the other flow bindings
+  keep resolving.
+
+**The rig must come `down` first** — Keycloak only imports the realm into a fresh container, so a
+running rig keeps the old flow, the old scopes and a factor-less `sup-anna`:
+
+```bash
+./deploy.sh down                                    # so Keycloak RE-IMPORTS the realm
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+```
+
+ROPC is untouched and stays structurally unable to carry `auth_time` (the mapper reads a user-session
+note the direct grant never sets), so every existing runner's `mint_token()` keeps working exactly as
+before — it just also sees `acr: aal1` now, which nothing asserts on. Step-up cells need the scripted
+code flow instead.
+
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 
 Off by default. `ENABLE_RESILIENCE_STUB=1 ./deploy.sh up` adds a **fault-injecting** stand-in for the
