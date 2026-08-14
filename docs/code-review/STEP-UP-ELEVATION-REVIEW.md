@@ -217,14 +217,27 @@ The other eighteen, all fixed except one deferred by design:
 | **The persona registry still called production-tier "the one sanctioned exception"** for sharing `sup-anna`'s reporting edge — step-up is a second sharer | Amended to two, with step-up's compliance with both safety rules stated |
 | **The `collection_base_url` override was still missing from four sibling runners** | Swept — the follow-up task's scope collapsed to the newman-export flag alone |
 
-**Deferred by design (Medium, CORE_BOUNDARY):** the published library hardcodes the *example's*
-vocabulary — the literals `"supervised"` and `"production"` — to decide when to emit
-`SUPERVISED_PRODUCTION_READ`, so no adopter can configure or suppress it. This is a real boundary
-smell, but it is **exactly what ADR 0030 §8 decided** ("computability-pinned … elevation is implied
-by the allow, never re-derived app-side"). Reversing a settled ADR at review close-out would be
-re-litigating design under the guise of a fix, so it is written up as a maintainer decision
-(keep + document / configurable seam / move into the example) rather than silently changed. The
-library's other event, `STEP_UP_CHALLENGED`, is vocabulary-free and unaffected.
+**Escalated, then decided by the maintainer (Medium, CORE_BOUNDARY):** the published library
+hardcoded the *example's* vocabulary — the literals `"supervised"` and `"production"` — to decide
+when to emit `SUPERVISED_PRODUCTION_READ`, so no adopter could configure or suppress it. Rather than
+reverse a settled ADR mid-review, the three options were written up for the maintainer, who chose
+the **configurable seam**:
+
+> **ADR 0030 Amendment 7.** What §8 pinned is *computability* — the trigger evaluates inside the
+> decision, from the allow, the resolved role and the enriched root attributes at that instant, so
+> elevation is implied by the allow and never re-derived app-side. That pin is why the trigger stays
+> in the manager and is **unchanged**; only the vocabulary became configuration. A
+> `PrivilegedReadAuditPolicy` (provenance · root attribute · root values, matched scalar-or-array
+> like `root_env_values`) is built by the starter from `opa.abac.audit.privileged-read.*`, and
+> **unset means silent** — the three-argument constructor is retained and now means exactly that,
+> the right default for every pre-C adopter. The example service opts in with its own nouns.
+> Moving the trigger app-side (option c) was rejected on the ADR's own terms: it forces the
+> re-derivation Amendment 3 forbids.
+
+Two cells pin the seam (unconfigured is silent on the very input that otherwise audits; a different
+vocabulary — `oversight`/`classification`/`restricted` — fires correctly), and the rig proof is
+unchanged in substance: E2's audit grep still finds **both** events on the live pods.
+`STEP_UP_CHALLENGED` is vocabulary-free and untouched.
 
 ## Round 8 — the mutation-coverage round
 
@@ -324,15 +337,19 @@ rather than absorbed.
   including the new wiring-check tests and the unknown-type challenge cell)
 - `./.sonar-local/sonar-local.sh`: **CLEAN — 0 open findings** on changed files (3× S5778 in the
   new test fixed, not suppressed)
-- `opa test infra/opa/policies/`: **381/381** (367 from the slice + 6 round-1 mirror cells + 2
-  round-2 off-state cells + 4 round-3 type/coherence cells + 2 round-5 window-axis cells);
-  `opa check --strict` clean
-- newman, re-run against the live rig after the fixes: `run-production-tier-matrix.sh` (the seven
+- `opa test infra/opa/policies/`: **387/387** (367 from the slice + 6 round-1 mirror cells + 2
+  round-2 off-state cells + 4 round-3 type/coherence cells + 2 round-5 window-axis cells + 6
+  round-8 mutation-pinning cells); `opa check --strict` clean, and every step-up conjunct now fails
+  when deleted
+- newman, re-run against the live rig after each round: `run-production-tier-matrix.sh` (the seven
   C-flip literal cells against the now data-sourced challenge) **green — 73/73**;
   `run-supervised-scope-matrix.sh` (miner preflight; both passes) **green — 48/48**;
-  `run-step-up-matrix.sh` (E1–E7 + the new E9 preflight + the run-scoped audit grep)
-  **green — 55/55**, with the E9 lines confirming iss parity, the gateway 200, and the tamper 401,
-  and both audit events matched against this run's fresh category id
+  `run-filter-matrix.sh` (the base-url override) **green — 29/29**; `run-tests.sh`
+  **green — 22/22**; `run-step-up-matrix.sh` **green — 58/58** (E1–E7 + E6i's root-type agent deny
+  + the E9 preflight's nine controls: iss parity, gateway 200, tamper 401, foreign-issuer 401 across
+  three cased spellings and three guarded routes, gateway-origin 200, and refresh-preserves-
+  `auth_time`), with **both** audit events grepped off the pods against this run's fresh category id
+  — through the configurable audit seam, which is what proves Amendment 7 preserved behavior
 - One fix-of-a-fix caught by the re-validation itself: the E9 tamper control originally flipped the
   token's **last** character — the final base64url sextet of an RS256 signature carries padding
   bits, so the flip can decode to the *identical* bytes and the control fails against a healthy
