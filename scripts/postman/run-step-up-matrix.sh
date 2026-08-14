@@ -252,8 +252,36 @@ esac
   echo "ERROR: a signature-corrupted token was NOT refused by the gateway — the E9e 200 above" >&2
   echo "       proves nothing. The gateway's JWT validation is off or misrouted." >&2
   exit 1; }
+#   (f) THE ISSUER ALLOWLIST (hardened 2026-08-14) — Keycloak's `iss` follows the request's Host
+#       header, so a mint through the published host port with a FORGED Host yields a realm-signed
+#       token naming an arbitrary authority. The gateway's issuer guard must refuse it (401); only
+#       the two rig authorities (keycloak:8888 in-network, localhost:28888 host-browser) pass.
+#       `editor` carries no TOTP factor, so a plain host-port ROPC mint works for this control.
+KC_HOST_PORT_URL="${KC_HOST_PORT_URL:-http://localhost:28888}"
+FOREIGN_ISS_JSON="$(curl -s -X POST \
+  "$KC_HOST_PORT_URL/realms/catalog-demo/protocol/openid-connect/token" \
+  -H 'Host: evil.example:28888' \
+  -d grant_type=password -d "client_id=$CLIENT_ID" -d "client_secret=$CLIENT_SECRET" \
+  -d username=editor -d password=editor)"
+FOREIGN_ISS_TOKEN="$(printf '%s' "$FOREIGN_ISS_JSON" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+[ -n "$FOREIGN_ISS_TOKEN" ] || {
+  echo "ERROR: could not mint the forged-Host control token via $KC_HOST_PORT_URL — Keycloak" >&2
+  echo "       answered: $(printf '%s' "$FOREIGN_ISS_JSON" | head -c 200)" >&2
+  exit 1; }
+FOREIGN_ISS_VALUE="$(token_claim "$FOREIGN_ISS_TOKEN" iss)"
+case "$FOREIGN_ISS_VALUE" in
+  *evil.example*) : ;;
+  *) echo "ERROR: the forged-Host mint did not produce a foreign issuer (got '$FOREIGN_ISS_VALUE')" >&2
+     echo "       — the E9f control would prove nothing. Has the Keycloak hostname been pinned?" >&2
+     exit 1 ;;
+esac
+[ "$(gateway_status "$FOREIGN_ISS_TOKEN")" = "401" ] || {
+  echo "ERROR: a realm-signed token with the FOREIGN issuer '$FOREIGN_ISS_VALUE' passed the" >&2
+  echo "       gateway — the issuer-allowlist guard is missing from the route (re-run" >&2
+  echo "       init-routes.sh via deploy.sh up) or has been removed." >&2
+  exit 1; }
 echo "  E9: iss parity confirmed ($EXPECTED_ISS); gateway 200 on the minted token; 401 on the"
-echo "  tamper control."
+echo "  tamper control; 401 on the foreign-issuer control ($FOREIGN_ISS_VALUE)."
 
 ANNA_SUB="$(token_claim "$ANNA_AAL1_TOKEN" sub)"
 EDITOR_SUB="$(token_claim "$EDITOR_TOKEN" sub)"

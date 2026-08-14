@@ -59,11 +59,12 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 
 > **Issuer gotcha:** Keycloak is hostname-aware — the `iss` claim follows the request's Host
 > header (`KC_HOSTNAME_STRICT=false`; see `compose.keycloak.yaml`'s issuer note). In-network mints
-> carry `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. **Measured
-> (2026-08-14): APISIX validates the signature against the realm JWKS and does not itself enforce
-> `iss`** — so in-network minting (or the code-flow miner, which presents the in-network authority)
-> is the convention that keeps every token on the canonical issuer, not something the gateway
-> forces. Mint in-network anyway: a stricter validator would reject host-issuer tokens.
+> carry `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. The openid-connect
+> plugin validates the signature against the realm JWKS and does not itself enforce `iss`
+> (measured 2026-08-14), so the routes carry an **issuer-allowlist pre-function** beside it: only
+> those two rig authorities pass, and a forged-Host mint through the published port is refused 401
+> (the step-up runner's E9 foreign-issuer control pins it). Mint in-network: it is the canonical
+> authority, and the miner presents it from the host for the same parity.
 
 ## Demo SPA auth (bearer-only gateway) — opt-in
 

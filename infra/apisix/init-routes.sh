@@ -73,6 +73,19 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #     when it is missing/invalid; it never initiates a redirect login. The browser SPA does its
 #     own Authorization Code + PKCE against Keycloak (public client `catalog-spa`) and presents
 #     the token. Same JWKS validation, no gateway-driven login.
+# THE ISSUER-ALLOWLIST GUARD (hardened 2026-08-14). Keycloak 26's `iss` follows the request's
+# Host header (KC_HOSTNAME_STRICT=false — load-bearing for the host-browser SPA login), and the
+# openid-connect plugin validates the SIGNATURE against the realm JWKS but never `iss` (measured —
+# the step-up runner's E9 controls pin both facts). Signature validation already binds tokens to
+# the realm's keys, so the residual risk is cosmetic (`iss` naming an arbitrary authority), but a
+# forged-Host mint through the published port 28888 SHOULD be refused, not waved through. This
+# pre-function 401s any well-formed bearer whose `iss` is neither of the two rig authorities —
+# in-network (`keycloak:8888`, every runner's mints + the miner's presented authority) or the
+# host-browser one (`localhost:28888`, the SPA's logins). Missing/malformed bearers pass THROUGH:
+# openid-connect (the primary authenticator) rejects those on its own terms; this guard only
+# narrows. Rides every route that carries openid-connect (catalog, usermgmt, MCP).
+ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end local token = auth:match('^[Bb]earer%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if claims.iss == 'http://keycloak:8888/realms/catalog-demo' or claims.iss == 'http://localhost:28888/realms/catalog-demo' then return end core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end\"]}"
+
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
     OIDC_BEARER_ONLY="true"
@@ -94,6 +107,7 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
 \"ssl_verify\":false}"
+  PLUGINS="$PLUGINS,$ISSUER_GUARD"
 fi
 
 # CORS — only needed when a browser SPA on a different origin (the Vite dev server on :3000)
@@ -270,6 +284,7 @@ if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
 \"ssl_verify\":false}"
+    UM_PLUGINS="$UM_PLUGINS,$ISSUER_GUARD"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
     UM_PLUGINS="$UM_PLUGINS,\"cors\":{\
@@ -342,6 +357,7 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
 \"ssl_verify\":false}"
+    MCP_PLUGINS="$MCP_PLUGINS,$ISSUER_GUARD"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
     MCP_PLUGINS="$MCP_PLUGINS,\"cors\":{\

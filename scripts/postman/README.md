@@ -133,9 +133,10 @@ its name-keyed `Alice Co` / `Carol Co` rows). A **failed run keeps its fixtures*
 ## Why the token is minted in-network
 
 Keycloak is hostname-aware — `iss` follows the request's Host header — so an in-network mint
-carries the canonical `keycloak:8888` issuer. (Measured 2026-08-14: APISIX validates the signature
-against the realm JWKS and does not itself enforce `iss`; in-network minting is parity by
-convention, not enforcement — see `docs/guides/E2E-TESTING.md`.) So
+carries the canonical `keycloak:8888` issuer. The gateway's openid-connect plugin validates the
+signature against the realm JWKS (never `iss` itself — measured 2026-08-14), and an
+issuer-allowlist guard beside it admits only the two rig authorities (`keycloak:8888`,
+`localhost:28888`) — see `docs/guides/E2E-TESTING.md`. So
 `run-tests.sh` mints the token from inside the `opa-abac-example_default` compose network and passes
 it to newman as `access_token`. Full explanation in
 [`docs/guides/E2E-TESTING.md`](../../docs/guides/E2E-TESTING.md).
