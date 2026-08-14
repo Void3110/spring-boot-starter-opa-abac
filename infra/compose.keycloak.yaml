@@ -14,9 +14,13 @@
 # The openid-connect plugin validates the token SIGNATURE against the realm JWKS and does not
 # itself enforce `iss` (also measured — E9's tamper control is what proves the 200 isn't a
 # wave-through), so init-routes.sh adds an ISSUER-ALLOWLIST pre-function beside it (hardened
-# 2026-08-14): only the two rig authorities pass — `keycloak:8888` (in-network mints + the miner)
-# and `localhost:28888` (the SPA's host-browser logins); a forged-Host mint through the published
-# port is refused (E9's foreign-issuer control pins it). STRICT=false stays: the demo SPA logs in
+# 2026-08-14): only the THREE rig authorities pass — `keycloak:8888` (in-network mints + the
+# miner), `localhost:9085` (THE GATEWAY ORIGIN: the demo SPA's whole PKCE flow runs through the
+# gateway's /realms/* passthrough, and Keycloak rewrites its advertised issuer to it — omitting
+# this 401s every SPA call, a regression this rig actually shipped for one commit), and
+# `localhost:28888` (this published port, reachable directly). `ISSUER_ALLOWLIST` in
+# init-routes.sh is the single source; a forged-Host mint is refused (E9's controls pin both the
+# deny and the gateway-origin ALLOW). STRICT=false stays: the demo SPA logs in
 # through the host port from a browser, which a strict in-network hostname would break. A
 # production deployment should still pin the hostname (KC_HOSTNAME + KC_HOSTNAME_STRICT=true).
 
@@ -31,11 +35,11 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HTTP_ENABLED: "true"
-      # STRICT=false makes the issuer follow the request's Host header (see the issuer note above);
-      # KC_HOSTNAME_URL is a removed v1 option on KC 26 and does nothing — kept only as a tombstone
-      # of the intended in-network authority until a hostname-v2 migration.
+      # STRICT=false makes the issuer follow the request's Host header (see the issuer note above).
+      # There is deliberately no hostname pin: the SPA and the in-network callers need DIFFERENT
+      # issuers, which is exactly why the gateway carries an allowlist instead. (A `KC_HOSTNAME_URL`
+      # line lived here until 2026-08-14 — a removed v1 option that did nothing on KC 26.)
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_URL: "http://keycloak:8888"
       KC_HOSTNAME_ADMIN_URL: "http://localhost:28888"
       # Tracing -> Jaeger (built-in OTEL).
       KC_TRACING_ENABLED: "true"

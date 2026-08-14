@@ -174,6 +174,7 @@ echo "==> newman run $COLLECTION (PRE re-parent: widening, different-sets, deny,
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+    --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "catalog_id=$CATALOG_ID" \
   --env-var "emea_category_id=$EMEA_CATEGORY_ID" \
   --env-var "apac_category_id=$APAC_CATEGORY_ID" \
@@ -215,6 +216,7 @@ echo "==> newman run $COLLECTION (POST re-parent: the moved row left catalog C's
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+    --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "catalog_id=$CATALOG_ID" \
   --env-var "emea_category_id=$EMEA_CATEGORY_ID" \
   --env-var "apac_category_id=$APAC_CATEGORY_ID" \

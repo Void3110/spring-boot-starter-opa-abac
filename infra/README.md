@@ -61,10 +61,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 > header (`KC_HOSTNAME_STRICT=false`; see `compose.keycloak.yaml`'s issuer note). In-network mints
 > carry `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. The openid-connect
 > plugin validates the signature against the realm JWKS and does not itself enforce `iss`
-> (measured 2026-08-14), so the routes carry an **issuer-allowlist pre-function** beside it: only
-> those two rig authorities pass, and a forged-Host mint through the published port is refused 401
-> (the step-up runner's E9 foreign-issuer control pins it). Mint in-network: it is the canonical
-> authority, and the miner presents it from the host for the same parity.
+> (measured 2026-08-14), so the routes carry an **issuer-allowlist pre-function** beside it
+> (`ISSUER_ALLOWLIST` in `apisix/init-routes.sh`). **Three** authorities pass: `keycloak:8888`,
+> `localhost:28888`, and — load-bearing — **`localhost:9085`, the gateway origin**, because the demo
+> SPA runs its whole PKCE flow through the gateway's `/realms/*` passthrough and Keycloak rewrites
+> its advertised issuer to it. A forged-Host mint is refused 401. E9 pins both halves: the
+> foreign-issuer deny and the gateway-origin allow. Mint in-network for the suite: it is the
+> canonical authority, and the miner presents it from the host for the same parity.
 
 ## Demo SPA auth (bearer-only gateway) — opt-in
 

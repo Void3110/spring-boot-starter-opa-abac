@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A resilient {@link OpaClient} decorator (Slice B3, ADR 0017 §1/§2) — it wraps a plain delegate
- * {@code OpaClient} (the {@link dev.dmitriikonovalov.opaabac.core.HttpOpaClient}) and runs each of the three
+ * {@code OpaClient} (the {@link dev.dmitriikonovalov.opaabac.core.HttpOpaClient}) and runs each of the four
  * decision calls through the OPA-edge {@link CallGuard}, so a <em>transient</em> OPA blip recovering within
  * budget no longer surfaces as a denial. Core is untouched — {@code OpaClient} is already an interface, so
  * the resilience lives one level up in the Spring layer (no pluggable transport in core; route "D" rejected).
@@ -37,6 +37,11 @@ import org.slf4j.LoggerFactory;
  *       all-false page (rare — the enrichment advice omits those blocks anyway) pays one extra fast hop,
  *       exactly like a genuine {@code allow} deny. Fail-closed is preserved in every case — resilience
  *       makes outages rarer, never wider.</li>
+ *   <li>{@code decide} retries a <em>reasonless</em> deny (indistinguishable from the swallowed failure,
+ *       exactly like {@code allow}'s {@code false}) but <strong>never</strong> a deny carrying a
+ *       {@link dev.dmitriikonovalov.opaabac.core.DenyReason}: the delegate builds a reason only on a real
+ *       {@code 200}, so a reasoned deny is a real answer — the same discipline {@code allowAll} applies to
+ *       a mixed block, and it keeps the step-up hot path off an extra hop plus backoff.</li>
  * </ul>
  *
  * <h2>The decorator OWNS the fail-closed values (breaker-open + exhausted-retry)</h2>
@@ -45,7 +50,7 @@ import org.slf4j.LoggerFactory;
  * {@code n}×{@code false}. It is <strong>never</strong> {@code denyAll()} (which has {@code fromError==false}
  * — a 5.5-B hierarchy {@code subtreeSpec} widening could survive next to it) and <strong>never</strong>
  * {@code allowAll()} (the catastrophe value). A contract test pins decorator-value == delegate-value in
- * every state. The decorator is a real {@code OpaClient} — it implements all three methods, fail-closed, by
+ * every state. The decorator is a real {@code OpaClient} — it implements all four methods, fail-closed, by
  * hand (no {@code default} fail-open).
  *
  * <p>On exhausted retry the guard returns the delegate's last (still fail-closed) value unchanged, so the

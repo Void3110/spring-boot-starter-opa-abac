@@ -187,6 +187,45 @@ strips null claims before the subject map is built, so the presence-test never s
 miss) and one arguing `hasCompleteReason()` is dead (the enforcement path re-derives completeness
 deliberately).
 
+## Round 7 — the hardening's second self-inflicted finding
+
+19 confirmed, 1 refuted. The headline is again a defect in the round-6 guard, live-reproduced by
+the lens *and* independently by its refuter:
+
+> **`Authorization: BEARER <token>` bypassed the issuer guard.** The guard matched `^[Bb]earer`,
+> but the openid-connect plugin it rides beside lowercases the scheme before validating
+> (`string.lower(res[1]) == "bearer"`, read from the running image). So the guard's *skip* set was
+> larger than the authenticator's *reject* set: a foreign-issuer token under `BEARER` skipped the
+> issuer check **and** authenticated — measured reaching the upstream on all four guarded routes.
+> The guard's own comment ("it only narrows — a malformed bearer passes through to openid-connect,
+> which rejects it") was therefore false for exactly this input.
+
+Fixed by lowercasing the scheme before slicing, with the reason written into the guard's comment so
+the next editor cannot re-introduce it. E9's foreign-issuer control now probes **three cased
+spellings** (`Bearer`/`BEARER`/`bEaReR`) across **all three guarded routes** — it previously probed
+one casing on one route, i.e. a guard installed on three routes was two-thirds unproven.
+
+The other eighteen, all fixed except one deferred by design:
+
+| Finding | Fix |
+|---|---|
+| **Spec**: `createProduct`/`updateProduct` can emit 503 (the fail-closed dictionary path) but declared none; `createCatalog` declared a 409 it cannot emit (my own over-broad round-6 addition — a fresh catalog has no governing team, so no tag write happens) | 503 added to both product writes; the 409 dropped from `createCatalog` |
+| **Five issuer notes still said "two rig authorities"** and attributed the SPA's login to `localhost:28888` — the *exact belief that caused the round-6 regression*, still committed in prose | All five swept to three authorities with the gateway origin named and explained; the inert `KC_HOSTNAME_URL` deleted (its own comment already called it dead) |
+| **Rego**: the coherence guard checked type but not *range* — a negative `max_age`/`skew` is well-typed but unsatisfiable, so a challenge was still minted | `>= 0` conjuncts on both axes + mirrored cells (`opa test` 385/385) |
+| **`act_chain: null` was documented as an agent call in all three policies but cannot be** — the extractor strips null-valued claims before the subject map exists (the same claim was *refuted twice* in earlier rounds as "not a fail-open", which is true and orthogonal: the docs were still wrong) | The shape list now says which shapes the claim can *arrive* as, and names the extractor's contract |
+| **`docs/api` 409 rows + per-endpoint status lists**; two javadocs stale (`ResilientOpaClient` "three decision calls" after `decide` made four; `ApiExceptionHandler` claiming the inherited mapping is always 403) | All updated |
+| **The persona registry still called production-tier "the one sanctioned exception"** for sharing `sup-anna`'s reporting edge — step-up is a second sharer | Amended to two, with step-up's compliance with both safety rules stated |
+| **The `collection_base_url` override was still missing from four sibling runners** | Swept — the follow-up task's scope collapsed to the newman-export flag alone |
+
+**Deferred by design (Medium, CORE_BOUNDARY):** the published library hardcodes the *example's*
+vocabulary — the literals `"supervised"` and `"production"` — to decide when to emit
+`SUPERVISED_PRODUCTION_READ`, so no adopter can configure or suppress it. This is a real boundary
+smell, but it is **exactly what ADR 0030 §8 decided** ("computability-pinned … elevation is implied
+by the allow, never re-derived app-side"). Reversing a settled ADR at review close-out would be
+re-litigating design under the guise of a fix, so it is written up as a maintainer decision
+(keep + document / configurable seam / move into the example) rather than silently changed. The
+library's other event, `STEP_UP_CHALLENGED`, is vocabulary-free and unaffected.
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the

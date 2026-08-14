@@ -1084,6 +1084,13 @@ test_malformed_window_data_mutes_the_challenge if {
 		with time.now_ns as stepup_now_ns
 }
 
+# …and a NEGATIVE window is muted for the same reason: well-typed but unsatisfiable.
+test_negative_window_mutes_the_challenge if {
+	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": -1, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
 test_absent_step_up_data_closes_elevation_and_mutes_the_challenge if {
 	not product.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with data.step_up as {}

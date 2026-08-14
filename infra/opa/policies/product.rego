@@ -283,7 +283,10 @@ elevated if {
 # THE PRESENCE-TEST, not a truthiness test (the recorded escape: a bare `input.subject.attributes.x`
 # reference is a truthiness test, and Rego's ONLY falsy value is `false` — so `act_chain: false` would
 # leave the rule undefined and route the call to the wider human branch). Testing the KEY makes every
-# value shape — `false`, `[]`, `""`, `null`, `0` — an agent call. `act_chain` is the WIRE claim minted
+# value shape the claim can ARRIVE as — `false`, `[]`, `""`, `0` — an agent call. (A JSON-`null`
+# claim is the one shape that never reaches here: the starter's extractor drops null-valued claims
+# before the subject map is built, so the key is absent and the call reads as human. That is the
+# extractor's contract, not this test's escape.) `act_chain` is the WIRE claim minted
 # by the `catalog-agent-*` clients' protocol mapper; `actor` is the MCP server's internal tool-gate
 # attribute and never travels downstream.
 is_agent_call if {
@@ -322,6 +325,11 @@ deny_reason := {
 	is_number(data.step_up.loa[data.step_up.required_acr])
 	is_number(data.step_up.max_age)
 	is_number(data.step_up.skew)
+
+	# …and NON-NEGATIVE. A negative window is well-typed but unsatisfiable: `elevated` can never
+	# hold, so a challenge would promise an elevation no re-authentication achieves.
+	data.step_up.max_age >= 0
+	data.step_up.skew >= 0
 }
 
 # The root's env value(s) as a set: an array tag -> the set of its elements; a scalar -> {scalar}.

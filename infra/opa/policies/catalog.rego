@@ -113,8 +113,11 @@ denied if {
 
 # THE PRESENCE-TEST, not a truthiness test (the recorded escape: a bare reference is a truthiness
 # test and Rego's only falsy value is `false`, so `act_chain: false` would leave the rule undefined
-# and route the call to the wider human branch). Testing the KEY makes every value shape — `false`,
-# `[]`, `""`, `null`, `0` — an agent call. `act_chain` is the WIRE claim the `catalog-agent-*`
+# and route the call to the wider human branch). Testing the KEY makes every value shape the claim
+# can ARRIVE as — `false`, `[]`, `""`, `0` — an agent call. (A JSON-`null` claim is the one shape
+# that never reaches here: the starter's extractor drops null-valued claims before the subject map
+# is built, so the key is absent and the call reads as human — the extractor's contract, not this
+# test's escape.) `act_chain` is the WIRE claim the `catalog-agent-*`
 # clients' protocol mapper mints; `actor` is the MCP server's internal tool-gate attribute and never
 # travels downstream.
 is_agent_call if {

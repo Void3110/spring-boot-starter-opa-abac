@@ -91,13 +91,17 @@ Keycloak is **hostname-aware**: the `iss` claim follows the request's Host heade
 (`KC_HOSTNAME_STRICT=false`), so an in-network mint carries `http://keycloak:8888` and a host-port
 mint carries `http://localhost:28888`. The openid-connect plugin validates the token signature
 against the realm JWKS and does not itself enforce `iss` (measured 2026-08-14), so the gateway
-carries an **issuer-allowlist guard** beside it (`init-routes.sh`, hardened the same day): only the
-two rig authorities pass — `keycloak:8888` (every runner's in-network mints, and the miner's
-presented authority) and `localhost:28888` (the SPA's host-browser logins); a realm-signed token
-minted with a forged Host header is refused 401. The suite still mints in-network so every token
+carries an **issuer-allowlist guard** beside it (`ISSUER_ALLOWLIST` in `init-routes.sh`, hardened
+the same day): three authorities pass — `keycloak:8888` (every runner's in-network mints, and the
+miner's presented authority), **`localhost:9085`, the gateway origin** (the demo SPA's whole PKCE
+flow goes through the gateway's `/realms/*` passthrough, and Keycloak rewrites its advertised
+issuer to it — packaged and vite-dev alike), and `localhost:28888` (the published Keycloak port).
+A realm-signed token minted with a forged Host header is refused 401, under **any** cased spelling
+of the `Bearer` scheme. The suite still mints in-network so every token
 carries the canonical issuer. The step-up runner's E9 preflight pins all three halves — the `iss`
-value, the tamper control (the 200 is signature-validated), and the foreign-issuer control (the
-allowlist actually bites).
+value, the tamper control (the 200 is signature-validated), the foreign-issuer control across three
+cased spellings and all three guarded routes (the allowlist actually bites), and the gateway-origin
+control (it does **not** bite the browser — the half whose absence broke the SPA for one commit).
 
 So the suite does **not** grab the token from the host. The runner mints it from inside the shared
 compose network (`opa-abac-example_default`) and hands it to newman:

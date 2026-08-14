@@ -166,6 +166,7 @@ echo "==> newman run $COLLECTION (the pagination envelope through the gateway)"
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+    --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "catalog_id=$DEMO_CATALOG_ID" \
   --env-var "reader_emea_token=$READER_EMEA_TOKEN" \
   --env-var "reader_apac_token=$READER_APAC_TOKEN" \

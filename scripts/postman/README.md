@@ -87,7 +87,7 @@ subject: an account one matrix asserts as *absent* must never be an account anot
 
 **Reserved persona family:** `sup-*` / `pm-*` (SUPERVISED-SCOPE, ADR 0029) — `sup-anna`, `sup-victor`, `sup-noreports`, `outsider-eve`, `pm-bob`, `pm-carol`, `pm-dave`, `pm-erin`. The whole family belongs to `run-supervised-scope-matrix.sh`, which owns their memberships **and** their reporting edges. **No other matrix may bind them to a team, grant on them, or add a reporting edge for them**: the supervised set is derived transitively, so one stray membership on a `pm-*` account silently widens `sup-anna`'s page and breaks E1's exact-id assertion. `sup-anna` and `sup-victor` must in particular stay members of **no** team — that is the whole point of the headline cell. `sup-noreports` carries the `unit-supervisor` claim and must **never** be given a reporting edge (it is E10's cell: the marker alone grants nothing), and `outsider-eve` must be given neither (E3).
 
-**The one sanctioned exception** (PRODUCTION-TIER, ADR 0030): `run-production-tier-matrix.sh` also gives `sup-anna` a reporting edge — it needs a *supervised* decision, and minting a second supervisor persona would be a realm diff this slice does not take. Two rules make the sharing safe, and both are enforced in the runners rather than merely stated: **(1)** each runner **deletes every reporting edge it manages** before seeding, so whichever runs second starts from its own org; **(2)** the production-tier matrix binds **no `pm-*` account** — its teams are owned by `editor`, so nothing it leaves behind can reach `sup-anna` once the supervised-scope runner re-seeds her edges, and E1's exact-id assertion there is unaffected. A third matrix wanting `sup-anna` must adopt both rules or pick another route.
+**The two sanctioned exceptions** (PRODUCTION-TIER and STEP-UP-ELEVATION, ADR 0030): `run-production-tier-matrix.sh` **and** `run-step-up-matrix.sh` each also give `sup-anna` a reporting edge — it needs a *supervised* decision, and minting a second supervisor persona would be a realm diff this slice does not take. Two rules make the sharing safe, and both are enforced in the runners rather than merely stated: **(1)** each runner **deletes every reporting edge it manages** before seeding, so whichever runs second starts from its own org; **(2)** the production-tier matrix binds **no `pm-*` account** — its teams are owned by `editor`, so nothing it leaves behind can reach `sup-anna` once the supervised-scope runner re-seeds her edges, and E1's exact-id assertion there is unaffected. The step-up matrix adopts both rules verbatim (it clears anna's edges **and** her memberships before seeding — E6d asserts an empty membership-only page — and its `Step-Up *` teams are likewise owned by `editor`). A **fourth** matrix wanting `sup-anna` must adopt both rules or pick another route.
 
 **Reserved realm account:** `perf` (LOAD-TESTING, Phase 7.2) — the **dedicated load identity**
 `scripts/load/run-load.sh` runs every k6 scenario as. The runner bootstraps her profile and her
@@ -135,8 +135,9 @@ its name-keyed `Alice Co` / `Carol Co` rows). A **failed run keeps its fixtures*
 Keycloak is hostname-aware — `iss` follows the request's Host header — so an in-network mint
 carries the canonical `keycloak:8888` issuer. The gateway's openid-connect plugin validates the
 signature against the realm JWKS (never `iss` itself — measured 2026-08-14), and an
-issuer-allowlist guard beside it admits only the two rig authorities (`keycloak:8888`,
-`localhost:28888`) — see `docs/guides/E2E-TESTING.md`. So
+issuer-allowlist guard beside it admits three rig authorities (`keycloak:8888`, the gateway origin
+`localhost:9085` the SPA logs in through, and `localhost:28888`) — see
+`docs/guides/E2E-TESTING.md`. So
 `run-tests.sh` mints the token from inside the `opa-abac-example_default` compose network and passes
 it to newman as `access_token`. Full explanation in
 [`docs/guides/E2E-TESTING.md`](../../docs/guides/E2E-TESTING.md).

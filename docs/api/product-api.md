@@ -328,6 +328,7 @@ Every error is an `application/problem+json` (RFC-7807) body. A client branches 
 | `401` | `STEP_UP_REQUIRED` | Step-up (RFC 9470): the sole blocker is authentication freshness — a supervisor reading production content before the second factor. The `WWW-Authenticate` header carries the challenge. Reads only (`list`/`get`). |
 | `403` | `ACCESS_DENIED` | The OPA gate denied — no grant, an unauthenticated/unresolved subject, or a tag decision the caller lacks. |
 | `404` | `RESOURCE_NOT_FOUND` | No such product under the given `catalogId`/`categoryId`. |
+| `409` | `TAG_OPERATOR_MANAGED` | A `tags` payload would assign, re-value or strip an **operator-managed** tag (written only through the operator path). |
 | `422` | `TAG_VALUE_ILLEGAL` | A tag key/value the dictionary does not permit (on create or update). |
 | `503` | `DEPENDENCY_UNAVAILABLE` | A required dependency (e.g. the tag dictionary) was unreachable — fail-closed; the request was rejected, not applied. |
 

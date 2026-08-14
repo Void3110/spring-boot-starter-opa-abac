@@ -80,7 +80,11 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 # Signature validation already binds a token to the realm's keys, so the residual risk is a
 # realm-signed token NAMING an arbitrary authority (mint through a published port with a forged
 # Host); this guard refuses those. It only NARROWS: a missing or malformed bearer passes through
-# to openid-connect, the primary authenticator, which rejects it on its own terms.
+# to openid-connect, the primary authenticator, which rejects it on its own terms. THE SCHEME MATCH
+# IS CASE-INSENSITIVE, and that is load-bearing rather than cosmetic: openid-connect lowercases the
+# scheme before validating (`string.lower(res[1]) == 'bearer'`), so a case-fixed match here would
+# make this guard's skip set LARGER than the authenticator's reject set — `Authorization: BEARER
+# <tok>` would skip the issuer check and still authenticate (measured: it reached the upstream).
 #
 # THE THREE RIG AUTHORITIES — every one is a real, exercised login path. Adding a way to reach
 # Keycloak means adding its origin here, or that path 401s at the edge:
@@ -93,7 +97,7 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #   - localhost:28888  the published Keycloak port, reachable directly from the host.
 ISSUER_ALLOWLIST="${ISSUER_ALLOWLIST:-http://keycloak:8888/realms/catalog-demo,http://localhost:9085/realms/catalog-demo,http://localhost:28888/realms/catalog-demo}"
 ISSUER_ALLOWED_LUA="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "[%c%s%c]=true,", 39, $i, 39}')"
-ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local allowed = {${ISSUER_ALLOWED_LUA}} local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end local token = auth:match('^[Bb]earer%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.[^%.]*$') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if type(claims.iss) ~= 'string' or not allowed[claims.iss] then core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end end\"]}"
+ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local allowed = {${ISSUER_ALLOWED_LUA}} local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end if not auth:lower():match('^bearer%s') then return end local token = auth:match('^%S+%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.[^%.]*$') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if type(claims.iss) ~= 'string' or not allowed[claims.iss] then core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end end\"]}"
 
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   if [ "${ENABLE_SPA:-0}" = "1" ]; then

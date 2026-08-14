@@ -19,8 +19,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * {@code errorCode}.
  *
  * <p>Extends {@link AbstractProblemAdvice}, which supplies the body builder and the inherited
- * {@code AccessDeniedException} → {@code 403 ACCESS_DENIED} mapping (so a denied {@code @OpaPreAuthorize}
- * call also lands as {@code problem+json}). The status for each exception is <strong>unchanged</strong>
+ * {@code AccessDeniedException} mapping (so a denied {@code @OpaPreAuthorize} call also lands as
+ * {@code problem+json}): {@code 403 ACCESS_DENIED} ordinarily, or — when the decision carries a complete
+ * step-up reason — {@code 401 STEP_UP_REQUIRED} with an RFC 9470 {@code WWW-Authenticate} challenge. The status for each exception is <strong>unchanged</strong>
  * from before — only the body shape and the typed code are new. Every catalog failure maps cleanly to a
  * {@link LibraryErrorCode}; {@link CatalogErrorCode} carries the app-specific ones (today:
  * {@code TAG_OPERATOR_MANAGED}).

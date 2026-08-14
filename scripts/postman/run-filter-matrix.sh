@@ -194,6 +194,7 @@ echo "==> newman run $COLLECTION (data-filtering matrix through the gateway)"
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+    --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "catalog_id=$DEMO_CATALOG_ID" \
   --env-var "emea_category_id=$EMEA_CATEGORY_ID" \
   --env-var "apac_category_id=$APAC_CATEGORY_ID" \

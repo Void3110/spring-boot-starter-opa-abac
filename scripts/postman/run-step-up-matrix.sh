@@ -232,8 +232,12 @@ EXPECTED_ISS="${EXPECTED_ISS:-${KEYCLOAK_TOKEN_URL%/protocol/openid-connect/toke
   echo "ERROR: the miner's token carries iss='$(token_claim "$ANNA_AAL1_TOKEN" iss)'," >&2
   echo "       expected '$EXPECTED_ISS' (issuer parity with the in-network mints — E9d)." >&2
   exit 1; }
-gateway_status() {  # $1 bearer -> the status code of an authenticated list through the gateway
-  curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $1" "$GATEWAY/api/v1/catalogs"
+gateway_status() {  # $1 bearer [$2 path] [$3 scheme] -> the status code through the gateway
+  # The scheme is a PARAMETER because the issuer guard must match it case-insensitively: the
+  # openid-connect plugin lowercases the scheme, so a guard that only matched `Bearer` would skip
+  # its issuer check on `BEARER` while the request still authenticated (a measured bypass).
+  curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: ${3:-Bearer} $1" "$GATEWAY${2:-/api/v1/catalogs}"
 }
 [ "$(gateway_status "$ANNA_AAL1_TOKEN")" = "200" ] || {
   echo "ERROR: the miner's token did not reach a 200 through the gateway (E9e)." >&2; exit 1; }
@@ -254,7 +258,8 @@ esac
 #   (f) THE ISSUER ALLOWLIST (hardened 2026-08-14) — Keycloak's `iss` follows the request's Host
 #       header, so a mint through the published host port with a FORGED Host yields a realm-signed
 #       token naming an arbitrary authority. The gateway's issuer guard must refuse it (401); only
-#       the two rig authorities (keycloak:8888 in-network, localhost:28888 host-browser) pass.
+#       the three rig authorities (keycloak:8888 in-network, localhost:9085 the gateway origin
+#       the SPA logs in through, localhost:28888 the published port) pass.
 #       `editor` carries no TOTP factor, so a plain host-port ROPC mint works for this control.
 KC_HOST_PORT_URL="${KC_HOST_PORT_URL:-http://localhost:28888}"
 FOREIGN_ISS_JSON="$(curl -s -X POST \
@@ -306,6 +311,22 @@ GATEWAY_ISS_VALUE="$(token_claim "$GATEWAY_ISS_TOKEN" iss)"
   echo "       origin), so the browser demo is broken: add it to init-routes.sh's" >&2
   echo "       ISSUER_ALLOWLIST. Every runner mints in-network, so nothing else here would fail." >&2
   exit 1; }
+#       …and the guard must hold for EVERY cased spelling of the scheme, and on EVERY route it
+#       rides (catalog, usermgmt, MCP) — a guard installed on three routes but probed on one is
+#       two-thirds unproven.
+for scheme in Bearer BEARER bEaReR; do
+  [ "$(gateway_status "$FOREIGN_ISS_TOKEN" /api/v1/catalogs "$scheme")" = "401" ] || {
+    echo "ERROR: the foreign-issuer token passed the gateway under the scheme spelling" >&2
+    echo "       '$scheme' — the issuer guard's scheme match is case-SENSITIVE while" >&2
+    echo "       openid-connect's is not, so the guard is bypassable." >&2
+    exit 1; }
+done
+for guarded_path in /api/v1/teams /mcp; do
+  [ "$(gateway_status "$FOREIGN_ISS_TOKEN" "$guarded_path")" = "401" ] || {
+    echo "ERROR: the foreign-issuer token was not refused on '$guarded_path' — the issuer" >&2
+    echo "       guard is missing from that route (it rides catalog, usermgmt AND mcp)." >&2
+    exit 1; }
+done
 echo "  E9: iss parity confirmed ($EXPECTED_ISS); gateway 200 on the minted token; 401 on the"
 echo "  tamper control; 401 on the foreign-issuer control ($FOREIGN_ISS_VALUE); 200 on the"
 echo "  gateway-origin (SPA) authority ($GATEWAY_ISS_VALUE)."
