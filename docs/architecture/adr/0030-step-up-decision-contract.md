@@ -294,3 +294,32 @@ elevation; and Keycloak flow automation, which stays rig configuration.
    `acr`/`amr` are absent from both tokens on every request-side path (including `max_age` and an
    essential-claims request); restoring the built-in `basic` + `acr` scopes is the fix, and a
    refresh grant preserves `auth_time` at the original login instant (re-measured).
+
+7. **The privileged-read event's vocabulary is the ADOPTER's, not the library's** (2026-08-14,
+   layer-3 review). §8 above pinned `SUPERVISED_PRODUCTION_READ` to *computability*: it fires from
+   the decision's own inputs — the granted allow, the resolved role, the enriched governing-root
+   attributes — at the instant the decision is made, so elevation is implied by the allow and never
+   re-derived app-side. That pin is **unchanged and remains the reason the trigger lives in the
+   manager**. What the review found is separable and was a real defect for adopters: the manager
+   also *hardcoded this repo's example nouns* — the literals `supervised` and `production` — so a
+   published-starter adopter whose vocabulary differs gets an event that can never fire, and one
+   whose vocabulary happens to match gets an event they never asked for, with no way to configure
+   or suppress either.
+
+   **Decision: the trigger stays where the data is; only its vocabulary becomes configuration.** A
+   `PrivilegedReadAuditPolicy` (provenance · root attribute · root values, the last matched
+   scalar-or-array exactly as `root_env_values` normalizes) is passed to the manager, built by the
+   starter from `opa.abac.audit.privileged-read.*`. **Unset means silent** — no policy, no event —
+   so an adopter's default is "nothing fires", and the example catalog service opts in with its own
+   nouns in `application.yml`. The alternatives were rejected on this ADR's own terms: keeping the
+   literals and documenting them leaves a published library firing on someone else's domain
+   language, and moving the trigger into the example service would force precisely the app-side
+   re-derivation of elevation that Amendment 3 and §8 forbid.
+
+   **Consequences.** The library's other audit event, `STEP_UP_CHALLENGED`, is vocabulary-free (it
+   reports a challenge the library itself minted) and is unaffected. The change is additive: the
+   three-argument manager constructor is retained and now means "no privileged-read event", which is
+   the correct default for every pre-C adopter. The e2e proof is unchanged in substance — the
+   example configures the same nouns, so `run-step-up-matrix.sh`'s E2 audit grep still measures the
+   event on the wire — and two unit cells pin the seam itself: unconfigured is silent, and a
+   *different* vocabulary (`oversight` / `classification` / `restricted`) fires correctly.

@@ -81,6 +81,27 @@ than behavior:**
   compatible — a source-incompatibility the additive default cannot avoid. Rename the local member
   (the in-repo precedent is `verdictFor`). Implementations without such a member are unaffected.
 
+**The audit channel is opt-in, in your vocabulary.** The library emits two events on the
+`opa.abac.audit` SLF4J logger. `STEP_UP_CHALLENGED` needs no configuration — it reports a challenge
+the library itself minted. `SUPERVISED_PRODUCTION_READ` answers a question only *your* domain can
+pose ("an oversight role read sensitive-tier content"), so its trigger is configuration and
+**unset means silent**:
+
+```yaml
+opa:
+  abac:
+    audit:
+      privileged-read:
+        provenance: supervised      # your role-provenance stamp for the oversight path
+        root-attribute: env         # the governing root's tier attribute
+        root-values: [production]   # the tier(s) that make a read privileged (scalar or array)
+```
+
+The trigger is evaluated inside the decision, from the decision's own inputs — the allow, the
+resolved role, the enriched root attributes — so elevation is implied by the allow and never
+re-derived (ADR 0030 §8 + Amendment 7). Leave the block out and no privileged-read event is ever
+emitted.
+
 **Four fail-closed rules, each landing at the layer it arises:**
 
 | Situation | Result | Why |

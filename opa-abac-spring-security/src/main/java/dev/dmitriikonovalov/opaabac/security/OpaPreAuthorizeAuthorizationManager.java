@@ -77,15 +77,16 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     private static final Logger log = LoggerFactory.getLogger(OpaPreAuthorizeAuthorizationManager.class);
     private static final AuthorizationDecision DENY = new AuthorizationDecision(false);
 
-    /** The role-provenance stamp that marks the supervised access path (ADR 0029/0031). */
-    private static final String SUPERVISED_PROVENANCE = "supervised";
-
-    /** The governing root's env tier that makes a supervised read a privileged, auditable one. */
-    private static final String PRODUCTION = "production";
-
     private final OpaClient opaClient;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
     private final ResourceResolutionSupport resolutionSupport;
+
+    /**
+     * Which allowed reads are privileged enough to audit, in the ADOPTER's vocabulary — {@code null}
+     * (the default) means the privileged-read event is never emitted. See
+     * {@link PrivilegedReadAuditPolicy}.
+     */
+    private final PrivilegedReadAuditPolicy privilegedReadAuditPolicy;
     private final ExpressionParser expressionParser = new SpelExpressionParser();
     private final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
@@ -102,10 +103,25 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             OpaClient opaClient,
             RoleDefinitionSupplier roleDefinitionSupplier,
             ResourceResolutionSupport resolutionSupport) {
+        this(opaClient, roleDefinitionSupplier, resolutionSupport, null);
+    }
+
+    /**
+     * @param privilegedReadAuditPolicy which allowed reads are privileged enough to audit, in this
+     *                                  adopter's own vocabulary, or {@code null} to emit no
+     *                                  privileged-read event (the default — see
+     *                                  {@link PrivilegedReadAuditPolicy})
+     */
+    public OpaPreAuthorizeAuthorizationManager(
+            OpaClient opaClient,
+            RoleDefinitionSupplier roleDefinitionSupplier,
+            ResourceResolutionSupport resolutionSupport,
+            PrivilegedReadAuditPolicy privilegedReadAuditPolicy) {
         this.opaClient = Objects.requireNonNull(opaClient, "opaClient");
         this.roleDefinitionSupplier =
                 Objects.requireNonNull(roleDefinitionSupplier, "roleDefinitionSupplier");
         this.resolutionSupport = resolutionSupport;
+        this.privilegedReadAuditPolicy = privilegedReadAuditPolicy;
     }
 
     /**
@@ -206,11 +222,10 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      * miss {@code ["production", "staging"]}. Absent root attributes mean no event: nothing proved this
      * read was privileged, which is also the state the policy treats as an unproven (closed) tier.
      */
-    private static void auditSupervisedProductionRead(
+    private void auditSupervisedProductionRead(
             AbacContext.Subject subject, RoleDefinition roleDefinition, ResolvedCheck resolved) {
-        if (roleDefinition == null
-                || !SUPERVISED_PROVENANCE.equals(roleDefinition.attributes().get("provenance"))
-                || !isProduction(resolved.resource().rootAttributes())) {
+        if (privilegedReadAuditPolicy == null
+                || !privilegedReadAuditPolicy.matches(roleDefinition, resolved.resource().rootAttributes())) {
             return;
         }
         AbacAuditLogger.supervisedProductionRead(
@@ -219,24 +234,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 resolved.resource().type(),
                 resolved.resource().id(),
                 resolved.roleId(),
-                SUPERVISED_PROVENANCE);
-    }
-
-    /** Whether the governing root's {@code env} tag contains {@code production}, scalar or array. */
-    private static boolean isProduction(Map<String, Object> rootAttributes) {
-        if (rootAttributes == null) {
-            return false;
-        }
-        Object env = rootAttributes.get("env");
-        if (env instanceof Iterable<?> values) {
-            for (Object value : values) {
-                if (PRODUCTION.equals(value)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        return PRODUCTION.equals(env);
+                privilegedReadAuditPolicy.provenance());
     }
 
     private static OpaPreAuthorize findAnnotation(MethodInvocation invocation) {

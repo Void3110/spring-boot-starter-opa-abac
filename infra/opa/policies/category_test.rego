@@ -1149,6 +1149,19 @@ test_deny_reason_required_acr_comes_from_data if {
 # (every string sorts above every number — `"1" >= 2` is TRUE), so without the `is_number` guard a
 # string-valued loa map would elevate password-only logins instead of failing closed. The mixed map
 # is the sharpest trap: a string level beside a numeric threshold satisfies the bare comparison.
+# …and the THRESHOLD side needs its own guard: Rego's total order puts `null` BELOW every number,
+# so a null-valued `loa[required_acr]` would make `1 >= null` true and an aal1 (password-only)
+# subject would clear an aal2 threshold. The string-map case above cannot pin this — it trips the
+# level-side guard first, so only a WELL-TYPED level beside a bad threshold reaches this conjunct.
+test_non_numeric_required_level_fails_closed if {
+	not category.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "aal1", "auth_time": stepup_now_s - 10},
+	)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": null}, "required_acr": "aal2", "max_age": 300, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
 test_string_loa_values_fail_closed if {
 	not category.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with data.step_up as {"loa": {"aal1": "1", "aal2": "2"}, "required_acr": "aal2", "max_age": 300, "skew": 30}
@@ -1183,12 +1196,25 @@ test_malformed_window_data_mutes_the_challenge if {
 	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
 		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300}
 		with time.now_ns as stepup_now_ns
+
+	# …and the SKEW axis explicitly: an absent skew is muted by either guard, so only a PRESENT
+	# but string-valued one pins `is_number(skew)` (the `max_age + skew` arithmetic type-errors,
+	# leaving elevation permanently undefined while a guardless challenge still advertised it).
+	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": "30"}
+		with time.now_ns as stepup_now_ns
 }
 
 # …and a NEGATIVE window is muted for the same reason: well-typed but unsatisfiable.
 test_negative_window_mutes_the_challenge if {
 	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
 		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": -1, "skew": 30}
+		with time.now_ns as stepup_now_ns
+
+	# …on the skew axis too: a negative skew large enough to invert the window makes elevation
+	# unreachable for everyone, so a challenge there is the §7 loop.
+	not category.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": -400}
 		with time.now_ns as stepup_now_ns
 }
 

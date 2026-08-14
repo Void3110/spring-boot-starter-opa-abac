@@ -226,6 +226,37 @@ re-litigating design under the guise of a fix, so it is written up as a maintain
 (keep + document / configurable seam / move into the example) rather than silently changed. The
 library's other event, `STEP_UP_CHALLENGED`, is vocabulary-free and unaffected.
 
+## Round 8 — the mutation-coverage round
+
+Seven Lows, two refuted, **no defects in shipped behavior**: every finding was a *guard that works
+but nothing pins*. The lenses proved each one by deleting the conjunct and observing the suite stay
+green — the same discipline the slice used for its own eleven deletion-mutation guards, now turned
+on the guards the review itself added.
+
+| Unpinned conjunct | Why the existing cells missed it | Now pinned by |
+|---|---|---|
+| `elevated`'s `is_number(required_level)` | The string-map case trips the *level*-side guard first, so the threshold-side guard was never the failing conjunct. Deleting it lets `1 >= null` hold — Rego orders `null` below every number — so a password-only `aal1` subject clears an `aal2` threshold | a **null-valued** `loa[required_acr]` beside a well-typed level |
+| `deny_reason`'s `is_number(skew)` | The only skew variation was an *absent* key, which both skew guards mute redundantly | a **present but string-valued** `skew` |
+| `deny_reason`'s `skew >= 0` | same | a **negative** `skew` inverting the window |
+
+Each now fails its mutation (2 cells per conjunct — the mirrored pair), verified by deleting all
+three in turn against the restored tree. `opa test` 385 → **387/387**.
+
+The other four:
+
+- **The catalog root's supervised-agent deny had no rig cell** — `catalog.rego` gained the agent
+  deny in T2, but E6 only exercised the child types. Added **E6i**, mirroring E1pre's human 200 so
+  the root type gets the same allow-vs-deny contrast.
+- **QA case I5's keystone — "a refresh grant preserves `auth_time`" — had no committed test
+  anywhere.** It is the claim the entire freshness design rests on (it is *why* a short token
+  lifetime would prove nothing), and it had been measured once by a scratchpad script that was
+  never committed. Added as **E9h**: mint the elevated token's refresh token, exchange it, assert
+  `auth_time` unchanged **and** `iat` advanced (the second half stops the first from passing
+  vacuously on an unrefreshed token).
+- **The three DELETE operations can emit 409** (`STATE_CONFLICT`) but declared only 204/403/404 —
+  and `catalog-api.md`'s table still listed `STATE_CONFLICT` under a literal `—` status. Both
+  fixed.
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the

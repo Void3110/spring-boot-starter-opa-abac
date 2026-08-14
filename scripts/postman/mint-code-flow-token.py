@@ -363,7 +363,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--show-claims", action="store_true",
                         help="print the decoded access-token claims to stderr")
     parser.add_argument("--field", default="access_token",
-                        help="which token-response field to print (default: access_token)")
+                        help="token-response field(s) to print, comma-separated, one per line "
+                             "(default: access_token)")
     return parser
 
 
@@ -402,10 +403,16 @@ def main(argv: list[str]) -> int:
             f"asked for acr={args.acr!r} but the minted token carries acr={claims.get('acr')!r} — "
             f"refusing to hand back an unelevated token")
 
-    value = tokens.get(args.field)
-    if not value:
-        raise SystemExit(f"the token response carried no '{args.field}' field")
-    print(value)
+    # `--field` takes a COMMA-SEPARATED list, printed one per line. One login, several fields: the
+    # refresh-preservation check needs the access token AND the refresh token FROM THE SAME
+    # AUTHENTICATION EVENT — two invocations would be two logins with two different `auth_time`s,
+    # and comparing across them proves nothing (measured: it reads as a laundered elevation).
+    fields = [f.strip() for f in args.field.split(",") if f.strip()]
+    for field in fields:
+        value = tokens.get(field)
+        if not value:
+            raise SystemExit(f"the token response carried no '{field}' field")
+        print(value)
     return 0
 
 

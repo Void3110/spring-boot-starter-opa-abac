@@ -40,6 +40,15 @@ opa:
         - acr
         - auth_time
         - act_chain
+    audit:
+      # THIS SERVICE's vocabulary for "a privileged read worth auditing" (ADR 0030 §8 Amendment 7).
+      # The starter emits SUPERVISED_PRODUCTION_READ only because these are set — unset, the event is
+      # silent, which is what an adopter with different nouns gets by default. The other audit event,
+      # STEP_UP_CHALLENGED, is vocabulary-free and needs nothing here.
+      privileged-read:
+        provenance: supervised          # the oversight access path (ADR 0029/0031's role stamp)
+        root-attribute: env             # the governing root's tier tag
+        root-values: [production]       # …and the tier that makes the read privileged
     hierarchy:
       enabled: ${OPA_ABAC_HIERARCHY_ENABLED:true}
       resolver: ${OPA_ABAC_HIERARCHY_RESOLVER:ltree}

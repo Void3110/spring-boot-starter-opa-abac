@@ -350,7 +350,7 @@ on the typed `errorCode`, not on the human `detail`.**
 
 Which statuses each endpoint can emit is defined in the spec: `list` → `400/401/403`; `create` →
 `400/403/404/409/422/503`; `get` → `401/403/404`; `update` → `403/404/409/422/503`; `delete` →
-`403/404`.
+`403/404/409`.
 
 <a id="example-422-tag_value_illegal"></a>
 **Example — `422 TAG_VALUE_ILLEGAL`** (a create or update whose `tags` violate the dictionary):

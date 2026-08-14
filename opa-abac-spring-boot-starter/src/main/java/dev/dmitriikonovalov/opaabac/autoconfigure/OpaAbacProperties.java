@@ -53,6 +53,8 @@ public class OpaAbacProperties {
     @NestedConfigurationProperty
     private Subject subject = new Subject();
 
+    private Audit audit = new Audit();
+
     /** Partial-evaluation (list data-filtering) settings. */
     @NestedConfigurationProperty
     private PartialEval partialEval = new PartialEval();
@@ -115,6 +117,14 @@ public class OpaAbacProperties {
 
     public void setDecisionField(String decisionField) {
         this.decisionField = decisionField;
+    }
+
+    public Audit getAudit() {
+        return audit;
+    }
+
+    public void setAudit(Audit audit) {
+        this.audit = audit;
     }
 
     public Subject getSubject() {
@@ -534,6 +544,65 @@ public class OpaAbacProperties {
 
         public void setHalfOpenProbes(int halfOpenProbes) {
             this.halfOpenProbes = halfOpenProbes;
+        }
+    }
+
+    /** The audit channel's opt-in triggers (ADR 0030 §8 Amendment 7). */
+    public static class Audit {
+
+        private PrivilegedRead privilegedRead = new PrivilegedRead();
+
+        public PrivilegedRead getPrivilegedRead() {
+            return privilegedRead;
+        }
+
+        public void setPrivilegedRead(PrivilegedRead privilegedRead) {
+            this.privilegedRead = privilegedRead;
+        }
+
+        /**
+         * Which allowed reads are privileged enough to emit {@code SUPERVISED_PRODUCTION_READ} on the
+         * {@code opa.abac.audit} channel — in <strong>your</strong> vocabulary, because only your domain
+         * can say what "an oversight role read sensitive-tier content" means.
+         *
+         * <p><strong>Unset means silent</strong>: with no {@code provenance} configured the event is
+         * never emitted. The other audit event, {@code STEP_UP_CHALLENGED}, is vocabulary-free and needs
+         * no configuration.
+         */
+        public static class PrivilegedRead {
+
+            /** The {@code role_definition.attributes.provenance} stamp marking the privileged path. */
+            private String provenance;
+
+            /** The governing root's attribute naming the tier. */
+            private String rootAttribute = "env";
+
+            /** The tier values that make a read privileged (scalar or array attribute). */
+            private List<String> rootValues = new ArrayList<>();
+
+            public String getProvenance() {
+                return provenance;
+            }
+
+            public void setProvenance(String provenance) {
+                this.provenance = provenance;
+            }
+
+            public String getRootAttribute() {
+                return rootAttribute;
+            }
+
+            public void setRootAttribute(String rootAttribute) {
+                this.rootAttribute = rootAttribute;
+            }
+
+            public List<String> getRootValues() {
+                return rootValues;
+            }
+
+            public void setRootValues(List<String> rootValues) {
+                this.rootValues = rootValues;
+            }
         }
     }
 

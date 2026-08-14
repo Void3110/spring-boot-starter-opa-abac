@@ -157,9 +157,16 @@ class StepUpDecisionAndChallengeTest {
                 .thenReturn(Optional.of(new Node("catalog", CATALOG_ID.toString(), rootAttributes)));
         lenient().when(chainSupplier.ancestorsOf("category", CATEGORY_ID.toString()))
                 .thenReturn(List.of(new ParentRef("catalog", CATALOG_ID.toString())));
+        // The example's vocabulary, passed explicitly — the library no longer hardcodes it (ADR 0030
+        // §8 Amendment 7). A manager built WITHOUT a policy emits no privileged-read event at all,
+        // which auditIsSilentWithoutAPolicy() pins.
         return new OpaPreAuthorizeAuthorizationManager(opaClient, roleDefinitionSupplier,
-                new ResourceResolutionSupport(resolver, chainSupplier, cache));
+                new ResourceResolutionSupport(resolver, chainSupplier, cache), EXAMPLE_AUDIT_POLICY);
     }
+
+    /** This repo's example vocabulary — the adopter's, not the library's. */
+    private static final PrivilegedReadAuditPolicy EXAMPLE_AUDIT_POLICY =
+            new PrivilegedReadAuditPolicy("supervised", "env", java.util.Set.of("production"));
 
     private static RoleDefinition supervisorRole() {
         return new RoleDefinition("supervisor-readonly", Map.of("provenance", "supervised"),
@@ -231,6 +238,56 @@ class StepUpDecisionAndChallengeTest {
                 .contains("subject=sup-anna", "accessPath=supervised",
                         "governingRootId=" + CATALOG_ID, "resourceType=category",
                         "resourceId=" + CATEGORY_ID, "acr=aal2", "authTime=1786000000");
+    }
+
+    @Test // ADR 0030 §8 Amendment 7: UNCONFIGURED means SILENT — a published starter must not fire an
+    void auditIsSilentWithoutAPolicy() throws Exception { // event keyed on this repo's example nouns.
+        when(opaClient.decide(any())).thenReturn(OpaDecision.permit());
+        when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.of(supervisorRole()));
+
+        // The very input that DOES audit above, on a manager built without a policy (the 3-arg
+        // constructor every pre-C adopter already uses).
+        cache.entries.clear();
+        lenient().when(resolver.resolve("category", CATEGORY_ID.toString()))
+                .thenReturn(Optional.of(new Node("category", CATEGORY_ID.toString(), Map.of())));
+        lenient().when(resolver.resolve("catalog", CATALOG_ID.toString()))
+                .thenReturn(Optional.of(new Node("catalog", CATALOG_ID.toString(),
+                        Map.of("env", "production"))));
+        lenient().when(chainSupplier.ancestorsOf("category", CATEGORY_ID.toString()))
+                .thenReturn(List.of(new ParentRef("catalog", CATALOG_ID.toString())));
+
+        new OpaPreAuthorizeAuthorizationManager(opaClient, roleDefinitionSupplier,
+                new ResourceResolutionSupport(resolver, chainSupplier, cache))
+                .authorize(noopAuthSupplier, invocation());
+
+        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).isNull();
+    }
+
+    @Test // …and a DIFFERENT adopter vocabulary works: the trigger follows the configured nouns
+    void auditFollowsTheConfiguredVocabulary() throws Exception {
+        when(opaClient.decide(any())).thenReturn(OpaDecision.permit());
+        when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.of(
+                new RoleDefinition("auditor", Map.of("provenance", "oversight"),
+                        Map.of("category", List.of("READ")))));
+
+        cache.entries.clear();
+        lenient().when(resolver.resolve("category", CATEGORY_ID.toString()))
+                .thenReturn(Optional.of(new Node("category", CATEGORY_ID.toString(), Map.of())));
+        lenient().when(resolver.resolve("catalog", CATALOG_ID.toString()))
+                .thenReturn(Optional.of(new Node("catalog", CATALOG_ID.toString(),
+                        Map.of("classification", List.of("restricted", "internal")))));
+        lenient().when(chainSupplier.ancestorsOf("category", CATEGORY_ID.toString()))
+                .thenReturn(List.of(new ParentRef("catalog", CATALOG_ID.toString())));
+
+        new OpaPreAuthorizeAuthorizationManager(opaClient, roleDefinitionSupplier,
+                new ResourceResolutionSupport(resolver, chainSupplier, cache),
+                new PrivilegedReadAuditPolicy("oversight", "classification",
+                        java.util.Set.of("restricted")))
+                .authorize(noopAuthSupplier, invocation());
+
+        assertThat(auditLine("SUPERVISED_PRODUCTION_READ"))
+                .isNotNull()
+                .contains("accessPath=oversight");
     }
 
     @Test // an ARRAY-shaped env is production too — the cardinality twin of the policy's root_env_values

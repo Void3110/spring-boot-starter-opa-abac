@@ -8,6 +8,7 @@ import dev.dmitriikonovalov.opaabac.security.AbacSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.JwtClaimsSubjectExtractor;
 import dev.dmitriikonovalov.opaabac.security.OpaMethodSecurityConfiguration;
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorizeAuthorizationManager;
+import dev.dmitriikonovalov.opaabac.security.PrivilegedReadAuditPolicy;
 import dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport;
 import dev.dmitriikonovalov.opaabac.security.SubjectClaimsConfig;
 import java.util.Optional;
@@ -18,6 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import java.util.Set;
 
 /**
  * The Spring-Security beans of the OPA ABAC starter. Imported by
@@ -80,8 +82,30 @@ public class OpaAbacSecurityBeans {
     public OpaPreAuthorizeAuthorizationManager opaPreAuthorizeAuthorizationManager(
             OpaClient opaClient,
             RoleDefinitionSupplier roleDefinitionSupplier,
-            ObjectProvider<ResourceResolutionSupport> resolutionSupport) {
+            ObjectProvider<ResourceResolutionSupport> resolutionSupport,
+            OpaAbacProperties properties) {
         return new OpaPreAuthorizeAuthorizationManager(
-                opaClient, roleDefinitionSupplier, resolutionSupport.getIfAvailable());
+                opaClient,
+                roleDefinitionSupplier,
+                resolutionSupport.getIfAvailable(),
+                privilegedReadAuditPolicy(properties));
+    }
+
+    /**
+     * The privileged-read audit trigger in the ADOPTER's vocabulary, or {@code null} when unconfigured
+     * (ADR 0030 §8 Amendment 7 — a published starter must not fire an event keyed on this repo's own
+     * example nouns). A configured {@code provenance} is the switch; the tier attribute defaults to
+     * {@code env} and the values must be listed explicitly.
+     */
+    private static PrivilegedReadAuditPolicy privilegedReadAuditPolicy(OpaAbacProperties properties) {
+        var configured = properties.getAudit().getPrivilegedRead();
+        if (configured.getProvenance() == null || configured.getProvenance().isBlank()
+                || configured.getRootValues().isEmpty()) {
+            return null;
+        }
+        return new PrivilegedReadAuditPolicy(
+                configured.getProvenance(),
+                configured.getRootAttribute(),
+                Set.copyOf(configured.getRootValues()));
     }
 }

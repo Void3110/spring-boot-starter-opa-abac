@@ -124,6 +124,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # -------------------------------------------------------------- Categories
   /api/v1/catalogs/{catalogId}/categories:
@@ -245,6 +247,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # ---------------------------------------------------------------- Products
   /api/v1/catalogs/{catalogId}/categories/{categoryId}/products:
@@ -361,6 +365,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
 components:
   parameters:

@@ -327,6 +327,58 @@ for guarded_path in /api/v1/teams /mcp; do
     echo "       guard is missing from that route (it rides catalog, usermgmt AND mcp)." >&2
     exit 1; }
 done
+#   (h) REFRESH CANNOT LAUNDER THE ELEVATION — QA case I5's keystone, and the reason a short token
+#       lifetime would prove nothing. `auth_time` is fixed at the AUTHENTICATION EVENT, so a refresh
+#       grant returns a genuinely NEW token (advanced `iat`) carrying the SAME `auth_time`: the
+#       freshness window keeps running against the original login. Measured here rather than
+#       asserted in prose — if a future Keycloak re-stamped `auth_time` on refresh, the whole
+#       elevation control would silently become "elevated forever, refresh to renew", and E3's
+#       loop-prevention cell (which rides the SSO session, not the refresh grant) would not see it.
+# ONE flow, BOTH fields: the pair must come from the SAME authentication event. Minting the
+# refresh token in a second invocation would be a second login with its own `auth_time`, and the
+# comparison below would read a perfectly healthy refresh as a laundered elevation.
+REFRESH_PAIR="$("$MINER" --user sup-anna --acr aal2 --cookie-jar "$COOKIE_JAR" \
+  --field access_token,refresh_token)" || {
+  echo "ERROR: could not mint anna's aal2 token pair for the E9h check." >&2; exit 1; }
+REFRESH_SOURCE_TOKEN="$(printf '%s' "$REFRESH_PAIR" | sed -n '1p')"
+ANNA_AAL2_REFRESH="$(printf '%s' "$REFRESH_PAIR" | sed -n '2p')"
+[ -n "$REFRESH_SOURCE_TOKEN" ] && [ -n "$ANNA_AAL2_REFRESH" ] || {
+  echo "ERROR: the miner did not return both fields for the E9h check." >&2; exit 1; }
+# The refresh MUST be presented by the client that was authorized — the miner runs the code flow as
+# the PUBLIC SPA client (`catalog-spa`, no secret), so exchanging its refresh token as the
+# confidential gateway client answers `Token client and authorized client don't match`.
+MINER_CLIENT="${MINER_CLIENT:-catalog-spa}"
+REFRESHED_JSON="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
+  -X POST "$KEYCLOAK_TOKEN_URL" \
+  -d grant_type=refresh_token -d "client_id=$MINER_CLIENT" \
+  -d "refresh_token=$ANNA_AAL2_REFRESH")"
+REFRESHED_TOKEN="$(printf '%s' "$REFRESHED_JSON" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+[ -n "$REFRESHED_TOKEN" ] || {
+  echo "ERROR: the refresh grant returned no access token — Keycloak answered:" >&2
+  echo "       $(printf '%s' "$REFRESHED_JSON" | head -c 200)" >&2
+  exit 1; }
+REFRESH_SOURCE_AUTH_TIME="$(token_claim "$REFRESH_SOURCE_TOKEN" auth_time)"
+REFRESHED_AUTH_TIME="$(token_claim "$REFRESHED_TOKEN" auth_time)"
+REFRESHED_IAT="$(token_claim "$REFRESHED_TOKEN" iat)"
+SOURCE_IAT="$(token_claim "$REFRESH_SOURCE_TOKEN" iat)"
+[ -n "$REFRESHED_AUTH_TIME" ] && [ "$REFRESHED_AUTH_TIME" = "$REFRESH_SOURCE_AUTH_TIME" ] || {
+  echo "ERROR: the refreshed token's auth_time ($REFRESHED_AUTH_TIME) differs from the" >&2
+  echo "       original login's ($REFRESH_SOURCE_AUTH_TIME) — a refresh would LAUNDER the" >&2
+  echo "       elevation and the freshness window would be renewable without re-authenticating." >&2
+  exit 1; }
+# The anti-vacuity half: prove the token really was RE-ISSUED rather than echoed back. Identity,
+# not timing — `iat` has SECOND granularity, so a refresh completing inside the mint's own second
+# legitimately carries the same `iat` (measured on this rig); `iat` is asserted NON-DECREASING.
+[ "$REFRESHED_TOKEN" != "$REFRESH_SOURCE_TOKEN" ] || {
+  echo "ERROR: the refresh grant returned the SAME access token — the auth_time equality above" >&2
+  echo "       would be vacuous (nothing was re-issued)." >&2
+  exit 1; }
+[ "$REFRESHED_IAT" -ge "$SOURCE_IAT" ] || {
+  echo "ERROR: the refreshed token's iat ($REFRESHED_IAT) went BACKWARDS from the source's" >&2
+  echo "       ($SOURCE_IAT) — the pair is not what it claims to be." >&2
+  exit 1; }
+echo "  E9h: the refresh grant preserved auth_time ($REFRESHED_AUTH_TIME) on a genuinely re-issued"
+echo "  token (iat $SOURCE_IAT -> $REFRESHED_IAT) — a refresh cannot launder the elevation (QA I5)."
 echo "  E9: iss parity confirmed ($EXPECTED_ISS); gateway 200 on the minted token; 401 on the"
 echo "  tamper control; 401 on the foreign-issuer control ($FOREIGN_ISS_VALUE); 200 on the"
 echo "  gateway-origin (SPA) authority ($GATEWAY_ISS_VALUE)."
