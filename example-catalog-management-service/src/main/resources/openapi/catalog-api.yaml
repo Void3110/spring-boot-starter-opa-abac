@@ -4,8 +4,14 @@ info:
   description: >
     E-commerce product catalog management. Resources form a hierarchy —
     Catalog → Category (self-referencing tree) → Product — which is exactly the
-    shape attribute-based access control (ABAC) is designed for. This baseline
-    has no authentication; auth is layered on in later phases.
+    shape attribute-based access control (ABAC) is designed for.
+
+    Authentication is terminated at the gateway (APISIX + Keycloak OIDC): every
+    request carries a bearer JWT, which the service reads for identity and never
+    re-validates. Authorization is the per-request ABAC decision. The one
+    service-emitted `401` is the RFC 9470 step-up challenge (`STEP_UP_REQUIRED`),
+    where authentication *freshness* is the sole blocker; every other denial is
+    a `403`.
   version: 0.1.0
   license:
     name: Apache 2.0
@@ -22,6 +28,9 @@ tags:
     description: Hierarchical categories within a catalog
   - name: Product
     description: Products within a category
+
+security:
+  - bearerAuth: []
 
 paths:
   # ---------------------------------------------------------------- Catalogs
@@ -416,6 +425,15 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        The gateway-validated OIDC access token, forwarded verbatim. The service reads identity
+        from it; the gateway is what verifies the signature and the issuer.
 
   responses:
     NoContent:

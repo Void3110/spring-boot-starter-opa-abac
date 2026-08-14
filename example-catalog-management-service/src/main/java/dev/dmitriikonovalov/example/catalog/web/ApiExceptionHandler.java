@@ -29,6 +29,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ApiExceptionHandler extends AbstractProblemAdvice {
 
+    /**
+     * THIS service's step-up wording. The library's default is deliberately domain-neutral (it is
+     * published, and cannot know what an adopter's step-up protects); a catalog that knows its
+     * elevation guards the production tier says so — ADR 0030 §8 Amendment 7.
+     */
+    @Override
+    protected String stepUpChallengeDescription() {
+        return "A second factor is required to read production content";
+    }
+
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ProblemDetail> handleNotFound(NotFoundException ex, HttpServletRequest request) {
         return problem(LibraryErrorCode.RESOURCE_NOT_FOUND, ex.getMessage(), request);

@@ -533,7 +533,7 @@ for pod in $CATALOG_PODS; do
   audit_log="$audit_log$("$RUNTIME" logs "$pod" 2>&1 | grep 'opa.abac.audit' || true)"$'\n'
 done
 run_audit_log="$(printf '%s' "$audit_log" | grep "$PROD_CATEGORY_ID" || true)"
-for event in STEP_UP_CHALLENGED SUPERVISED_PRODUCTION_READ; do
+for event in STEP_UP_CHALLENGED PRIVILEGED_READ; do
   printf '%s' "$run_audit_log" | grep -q "$event" || {
     echo "ERROR: the audit event $event never reached opa.abac.audit on any catalog pod" >&2
     echo "       for THIS run's category ($PROD_CATEGORY_ID)." >&2

@@ -561,7 +561,7 @@ public class OpaAbacProperties {
         }
 
         /**
-         * Which allowed reads are privileged enough to emit {@code SUPERVISED_PRODUCTION_READ} on the
+         * Which allowed reads are privileged enough to emit {@code PRIVILEGED_READ} on the
          * {@code opa.abac.audit} channel — in <strong>your</strong> vocabulary, because only your domain
          * can say what "an oversight role read sensitive-tier content" means.
          *

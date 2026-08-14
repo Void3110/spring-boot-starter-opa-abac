@@ -2,7 +2,6 @@ package dev.dmitriikonovalov.opaabac.security;
 
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -10,7 +9,7 @@ import java.util.Set;
  * library's (ADR 0030 §8, Amendment 7).
  *
  * <h2>Why this is configuration and not a constant</h2>
- * The event this policy gates ({@code SUPERVISED_PRODUCTION_READ}) answers a question only the
+ * The event this policy gates ({@code PRIVILEGED_READ}) answers a question only the
  * <em>adopter's</em> domain can pose: "an oversight role read production-tier content." The words
  * {@code supervised} and {@code production} are this repo's example vocabulary; a published starter
  * that hardcoded them would fire an event no adopter asked for when their nouns happen to match, and
@@ -36,13 +35,17 @@ import java.util.Set;
 public record PrivilegedReadAuditPolicy(String provenance, String rootAttribute, Set<String> rootValues) {
 
     public PrivilegedReadAuditPolicy {
-        Objects.requireNonNull(provenance, "provenance");
-        Objects.requireNonNull(rootAttribute, "rootAttribute");
-        rootValues = Set.copyOf(Objects.requireNonNull(rootValues, "rootValues"));
-        if (provenance.isBlank() || rootAttribute.isBlank() || rootValues.isEmpty()) {
+        // One message for every incomplete shape, nulls included: a half-configured policy is a typo,
+        // and the caller needs to be told WHICH knobs exist rather than handed an NPE.
+        rootValues = rootValues == null ? Set.of() : Set.copyOf(rootValues);
+        if (provenance == null || provenance.isBlank()
+                || rootAttribute == null || rootAttribute.isBlank()
+                || rootValues.isEmpty()) {
             throw new IllegalArgumentException(
                     "a privileged-read audit policy needs a provenance, a root attribute and at least "
-                            + "one root value; leave the whole policy unset to disable the event");
+                            + "one root value (got provenance=" + provenance + ", rootAttribute="
+                            + rootAttribute + ", rootValues=" + rootValues + "); leave the whole "
+                            + "policy unset to disable the event");
         }
     }
 

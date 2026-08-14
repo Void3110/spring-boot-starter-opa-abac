@@ -3,6 +3,8 @@ package dev.dmitriikonovalov.opaabac.security;
 import dev.dmitriikonovalov.opaabac.core.DenyReason;
 import dev.dmitriikonovalov.opaabac.core.VersionConflictException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,14 +34,38 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  */
 public abstract class AbstractProblemAdvice {
 
+    private static final Logger log = LoggerFactory.getLogger(AbstractProblemAdvice.class);
+
+    /**
+     * The DOMAIN-NEUTRAL default sentence — see {@link #stepUpChallengeDescription()}.
+     *
+     * <p>It deliberately says nothing about <em>why</em> the resource is sensitive. This class is
+     * published: an adopter whose {@code insufficient_user_authentication} reason guards a payment
+     * confirmation or an admin action would otherwise have this library assert a false, domain-
+     * inappropriate fact about their resource to the caller (ADR 0030 §8 Amendment 7's rule, applied
+     * to the wire-visible half — the audit event's vocabulary was fixed first, this is its twin).
+     */
+    private static final String DEFAULT_STEP_UP_DETAIL =
+            "Re-authentication with a stronger, fresher factor is required";
+
+    private final ProblemDetailFactory problemDetailFactory = new ProblemDetailFactory();
+
     /**
      * The one human-readable sentence the challenge and its problem body share, so the
      * {@code error_description} a client reads on the header and the {@code detail} it reads in the body
      * can never drift apart.
+     *
+     * <p><strong>Override to speak your own domain.</strong> The default is deliberately generic; a
+     * service that knows what its step-up actually protects should say so — this repo's example
+     * catalog service overrides it with its production-tier wording. The value is emitted inside a
+     * quoted HTTP header parameter, so an override containing a quote or CR/LF suppresses the
+     * challenge (the same allowlist that guards the policy-supplied parameters).
+     *
+     * @return the sentence to put in {@code error_description} and the problem {@code detail}
      */
-    private static final String STEP_UP_DETAIL = "A second factor is required to read production content";
-
-    private final ProblemDetailFactory problemDetailFactory = new ProblemDetailFactory();
+    protected String stepUpChallengeDescription() {
+        return DEFAULT_STEP_UP_DETAIL;
+    }
 
     /**
      * Render a {@code 403 application/problem+json} for an access denial raised by the authorization
@@ -56,7 +82,7 @@ public abstract class AbstractProblemAdvice {
             if (challenge != null) {
                 AbacAuditLogger.stepUpChallenged(currentSubjectId(), stepUp);
                 ResponseEntity<ProblemDetail> base =
-                        problem(LibraryErrorCode.STEP_UP_REQUIRED, STEP_UP_DETAIL, request);
+                        problem(LibraryErrorCode.STEP_UP_REQUIRED, stepUpChallengeDescription(), request);
                 return ResponseEntity.status(base.getStatusCode())
                         .headers(base.getHeaders())
                         .header(HttpHeaders.WWW_AUTHENTICATE, challenge)
@@ -107,11 +133,14 @@ public abstract class AbstractProblemAdvice {
      *       into a header-injection primitive.</li>
      * </ul>
      */
-    private static String challengeFor(DenyReason reason) {
+    private String challengeFor(DenyReason reason) {
+        String description = stepUpChallengeDescription();
         if (!DenyReason.INSUFFICIENT_USER_AUTHENTICATION.equals(reason.type())) {
+            log.warn("step-up challenge suppressed: unrecognized deny_reason type (denying 403)");
             return null;
         }
         if (!reason.isComplete()) {
+            log.warn("step-up challenge suppressed: incomplete deny_reason (denying 403)");
             return null;
         }
         // A NON-POSITIVE window is well-typed but unsatisfiable — no re-authentication can ever be
@@ -119,23 +148,37 @@ public abstract class AbstractProblemAdvice {
         // guards its own data, but this library is published for adopters who write their own: the
         // emitter must refuse the unanswerable challenge on its own terms, not trust the policy to.
         if (reason.maxAge() <= 0) {
+            log.warn("step-up challenge suppressed: non-positive max_age {} (denying 403)",
+                    reason.maxAge());
             return null;
         }
-        if (!isSafeParameter(reason.type()) || !isSafeParameter(reason.requiredAcr())) {
+        if (!isSafeParameter(reason.type()) || !isSafeParameter(reason.requiredAcr())
+                || !isSafeParameter(description)) {
+            log.warn("step-up challenge suppressed: a parameter cannot be safely quoted (denying 403)");
             return null;
         }
         return "Bearer error=\"" + reason.type() + "\""
-                + ", error_description=\"" + STEP_UP_DETAIL + "\""
+                + ", error_description=\"" + description + "\""
                 + ", acr_values=\"" + reason.requiredAcr() + "\""
                 + ", max_age=\"" + reason.maxAge() + "\"";
     }
 
-    /** Unreserved token characters only — no quote, no backslash, no CR/LF, no control characters. */
+    /**
+     * Safe inside a quoted header parameter — no quote, no backslash, no CR/LF, no control characters.
+     *
+     * <p>Space and comma are admitted because one of the guarded values is PROSE (the challenge
+     * description) and an ordinary English sentence contains both; they are unremarkable inside a
+     * quoted-string. Everything that could break out of that string — or out of the header — is not:
+     * quote, backslash, CR/LF, control characters. (Measured the hard way: the neutral default
+     * sentence itself was suppressed by an allowlist that forbade the comma, which is precisely the
+     * silent 403-downgrade an adopter writing a normal sentence would have hit.)
+     */
     private static boolean isSafeParameter(String value) {
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
             boolean allowed = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-                    || c == '_' || c == '-' || c == '.' || c == ':' || c == '/';
+                    || c == '_' || c == '-' || c == '.' || c == ':' || c == '/' || c == ' '
+                    || c == ',';
             if (!allowed) {
                 return false;
             }

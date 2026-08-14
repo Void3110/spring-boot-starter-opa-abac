@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
  *   <li>{@code STEP_UP_CHALLENGED} — a challenge was minted. Deliberately carries <em>no</em>
  *       {@code acr}/{@code auth_time}: at challenge time the subject is precisely <em>not</em> elevated,
  *       so those fields would only ever record the state that failed.</li>
- *   <li>{@code SUPERVISED_PRODUCTION_READ} — an allowed supervised read of production content, i.e. the
+ *   <li>{@code PRIVILEGED_READ} — an allowed supervised read of production content, i.e. the
  *       privileged read the second factor exists for. This is the elevation <em>in use</em>, which is
  *       the auditable fact; there is no separate "an elevation happened" event, because the library
  *       never sees the identity provider's ceremony, only tokens.</li>
@@ -64,7 +64,7 @@ public final class AbacAuditLogger {
     }
 
     /**
-     * Emit {@code SUPERVISED_PRODUCTION_READ} — an allowed supervised read of production content.
+     * Emit {@code PRIVILEGED_READ} — an allowed supervised read of production content.
      *
      * <p>{@code acr} and {@code auth_time} are logged <strong>verbatim</strong> from the subject's
      * attributes. Elevation is <em>implied by the allow</em> — the policy already required it — and is
@@ -78,7 +78,7 @@ public final class AbacAuditLogger {
      * @param governingRootId the governing root whose tier made this privileged
      * @param accessPath      how the subject reached it (the role's provenance)
      */
-    public static void supervisedProductionRead(
+    public static void privilegedRead(
             String subjectId,
             Map<String, Object> attributes,
             String resourceType,
@@ -87,7 +87,7 @@ public final class AbacAuditLogger {
             String accessPath) {
         try {
             Map<String, Object> safe = attributes == null ? Map.of() : attributes;
-            audit.info("event=SUPERVISED_PRODUCTION_READ subject={} accessPath={} governingRootId={} "
+            audit.info("event=PRIVILEGED_READ subject={} accessPath={} governingRootId={} "
                             + "resourceType={} resourceId={} acr={} authTime={}",
                     subjectId,
                     accessPath,
@@ -97,7 +97,7 @@ public final class AbacAuditLogger {
                     safe.get("acr"),
                     safe.get("auth_time"));
         } catch (RuntimeException e) {
-            log.debug("audit emission failed for SUPERVISED_PRODUCTION_READ ({})",
+            log.debug("audit emission failed for PRIVILEGED_READ ({})",
                     e.getClass().getSimpleName());
         }
     }

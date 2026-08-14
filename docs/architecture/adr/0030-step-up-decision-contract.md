@@ -285,7 +285,8 @@ elevation; and Keycloak flow automation, which stays rig configuration.
    designed feature with its own audit story and capability tier, never a default.
    (Cross-reference: ADR 0028's model is narrowing-only; this deny narrows and grants nothing.)
 5. **§8's event list, refined.** The slice ships exactly **two** events — `STEP_UP_CHALLENGED`
-   (at the challenge) and `SUPERVISED_PRODUCTION_READ` (at the elevated read) — and no token-level
+   (at the challenge) and `SUPERVISED_PRODUCTION_READ` (at the elevated read; **renamed
+   `PRIVILEGED_READ` by Amendment 7** — the name below is the pre-rename one) — and no token-level
    "an elevation happened" event: the resource server never sees the Keycloak ceremony, only
    tokens, and the elevated read *is* the elevation in use. §8's "(a) an elevation" is discharged
    by the challenged/read pair.
@@ -315,6 +316,18 @@ elevation; and Keycloak flow automation, which stays rig configuration.
    literals and documenting them leaves a published library firing on someone else's domain
    language, and moving the trigger into the example service would force precisely the app-side
    re-derivation of elevation that Amendment 3 and §8 forbid.
+
+   **The sweep, completed (same day, round 10).** The first pass fixed only the *trigger*. Three
+   siblings carried the same breach and were caught by the next review round: the event's own **name**
+   (`SUPERVISED_PRODUCTION_READ` → **`PRIVILEGED_READ`**, matching the property and the policy class —
+   it is the string that lands in an adopter's logs); the **wire-visible challenge description**, which
+   asserted "…to read production content" in every RFC 9470 `error_description` and problem `detail`
+   the library minted — worse than the audit event, since it states a false, domain-inappropriate fact
+   about the resource *to the caller*; and a **half-configured policy block**, which silently disabled
+   the event instead of failing startup (silently disabling an audit control on a typo is how oversight
+   quietly stops happening). The description now defaults to a domain-neutral sentence and is an
+   overridable `stepUpChallengeDescription()` seam — the example service overrides it with its
+   production wording, and unit cells pin both sides plus the unquotable-override suppression.
 
    **Consequences.** The library's other audit event, `STEP_UP_CHALLENGED`, is vocabulary-free (it
    reports a challenge the library itself minted) and is unaffected. The change is additive: the

@@ -99,8 +99,12 @@ public class OpaAbacSecurityBeans {
      */
     private static PrivilegedReadAuditPolicy privilegedReadAuditPolicy(OpaAbacProperties properties) {
         var configured = properties.getAudit().getPrivilegedRead();
-        if (configured.getProvenance() == null || configured.getProvenance().isBlank()
-                || configured.getRootValues().isEmpty()) {
+        boolean provenanceSet = configured.getProvenance() != null && !configured.getProvenance().isBlank();
+        boolean valuesSet = !configured.getRootValues().isEmpty();
+        // ENTIRELY absent means off. HALF-configured means a typo, and silently disabling an audit
+        // control on a typo is how oversight quietly stops happening — the record's own validation
+        // fails startup instead, which is why it validates rather than normalizing.
+        if (!provenanceSet && !valuesSet) {
             return null;
         }
         return new PrivilegedReadAuditPolicy(

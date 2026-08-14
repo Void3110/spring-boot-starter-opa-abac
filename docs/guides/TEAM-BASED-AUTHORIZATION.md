@@ -419,7 +419,7 @@ are the consumer's):
 | Event | Where | Payload |
 |---|---|---|
 | `STEP_UP_CHALLENGED` | the advice, at 401-mint | subject, resource type + id, governing root, the challenge parameters — **no** `acr`/`auth_time`, since the subject is precisely *not* elevated yet |
-| `SUPERVISED_PRODUCTION_READ` | the manager, on an allowed supervised read of a production root | subject, access path, governing root, resource, plus `acr` and `auth_time` **verbatim** |
+| `PRIVILEGED_READ` | the manager, on an allowed supervised read of a production root | subject, access path, governing root, resource, plus `acr` and `auth_time` **verbatim** |
 
 Elevation is **implied by the allow** and never re-derived app-side — a Java copy of the LoA map or the
 window would create a second source of truth for a number ADR 0030 insists exists once. And emission

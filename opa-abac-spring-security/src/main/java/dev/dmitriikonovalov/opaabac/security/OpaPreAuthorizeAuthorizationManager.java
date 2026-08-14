@@ -209,7 +209,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     }
 
     /**
-     * Emit {@code SUPERVISED_PRODUCTION_READ} (ADR 0030 §8) when — and only when — an <b>allowed</b>
+     * Emit {@code PRIVILEGED_READ} (ADR 0030 §8) when — and only when — an <b>allowed</b>
      * decision was a <b>supervised</b> subject reading content whose <b>governing root is production</b>.
      *
      * <p><b>Elevation is implied by the allow and never re-derived here.</b> The policy already required
@@ -228,7 +228,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 || !privilegedReadAuditPolicy.matches(roleDefinition, resolved.resource().rootAttributes())) {
             return;
         }
-        AbacAuditLogger.supervisedProductionRead(
+        AbacAuditLogger.privilegedRead(
                 subject.id(),
                 subject.attributes(),
                 resolved.resource().type(),

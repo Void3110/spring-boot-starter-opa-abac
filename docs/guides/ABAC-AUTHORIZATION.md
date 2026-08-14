@@ -83,7 +83,7 @@ than behavior:**
 
 **The audit channel is opt-in, in your vocabulary.** The library emits two events on the
 `opa.abac.audit` SLF4J logger. `STEP_UP_CHALLENGED` needs no configuration — it reports a challenge
-the library itself minted. `SUPERVISED_PRODUCTION_READ` answers a question only *your* domain can
+the library itself minted. `PRIVILEGED_READ` answers a question only *your* domain can
 pose ("an oversight role read sensitive-tier content"), so its trigger is configuration and
 **unset means silent**:
 
@@ -99,8 +99,16 @@ opa:
 
 The trigger is evaluated inside the decision, from the decision's own inputs — the allow, the
 resolved role, the enriched root attributes — so elevation is implied by the allow and never
-re-derived (ADR 0030 §8 + Amendment 7). Leave the block out and no privileged-read event is ever
-emitted.
+re-derived (ADR 0030 §8 + Amendment 7). Leave the block out entirely and no privileged-read event is
+ever emitted; configure it *half*-way and startup fails rather than silently disabling the control.
+
+**The challenge sentence is yours too.** The 401's RFC 9470 `error_description` and the problem
+body's `detail` share one sentence, defaulting to the domain-neutral *"Re-authentication with a
+stronger, fresher factor is required"*. Override `stepUpChallengeDescription()` on your
+`AbstractProblemAdvice` subclass to say what your step-up actually protects (the example catalog
+service does). The value is emitted inside a quoted header parameter, so an override containing a
+quote or CR/LF suppresses the challenge and falls back to the plain 403 — with a warning log, like
+every other suppression rule.
 
 **Four fail-closed rules, each landing at the layer it arises:**
 

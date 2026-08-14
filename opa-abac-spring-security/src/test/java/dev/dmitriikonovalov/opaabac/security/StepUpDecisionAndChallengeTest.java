@@ -224,7 +224,7 @@ class StepUpDecisionAndChallengeTest {
         assertThat(decision).isNotInstanceOf(StepUpRequiredDecision.class);
     }
 
-    // --- U19 (manager half): SUPERVISED_PRODUCTION_READ ----------------------------------
+    // --- U19 (manager half): PRIVILEGED_READ ----------------------------------
 
     @Test // granted + supervised + a production root → the read event, with acr/auth_time verbatim
     void auditsTheSupervisedProductionRead() throws Exception {
@@ -233,7 +233,7 @@ class StepUpDecisionAndChallengeTest {
 
         managerWithRoot(Map.of("env", "production")).authorize(noopAuthSupplier, invocation());
 
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ"))
+        assertThat(auditLine("PRIVILEGED_READ"))
                 .isNotNull()
                 .contains("subject=sup-anna", "accessPath=supervised",
                         "governingRootId=" + CATALOG_ID, "resourceType=category",
@@ -260,7 +260,7 @@ class StepUpDecisionAndChallengeTest {
                 new ResourceResolutionSupport(resolver, chainSupplier, cache))
                 .authorize(noopAuthSupplier, invocation());
 
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).isNull();
+        assertThat(auditLine("PRIVILEGED_READ")).isNull();
     }
 
     @Test // …and a DIFFERENT adopter vocabulary works: the trigger follows the configured nouns
@@ -285,7 +285,7 @@ class StepUpDecisionAndChallengeTest {
                         java.util.Set.of("restricted")))
                 .authorize(noopAuthSupplier, invocation());
 
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ"))
+        assertThat(auditLine("PRIVILEGED_READ"))
                 .isNotNull()
                 .contains("accessPath=oversight");
     }
@@ -298,7 +298,7 @@ class StepUpDecisionAndChallengeTest {
         managerWithRoot(Map.of("env", List.of("production", "staging")))
                 .authorize(noopAuthSupplier, invocation());
 
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).isNotNull();
+        assertThat(auditLine("PRIVILEGED_READ")).isNotNull();
     }
 
     @Test // the three ways the event must NOT fire: a member, a non-production tier, a denied read
@@ -308,15 +308,15 @@ class StepUpDecisionAndChallengeTest {
                 Map.of("category", List.of("READ")));
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.of(member));
         managerWithRoot(Map.of("env", "production")).authorize(noopAuthSupplier, invocation());
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).as("a member's read").isNull();
+        assertThat(auditLine("PRIVILEGED_READ")).as("a member's read").isNull();
 
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.of(supervisorRole()));
         managerWithRoot(Map.of("env", "staging")).authorize(noopAuthSupplier, invocation());
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).as("a staging tier").isNull();
+        assertThat(auditLine("PRIVILEGED_READ")).as("a staging tier").isNull();
 
         when(opaClient.decide(any())).thenReturn(OpaDecision.deny());
         managerWithRoot(Map.of("env", "production")).authorize(noopAuthSupplier, invocation());
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).as("a denied read").isNull();
+        assertThat(auditLine("PRIVILEGED_READ")).as("a denied read").isNull();
     }
 
     @Test // an exception INSIDE emission is swallowed — an audit bug is never an authorization outage
@@ -324,11 +324,11 @@ class StepUpDecisionAndChallengeTest {
         // Driven straight at the emitter: AbacContext.Subject defensively copies its attribute map, so a
         // hostile map cannot reach the payload through the manager. The guarantee under test is the
         // emitter's, and this is where it lives.
-        org.assertj.core.api.Assertions.assertThatCode(() -> AbacAuditLogger.supervisedProductionRead(
+        org.assertj.core.api.Assertions.assertThatCode(() -> AbacAuditLogger.privilegedRead(
                         "sup-anna", new HostileMap(), "category", "k-1", "c-1", "supervised"))
                 .doesNotThrowAnyException();
 
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ")).isNull();
+        assertThat(auditLine("PRIVILEGED_READ")).isNull();
     }
 
     /** An attribute map that blows up when the audit payload reads it. */
@@ -361,7 +361,7 @@ class StepUpDecisionAndChallengeTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
                 .isEqualTo("Bearer error=\"insufficient_user_authentication\", "
-                        + "error_description=\"A second factor is required to read production content\", "
+                        + "error_description=\"Re-authentication with a stronger, fresher factor is required\", "
                         + "acr_values=\"aal2\", max_age=\"300\"");
         assertThat(response.getBody().errorCode()).isEqualTo("STEP_UP_REQUIRED");
     }
@@ -403,6 +403,44 @@ class StepUpDecisionAndChallengeTest {
             assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
             assertThat(response.getBody().errorCode()).isEqualTo("ACCESS_DENIED");
         }
+    }
+
+    @Test // the description is the ADOPTER's: an override reaches BOTH the header and the body
+    void challengeDescriptionFollowsTheOverride() {
+        final class DomainAdvice extends AbstractProblemAdvice {
+            @Override
+            protected String stepUpChallengeDescription() {
+                return "Confirm your identity to approve a payment";
+            }
+        }
+        HttpServletRequest request = new MockHttpServletRequest("GET", "/v1/payments/p-1");
+
+        ResponseEntity<ProblemDetail> response = new DomainAdvice().handleAccessDenied(
+                new AuthorizationDeniedException("Access Denied",
+                        new StepUpRequiredDecision(COMPLETE, "payment", "p-1", "acct-1")),
+                request);
+
+        assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
+                .contains("error_description=\"Confirm your identity to approve a payment\"")
+                .doesNotContain("production");
+        assertThat(response.getBody().detail()).isEqualTo("Confirm your identity to approve a payment");
+    }
+
+    @Test // an override that cannot be safely quoted suppresses the challenge, like any other parameter
+    void unquotableDescriptionFallsBackToForbidden() {
+        final class HostileAdvice extends AbstractProblemAdvice {
+            @Override
+            protected String stepUpChallengeDescription() {
+                return "oops\", scope=\"admin";
+            }
+        }
+        ResponseEntity<ProblemDetail> response = new HostileAdvice().handleAccessDenied(
+                new AuthorizationDeniedException("Access Denied",
+                        new StepUpRequiredDecision(COMPLETE, "category", "k-1", "c-1")),
+                new MockHttpServletRequest("GET", "/v1/catalogs/c/categories/k"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
     }
 
     @Test // a NON-POSITIVE window → the plain 403: "re-authenticate within 0s" is unanswerable

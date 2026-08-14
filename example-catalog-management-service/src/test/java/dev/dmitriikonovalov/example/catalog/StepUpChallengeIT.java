@@ -240,7 +240,7 @@ class StepUpChallengeIT {
                 .doesNotContain("authTime=");
     }
 
-    @Test // an ELEVATED allow emits SUPERVISED_PRODUCTION_READ with the claims logged verbatim
+    @Test // an ELEVATED allow emits PRIVILEGED_READ with the claims logged verbatim
     void theElevatedReadEmitsItsAuditEvent() throws Exception {
         Fixture fixture = seedTree();
         ProgrammableOpaClient.answer.set(OpaDecision.permit());
@@ -249,7 +249,7 @@ class StepUpChallengeIT {
                         fixture.catalogId(), fixture.categoryId())
                 .header(SUBJECT_HEADER, SUPERVISOR)).andExpect(status().isOk());
 
-        assertThat(auditLine("SUPERVISED_PRODUCTION_READ"))
+        assertThat(auditLine("PRIVILEGED_READ"))
                 .isNotNull()
                 .contains("subject=" + SUPERVISOR, "accessPath=supervised",
                         "governingRootId=" + fixture.catalogId(), "resourceType=category",
