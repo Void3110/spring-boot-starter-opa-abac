@@ -72,10 +72,33 @@ public class OpaAbacSecurityBeans {
     }
 
     /**
+     * The pre-Amendment-7 signature, retained for source/binary compatibility: this class is
+     * {@code public} in a module published to Maven Central, so an already-compiled caller must keep
+     * linking. It delegates with no audit policy — which is exactly what a caller predating the
+     * privileged-read event should get. NOT a {@code @Bean}: the 4-arg method below is the one the
+     * container calls, and two bean methods for one type would be ambiguous.
+     *
+     * <p>Prefer the overload taking {@link OpaAbacProperties}, which honours
+     * {@code opa.abac.audit.privileged-read.*}. This shim carries no {@code @Deprecated}
+     * annotation deliberately: it is not deprecated <em>behaviour</em> to be migrated off, it is a
+     * link-compatibility artifact whose removal is a MAJOR-version decision, recorded as such in
+     * ADR 0030 Amendment 7 rather than left as a standing lint suppression.
+     */
+    public OpaPreAuthorizeAuthorizationManager opaPreAuthorizeAuthorizationManager(
+            OpaClient opaClient,
+            RoleDefinitionSupplier roleDefinitionSupplier,
+            ObjectProvider<ResourceResolutionSupport> resolutionSupport) {
+        return new OpaPreAuthorizeAuthorizationManager(
+                opaClient, roleDefinitionSupplier, resolutionSupport.getIfAvailable(), null);
+    }
+
+    /**
      * The {@code @OpaPreAuthorize} manager. The {@link ResourceResolutionSupport} is present only when
      * the app registered an {@code AbacResourceResolver} and the {@code resource-resolution} kill-switch
      * is on; absent ({@code null}) the manager's behavior — and the OPA input it builds — is
-     * byte-identical to the pre-resolution baseline.
+     * byte-identical to the pre-resolution baseline. The audit policy is built from
+     * {@code opa.abac.audit.privileged-read.*} and is {@code null} when unconfigured (ADR 0030
+     * Amendment 7).
      */
     @Bean
     @ConditionalOnMissingBean
@@ -99,12 +122,12 @@ public class OpaAbacSecurityBeans {
      */
     private static PrivilegedReadAuditPolicy privilegedReadAuditPolicy(OpaAbacProperties properties) {
         var configured = properties.getAudit().getPrivilegedRead();
-        boolean provenanceSet = configured.getProvenance() != null && !configured.getProvenance().isBlank();
-        boolean valuesSet = !configured.getRootValues().isEmpty();
         // ENTIRELY absent means off. HALF-configured means a typo, and silently disabling an audit
         // control on a typo is how oversight quietly stops happening — the record's own validation
-        // fails startup instead, which is why it validates rather than normalizing.
-        if (!provenanceSet && !valuesSet) {
+        // fails startup instead, which is why it validates rather than normalizing. `isAnySet` counts
+        // all THREE knobs, including a root-attribute set alone (its default value is not a
+        // configuration, so tracking explicit assignment is what makes that case loud).
+        if (!configured.isAnySet()) {
             return null;
         }
         return new PrivilegedReadAuditPolicy(

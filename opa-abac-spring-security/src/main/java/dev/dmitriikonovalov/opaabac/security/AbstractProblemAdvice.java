@@ -151,7 +151,7 @@ public abstract class AbstractProblemAdvice {
         // muting it would withhold the very challenge that would let the subject in. Only what the
         // reason ITSELF proves unanswerable is rejected here; the policy owns the rest.
         if (reason.maxAge() < 0) {
-            log.warn("step-up challenge suppressed: non-positive max_age {} (denying 403)",
+            log.warn("step-up challenge suppressed: negative max_age {} (denying 403)",
                     reason.maxAge());
             return null;
         }

@@ -330,7 +330,12 @@ elevation; and Keycloak flow automation, which stays rig configuration.
    production wording, and unit cells pin both sides plus the unquotable-override suppression.
 
    **Consequences.** The library's other audit event, `STEP_UP_CHALLENGED`, is vocabulary-free (it
-   reports a challenge the library itself minted) and is unaffected. The change is additive: the
+   reports a challenge the library itself minted) and is unaffected. The starter's public
+   `opaPreAuthorizeAuthorizationManager` bean factory gained a parameter, so its **3-argument form is
+   retained as a link-compatibility shim** (`opa-abac-spring-boot-starter` is published to Maven
+   Central and 1.0.0/1.1.0 shipped that signature); it delegates with a `null` audit policy, which is
+   exactly what a pre-C caller should get. **Remove the shim at the next MAJOR version** — that is the
+   decision this note records, rather than carrying a standing lint suppression for it. The change is additive: the
    three-argument manager constructor is retained and now means "no privileged-read event", which is
    the correct default for every pre-C adopter. The e2e proof is unchanged in substance — the
    example configures the same nouns, so `run-step-up-matrix.sh`'s E2 audit grep still measures the

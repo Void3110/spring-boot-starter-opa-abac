@@ -63,6 +63,11 @@ class OpaAbacAutoConfigurationTest {
         runner.withPropertyValues("opa.abac.enabled=true",
                         "opa.abac.audit.privileged-read.provenance=supervised")
                 .run(context -> assertThat(context).hasFailed());
+
+        // …and the third knob, whose DEFAULT would otherwise make a block naming only it look absent
+        runner.withPropertyValues("opa.abac.enabled=true",
+                        "opa.abac.audit.privileged-read.root-attribute=env")
+                .run(context -> assertThat(context).hasFailed());
     }
 
     @Test // U30 — enabled + security on classpath → all spine beans present

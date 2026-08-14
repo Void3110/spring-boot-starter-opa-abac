@@ -574,8 +574,15 @@ public class OpaAbacProperties {
             /** The {@code role_definition.attributes.provenance} stamp marking the privileged path. */
             private String provenance;
 
-            /** The governing root's attribute naming the tier. */
+            /**
+             * The governing root's attribute naming the tier. Defaulted, but the DEFAULT ITSELF is not
+             * "configured": {@link #isAnySet()} tracks explicit assignment so a block naming only this
+             * knob still counts as half-configured and fails startup.
+             */
             private String rootAttribute = "env";
+
+            /** Whether the adopter explicitly set {@link #rootAttribute} (as opposed to the default). */
+            private boolean rootAttributeSet;
 
             /** The tier values that make a read privileged (scalar or array attribute). */
             private List<String> rootValues = new ArrayList<>();
@@ -594,6 +601,19 @@ public class OpaAbacProperties {
 
             public void setRootAttribute(String rootAttribute) {
                 this.rootAttribute = rootAttribute;
+                this.rootAttributeSet = true;
+            }
+
+            /**
+             * Whether ANY of the three knobs was set — the "is this block present at all?" question the
+             * starter asks. Entirely absent means the privileged-read event is off; anything else is a
+             * configuration the record must validate, so a typo fails startup instead of silently
+             * disabling an audit control.
+             */
+            public boolean isAnySet() {
+                return (provenance != null && !provenance.isBlank())
+                        || rootAttributeSet
+                        || !rootValues.isEmpty();
             }
 
             public List<String> getRootValues() {

@@ -1249,7 +1249,15 @@
                   "// pure supervisor is refused before her provenance is ever consulted, so an MCP",
                   "// 403 would prove the tool-gate and say nothing about C's agent deny.",
                   "mcpDenied('E6h the pure supervisor has no tool-gate ceiling at all', pm.response,",
-                  "          'tool-gate', 'tool-gate-denied');"
+                  "          'tool-gate', 'tool-gate-denied');",
+                  "// NO ALLOW CELL LIVES IN THIS FOLDER, deliberately. Both MCP cells here assert a DENY, so on their",
+                  "// own a wholesale tool-gate outage would keep them green — but the tool-gate's allow/deny contrast",
+                  "// is OWNED by run-agent-tool-matrix.sh (its E2 'allow half' calls a tool with an agent-client token",
+                  "// whose principal IS a member, which is the only shape that can be allowed here: a plain human",
+                  "// token has no agent capability, so the intersection is empty and even the catalog's OWNER is",
+                  "// tool-gate-denied — measured). That runner is part of T6's E8 non-regression sweep, so a globally",
+                  "// closed tool-gate fails the SUITE. This folder's job is narrower: it documents WHY the target-gate",
+                  "// cells above are REST rather than MCP."
                 ]
               }
             }

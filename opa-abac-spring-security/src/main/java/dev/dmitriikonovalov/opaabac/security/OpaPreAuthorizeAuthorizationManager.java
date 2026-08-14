@@ -179,7 +179,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                         resolved.instance());
             }
             if (allowed) {
-                auditSupervisedProductionRead(subject, roleDefinition, resolved);
+                auditPrivilegedRead(subject, roleDefinition, resolved);
                 return new AuthorizationDecision(true);
             }
             if (decision.denyReason() != null) {
@@ -209,20 +209,23 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     }
 
     /**
-     * Emit {@code PRIVILEGED_READ} (ADR 0030 §8) when — and only when — an <b>allowed</b>
-     * decision was a <b>supervised</b> subject reading content whose <b>governing root is production</b>.
+     * Emit {@code PRIVILEGED_READ} (ADR 0030 §8 + Amendment 7) when — and only when — an <b>allowed</b>
+     * decision matched the adopter's {@link PrivilegedReadAuditPolicy}: the resolved role carries the
+     * configured <b>provenance</b>, and the governing root's configured <b>tier attribute</b> holds one of
+     * the configured <b>tier values</b>. With no policy configured, nothing is emitted — the words
+     * {@code supervised} and {@code production} are this repo's EXAMPLE vocabulary, not the library's.
      *
      * <p><b>Elevation is implied by the allow and never re-derived here.</b> The policy already required
      * it; re-checking `acr`/`auth_time` app-side would mean a second copy of the LoA map and the freshness
      * window, and the whole point of ADR 0030 Amendment 3 is that exactly one window exists. The claims
      * are logged verbatim, not interpreted.
      *
-     * <p>The {@code env} test mirrors the policy's {@code root_env_values} — the cardinality twin: a tag
-     * value in this model is a scalar string <em>or</em> a string array, and a bare {@code equals} would
-     * miss {@code ["production", "staging"]}. Absent root attributes mean no event: nothing proved this
-     * read was privileged, which is also the state the policy treats as an unproven (closed) tier.
+     * <p>The tier test mirrors the policy's {@code root_env_values} — the cardinality twin: a tag value in
+     * this model is a scalar string <em>or</em> a string array, and a bare {@code equals} would miss
+     * {@code ["production", "staging"]}. Absent root attributes mean no event: nothing proved this read
+     * was privileged, which is also the state the policy treats as an unproven (closed) tier.
      */
-    private void auditSupervisedProductionRead(
+    private void auditPrivilegedRead(
             AbacContext.Subject subject, RoleDefinition roleDefinition, ResolvedCheck resolved) {
         if (privilegedReadAuditPolicy == null
                 || !privilegedReadAuditPolicy.matches(roleDefinition, resolved.resource().rootAttributes())) {

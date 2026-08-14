@@ -1039,11 +1039,6 @@ test_deny_reason_required_acr_comes_from_data if {
 		with time.now_ns as stepup_now_ns
 }
 
-# The EMPTY-DOCUMENT off-state, pinned: with `data.step_up` gone (the state a whole-document PUT
-# clobber produces — the drill's footgun), elevation is impossible for a fresh aal2 AND the
-# sole-blocker reason is undefined — a plain deny, never a challenge advertising a window nobody
-# enforces. This is the "absent data.step_up leaves this undefined -> plain deny" contract stated
-# beside `deny_reason`, asserted rather than trusted.
 # The TYPE of the loa level is load-bearing: Rego comparisons are a total order ACROSS types
 # (every string sorts above every number — `"1" >= 2` is TRUE), so without the `is_number` guard a
 # string-valued loa map would elevate password-only logins instead of failing closed. The mixed map
@@ -1128,6 +1123,11 @@ test_small_but_live_window_still_challenges if {
 		with time.now_ns as stepup_now_ns
 }
 
+# The EMPTY-DOCUMENT off-state, pinned: with `data.step_up` gone (the state a whole-document PUT
+# clobber produces — the drill's footgun), elevation is impossible for a fresh aal2 AND the
+# sole-blocker reason is undefined — a plain deny, never a challenge advertising a window nobody
+# enforces. This is the "absent data.step_up leaves this undefined -> plain deny" contract stated
+# beside `deny_reason`, asserted rather than trusted.
 test_absent_step_up_data_closes_elevation_and_mutes_the_challenge if {
 	not product.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with data.step_up as {}
