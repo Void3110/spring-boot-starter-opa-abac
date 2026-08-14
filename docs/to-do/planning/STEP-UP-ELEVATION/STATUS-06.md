@@ -162,6 +162,14 @@ successful, and the rig restored to the shipped 300-second window.
   affected runner is green. What is **not** T6's to decide, and is why this is escalated: whether the
   realm should instead exempt the direct-grant flow for fixture factors, and whether I5(d) should be
   re-measured on a factored persona. No realm file was touched by this part.
+- **Maintainer resolution of the escalation (2026-08-14, orchestrator-recorded).** The harness-side
+  `otp=` repair is **accepted as the answer**; the realm stays unchanged (no direct-grant exemption
+  for fixture factors — the behavior is Keycloak's own rule for factored identities, and exempting
+  it would carve a fixture-only auth path into the realm export). I5(d) was re-measured on the
+  factored persona (`sup-anna`) against the live rig: plain ROPC → `invalid_grant` reproduced;
+  ROPC + `otp=` mints; the minted token carries no `auth_time` (and `acr: aal1`), so ROPC cannot
+  launder elevation for a factored supervisor either. Evidence recorded as the I5(d) amendment in
+  `STATUS-01.md` §Decisions. Run resumed.
 - **`run-tests.sh` failed once on a transient, not a regression.** Its "claim the catalog"
   step answered `400` when run **immediately after** `run-supervised-scope-matrix.sh`, whose E8 pass
   recreates the catalog pods on the way out; the user-service's ownership lookup reaches a pod that

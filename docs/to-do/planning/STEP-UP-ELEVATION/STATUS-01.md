@@ -168,6 +168,19 @@ instant** — `iat` advances, `auth_time` does not.
 - **Known, accepted side effect:** ROPC tokens now carry `acr: aal1` (they carried none before). `acr`
   alone is never a control here — the freshness half of `elevated` is what bites, and ROPC still
   carries no `auth_time` at all (asserted in I5(d), not assumed). No matrix asserts token claim sets.
+- **I5(d) amendment (2026-08-14, maintainer-directed, orchestrator-recorded).** The original I5(d)
+  cell measured `editor` — a persona without a factor — so "ROPC is untouched" missed that the
+  direct-grant flow demands a code from any identity **owning** a factor: a plain ROPC mint for
+  `sup-anna` answers `invalid_grant / "Invalid user credentials"` (part 1's cross-part escalation,
+  STATUS-06). Re-measured on the factored persona against the live rig's Keycloak, in-network via
+  the runners' own mint path: **(a)** plain ROPC for `sup-anna` → `invalid_grant`, reproduced;
+  **(b)** ROPC + `otp=` (the miner's `--print-otp`, next-window retry for one-time use) → mints;
+  **(c)** the minted token carries `acr: aal1`, **no `auth_time`**, and no `act_chain` — so the
+  security property I5(d) exists for stands on the right persona too: without `auth_time`,
+  `elevated` is undefined and the production deny holds; ROPC cannot launder elevation even for a
+  factored supervisor. The realm is deliberately unchanged (no direct-grant exemption for fixture
+  factors): the behavior is Keycloak's own factored-identity rule, and the harness-side `otp=`
+  repair (T6) keeps the fixture secret + RFC 6238 parameters in one place.
 
 ## Commit
 
