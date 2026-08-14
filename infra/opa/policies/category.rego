@@ -264,9 +264,21 @@ stepup_denied if {
 #
 # `not is_agent_call` is defence in depth beside the agent deny above: elevation is a human ceremony,
 # so no combination of claims lets an agent-marked call elevate even if the deny were ever relaxed.
+# The level comparison is TYPE-GUARDED and TIED TO THE ADVERTISED ACR. Rego comparisons are a
+# total order ACROSS types (every string sorts above every number, so `"1" >= 2` is true): without
+# `is_number`, a string-valued `loa` entry — a natural transcription slip from the realm's
+# `acr.loa.map`, which is itself a JSON string — would elevate password-only logins instead of
+# failing closed. And the threshold is `loa[required_acr]`, never a literal: the level the
+# challenge advertises is by construction the level this check demands, so the pair cannot drift
+# apart (a literal `2` beside `required_acr: "aal3"` would under-enforce; beside an unmapped name
+# it would challenge for an ACR that elevates nothing — the §7 loop).
 elevated if {
 	not is_agent_call
-	data.step_up.loa[input.subject.attributes.acr] >= 2
+	level := data.step_up.loa[input.subject.attributes.acr]
+	is_number(level)
+	required_level := data.step_up.loa[data.step_up.required_acr]
+	is_number(required_level)
+	level >= required_level
 	(time.now_ns() / 1000000000) - input.subject.attributes.auth_time <= data.step_up.max_age + data.step_up.skew
 	input.subject.attributes.auth_time - (time.now_ns() / 1000000000) <= data.step_up.skew
 }
@@ -305,6 +317,10 @@ deny_reason := {
 	stepup_denied
 	granted
 	not denied_other
+	# The challenge is only minted when answering it would actually elevate: `required_acr` must map
+	# to a NUMERIC level in `loa`. Incoherent data (an unmapped or string-valued name) mutes the
+	# challenge — a plain deny, never a 401 advertising an ACR that elevates nothing (the §7 loop).
+	is_number(data.step_up.loa[data.step_up.required_acr])
 }
 
 # The root's env value(s) as a set: an array tag -> the set of its elements; a scalar -> {scalar}.

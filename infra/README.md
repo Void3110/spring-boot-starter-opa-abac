@@ -408,8 +408,10 @@ code flow instead.
 
 ```bash
 ./deploy.sh down                                   # the realm changed — Keycloak must RE-IMPORT it
+./deploy.sh build                                  # fresh app images BEFORE the up — `up` reuses an
+                                                   # existing image, so building after leaves the pods
+                                                   # on the pre-C code with nothing to tell you so
 ENABLE_MCP=1 ./deploy.sh up --pods 2               # force-enables OIDC + OPA + the user-service
-./deploy.sh build                                  # fresh catalog image; build usermgmt + mcp explicitly
 cd scripts/postman && ./run-step-up-matrix.sh
 ```
 

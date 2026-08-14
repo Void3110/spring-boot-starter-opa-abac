@@ -72,6 +72,22 @@ findings**, both pre-existing in parts 0/1's code (not introduced by round 1's f
 | 17 (Low) | `ResilientOpaClient.decide()` **retried reason-carrying denies**: the retryable-result predicate treated every deny as the fail-closed sentinel, but a deny carrying a reason is provably a real 200 answer (the delegate only builds one there) — so the step-up hot path (every unelevated supervisor's challenge) paid a deterministic-identical extra OPA hop plus an on-thread backoff, the exact inconsistency `allowAll()`'s MIXED discipline already refuses | The predicate excludes reason-carrying denies (`d == null \|\| (!d.allow() && d.denyReason() == null)`); a `RetryingGuard` test pins "asked exactly once" |
 | 18 (Low) | The **absent/empty `data.step_up` off-state was pinned by zero tests** — both policies' comments claim "absent data ⇒ undefined ⇒ plain deny" (the exact state the drill's whole-document-PUT footgun produces) but every elevation test ran against the real `step_up.json` | `test_absent_step_up_data_closes_elevation_and_mutes_the_challenge` in both test files: `with data.step_up as {}` ⇒ no allow for fresh aal2 AND no `deny_reason` |
 
+## Round 3
+
+A third 8-lens pass over the **committed** tree (18 agents; rounds 1–2's fixes explicitly
+excluded from re-reporting). It surfaced **one new Medium-class defect (mirrored, so two
+findings) and five Lows**, all pre-existing, all fixed:
+
+| # | Finding | Fix |
+|---|---|---|
+| 19 (Medium, both policies) | **The LoA lookup failed OPEN on a string-valued `loa` map**: Rego comparisons are a total order *across* types — `"1" >= 2` is `true` — so a data-value typo (a natural transcription from the realm's `acr.loa.map`, itself a JSON string) would elevate password-only `aal1` logins into the production tier, and every aal2 happy-path test would stay green while the aal1-must-not-elevate deny silently inverted. Reproduced with `opa eval` by the finder *and* independently by its refuter. Latent (shipped data is numeric), but this is the reference policy adopters copy | The level is bound and type-guarded (`is_number`) in both policies, and the threshold is now **`loa[required_acr]`, never a literal `2`** — which also closes finding 21 |
+| 20 (dup of 19) | The critic's sweep: the identical defect alive in `product.rego` | Same edit, both files, same commit |
+| 21 (Low) | The `>= 2` literal was decoupled from the advertised `required_acr` — raising `required_acr` to a higher level would not raise enforcement, and an unmapped name would challenge for an ACR that elevates nothing (the §7 loop) | Subsumed by 19's data-tied threshold; additionally `deny_reason` gained a coherence conjunct — the challenge is only minted when `loa[required_acr]` is a number, so incoherent data mutes the challenge (plain deny). Cells: string-map, mixed-map (the cross-type trap), unmapped-`required_acr` — both files |
+| 22 (Low) | `docs/api/README.md`'s catalog vocabulary omitted `TAG_OPERATOR_MANAGED` (in the spec enum) and the 409 row said "user-mgmt only" | Both corrected |
+| 23 (Low) | `infra/README.md`'s step-up runbook ordered `up` before `build` — pods stay on the pre-C image with nothing to say so | Order swapped (down → build → up) with the reason stated |
+| 24 (Low) | `category-api.md`'s `ProblemDetail` union omitted `STEP_UP_REQUIRED` — the unswept twin of round 1's `product-api.md` union fix | Added |
+| 25 (Low) | `scripts/postman/README.md`'s step-up row had the same up-before-rebuild sequencing | Reworded to the explicit order |
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the
@@ -139,8 +155,8 @@ rather than absorbed.
   including the new wiring-check tests and the unknown-type challenge cell)
 - `./.sonar-local/sonar-local.sh`: **CLEAN — 0 open findings** on changed files (3× S5778 in the
   new test fixed, not suppressed)
-- `opa test infra/opa/policies/`: **375/375** (367 from the slice + 6 round-1 mirror cells + 2
-  round-2 off-state cells); `opa check --strict` clean
+- `opa test infra/opa/policies/`: **379/379** (367 from the slice + 6 round-1 mirror cells + 2
+  round-2 off-state cells + 4 round-3 type/coherence cells); `opa check --strict` clean
 - newman, re-run against the live rig after the fixes: `run-production-tier-matrix.sh` (the seven
   C-flip literal cells against the now data-sourced challenge) **green — 73/73**;
   `run-supervised-scope-matrix.sh` (miner preflight; both passes) **green — 48/48**;

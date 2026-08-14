@@ -1044,6 +1044,34 @@ test_deny_reason_required_acr_comes_from_data if {
 # sole-blocker reason is undefined — a plain deny, never a challenge advertising a window nobody
 # enforces. This is the "absent data.step_up leaves this undefined -> plain deny" contract stated
 # beside `deny_reason`, asserted rather than trusted.
+# The TYPE of the loa level is load-bearing: Rego comparisons are a total order ACROSS types
+# (every string sorts above every number — `"1" >= 2` is TRUE), so without the `is_number` guard a
+# string-valued loa map would elevate password-only logins instead of failing closed. The mixed map
+# is the sharpest trap: a string level beside a numeric threshold satisfies the bare comparison.
+test_string_loa_values_fail_closed if {
+	not product.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with data.step_up as {"loa": {"aal1": "1", "aal2": "2"}, "required_acr": "aal2", "max_age": 300, "skew": 30}
+		with time.now_ns as stepup_now_ns
+	not product.allow with input as elev_input(
+		tiered_supervisor_role, production_root,
+		{"acr": "aal1", "auth_time": stepup_now_s - 10},
+	)
+		with data.step_up as {"loa": {"aal1": "1", "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
+# The threshold is loa[required_acr], never a literal — and INCOHERENT data mutes the challenge:
+# with required_acr unmapped in loa, nobody can elevate (fail-closed) AND no deny_reason is emitted
+# (a challenge naming an ACR that elevates nothing is the §7 loop, not an answer).
+test_unmapped_required_acr_closes_elevation_and_mutes_the_challenge if {
+	not product.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "gold", "max_age": 300, "skew": 30}
+		with time.now_ns as stepup_now_ns
+	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
+		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "gold", "max_age": 300, "skew": 30}
+		with time.now_ns as stepup_now_ns
+}
+
 test_absent_step_up_data_closes_elevation_and_mutes_the_challenge if {
 	not product.allow with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with data.step_up as {}
