@@ -9,7 +9,8 @@ tags:
 
 # Step-Up Elevation — Code Review
 
-> **Verdict**: Approved with fixes
+> **Verdict**: Approved with fixes — **ten adversarial rounds**, each round's fixes committed before
+> the next ran
 > **Scope**: Layer-3 whole-delivery review of the STEP-UP-ELEVATION slice (T1–T6, two orchestrated
 > parts): the realm's conditional level-2 TOTP flow, the `elevated`/sole-blocker policy composition,
 > the additive `decide()` envelope, the RFC 9470 challenge emitter + audit, the token miner, and the
@@ -270,6 +271,30 @@ The other four:
   and `catalog-api.md`'s table still listed `STATE_CONFLICT` under a literal `—` status. Both
   fixed.
 
+## Rounds 9–10 — the vocabulary sweep, completed
+
+Round 9 (six Lows) added a **library-side** range guard on the advertised window: round 5 had
+guarded `max_age`/`skew` in the *example policy*, but this library is published for adopters who
+write their own, so the emitter now refuses a non-positive window on its own terms. It also fixed
+the branch's own runner reproducing the newman JSON-export defect the note documents (the correct
+pattern already existed in-repo), the `OpaClient` javadoc's stale count, the PUTs' missing 400, and
+a second inert Keycloak-v1 option.
+
+Round 10 then caught what round 9's *own* audit fix had left half-done — three siblings of
+Amendment 7, all in the published library:
+
+| Sibling | Why it mattered more than the trigger |
+|---|---|
+| The event **name** `SUPERVISED_PRODUCTION_READ` | It is the string that lands in an adopter's logs, and it was the last piece of this repo's example vocabulary baked into the library. → **`PRIVILEGED_READ`**, matching the property and the policy class |
+| The **challenge description** | *Worse than the audit event*: it reaches the **caller**. Every RFC 9470 `error_description` and problem `detail` asserted "…to read production content" — a false, domain-inappropriate fact for an adopter whose step-up guards a payment confirmation. → a domain-neutral default plus an overridable `stepUpChallengeDescription()` seam; the example overrides it |
+| A **half-configured** policy block | It silently disabled the event. Silently disabling an audit control on a typo is how oversight quietly stops happening. → entirely-absent still means off; partial fails startup naming every knob |
+
+Two smaller ones: the four challenge-suppression branches were completely silent and now warn; and
+the allowlist admits a comma — *my own* neutral default sentence was suppressed by an allowlist that
+forbade it, which is precisely the silent 403-downgrade an adopter writing an ordinary sentence
+would have hit. The spec also stopped claiming "no authentication" while documenting an
+authentication challenge (it now declares `bearerAuth`).
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the
@@ -350,6 +375,14 @@ rather than absorbed.
   three cased spellings and three guarded routes, gateway-origin 200, and refresh-preserves-
   `auth_time`), with **both** audit events grepped off the pods against this run's fresh category id
   — through the configurable audit seam, which is what proves Amendment 7 preserved behavior
+- **A `run-tests.sh` failure chased to its root and found NOT to be this branch's**: the realm export
+  pins no user ids, so every `deploy.sh down`+`up` re-imports the realm and mints `demo` a fresh
+  `sub`, orphaning its `app_user` row (the DB volume survives `down`); `run-tests.sh` is the only
+  runner that never bootstraps its own user, so its claim step 400s with "No acting user: request is
+  unauthenticated" — which reads as an auth regression and is a missing profile row. Proven by
+  probing the pod directly (identical failure ⇒ not the gateway guard), by the duplicate
+  same-`display_name` rows (one per re-import), and by bootstrapping the current `sub` → **22/22**.
+  Spun off as a follow-up; recorded in Mulch
 - One fix-of-a-fix caught by the re-validation itself: the E9 tamper control originally flipped the
   token's **last** character — the final base64url sextet of an RS256 signature carries padding
   bits, so the flip can decode to the *identical* bytes and the control fails against a healthy
