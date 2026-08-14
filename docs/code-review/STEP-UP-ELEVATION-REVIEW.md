@@ -151,6 +151,42 @@ mint (`curl -H 'Host: evil.example'`) yields a realm-*signed* token with
 `iss=http://evil.example:28888/…`, and the gateway must 401 it. Verified live: the control passes,
 step-up 55/55, `run-tests.sh` 22/22 (canonical-issuer traffic unaffected).
 
+## Round 6 — and why the loop rule earned its keep
+
+The round intended as terminal instead caught a **Critical regression introduced by the hardening
+commit itself**, reproduced live by its own refuter:
+
+> **The issuer allowlist 401'd every demo-SPA token.** The SPA does not log in at
+> `localhost:28888`: `auth.ts` sets its authority to `window.location.origin`, its whole PKCE flow
+> runs through the gateway's `/realms/*` passthrough, and Keycloak rewrites its advertised issuer to
+> the **gateway origin** (`localhost:9085`) — packaged *and* vite-dev (the `:3000` proxy sets
+> `changeOrigin`). That origin was missing from the allowlist, so every SPA call to `/api/**`,
+> `/api/v1/teams*`, `/api/v1/users*` and `/mcp*` would have been refused at the edge.
+
+**Why the hardening's own validation missed it**: every runner in the suite mints in-network, so
+55/55 + 22/22 were green while the browser path was broken. That is the shape of the defect —
+*a token path no e2e exercises*. Fixed by allowlisting the gateway origin (the list is now a
+documented, overridable `ISSUER_ALLOWLIST` naming all three real login paths), and by adding **E9
+control (g)**: mint with the gateway's Host, assert **200**. The allow half of the cut is now pinned
+beside the deny half, so the same omission fails loudly next time. The guard's JWT match was also
+tightened to exactly three segments while there.
+
+The other seven, all fixed:
+
+| # | Finding | Fix |
+|---|---|---|
+| Medium | **`deny_reason`'s `granted` conjunct had zero real coverage** — the write-verb cell passed an already-elevated subject, so `stepup_denied` was already false and the case duplicated another; deleting `granted` left the suite green in both files | The cell now uses an unelevated subject, plus a new out-of-scope-supervisor cell (the conjunct's second bullet). Mutation-proven: deleting `granted` now fails **4** cells, previously 0 |
+| Medium | The issuer control never exercised the browser authority (the gap above, as a test finding) | E9 control (g) |
+| Low | `OpaClient.decide` is source-incompatible with an implementation already declaring `decide(AbacContext)` | Name-collision caveat documented beside the mock caveat |
+| Low | The spec declared no 409 although the service emits `TAG_OPERATOR_MANAGED`/`STATE_CONFLICT` | `Conflict` response component, referenced from all six tag-carrying writes — and the product writes, which declared neither 409 nor 422 despite being taggable (ADR 0025), gained both |
+| Low ×2 | Dead `REPO_ROOT` and an unread `open_product_id` env-var in the step-up runner | Removed |
+| Low | `STEP_UP_REQUIRED` was the only enum constant missing from the per-constant status contract test | Added |
+
+Five findings were refuted, including two attempts at the `act_chain: null` shape (the extractor
+strips null claims before the subject map is built, so the presence-test never sees a key it would
+miss) and one arguing `hasCompleteReason()` is dead (the enforcement path re-derives completeness
+deliberately).
+
 ## Fail-closed verification
 
 Every error/empty path lands on deny/empty — re-traced under the adversarial pass and after the

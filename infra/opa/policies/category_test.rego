@@ -1202,11 +1202,33 @@ test_no_deny_reason_when_already_elevated if {
 
 # ABSENT — a WRITE verb: not `granted`, so the read-only ceiling answers plainly. A challenge here
 # would promise that a second factor unlocks a write, which it never does.
+#
+# The subject is deliberately UNELEVATED (`tier_input`, no claims): with a fresh aal2 the whole
+# clause is already dead at `stepup_denied`, so the case would pass with `granted` DELETED — it
+# would duplicate test_no_deny_reason_when_already_elevated and pin nothing. Unelevated, this is
+# the only cell that fails when the `granted` conjunct goes.
 test_no_deny_reason_for_a_write_verb if {
 	not category.deny_reason with input as object.union(
-		elev_input(tiered_supervisor_role, production_root, fresh_aal2),
+		tier_input(tiered_supervisor_role, production_root),
 		{"action": "category:update"},
 	)
+		with time.now_ns as stepup_now_ns
+}
+
+# ABSENT — an OUT-OF-SCOPE supervisor: the second `granted` bullet. A supervised role that does not
+# carry the verb on this type is not one elevation from allow, so it learns nothing — no challenge,
+# no "this is production" leak.
+# (Built literally, NOT via object.union on the supervisor fixture: object.union merges maps
+# RECURSIVELY, so unioning `{"permissions": {}}` leaves the original permissions intact and the
+# subject stays granted — the case would then assert nothing.)
+out_of_scope_supervisor_role := {
+	"code": "supervisor-readonly",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {"catalog": ["READ"]},
+}
+
+test_no_deny_reason_for_an_out_of_scope_supervisor if {
+	not category.deny_reason with input as tier_input(out_of_scope_supervisor_role, production_root)
 		with time.now_ns as stepup_now_ns
 }
 

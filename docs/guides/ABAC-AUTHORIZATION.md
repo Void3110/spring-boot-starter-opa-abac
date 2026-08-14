@@ -69,12 +69,17 @@ if (!decision.allow() && decision.hasCompleteReason()) {
 
 `OpaClient.decide` is a **`default` method** delegating to `allow` with a `null` reason, so every
 implementation written before it existed compiles and behaves identically — the additive move, chosen
-over an envelope version deliberately (ADR 0030 §6). **The one caveat is mocks**: a Mockito
-`mock(OpaClient.class)` does not run default methods, so a test that stubs only
-`when(client.allow(any()))` now gets `null` from `decide()` — which the gate reads as a fail-closed
-deny. Tests that mock `OpaClient` must stub `decide(...)` (e.g.
-`thenReturn(OpaDecision.of(true))`), or use a real stub class so the default runs; real
-implementations are unaffected.
+over an envelope version deliberately (ADR 0030 §6). **Two caveats, both about existing code rather
+than behavior:**
+
+- **Mocks.** A Mockito `mock(OpaClient.class)` does not run default methods, so a test that stubs
+  only `when(client.allow(any()))` now gets `null` from `decide()` — which the gate reads as a
+  fail-closed deny. Tests that mock `OpaClient` must stub `decide(...)` (e.g.
+  `thenReturn(OpaDecision.of(true))`), or use a real stub class so the default runs.
+- **Name collision.** An existing implementation that already declares its own
+  `decide(AbacContext)` member no longer compiles against the interface unless the signature is
+  compatible — a source-incompatibility the additive default cannot avoid. Rename the local member
+  (the in-repo precedent is `verdictFor`). Implementations without such a member are unaffected.
 
 **Four fail-closed rules, each landing at the layer it arises:**
 

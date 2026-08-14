@@ -52,6 +52,7 @@ class ProblemDetailContractTest {
         assertThat(LibraryErrorCode.STATE_CONFLICT.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(LibraryErrorCode.TAG_VALUE_ILLEGAL.status()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(LibraryErrorCode.ROLE_SUBSET_VIOLATION.status()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(LibraryErrorCode.STEP_UP_REQUIRED.status()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     // U3 — the helper builds a ProblemDetail from (status, code, detail, instance).

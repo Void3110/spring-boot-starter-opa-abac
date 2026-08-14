@@ -74,17 +74,26 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #     own Authorization Code + PKCE against Keycloak (public client `catalog-spa`) and presents
 #     the token. Same JWKS validation, no gateway-driven login.
 # THE ISSUER-ALLOWLIST GUARD (hardened 2026-08-14). Keycloak 26's `iss` follows the request's
-# Host header (KC_HOSTNAME_STRICT=false — load-bearing for the host-browser SPA login), and the
-# openid-connect plugin validates the SIGNATURE against the realm JWKS but never `iss` (measured —
-# the step-up runner's E9 controls pin both facts). Signature validation already binds tokens to
-# the realm's keys, so the residual risk is cosmetic (`iss` naming an arbitrary authority), but a
-# forged-Host mint through the published port 28888 SHOULD be refused, not waved through. This
-# pre-function 401s any well-formed bearer whose `iss` is neither of the two rig authorities —
-# in-network (`keycloak:8888`, every runner's mints + the miner's presented authority) or the
-# host-browser one (`localhost:28888`, the SPA's logins). Missing/malformed bearers pass THROUGH:
-# openid-connect (the primary authenticator) rejects those on its own terms; this guard only
-# narrows. Rides every route that carries openid-connect (catalog, usermgmt, MCP).
-ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end local token = auth:match('^[Bb]earer%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if claims.iss == 'http://keycloak:8888/realms/catalog-demo' or claims.iss == 'http://localhost:28888/realms/catalog-demo' then return end core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end\"]}"
+# Host header (KC_HOSTNAME_STRICT=false — load-bearing for the browser SPA, whose whole PKCE flow
+# runs against the gateway origin), and the openid-connect plugin validates the SIGNATURE against
+# the realm JWKS but never `iss` (measured — the step-up runner's E9 controls pin both facts).
+# Signature validation already binds a token to the realm's keys, so the residual risk is a
+# realm-signed token NAMING an arbitrary authority (mint through a published port with a forged
+# Host); this guard refuses those. It only NARROWS: a missing or malformed bearer passes through
+# to openid-connect, the primary authenticator, which rejects it on its own terms.
+#
+# THE THREE RIG AUTHORITIES — every one is a real, exercised login path. Adding a way to reach
+# Keycloak means adding its origin here, or that path 401s at the edge:
+#   - keycloak:8888    the in-network authority: every runner's ROPC mints, the code-flow miner
+#                      (which presents this Host from the host), and APISIX's own discovery.
+#   - localhost:9085   THE GATEWAY ORIGIN: the demo SPA's entire Authorization-Code+PKCE flow goes
+#                      through the /realms/* passthrough, and Keycloak rewrites its advertised URLs
+#                      (issuer included) to it — packaged AND vite-dev (the :3000 proxy sets
+#                      changeOrigin, so the Host is still :9085). Omitting this 401s every SPA call.
+#   - localhost:28888  the published Keycloak port, reachable directly from the host.
+ISSUER_ALLOWLIST="${ISSUER_ALLOWLIST:-http://keycloak:8888/realms/catalog-demo,http://localhost:9085/realms/catalog-demo,http://localhost:28888/realms/catalog-demo}"
+ISSUER_ALLOWED_LUA="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "[%c%s%c]=true,", 39, $i, 39}')"
+ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local allowed = {${ISSUER_ALLOWED_LUA}} local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end local token = auth:match('^[Bb]earer%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.[^%.]*$') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if type(claims.iss) ~= 'string' or not allowed[claims.iss] then core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end end\"]}"
 
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   if [ "${ENABLE_SPA:-0}" = "1" ]; then

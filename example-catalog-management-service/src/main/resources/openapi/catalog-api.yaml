@@ -65,6 +65,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
@@ -107,6 +109,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
         '503':
@@ -177,6 +181,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
         '503':
@@ -224,6 +230,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
         '503':
@@ -288,6 +296,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
 
   /api/v1/catalogs/{catalogId}/categories/{categoryId}/products/{productId}:
     parameters:
@@ -332,6 +344,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
     delete:
       tags: [Product]
       summary: Delete a product
@@ -435,6 +451,15 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
     UnprocessableEntity:
       description: A domain rule rejected the request (e.g. an illegal tag value)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Conflict:
+      description: >-
+        The request collides with current state — `TAG_OPERATOR_MANAGED` when it would assign,
+        re-value or strip an operator-managed tag (the `env` tier is written only through the
+        operator path), or `STATE_CONFLICT` for a uniqueness/lifecycle conflict.
       content:
         application/problem+json:
           schema:

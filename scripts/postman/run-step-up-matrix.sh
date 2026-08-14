@@ -46,7 +46,6 @@
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 cd "$SELF_DIR"
 
 # --- config (override via env) -----------------------------------------------
@@ -280,8 +279,36 @@ esac
   echo "       gateway — the issuer-allowlist guard is missing from the route (re-run" >&2
   echo "       init-routes.sh via deploy.sh up) or has been removed." >&2
   exit 1; }
+#   (g) THE ALLOWLIST'S *ALLOW* HALF — the SPA's authority. The browser demo runs its whole PKCE
+#       flow against the GATEWAY ORIGIN (the /realms/* passthrough), and Keycloak rewrites its
+#       advertised issuer to it, so an allowlist holding only the in-network and published-port
+#       authorities 401s every SPA call while every runner here stays green (they all mint
+#       in-network — which is exactly how such a regression reaches a browser unnoticed). Minting
+#       with the gateway's Host reproduces that token shape without a browser.
+GATEWAY_ISS_JSON="$(curl -s -X POST \
+  "$KC_HOST_PORT_URL/realms/catalog-demo/protocol/openid-connect/token" \
+  -H "Host: ${GATEWAY#http://}" \
+  -d grant_type=password -d "client_id=$CLIENT_ID" -d "client_secret=$CLIENT_SECRET" \
+  -d username=editor -d password=editor)"
+GATEWAY_ISS_TOKEN="$(printf '%s' "$GATEWAY_ISS_JSON" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+[ -n "$GATEWAY_ISS_TOKEN" ] || {
+  echo "ERROR: could not mint the gateway-origin control token — Keycloak answered:" >&2
+  echo "       $(printf '%s' "$GATEWAY_ISS_JSON" | head -c 200)" >&2
+  exit 1; }
+GATEWAY_ISS_VALUE="$(token_claim "$GATEWAY_ISS_TOKEN" iss)"
+[ "$GATEWAY_ISS_VALUE" = "$GATEWAY/realms/catalog-demo" ] || {
+  echo "ERROR: the gateway-Host mint carries iss='$GATEWAY_ISS_VALUE', expected" >&2
+  echo "       '$GATEWAY/realms/catalog-demo' — the E9g control would prove nothing." >&2
+  exit 1; }
+[ "$(gateway_status "$GATEWAY_ISS_TOKEN")" = "200" ] || {
+  echo "ERROR: a token carrying the GATEWAY-ORIGIN issuer '$GATEWAY_ISS_VALUE' was refused." >&2
+  echo "       That is the demo SPA's own issuer (its PKCE flow runs through /realms/* at this" >&2
+  echo "       origin), so the browser demo is broken: add it to init-routes.sh's" >&2
+  echo "       ISSUER_ALLOWLIST. Every runner mints in-network, so nothing else here would fail." >&2
+  exit 1; }
 echo "  E9: iss parity confirmed ($EXPECTED_ISS); gateway 200 on the minted token; 401 on the"
-echo "  tamper control; 401 on the foreign-issuer control ($FOREIGN_ISS_VALUE)."
+echo "  tamper control; 401 on the foreign-issuer control ($FOREIGN_ISS_VALUE); 200 on the"
+echo "  gateway-origin (SPA) authority ($GATEWAY_ISS_VALUE)."
 
 ANNA_SUB="$(token_claim "$ANNA_AAL1_TOKEN" sub)"
 EDITOR_SUB="$(token_claim "$EDITOR_TOKEN" sub)"
@@ -410,7 +437,6 @@ run_folder() {  # $1 folder, $2 report suffix, then extra --env-var pairs
     --env-var "prod_product_id=$PROD_PRODUCT_ID" \
     --env-var "open_catalog_id=$OPEN_CATALOG_ID" \
     --env-var "open_category_id=$OPEN_CATEGORY_ID" \
-    --env-var "open_product_id=$OPEN_PRODUCT_ID" \
     --env-var "shipped_max_age=$SHIPPED_MAX_AGE" \
     --env-var "drill_max_age=$DRILL_MAX_AGE" \
     "$@" \
