@@ -374,13 +374,14 @@ One commit per review round, plus the maintainer-directed hardening:
 
 ## Spun-off follow-ups (deliberately out of this branch)
 
-Two pre-existing suite-wide patterns the review surfaced, kept out rather than ballooning the
+One pre-existing suite-wide pattern the review surfaced, kept out rather than ballooning the
 slice's diff:
 
-1. **The newman JSON export never writes.** Every runner passes `--reporter-json-export` without
-   activating the json reporter (`-r cli,json`), so every directory under
-   `scripts/postman/build/reports/postman/` is empty — assertion counts must be read from the
-   console output.
-2. **`collection_base_url` shadowing in six other runners.** The environment file's value wins over
-   collection variables, so a non-default `GATEWAY` splits a run; the three C-affected runners are
-   fixed here via `--env-var`, the rest need the same sweep.
+- **The newman JSON export never writes** in most runners: they pass `--reporter-json-export`
+  without activating the json reporter, so their report directories are empty and assertion counts
+  must be read from console output. The correct pattern already exists in-repo
+  (`run-resilience-matrix.sh` uses `--reporters cli,json`) and round 9 applied it to *this
+  branch's own* runner; the pre-existing runners still need the one-flag sweep.
+
+*(The `collection_base_url` shadowing that was listed here as a second follow-up was completed on
+this branch in rounds 4 and 7 — every runner now passes the override.)*

@@ -513,7 +513,7 @@ run_folder() {  # $1 folder, $2 report suffix, then extra --env-var pairs
     --env-var "shipped_max_age=$SHIPPED_MAX_AGE" \
     --env-var "drill_max_age=$DRILL_MAX_AGE" \
     "$@" \
-    --reporter-cli \
+    --reporters cli,json \
     --reporter-json-export "$REPORT_DIR/$RUN_ID/step-up-matrix-$suffix.json"
 }
 

@@ -84,7 +84,7 @@ public abstract class AbstractProblemAdvice {
     /**
      * The RFC 9470 challenge for a reason, or {@code null} when one must not be emitted.
      *
-     * <p>Three rejections, all of which fall back to the ordinary 403:
+     * <p>Four rejections, all of which fall back to the ordinary 403:
      * <ul>
      *   <li><strong>An unrecognized reason type.</strong> The one type this library knows how to answer
      *       is {@link DenyReason#INSUFFICIENT_USER_AUTHENTICATION} — a fresh second factor. Any other
@@ -95,6 +95,11 @@ public abstract class AbstractProblemAdvice {
      *       re-authenticate against a still-valid session, receive the same stale {@code auth_time}, and
      *       be challenged again — ADR 0030 §7's infinite loop. A half-formed challenge is worse than
      *       none.</li>
+     *   <li><strong>A non-positive window.</strong> {@code max_age <= 0} is well-typed but
+     *       unsatisfiable — no re-authentication is ever "within zero seconds" — so the challenge would
+     *       be the same §7 loop by arithmetic rather than by omission. The example policy guards its own
+     *       data, but this library is published for adopters who write their own, so the emitter refuses
+     *       on its own terms rather than trusting the policy to have checked.</li>
      *   <li><strong>A value that cannot be safely quoted.</strong> The parameters originate in policy
      *       data, which is trusted but not this class's to trust <em>blindly</em>: a value carrying a
      *       quote or a CR/LF would break out of the quoted-string and, in the worst case, out of the
@@ -107,6 +112,13 @@ public abstract class AbstractProblemAdvice {
             return null;
         }
         if (!reason.isComplete()) {
+            return null;
+        }
+        // A NON-POSITIVE window is well-typed but unsatisfiable — no re-authentication can ever be
+        // "within 0 seconds" — so advertising it is the §7 loop with extra steps. The example policy
+        // guards its own data, but this library is published for adopters who write their own: the
+        // emitter must refuse the unanswerable challenge on its own terms, not trust the policy to.
+        if (reason.maxAge() <= 0) {
             return null;
         }
         if (!isSafeParameter(reason.type()) || !isSafeParameter(reason.requiredAcr())) {

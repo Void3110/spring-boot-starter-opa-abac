@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * Client for evaluating ABAC decisions against an OPA server.
  *
- * <p>Three decision shapes, all <strong>fail-closed</strong> on any transport/parse error:
+ * <p>Four decision shapes, all <strong>fail-closed</strong> on any transport/parse error:
  *
  * <ul>
  *   <li>{@link #allow(AbacContext)} — a single yes/no decision (the spine);</li>

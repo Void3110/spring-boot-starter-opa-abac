@@ -405,6 +405,20 @@ class StepUpDecisionAndChallengeTest {
         }
     }
 
+    @Test // a NON-POSITIVE window → the plain 403: "re-authenticate within 0s" is unanswerable
+    void nonPositiveMaxAgeFallsBackToForbidden() {
+        List<DenyReason> unsatisfiable = List.of(
+                new DenyReason(DenyReason.INSUFFICIENT_USER_AUTHENTICATION, "aal2", 0),
+                new DenyReason(DenyReason.INSUFFICIENT_USER_AUTHENTICATION, "aal2", -1));
+
+        for (DenyReason reason : unsatisfiable) {
+            ResponseEntity<ProblemDetail> response =
+                    render(new StepUpRequiredDecision(reason, "category", "k-1", "c-1"));
+            assertThat(response.getStatusCode()).as("reason: %s", reason).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(response.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNull();
+        }
+    }
+
     @Test // an unrecognized reason type → the plain 403. A 401 whose error code no client can act on
     void unknownReasonTypeFallsBackToForbidden() { // is the §7 loop wearing a different hat.
         List<DenyReason> unknown = List.of(

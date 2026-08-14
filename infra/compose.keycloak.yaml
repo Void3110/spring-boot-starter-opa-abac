@@ -40,7 +40,6 @@ services:
       # issuers, which is exactly why the gateway carries an allowlist instead. (A `KC_HOSTNAME_URL`
       # line lived here until 2026-08-14 — a removed v1 option that did nothing on KC 26.)
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_ADMIN_URL: "http://localhost:28888"
       # Tracing -> Jaeger (built-in OTEL).
       KC_TRACING_ENABLED: "true"
       KC_TRACING_ENDPOINT: "http://opa-abac-jaeger:4318"
