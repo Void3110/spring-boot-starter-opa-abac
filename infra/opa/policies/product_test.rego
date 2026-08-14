@@ -1091,9 +1091,11 @@ test_malformed_window_data_mutes_the_challenge if {
 		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300}
 		with time.now_ns as stepup_now_ns
 
-	# …and the SKEW axis explicitly: an absent skew is muted by either guard, so only a PRESENT
-	# but string-valued one pins `is_number(skew)` (the `max_age + skew` arithmetic type-errors,
-	# leaving elevation permanently undefined while a guardless challenge still advertised it).
+	# …and the SKEW axis explicitly. NOTE what this case does and does not pin: a string-valued skew
+	# is muted by the `max_age + skew` ARITHMETIC (a type error → undefined), so this cell passes
+	# with `is_number(skew)` deleted — it pins the BEHAVIOUR (incoherent window ⇒ no challenge), not
+	# that particular conjunct, which is belt-and-braces. The decisive type guard is the one on
+	# `loa[required_acr]`, where a comparison would otherwise order across types instead of erroring.
 	not product.deny_reason with input as tier_input(tiered_supervisor_role, production_root)
 		with data.step_up as {"loa": {"aal1": 1, "aal2": 2}, "required_acr": "aal2", "max_age": 300, "skew": "30"}
 		with time.now_ns as stepup_now_ns

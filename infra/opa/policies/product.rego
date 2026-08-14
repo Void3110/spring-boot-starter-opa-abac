@@ -318,10 +318,13 @@ deny_reason := {
 	granted
 	not denied_other
 	# The challenge is only minted when answering it would actually elevate: `required_acr` must map
-	# to a NUMERIC level in `loa`, and the WINDOW must be enforceable — `elevated`'s arithmetic needs
-	# numeric `max_age` and `skew`, so a string-valued or absent one leaves elevation permanently
-	# undefined while a guardless challenge would still advertise a window nobody can satisfy.
-	# Incoherent data on ANY axis mutes the challenge — a plain deny, never the §7 loop.
+	# to a NUMERIC level in `loa` — that one IS decisive, because a comparison silently ORDERS across
+	# types instead of erroring. The two window `is_number`s below are deliberate belt-and-braces and
+	# are NOT decisive: the `max_age + skew` conjunct further down is arithmetic, and arithmetic on a
+	# non-number is a type error → the rule is undefined → the challenge is already muted (measured:
+	# deleting either one leaves the suite green). They are kept because that subsumption rests on a
+	# subtle asymmetry — `+` errors where `>=` quietly orders — and stating the type requirement in
+	# the rule is cheaper than re-deriving it. Incoherent data on any axis mutes the challenge.
 	is_number(data.step_up.loa[data.step_up.required_acr])
 	is_number(data.step_up.max_age)
 	is_number(data.step_up.skew)
