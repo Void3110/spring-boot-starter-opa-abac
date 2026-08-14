@@ -257,3 +257,40 @@ operator-managed — a coupling stated in §3 precisely so it is not quietly bro
 
 **Deferred.** Persisted/queryable audit; a published step-up SPI in the starter; transactional (RAR)
 elevation; and Keycloak flow automation, which stays rig configuration.
+
+## Amendments
+
+**2026-08-13 (slice C design — grill-me refinements; rationale in the slice's `00-DESIGN`):**
+
+1. **`deny_reason` is emitted only when step-up is the *sole* blocker** — the subject is `granted`
+   and no deny other than the step-up clause fires. This makes §7's fingerprinting stance
+   structural: an out-of-scope read, a write against the read-only ceiling, and an agent call all
+   answer a plain 403 with no challenge — only the case elevation would actually change gets one.
+2. **The unproven tier is elevation-proof.** The `not elevated` conjunct amends the *production*
+   deny clause only; the absent-`root_attributes` clause is untouched. An enrichment outage is a
+   closed tier for everyone — elevation proves who is present, never what the tier is.
+3. **One freshness window, stated twice, mirrored.** Keycloak's level-2 condition max age is set to
+   the same value as the policy's `max_age` (300), and the two locations cross-reference each
+   other; the policy data (`step_up` JSON: `loa`, `max_age`, `skew`) is the decision-side source.
+4. **The supervised path is human-only — closed to agent calls, any tier, for now.** A
+   provenance-scoped deny with the agent presence-test discriminator (the **`act_chain`** wire
+   claim's key present — `act_chain` is what the agent clients' protocol mapper mints; `actor` is
+   the MCP server's internal tool-gate attribute and never travels downstream) lands beside the
+   tier denies: supervision and elevation are human ceremonies, and an agent-marked call is refused
+   plainly, per amendment 1 — no challenge an agent cannot fulfil. An "elevated agent" token is
+   unmintable on this rig (the agent clients are ROPC-only), so that contract cell is pinned by
+   constructed-input policy tests; a human token used by an agent *without* the delegation claim is
+   indistinguishable from the human — the closure keys on the delegation claim, exactly as
+   ADR 0028 defines an agent call. Revisitable: a supervised agent read-out would be its own
+   designed feature with its own audit story and capability tier, never a default.
+   (Cross-reference: ADR 0028's model is narrowing-only; this deny narrows and grants nothing.)
+5. **§8's event list, refined.** The slice ships exactly **two** events — `STEP_UP_CHALLENGED`
+   (at the challenge) and `SUPERVISED_PRODUCTION_READ` (at the elevated read) — and no token-level
+   "an elevation happened" event: the resource server never sees the Keycloak ceremony, only
+   tokens, and the elevated read *is* the elevation in use. §8's "(a) an elevation" is discharged
+   by the challenged/read pair.
+6. **Diagnosis note (§Context).** The 2026-08-13 re-probe of the committed realm export confirmed
+   the §Context diagnosis end-to-end: with the literal `defaultClientScopes` list, `auth_time`/
+   `acr`/`amr` are absent from both tokens on every request-side path (including `max_age` and an
+   essential-claims request); restoring the built-in `basic` + `acr` scopes is the fix, and a
+   refresh grant preserves `auth_time` at the original login instant (re-measured).
