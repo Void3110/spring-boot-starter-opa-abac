@@ -705,6 +705,7 @@ components:
           description: The machine-stable code a consumer branches on. The union of codes this service can emit.
           enum:
             - ACCESS_DENIED
+            - STEP_UP_REQUIRED
             - RESOURCE_NOT_FOUND
             - VALIDATION_FAILED
             - TAG_VALUE_ILLEGAL

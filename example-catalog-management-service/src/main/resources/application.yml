@@ -30,6 +30,16 @@ opa:
       # app — the starter's JWT extractor decodes the forwarded token WITHOUT verifying its signature,
       # so it stays disabled until this is set. Never enable gateway-less.
       trust-forwarded-jwt: true
+      # Copied verbatim (type-preserved) into AbacContext.Subject#attributes, where the policy reads them:
+      #   acr, auth_time — the step-up freshness control (ADR 0030 §5). auth_time MUST stay numeric;
+      #                    the policy does arithmetic on it, and a string leaves `elevated` undefined
+      #                    (fail-closed, but silently un-elevatable).
+      #   act_chain      — the delegation claim an agent client's token carries. Its PRESENCE closes the
+      #                    supervised path (ADR 0030 Amendment 4); the value is never interpreted here.
+      attribute-claims:
+        - acr
+        - auth_time
+        - act_chain
     hierarchy:
       enabled: ${OPA_ABAC_HIERARCHY_ENABLED:true}
       resolver: ${OPA_ABAC_HIERARCHY_RESOLVER:ltree}

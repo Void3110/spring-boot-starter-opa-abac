@@ -1,11 +1,15 @@
 package dev.dmitriikonovalov.opaabac.security;
 
+import dev.dmitriikonovalov.opaabac.core.DenyReason;
 import dev.dmitriikonovalov.opaabac.core.VersionConflictException;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
 /**
@@ -28,16 +32,104 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  */
 public abstract class AbstractProblemAdvice {
 
+    /**
+     * The one human-readable sentence the challenge and its problem body share, so the
+     * {@code error_description} a client reads on the header and the {@code detail} it reads in the body
+     * can never drift apart.
+     */
+    private static final String STEP_UP_DETAIL = "A second factor is required to read production content";
+
     private final ProblemDetailFactory problemDetailFactory = new ProblemDetailFactory();
 
     /**
      * Render a {@code 403 application/problem+json} for an access denial raised by the authorization
-     * layer. The denial has already happened; this only shapes the body.
+     * layer — or, when the denial was <em>only</em> for want of a fresh second factor, a {@code 401}
+     * with an RFC 9470 {@code WWW-Authenticate} challenge (ADR 0030 §7). The denial has already
+     * happened; this only shapes the response.
      */
     @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
     public ResponseEntity<ProblemDetail> handleAccessDenied(
             RuntimeException ex, HttpServletRequest request) {
+        StepUpRequiredDecision stepUp = stepUpDecision(ex);
+        if (stepUp != null) {
+            String challenge = challengeFor(stepUp.reason());
+            if (challenge != null) {
+                AbacAuditLogger.stepUpChallenged(currentSubjectId(), stepUp);
+                ResponseEntity<ProblemDetail> base =
+                        problem(LibraryErrorCode.STEP_UP_REQUIRED, STEP_UP_DETAIL, request);
+                return ResponseEntity.status(base.getStatusCode())
+                        .headers(base.getHeaders())
+                        .header(HttpHeaders.WWW_AUTHENTICATE, challenge)
+                        .body(base.getBody());
+            }
+        }
         return problem(LibraryErrorCode.ACCESS_DENIED, "Access denied", request);
+    }
+
+    /**
+     * The {@link StepUpRequiredDecision} behind this exception, or {@code null} for every other denial.
+     *
+     * <p>Spring Security's {@code AuthorizationManager.verify} throws
+     * {@code new AuthorizationDeniedException("Access Denied", result)} carrying the manager's own result
+     * object, so the subclass arrives here intact (verified against spring-security-core, not assumed).
+     */
+    private static StepUpRequiredDecision stepUpDecision(RuntimeException ex) {
+        if (ex instanceof AuthorizationDeniedException denied
+                && denied.getAuthorizationResult() instanceof StepUpRequiredDecision stepUp) {
+            return stepUp;
+        }
+        return null;
+    }
+
+    /**
+     * The RFC 9470 challenge for a reason, or {@code null} when one must not be emitted.
+     *
+     * <p>Two rejections, both of which fall back to the ordinary 403:
+     * <ul>
+     *   <li><strong>An incomplete reason.</strong> A challenge without {@code max_age} lets the client
+     *       re-authenticate against a still-valid session, receive the same stale {@code auth_time}, and
+     *       be challenged again — ADR 0030 §7's infinite loop. A half-formed challenge is worse than
+     *       none.</li>
+     *   <li><strong>A value that cannot be safely quoted.</strong> The parameters originate in policy
+     *       data, which is trusted but not this class's to trust <em>blindly</em>: a value carrying a
+     *       quote or a CR/LF would break out of the quoted-string and, in the worst case, out of the
+     *       header. The allowlist keeps a compromised or fat-fingered data document from turning a deny
+     *       into a header-injection primitive.</li>
+     * </ul>
+     */
+    private static String challengeFor(DenyReason reason) {
+        if (!reason.isComplete()) {
+            return null;
+        }
+        if (!isSafeParameter(reason.type()) || !isSafeParameter(reason.requiredAcr())) {
+            return null;
+        }
+        return "Bearer error=\"" + reason.type() + "\""
+                + ", error_description=\"" + STEP_UP_DETAIL + "\""
+                + ", acr_values=\"" + reason.requiredAcr() + "\""
+                + ", max_age=\"" + reason.maxAge() + "\"";
+    }
+
+    /** Unreserved token characters only — no quote, no backslash, no CR/LF, no control characters. */
+    private static boolean isSafeParameter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            boolean allowed = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '_' || c == '-' || c == '.' || c == ':' || c == '/';
+            if (!allowed) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The challenged subject, or {@code null} — log-only, and never an input to anything. */
+    private static String currentSubjectId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof AbacAuthentication abac && abac.isAuthenticated()) {
+            return abac.getSubject().id();
+        }
+        return null;
     }
 
     /**

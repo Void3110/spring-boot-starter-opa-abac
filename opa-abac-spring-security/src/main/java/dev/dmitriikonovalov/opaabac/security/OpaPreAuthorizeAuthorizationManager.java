@@ -5,6 +5,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -76,6 +77,12 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     private static final Logger log = LoggerFactory.getLogger(OpaPreAuthorizeAuthorizationManager.class);
     private static final AuthorizationDecision DENY = new AuthorizationDecision(false);
 
+    /** The role-provenance stamp that marks the supervised access path (ADR 0029/0031). */
+    private static final String SUPERVISED_PROVENANCE = "supervised";
+
+    /** The governing root's env tier that makes a supervised read a privileged, auditable one. */
+    private static final String PRODUCTION = "production";
+
     private final OpaClient opaClient;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
     private final ResourceResolutionSupport resolutionSupport;
@@ -139,7 +146,14 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             AbacContext context =
                     new AbacContext(subject, annotation.action(), resolved.resource(), roleDefinition, Map.of());
 
-            boolean allowed = opaClient.allow(context);
+            OpaDecision decision = opaClient.decide(context);
+            if (decision == null) {
+                // A client breaking the never-null contract. Deny explicitly rather than let an NPE fall
+                // into the catch below — same outcome, but legible in the log and pinned by a test.
+                log.warn("OPA pre-authorize denied (fail-closed): OpaClient.decide returned null");
+                return DENY;
+            }
+            boolean allowed = decision.allow();
             if (allowed && resolutionSupport != null && resolved.instance() != null) {
                 // Write-through on allow only: the handler may reuse the authorized snapshot. The DECIDED
                 // LEAF is never read back by the gate — it is always resolved fresh, so this entry can
@@ -148,7 +162,22 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 resolutionSupport.cache().put(resolved.resource().type(), resolved.resource().id(),
                         resolved.instance());
             }
-            return new AuthorizationDecision(allowed);
+            if (allowed) {
+                auditSupervisedProductionRead(subject, roleDefinition, resolved);
+                return new AuthorizationDecision(true);
+            }
+            if (decision.denyReason() != null) {
+                // A structured deny: the policy says a fresh second factor is the SOLE blocker. Carry the
+                // reason — plus the log-only coordinates the enforcement point cannot re-derive — so the
+                // advice can mint the challenge. Still a denied decision to everything that only asks
+                // isGranted().
+                return new StepUpRequiredDecision(
+                        decision.denyReason(),
+                        resolved.resource().type(),
+                        resolved.resource().id(),
+                        resolved.roleId());
+            }
+            return DENY;
         } catch (RoleResolutionException e) {
             // B2: role-source outage → deny, never the realm fallback (ADR 0014). An outage makes the
             // role UNKNOWN; building an empty-role context would let the policy's realm fallback decide,
@@ -161,6 +190,53 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             log.warn("OPA pre-authorize denied (fail-closed): {}", e.getClass().getSimpleName());
             return DENY;
         }
+    }
+
+    /**
+     * Emit {@code SUPERVISED_PRODUCTION_READ} (ADR 0030 §8) when — and only when — an <b>allowed</b>
+     * decision was a <b>supervised</b> subject reading content whose <b>governing root is production</b>.
+     *
+     * <p><b>Elevation is implied by the allow and never re-derived here.</b> The policy already required
+     * it; re-checking `acr`/`auth_time` app-side would mean a second copy of the LoA map and the freshness
+     * window, and the whole point of ADR 0030 Amendment 3 is that exactly one window exists. The claims
+     * are logged verbatim, not interpreted.
+     *
+     * <p>The {@code env} test mirrors the policy's {@code root_env_values} — the cardinality twin: a tag
+     * value in this model is a scalar string <em>or</em> a string array, and a bare {@code equals} would
+     * miss {@code ["production", "staging"]}. Absent root attributes mean no event: nothing proved this
+     * read was privileged, which is also the state the policy treats as an unproven (closed) tier.
+     */
+    private static void auditSupervisedProductionRead(
+            AbacContext.Subject subject, RoleDefinition roleDefinition, ResolvedCheck resolved) {
+        if (roleDefinition == null
+                || !SUPERVISED_PROVENANCE.equals(roleDefinition.attributes().get("provenance"))
+                || !isProduction(resolved.resource().rootAttributes())) {
+            return;
+        }
+        AbacAuditLogger.supervisedProductionRead(
+                subject.id(),
+                subject.attributes(),
+                resolved.resource().type(),
+                resolved.resource().id(),
+                resolved.roleId(),
+                SUPERVISED_PROVENANCE);
+    }
+
+    /** Whether the governing root's {@code env} tag contains {@code production}, scalar or array. */
+    private static boolean isProduction(Map<String, Object> rootAttributes) {
+        if (rootAttributes == null) {
+            return false;
+        }
+        Object env = rootAttributes.get("env");
+        if (env instanceof Iterable<?> values) {
+            for (Object value : values) {
+                if (PRODUCTION.equals(value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return PRODUCTION.equals(env);
     }
 
     private static OpaPreAuthorize findAnnotation(MethodInvocation invocation) {

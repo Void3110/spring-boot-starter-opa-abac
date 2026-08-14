@@ -123,6 +123,14 @@ public class CatalogListAuthorizer {
     /** The one resource type this authorizer lists — the coordinate every seam it calls is keyed by. */
     private static final String CATALOG_TYPE = "catalog";
 
+    /**
+     * The wire claim an agent client's token carries (the {@code catalog-agent-*} clients' protocol
+     * mapper). Its <b>presence</b> is what marks a delegated call; the value is never interpreted here.
+     * Note the name: {@code actor} is the MCP server's internal tool-gate attribute and never travels
+     * downstream, so this service would never see it.
+     */
+    private static final String AGENT_DELEGATION_CLAIM = "act_chain";
+
     private final CatalogRepository catalogs;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
     /** Absent when the starter is off (opa.abac.enabled=false, the unguarded-baseline rig) → empty. */
@@ -180,13 +188,43 @@ public class CatalogListAuthorizer {
         // ONE membership fetch and (at most) ONE supervised fetch, both per request, so the two legs read a
         // consistent id set within this request. Each is independently fail-closed to an empty list.
         List<UUID> membershipIds = distinct(resolver.governedIds(subject.id(), CATALOG_TYPE));
-        List<UUID> supervisedIds = supervisedScope(subject.id(), membershipIds);
+        List<UUID> supervisedIds = isAgentCall(subject) ? List.of() : supervisedScope(subject.id(), membershipIds);
 
         if (membershipIds.isEmpty() && supervisedIds.isEmpty()) {
             return Page.empty(pageable); // governs and supervises nothing → empty page (fail-closed)
         }
 
         return authorizedPage(subject, membershipIds, supervisedIds, abacQuery, pageable);
+    }
+
+    /**
+     * Whether this request is an <b>agent-marked</b> call — the third prong of ADR 0030 Amendment 4's
+     * human-only supervised path.
+     *
+     * <p><b>Why it lives here and not in Rego.</b> The catalog list is the two-leg query above, and its
+     * cut comes from {@code filter} — which deliberately never consults {@code denied} (slice B's pin,
+     * asserted positively in the policy tests). So no Rego deny can reach this leg; the closure has to be
+     * app-side. The two single-decision prongs (the leaf policies' provenance-scoped agent deny) cover
+     * everything else.
+     *
+     * <p><b>Presence, never truthiness.</b> The discriminator is the {@code act_chain} <em>key</em>:
+     * a bare truthiness test would let {@code act_chain: false} — or {@code []}, or {@code ""} — route an
+     * agent call down the human branch, which is the recorded escape this project has already been bitten
+     * by once.
+     *
+     * <p><b>The degrade is the shape that already exists</b>, not a new one: dropping the supervised leg
+     * is exactly what a supervised-source outage does, so an agent falls back to membership-only — which,
+     * for a pure supervisor, is the empty page. Strictly narrower, never wider, and members are untouched
+     * because their rows come from the membership leg this never removes.
+     */
+    private static boolean isAgentCall(AbacContext.Subject subject) {
+        Map<String, Object> attributes = subject.attributes();
+        if (attributes == null || !attributes.containsKey(AGENT_DELEGATION_CLAIM)) {
+            return false;
+        }
+        log.debug("catalog list: agent-marked call ({} present) — the supervised leg is skipped",
+                AGENT_DELEGATION_CLAIM);
+        return true;
     }
 
     /**
