@@ -305,7 +305,7 @@ newman_run() {
     --env-var "reader_catalog_id=$READER_CATALOG_ID" \
     --env-var "dave_category_id=$DAVE_CATEGORY_ID" \
     --env-var "dave_product_id=$DAVE_PRODUCT_ID" \
-    --reporter-cli \
+    --reporters cli,json \
     --reporter-json-export "$REPORT_DIR/$RUN_ID/$report"
 }
 

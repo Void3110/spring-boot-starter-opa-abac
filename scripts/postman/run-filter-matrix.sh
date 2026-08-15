@@ -207,7 +207,7 @@ newman run "$COLLECTION" \
   --env-var "reader_emea_token=$READER_EMEA_TOKEN" \
   --env-var "reader_apac_token=$READER_APAC_TOKEN" \
   --env-var "stranger_token=$STRANGER_TOKEN" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/data-filter-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

@@ -144,7 +144,7 @@ NEWMAN_ARGS=(
   --env-var "b4_bootstrap=$B4_BOOTSTRAP"
   --env-var "user_service=$USER_SERVICE"
   --env-var "viewer_uid=$VIEWER_UID"
-  --reporter-cli
+  --reporters cli,json
   --reporter-json-export "$REPORT_DIR/$RUN_ID/$(basename "${COLLECTION%.json}")-report.json"
 )
 [ -n "$VERBOSE" ] && NEWMAN_ARGS+=("$VERBOSE")

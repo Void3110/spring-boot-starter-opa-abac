@@ -78,6 +78,14 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
+# Decode a JWT's `sub` without requiring jq (the matrix runners' helper).
+token_sub() {
+  local tok="$1" payload
+  payload="$(printf '%s' "$tok" | cut -d. -f2 | tr '_-' '/+')"
+  while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="${payload}="; done
+  printf '%s' "$payload" | base64 -d 2>/dev/null | sed -n 's/.*"sub":"\([^"]*\)".*/\1/p'
+}
+
 # Container runtime for the in-network token grab (docker or podman).
 RUNTIME=""
 for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; break; }; done
@@ -121,6 +129,21 @@ if [ "$ROLE_SOURCE" = "http" ]; then
     echo "  Bring the rig up with: ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2" >&2
     exit 1
   }
+  # Ensure the acting user's profile row exists BEFORE the collection's claim step. The realm export
+  # pins no id for fixture users, so every `./deploy.sh down` + `up` re-imports the realm and mints
+  # `demo` a NEW `sub` — while the user-service keys `app_user` by subject and its volume survives
+  # the down. Without this row the claim step answers 400 "No acting user" (which reads like an
+  # auth/gateway regression) and all downstream assertions cascade. The bootstrap endpoint is
+  # idempotent (subject-keyed upsert), so calling it every run is safe — the same discipline every
+  # matrix runner already follows.
+  DEMO_SUB="$(token_sub "$ACCESS_TOKEN")"
+  [ -n "$DEMO_SUB" ] || { echo "ERROR: could not decode the token's sub claim." >&2; exit 1; }
+  echo "==> Bootstrapping the '$USERNAME' profile row (sub $DEMO_SUB) ..."
+  curl -sf -X POST "$USER_SERVICE/internal/bootstrap/users" -H 'Content-Type: application/json' \
+    -d "{\"subject\":\"$DEMO_SUB\",\"displayName\":\"$USERNAME\"}" >/dev/null || {
+    echo "ERROR: bootstrapping the acting user failed — the claim step would answer 400 \"No acting user\"." >&2
+    exit 1
+  }
 else
   B4_BOOTSTRAP="false"
   echo "==> Rig flavour: OIDC-ONLY (catalog role-source=$ROLE_SOURCE, the static supplier). The B4 claim step will skip itself."
@@ -133,7 +156,7 @@ NEWMAN_ARGS=(
   -e "$ENV_FILE"
   --env-var "access_token=$ACCESS_TOKEN"
   --env-var "b4_bootstrap=$B4_BOOTSTRAP"
-  --reporter-cli
+  --reporters cli,json
   --reporter-json-export "$REPORT_DIR/$RUN_ID/$(basename "${COLLECTION%.json}")-report.json"
 )
 [ -n "$FOLDER" ]  && NEWMAN_ARGS+=(--folder "$FOLDER")

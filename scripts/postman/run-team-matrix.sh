@@ -216,7 +216,7 @@ newman run "$COLLECTION" \
   --env-var "nonmember_token=$NONMEMBER_TOKEN" \
   --env-var "owner_sub=$OWNER_SUB" \
   --env-var "viewer_uid=$VIEWER_UID" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/team-abac-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

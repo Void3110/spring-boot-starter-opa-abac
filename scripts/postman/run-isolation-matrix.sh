@@ -150,7 +150,7 @@ newman run "$COLLECTION" \
   --env-var "carol_uid=$CAROL_UID" \
   --env-var "carol_catalog_id=$CAROL_CATALOG_ID" \
   --env-var "carol_team_id=$CAROL_TEAM_ID" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/isolation-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

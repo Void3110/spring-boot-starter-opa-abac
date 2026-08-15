@@ -189,7 +189,7 @@ run_folder() { # folder-name report-suffix
     --env-var "overreach_token=$OVERREACH_TOKEN" \
     --env-var "lowpriv_token=$LOWPRIV_TOKEN" \
     --env-var "revoked_token=$REVOKED_TOKEN" \
-    --reporter-cli \
+    --reporters cli,json \
     --reporter-json-export "$REPORT_DIR/$RUN_ID/agent-tool-matrix-$2.json"
 }
 

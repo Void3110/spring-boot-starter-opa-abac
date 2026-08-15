@@ -182,7 +182,7 @@ newman run "$COLLECTION" \
   --env-var "strict_token=$STRICT_TOKEN" \
   --env-var "gated_token=$GATED_TOKEN" \
   --env-var "editor_token=$OWNER_TOKEN" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/tag-abac-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

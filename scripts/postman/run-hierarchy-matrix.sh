@@ -192,7 +192,7 @@ newman run "$COLLECTION" \
   --env-var "sibling_category_id=$SIBLING_CATEGORY_ID" \
   --env-var "movable_category_id=$MOVABLE_CATEGORY_ID" \
   --env-var "reader_token=$READER_TOKEN" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/hierarchy-abac-matrix-report.json"
 
 # --- RE-PARENT FLIPS A DECISION ---------------------------------------------
