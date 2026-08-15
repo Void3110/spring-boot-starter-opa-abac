@@ -362,10 +362,19 @@ rather than absorbed.
   including the new wiring-check tests and the unknown-type challenge cell)
 - `./.sonar-local/sonar-local.sh`: **CLEAN — 0 open findings** on changed files (3× S5778 in the
   new test fixed, not suppressed)
-- `opa test infra/opa/policies/`: **387/387** (367 from the slice + 6 round-1 mirror cells + 2
-  round-2 off-state cells + 4 round-3 type/coherence cells + 2 round-5 window-axis cells + 6
-  round-8 mutation-pinning cells); `opa check --strict` clean, and every step-up conjunct now fails
-  when deleted
+- `opa test infra/opa/policies/`: **389/389** (367 from the slice, plus cells added by rounds 1, 2,
+  3, 5, 8, 11 and 13 — mirror, off-state, type/coherence, window-axis, mutation-pinning, live-window
+  and skew-axis); `opa check --strict` clean and `opa fmt` clean.
+
+  **Mutation status, stated precisely** (round 15 measured it, round 18 corrected this claim): every
+  step-up conjunct that DECIDES fails when deleted — including both window axes independently
+  (`skew >= 0` and `max_age + skew > 0`, each killing 2 cells) and the decisive
+  `is_number(loa[required_acr])`. Two conjuncts deliberately do NOT fail alone:
+  `is_number(max_age)` and `is_number(skew)` are subsumed by the arithmetic in `max_age + skew`
+  (arithmetic on a non-number is a type error ⇒ rule undefined ⇒ challenge already muted). They are
+  retained as belt-and-braces because that subsumption rests on a subtle asymmetry — `+` errors
+  where `>=` silently orders across types — and both the policy and test comments now say so rather
+  than claiming they are load-bearing.
 - newman, re-run against the live rig after each round: `run-production-tier-matrix.sh` (the seven
   C-flip literal cells against the now data-sourced challenge) **green — 73/73**;
   `run-supervised-scope-matrix.sh` (miner preflight; both passes) **green — 48/48**;

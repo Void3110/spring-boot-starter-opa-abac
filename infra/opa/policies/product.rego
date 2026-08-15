@@ -317,6 +317,7 @@ deny_reason := {
 	stepup_denied
 	granted
 	not denied_other
+
 	# The challenge is only minted when answering it would actually elevate: `required_acr` must map
 	# to a NUMERIC level in `loa` — that one IS decisive, because a comparison silently ORDERS across
 	# types instead of erroring. The two window `is_number`s below are deliberate belt-and-braces and

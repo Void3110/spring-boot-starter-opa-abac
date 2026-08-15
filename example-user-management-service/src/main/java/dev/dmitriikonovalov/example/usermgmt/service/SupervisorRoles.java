@@ -26,11 +26,14 @@ import java.util.Map;
  * {@link #PROVENANCE_SUPERVISED}, and is still READ-only — so the read-only ceiling is unchanged and
  * inheritance remains closed to it.
  *
- * <p><b>How far that read goes is decided in policy, not here</b> (ADR 0030 §3–4): the leaf policies
- * carry two provenance-scoped {@code denied} clauses that close contents whose governing root is
- * tagged {@code env=production} — or whose tier could not be established at all. Widening the role is
- * therefore not widening access to production detail; it moves the decision to where the tier is
- * visible.
+ * <p><b>How far that read goes is decided in policy, not here</b> (ADR 0030 §3–4, as amended by
+ * §5–9): the leaf policies carry provenance-scoped {@code denied} clauses that close contents whose
+ * governing root is tagged {@code env=production} — or whose tier could not be established at all —
+ * plus, since slice C, a third that closes the supervised path to agent-marked calls. The production
+ * clause is now narrowed by {@code elevated}: a supervisor holding a fresh second factor opens it for
+ * a bounded window, and that deny alone carries a structured reason the library renders as a 401
+ * challenge. Widening the role is therefore still not widening access to production detail; it moves
+ * the decision to where the tier — and now the authentication freshness — is visible.
  *
  * <h2>Provenance</h2>
  * Provenance rides the <b>existing</b> generic {@code attributes} map plus the reserved code, so
