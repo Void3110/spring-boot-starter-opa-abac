@@ -1,0 +1,790 @@
+{
+  "info": {
+    "name": "Demo-world matrix (SPA-CHALLENGE-UX - the console's supervised world)",
+    "description": "The world scripts/postman/seed-demo-data.sh builds for the browser console, asserted through the gateway on EXACT ids: sup-demo supervises pm-demo, is bound to NO team, and therefore sees two catalogs purely by derivation - one tagged env=production, one untagged. Reading the production catalog's CONTENTS challenges her (RFC 9470); the same read by pm-demo, a MEMBER, does not. That asymmetry is the demo.\n\nThis is NOT a matrix in the usual sense: it owns no fixtures and tears nothing down. It asserts a SEEDED world (fixture family d311..., owned by seed-demo-data.sh), which is why it is safe to run beside every other matrix - and E32 proves exactly that in both directions.\n\nFOUR FOLDERS, run in order by run-demo-world-matrix.sh: 'Demo world' (E31a-h) on the freshly seeded rig; 'Idempotency' (E31i-j) after a SECOND seed run; 'Coexistence' (E32a-d) after the supervised-scope and step-up matrices have run; 'Convergence' (E33a-c) after a realm re-import plus a re-seed (the runner's --convergence mode).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:9085"
+    },
+    {
+      "key": "collection_base_url",
+      "value": "http://localhost:9085/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Demo world",
+      "item": [
+        {
+          "name": "E31a \u2014 HEADLINE: sup-demo (bound to NO team) GET /catalogs -> exactly the two demo catalogs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31a 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "// sup-demo owns no seat anywhere: every row here is DERIVED from the single edge to pm-demo.",
+                  "pm.test('E31a sup-demo sees EXACTLY 2 catalogs', () => pm.expect(body.count).to.eql(2));",
+                  "pm.test('E31a both demo catalogs are present, by exact id', () => {",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});",
+                  "// The flagship Demo catalog is governed by a team sup-demo has nothing to do with: it must NOT leak.",
+                  "pm.test('E31a the flagship demo catalog is NOT in her page', () =>",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('demo_catalog_id')));",
+                  "pm.collectionVariables.set('observed_sup_ids', JSON.stringify(ids.slice().sort()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31b \u2014 the tier states: production tagged, open untagged",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31b 200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "const prod = items.find(i => i.id === pm.environment.get('demo_prod_catalog_id'));",
+                  "const open = items.find(i => i.id === pm.environment.get('demo_open_catalog_id'));",
+                  "pm.test('E31b the production catalog carries env=production', () => {",
+                  "  pm.expect(prod, 'production catalog row').to.be.an('object');",
+                  "  pm.expect(prod.tags.env).to.eql('production');",
+                  "});",
+                  "// The open catalog is UNTAGGED on purpose - it is the no-ceremony control the console needs.",
+                  "pm.test('E31b the open catalog carries NO env tag', () => {",
+                  "  pm.expect(open, 'open catalog row').to.be.an('object');",
+                  "  pm.expect(open.tags && open.tags.env).to.be.oneOf([undefined, null]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31c \u2014 no ceremony: sup-demo reads the OPEN catalog's contents at aal1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_open_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_open_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31c 200 OK - an untagged catalog needs no second factor', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E31c exactly one seeded category', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E31c it is the seeded Demo Open Category', () =>",
+                  "  pm.expect(body.items[0].name).to.eql('Demo Open Category'));",
+                  "pm.test('E31c no challenge was issued', () =>",
+                  "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.be.oneOf([undefined, null]));",
+                  "pm.collectionVariables.set('observed_open_category_id', body.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31d \u2014 THE CHALLENGE: sup-demo at aal1 is refused the PRODUCTION catalog's contents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// This is the exact wire condition the console's locked panel is built to consume (RFC 9470).",
+                  "pm.test('E31d 401 - a supervised read of production content demands a fresh second factor', () =>",
+                  "  pm.response.to.have.status(401));",
+                  "const challenge = pm.response.headers.get('WWW-Authenticate');",
+                  "pm.test('E31d a WWW-Authenticate challenge is present', () => pm.expect(challenge).to.be.a('string'));",
+                  "pm.test('E31d the challenge is a Bearer insufficient_user_authentication', () => {",
+                  "  pm.expect(challenge).to.match(/^Bearer /i);",
+                  "  pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "});",
+                  "pm.test('E31d it names the required acr AND a numeric max_age (both are followable)', () => {",
+                  "  const acr = /acr_values=\"([^\"]*)\"/.exec(challenge);",
+                  "  const age = /max_age=\"([^\"]*)\"/.exec(challenge);",
+                  "  pm.expect(acr, 'acr_values param').to.not.eql(null);",
+                  "  pm.expect(acr[1]).to.eql('aal2');",
+                  "  pm.expect(age, 'max_age param').to.not.eql(null);",
+                  "  pm.expect(Number(age[1])).to.be.a('number').and.to.be.at.least(0);",
+                  "});",
+                  "pm.test('E31d the body carries the STEP_UP_REQUIRED code the client classifies on', () =>",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('STEP_UP_REQUIRED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31e \u2014 the MEMBER leg: pm-demo reads the SAME production contents with no elevation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pm_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The asymmetry the demo exists to show: membership is not supervision. Same catalog, same tier.",
+                  "pm.test('E31e 200 OK - a member needs no second factor on production', () =>",
+                  "  pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E31e exactly one seeded category', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E31e it is the seeded Demo Production Category', () =>",
+                  "  pm.expect(body.items[0].name).to.eql('Demo Production Category'));",
+                  "pm.test('E31e no challenge was issued to the member', () =>",
+                  "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.be.oneOf([undefined, null]));",
+                  "pm.collectionVariables.set('observed_prod_category_id', body.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31f \u2014 pm-demo's own page is exactly the two demo catalogs (a duplicate seed would show here)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pm_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31f 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "// pm-demo owns exactly the two Demo * Teams. A re-run that duplicated a catalog or a team would",
+                  "// land here as a third row - which is why the count is asserted, not just the membership.",
+                  "pm.test('E31f exactly 2 rows - the seed did not duplicate', () => pm.expect(body.count).to.eql(2));",
+                  "pm.test('E31f both by exact id', () => {",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31g \u2014 a product exists under the production category",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pm_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories/{{observed_prod_category_id}}/products",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories",
+                "{{observed_prod_category_id}}",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31g 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E31g exactly one seeded product', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E31g it is the seeded Demo Production Product', () =>",
+                  "  pm.expect(body.items[0].name).to.eql('Demo Production Product'));",
+                  "pm.collectionVariables.set('observed_prod_product_id', body.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31h \u2014 a product exists under the open category",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_open_catalog_id}}/categories/{{observed_open_category_id}}/products",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_open_catalog_id}}",
+                "categories",
+                "{{observed_open_category_id}}",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31h 200 OK - read through the supervised leg, no ceremony', () =>",
+                  "  pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E31h exactly one seeded product', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E31h it is the seeded Demo Open Product', () =>",
+                  "  pm.expect(body.items[0].name).to.eql('Demo Open Product'));",
+                  "pm.collectionVariables.set('observed_open_product_id', body.items[0].id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Idempotency",
+      "item": [
+        {
+          "name": "E31i \u2014 IDEMPOTENT: after a second seed run the catalog ids are identical",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31i 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id).sort();",
+                  "pm.test('E31i still exactly 2 catalogs', () => pm.expect(body.count).to.eql(2));",
+                  "// The runner passes the ids observed BEFORE the re-seed. Find-or-create (not delete-and-recreate)",
+                  "// is what makes this hold: the demo world is a stable place a reader can come back to.",
+                  "pm.test('E31i the ids are byte-identical to the pre-re-seed page', () =>",
+                  "  pm.expect(JSON.stringify(ids)).to.eql(pm.environment.get('pre_reseed_catalog_ids')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E31j \u2014 IDEMPOTENT: the category and product ids survived the re-seed too",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pm_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E31j 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E31j still exactly one category', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E31j the category id is unchanged', () =>",
+                  "  pm.expect(body.items[0].id).to.eql(pm.environment.get('pre_reseed_prod_category_id')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Coexistence",
+      "item": [
+        {
+          "name": "E32a \u2014 COEXISTENCE: after the matrices ran, sup-demo's page is untouched",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E32a 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "// Every matrix scopes its teardown to its OWN names/ids/subjects, so none of them clears",
+                  "// sup-demo's edge or unbinds pm-demo. If one ever does, this cell is where it surfaces.",
+                  "pm.test('E32a still exactly 2 catalogs', () => pm.expect(body.count).to.eql(2));",
+                  "pm.test('E32a both still present by exact id', () => {",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E32b \u2014 and the demo world never leaked into a MATRIX supervisor's page",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E32b 200 OK', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().items.map(i => i.id);",
+                  "// The converse direction: the seed binds no matrix persona, so anna's exact-id assertions",
+                  "// elsewhere stay valid. A stray d311... row here would silently widen her page.",
+                  "pm.test('E32b no d311... catalog is in sup-anna\\'s page', () => {",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('demo_prod_catalog_id'));",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('demo_open_catalog_id'));",
+                  "  pm.expect(ids).to.not.include(pm.environment.get('demo_catalog_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E32c \u2014 the tier behaviour survived the matrices: production still challenges sup-demo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The step-up matrix runs a freshness DRILL that overrides step_up.max_age and restores it by",
+                  "// restarting OPA. A rig left in drill state would still 401 here, so the challenge is re-parsed:",
+                  "// max_age must be the shipped window, not the drill's 5.",
+                  "pm.test('E32c 401 - still challenged', () => pm.response.to.have.status(401));",
+                  "const challenge = pm.response.headers.get('WWW-Authenticate');",
+                  "pm.test('E32c the challenge is still well formed', () => {",
+                  "  pm.expect(challenge).to.be.a('string');",
+                  "  pm.expect(challenge).to.include('error=\"insufficient_user_authentication\"');",
+                  "});",
+                  "pm.test('E32c the advertised max_age is the SHIPPED window, not a leftover drill override', () => {",
+                  "  const age = /max_age=\"([^\"]*)\"/.exec(challenge);",
+                  "  pm.expect(age, 'max_age param').to.not.eql(null);",
+                  "  pm.expect(Number(age[1])).to.eql(Number(pm.environment.get('shipped_max_age')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E32d \u2014 and the OPEN catalog still needs no ceremony",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_open_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_open_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E32d 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E32d still exactly one category', () => pm.expect(pm.response.json().count).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Convergence",
+      "item": [
+        {
+          "name": "E33a \u2014 CONVERGENCE: after a realm re-import + re-seed, the world is the same world",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E33a 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
+                  "// A re-import can hand every persona a NEW subject. The seed converges anyway: bootstrap/users is",
+                  "// find-or-create by subject and the reporting edge is a REPLACE. The runner records whether the",
+                  "// subjects were in fact stable (the pinned realm ids) - that is observed, not asserted here.",
+                  "pm.test('E33a exactly 2 catalogs again', () => pm.expect(body.count).to.eql(2));",
+                  "pm.test('E33a the same two, by exact id', () => {",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
+                  "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E33b \u2014 no duplicate world: pm-demo's page is still exactly two",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pm_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E33b 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "// A re-seed against a re-imported realm is where duplicate teams/catalogs would appear: a new",
+                  "// subject bootstrapping a second app_user, a second Demo * Team governing the same catalog.",
+                  "pm.test('E33b exactly 2 rows - no duplicate team or catalog was created', () =>",
+                  "  pm.expect(body.count).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E33c \u2014 and the tier states came back with it",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sup_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E33c 401 - the operator tag survived the re-seed', () => pm.response.to.have.status(401));",
+                  "pm.test('E33c with a well-formed challenge', () =>",
+                  "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('insufficient_user_authentication'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

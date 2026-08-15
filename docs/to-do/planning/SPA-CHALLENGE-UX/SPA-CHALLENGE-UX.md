@@ -64,7 +64,7 @@ whole A/B/C story in the browser.
 | T2 | the SPA challenge seam: parser, `StepUpRequiredError`, `request()` classification, vitest | 📋 |
 | T3 | the locked panel, [Verify], the state-carried location, restoration, one retry | 📋 |
 | T4 | the elevation chip (learned window, reactive expiry) + the row badges | 📋 |
-| T5 | `sup-demo`/`pm-demo` in the realm, the seed's supervised block, the registry row | 📋 |
+| T5 | `sup-demo`/`pm-demo` in the realm, the seed's supervised block, the registry row | ✅ |
 | T6 | the pane pass (E10–E21), the launch attach entry, the ratchet, close-out | 📋 |
 
 Decomposition: [[01-DECOMPOSITION]] · QA cases: [[10-QA-TEST-CASES]] · per-ticket record: `STATUS-01…06`.
