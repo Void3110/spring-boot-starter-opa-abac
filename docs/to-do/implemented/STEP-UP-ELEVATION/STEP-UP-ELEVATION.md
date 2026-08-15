@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -9,7 +9,16 @@ tags:
 
 # STEP-UP-ELEVATION — a fresh second factor opens production, briefly
 
-> **Status: Planning — validated, cleared to run.**
+> ✅ **SHIPPED 2026-08-15** — branch `feature/void3110/step-up-elevation` (PR #107, squash `2e516ca`),
+> T1–T6 all green, two-part orchestrated autonomous run + an 18-round layer-3 adversarial review
+> (Approved with fixes — [[../../../code-review/STEP-UP-ELEVATION-REVIEW|review note]]: ~115 findings
+> fixed in-branch, headline the one-sided freshness window, the `act_chain` wiring guard, and the
+> cross-type comparison guard). `./gradlew build` ✅ · `opa test` **389/389** · step-up matrix **58/58**
+> live with both audit events grepped off the pods · production-tier **73/73** · supervised-scope
+> **48/48** · Sonar clean. One TOTP opens supervised production contents for a bounded window
+> (`auth_time` + 300 s + 30 s skew), refresh cannot stretch it, every privileged read is audited, and
+> the supervised path stays human-only. The SPA challenge UX is the collaborative follow-up.
+>
 > **Validated:** 2026-08-14 — mechanical + adversarial clean; 2 delta checks after 2 amendments
 > (full fan-out: 40 agents, 30 confirmed findings incl. 9 run-stoppers, all fixed; the terminal
 > delta check returned no defects).
