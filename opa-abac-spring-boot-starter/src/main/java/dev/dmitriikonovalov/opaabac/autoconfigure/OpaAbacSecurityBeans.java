@@ -12,6 +12,7 @@ import dev.dmitriikonovalov.opaabac.security.PrivilegedReadAuditPolicy;
 import dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport;
 import dev.dmitriikonovalov.opaabac.security.SubjectClaimsConfig;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -19,7 +20,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import java.util.Set;
 
 /**
  * The Spring-Security beans of the OPA ABAC starter. Imported by
