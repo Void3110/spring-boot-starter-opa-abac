@@ -261,7 +261,8 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 > derived from the reporting structure, read-only, and audited — plus the second factor that gates
 > production detail. Split across three slices: **A** [[SUPERVISED-SCOPE]] (Phase 10-A, ✅ shipped
 > 2026-08-07), **B** [[PRODUCTION-TIER]] (Phase 10-B, ✅ shipped 2026-08-13) and **C**
-> [[STEP-UP-ELEVATION]] (📋 design settled 2026-08-13, decomposition pending).
+> [[STEP-UP-ELEVATION]] (Phase 10-C, ✅ shipped 2026-08-15) — plus the console follow-up
+> [[SPA-CHALLENGE-UX]] (📋 planned 2026-08-15).
 
 - **K1** *As a unit manager on no team*, I see the catalogs of the teams my reports own or manage —
   including my reports' reports' — and **nothing** adjacent to my unit. — **Phase 10-A** ✅ (the headline
@@ -282,11 +283,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   **Phase 10-B** ✅
 - **K8** *As a manager*, opening **production** content asks me for a second factor, once, and then lets me
   work for a bounded window — and refreshing my session does **not** silently extend it. — **Phase 10-C**
-  📋 (the headline step-up round trip)
+  ✅ (the headline step-up round trip)
 - **K9** *As a compliance reviewer*, every privileged production read a manager performs leaves an audit
-  event — the reads are the exact risk the second factor exists for. — **Phase 10-C** 📋
+  event — the reads are the exact risk the second factor exists for. — **Phase 10-C** ✅
 - **K10** *As an identity team*, we can swap the second factor (TOTP → passkey, say) as a **configuration**
-  change, with no application change and no redeploy. — **Phase 10-C** 📋
+  change, with no application change and no redeploy. — **Phase 10-C** ✅
 - **K11** *As a manager*, I can open the **contents** of my reports' non-production catalogs — categories
   and products, staging and dev — without ceremony: routine oversight needs no second factor. —
   **Phase 10-B** ✅ (the headline tier cut)
@@ -298,11 +299,17 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   **Phase 10-B** ✅ (the fail-closed drill: enrichment outage narrows the supervisor, never the member)
 - **K14** *As a client developer*, the step-up refusal tells my client exactly how to re-authenticate
   (`acr_values` + `max_age` in a standard RFC 9470 challenge), and following it cannot loop — while a
-  re-auth that omits `max_age` provably stays stuck on the same stale login. — **Phase 10-C** 📋
+  re-auth that omits `max_age` provably stays stuck on the same stale login. — **Phase 10-C** ✅
 - **K15** *As a security officer*, an AI agent cannot exercise supervisory oversight: any call carrying
   the agent delegation claim is refused on the supervised path — plain 403, any tier, never a challenge —
-  even if its token were somehow elevated (a combination the realm cannot even mint). — **Phase 10-C** 📋
+  even if its token were somehow elevated (a combination the realm cannot even mint). — **Phase 10-C** ✅
   (revisitable: a supervised agent read-out would be its own designed feature)
+
+- **K16** *As a manager using the demo console*, a production catalog tells me **before I click** that
+  it will ask for verification, the refusal explains itself in the server's own words, one [Verify]
+  takes me to the second factor and back to the same place, and I can see how long my elevation lasts —
+  without the console ever pretending to decide what the server decides. — **SPA-CHALLENGE-UX** 📋
+  (the console consuming K8/K14's contract)
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so

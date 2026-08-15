@@ -213,6 +213,8 @@ decision, not an implementation note, because omitting it produces an **infinite
 Keycloak would see a still-valid session, skip the second-factor prompt, and reissue the *same* stale
 `auth_time`, which the resource server would reject again. `max_age` is what forces re-authentication.
 
+> *Clarification (2026-08-15, SPA-CHALLENGE-UX):* forwarding **`max_age=0`** satisfies this MUST as a strict superset — it forces re-authentication regardless of the advertised window and of the realm's per-level `loa-max-age` (the token miner's measured recipe). The loop this rule prevents comes from **omitting** `max_age`; echoing the challenge's own value would also re-authenticate, since the challenge only fires past `max_age + skew`.
+
 Elevation is **time-boxed, not per-resource**: one elevation covers production reads for the freshness
 window. Per-operation authorization (RAR) is overkill for a read-only oversight feature.
 
