@@ -69,7 +69,7 @@ kills). `q` narrows; the client types to filter rather than paging.
 ### 6. URL is an implementation detail — the port stays URL-agnostic
 The Keycloak server URL (`http://keycloak:8888` **in-network** in the rig) is private to the module +
 its config; the port and the endpoint never mention Keycloak, a URL, or a realm. **Note for the rig:**
-`KC_HOSTNAME_ADMIN_URL=http://localhost:28888` is a **console-URL rewrite**, *not* the REST admin path —
+a console-URL rewrite (Keycloak's admin-URL knob, e.g. `http://localhost:28888`) is a **console** concern, *not* the REST admin path —
 the module calls the in-network `:8888`. (Recorded so no one "fixes" it to localhost.)
 
 ### 7. Authorization — bearer-only; disclosure type-bounded; the real gate is `team:add-member`

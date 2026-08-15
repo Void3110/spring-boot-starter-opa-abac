@@ -325,8 +325,10 @@ Every error is an `application/problem+json` (RFC-7807) body. A client branches 
 | Status | `errorCode` | When |
 |--------|-------------|------|
 | `400` | `VALIDATION_FAILED` | Malformed body, or a `page`/`perPage` bounds violation (no clamping). |
+| `401` | `STEP_UP_REQUIRED` | Step-up (RFC 9470): the sole blocker is authentication freshness — a supervisor reading production content before the second factor. The `WWW-Authenticate` header carries the challenge. Reads only (`list`/`get`). |
 | `403` | `ACCESS_DENIED` | The OPA gate denied — no grant, an unauthenticated/unresolved subject, or a tag decision the caller lacks. |
 | `404` | `RESOURCE_NOT_FOUND` | No such product under the given `catalogId`/`categoryId`. |
+| `409` | `TAG_OPERATOR_MANAGED` | A `tags` payload would assign, re-value or strip an **operator-managed** tag (written only through the operator path). |
 | `422` | `TAG_VALUE_ILLEGAL` | A tag key/value the dictionary does not permit (on create or update). |
 | `503` | `DEPENDENCY_UNAVAILABLE` | A required dependency (e.g. the tag dictionary) was unreachable — fail-closed; the request was rejected, not applied. |
 
@@ -417,7 +419,8 @@ The RFC-7807 error body (`application/problem+json`). Required members: `status`
   detail?: string;    // human, instance-specific explanation
   instance?: string;  // the request path that produced the error
   errorCode: "ACCESS_DENIED" | "RESOURCE_NOT_FOUND" | "VALIDATION_FAILED"
-           | "TAG_VALUE_ILLEGAL" | "DEPENDENCY_UNAVAILABLE" | "STATE_CONFLICT";
+           | "TAG_VALUE_ILLEGAL" | "DEPENDENCY_UNAVAILABLE" | "STATE_CONFLICT"
+           | "TAG_OPERATOR_MANAGED" | "STEP_UP_REQUIRED";
   timestamp?: string; // date-time — when the error was produced (correlation)
 }
 ```

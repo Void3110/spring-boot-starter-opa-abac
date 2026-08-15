@@ -140,6 +140,7 @@ echo "==> newman run $COLLECTION (multi-tenant isolation matrix through the gate
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+    --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "user_service=$USER_SERVICE" \
   --env-var "alice_token=$ALICE_TOKEN" \
   --env-var "bob_token=$BOB_TOKEN" \

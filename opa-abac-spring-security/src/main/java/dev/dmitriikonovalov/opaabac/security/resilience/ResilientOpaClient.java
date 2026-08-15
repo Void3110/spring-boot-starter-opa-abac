@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.security.resilience;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import java.util.List;
 import java.util.Objects;
@@ -11,7 +12,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A resilient {@link OpaClient} decorator (Slice B3, ADR 0017 §1/§2) — it wraps a plain delegate
- * {@code OpaClient} (the {@link dev.dmitriikonovalov.opaabac.core.HttpOpaClient}) and runs each of the three
+ * {@code OpaClient} (the {@link dev.dmitriikonovalov.opaabac.core.HttpOpaClient}) and runs each of the four
  * decision calls through the OPA-edge {@link CallGuard}, so a <em>transient</em> OPA blip recovering within
  * budget no longer surfaces as a denial. Core is untouched — {@code OpaClient} is already an interface, so
  * the resilience lives one level up in the Spring layer (no pluggable transport in core; route "D" rejected).
@@ -36,6 +37,11 @@ import org.slf4j.LoggerFactory;
  *       all-false page (rare — the enrichment advice omits those blocks anyway) pays one extra fast hop,
  *       exactly like a genuine {@code allow} deny. Fail-closed is preserved in every case — resilience
  *       makes outages rarer, never wider.</li>
+ *   <li>{@code decide} retries a <em>reasonless</em> deny (indistinguishable from the swallowed failure,
+ *       exactly like {@code allow}'s {@code false}) but <strong>never</strong> a deny carrying a
+ *       {@link dev.dmitriikonovalov.opaabac.core.DenyReason}: the delegate builds a reason only on a real
+ *       {@code 200}, so a reasoned deny is a real answer — the same discipline {@code allowAll} applies to
+ *       a mixed block, and it keeps the step-up hot path off an extra hop plus backoff.</li>
  * </ul>
  *
  * <h2>The decorator OWNS the fail-closed values (breaker-open + exhausted-retry)</h2>
@@ -44,7 +50,7 @@ import org.slf4j.LoggerFactory;
  * {@code n}×{@code false}. It is <strong>never</strong> {@code denyAll()} (which has {@code fromError==false}
  * — a 5.5-B hierarchy {@code subtreeSpec} widening could survive next to it) and <strong>never</strong>
  * {@code allowAll()} (the catastrophe value). A contract test pins decorator-value == delegate-value in
- * every state. The decorator is a real {@code OpaClient} — it implements all three methods, fail-closed, by
+ * every state. The decorator is a real {@code OpaClient} — it implements all four methods, fail-closed, by
  * hand (no {@code default} fail-open).
  *
  * <p>On exhausted retry the guard returns the delegate's last (still fail-closed) value unchanged, so the
@@ -78,6 +84,45 @@ public final class ResilientOpaClient implements OpaClient {
             // Breaker open: the delegate was never called. Synthesize the same fail-closed value by hand.
             log.warn("OPA allow fail-closed: circuit breaker open (denying)");
             return false;
+        }
+    }
+
+    /**
+     * The single decision, keeping the delegate's structured {@link OpaDecision#denyReason()}.
+     *
+     * <h2>Why this override is mandatory, not optional</h2>
+     * {@code OpaClient.decide} is a {@code default} that delegates to {@code allow}. Without this
+     * override, this decorator would inherit that default and it would call <em>this class's own</em>
+     * {@code allow} — which returns a bare boolean — so the delegate's reason would be silently
+     * swallowed and every step-up deny in the system would degrade to a plain 403. Nothing would fail,
+     * nothing would log; the feature would simply not exist behind the decorator. A test asserts the
+     * call goes through the guard, so the override cannot be removed without a red build.
+     *
+     * <h2>Fail-closed, and never inventive</h2>
+     * Breaker-open synthesizes {@link OpaDecision#deny()} — deny with a {@code null} reason — by hand,
+     * exactly as {@link #allow} synthesizes {@code false}. Transport failures and exhausted retries need
+     * no special handling: the delegate has already swallowed them into its own {@code (false, null)}.
+     * A reason therefore <em>only</em> ever reaches a caller when OPA actually answered 200 with one,
+     * which is the whole point — a fabricated reason would promise that re-authenticating fixes an
+     * outage, and put the user on a treadmill of factors that change nothing.
+     */
+    @Override
+    public OpaDecision decide(AbacContext context) {
+        try {
+            // Retry semantics: a reasonless deny is indistinguishable from the delegate's swallowed
+            // failure, so it retries like allow()'s false. A deny CARRYING a reason is provably a real
+            // 200 answer (the delegate only builds one there) — never the sentinel — so it is not
+            // retried, exactly as allowAll() refuses to retry the distinguishable MIXED block:
+            // retrying a deterministic answer buys nothing and taxes the step-up hot path (every
+            // unelevated supervisor's challenge) with an extra OPA hop plus an on-thread backoff.
+            OpaDecision decision = guard.call(
+                    () -> delegate.decide(context),
+                    retryableError,
+                    d -> d == null || (!d.allow() && d.denyReason() == null));
+            return decision == null ? OpaDecision.deny() : decision;
+        } catch (CallNotPermittedException _) {
+            log.warn("OPA decide fail-closed: circuit breaker open (denying, no reason)");
+            return OpaDecision.deny();
         }
     }
 

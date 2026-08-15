@@ -186,16 +186,20 @@ state). This keeps the contract simple; adopt `PATCH` only if partial update bec
 | Code | When | Example |
 |---|---|---|
 | `400 Bad Request` | request **syntax**/shape invalid (Bean-Validation failure, unparseable body, illegal argument) | empty `name`, `priceCents` < 0 |
+| `401 Unauthorized` | **step-up only** (RFC 9470): the denial's sole blocker is authentication freshness — re-authenticating at the challenged ACR clears it | a supervisor's production read before TOTP; body `STEP_UP_REQUIRED` + `WWW-Authenticate` challenge |
 | `403 Forbidden` | the ABAC decision **denied** access | non-owner calling `team:manage` |
 | `404 Not Found` | the resource (or its claimed parent) doesn't exist | unknown `catalogId`; child not under the parent |
 | `409 Conflict` | the request collides with current **state** (a uniqueness/immutability/lifecycle conflict) | duplicate team target; editing a system (immutable) role |
 | `422 Unprocessable Entity` | the request is **syntactically valid but semantically rejected** by a domain rule | a tag value not in the dictionary; the role-subset rule |
 | `503 Service Unavailable` | a required dependency was unreachable and the operation **fails closed** | the tag dictionary could not be fetched |
 
-**No `401`.** Authentication happens at the gateway (APISIX OIDC) before a request reaches a service; a
-service only sees already-authenticated requests, and an authorization denial is a `403`. (The library's
-`AbacFilter` lets an *anonymous* request through to the security layer, which then denies — also `403`,
-never `401`.)
+**`401` is step-up only.** Authentication happens at the gateway (APISIX OIDC) before a request reaches
+a service; a service only sees already-authenticated requests, and an ordinary authorization denial is a
+`403`. (The library's `AbacFilter` lets an *anonymous* request through to the security layer, which then
+denies — also `403`, never `401`.) The **one** service-emitted `401` is the step-up challenge
+([[TEAM-BASED-AUTHORIZATION]] §Step-up elevation, ADR 0030): when a second factor is the denial's *sole*
+blocker, the advice answers `401` + an RFC 9470 `WWW-Authenticate` challenge + `STEP_UP_REQUIRED` —
+a deny that names its remedy, not an authentication failure. Every other denial stays `403`.
 
 ### The decision rules that matter
 

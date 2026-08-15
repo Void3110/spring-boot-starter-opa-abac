@@ -191,7 +191,7 @@ service ingests the three claims, and the supervised **list** leg closes to agen
     emitted in the advice at 401-mint — the subject from the security context, the resource
     type+id + governing root from `StepUpRequiredDecision`'s log-only fields, plus the challenge
     params (**no** `acr`/`auth_time` — the subject is precisely *not* elevated at challenge time);
-    `SUPERVISED_PRODUCTION_READ` emitted in the manager iff **granted** ∧
+    `PRIVILEGED_READ` emitted in the manager iff **granted** ∧
     `provenance == "supervised"` ∧ the target's `root_attributes.env` **contains** `"production"`
     (normalized scalar-or-array, mirroring the policy's `root_env_values` — the cardinality twin)
     — **elevation is implied by the allow and never re-derived app-side** (no Java copy of

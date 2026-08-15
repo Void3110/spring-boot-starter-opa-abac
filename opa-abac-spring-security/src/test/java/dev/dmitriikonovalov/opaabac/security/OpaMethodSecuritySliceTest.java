@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +61,7 @@ class OpaMethodSecuritySliceTest {
 
     private AuthorizationManagerBeforeMethodInterceptor interceptorWith(boolean opaAllows) {
         OpaClient opaClient = mock(OpaClient.class);
-        when(opaClient.allow(Mockito.any())).thenReturn(opaAllows);
+        when(opaClient.decide(Mockito.any())).thenReturn(OpaDecision.of(opaAllows));
         RoleDefinitionSupplier supplier = mock(RoleDefinitionSupplier.class);
         when(supplier.lookup(Mockito.any(), Mockito.any(), Mockito.any())).thenReturn(Optional.empty());
 

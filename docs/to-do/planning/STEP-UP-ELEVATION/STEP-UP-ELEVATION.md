@@ -52,7 +52,7 @@ differentiator, not a re-implementation ([[0030-step-up-decision-contract|ADR 00
    conditional level-2 TOTP subflow with max age 300 mirroring the policy window, `sup-anna`'s
    seeded fixture OTP secret; runner documents down-first re-import.
 7. **Audit = two events on `opa.abac.audit`** (`STEP_UP_CHALLENGED` in the advice,
-   `SUPERVISED_PRODUCTION_READ` in the manager); emission never affects the decision.
+   `PRIVILEGED_READ` in the manager); emission never affects the decision.
 8. **The supervised path is human-only**: `provenance == "supervised"` + the `act_chain`
    presence-test → deny, any tier, always a plain 403 (sole-blocker suppresses the challenge); the
    wire claim is `act_chain` — `actor` is MCP-internal and never travels downstream.
@@ -73,12 +73,12 @@ on this rig, and its contract is pinned by constructed-input `opa test`.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | realm: `basic`+`acr` scopes, ACR-to-LoA map, the conditional level-2 TOTP subflow (max age 300), anna's seeded OTP credential | 📋 TODO |
-| T2 | policy: the `step_up` data JSON, `elevated`, the amended production denies, `stepup_denied` + sole-blocker `deny_reason`, the agent deny (all three leaf policies), mutation guards | 📋 TODO |
-| T3 | library envelope: `OpaDecision`/`DenyReason`, `OpaClient.decide()` default, `HttpOpaClient` parse, `ResilientOpaClient` **overridden** passthrough (the default-method trap) | 📋 TODO |
-| T4 | manager + emitter + audit + wiring: `decide()` adoption, `StepUpRequiredDecision`, the advice 401 branch + `STEP_UP_REQUIRED`, both audit events, the catalog service's `attribute-claims` yaml (`acr`, `auth_time`, `act_chain`), the supervised-leg agent guard in `CatalogListAuthorizer` | 📋 TODO |
-| T5 | the code-flow token miner (`mint-code-flow-token.py`, stdlib + TOTP) | 📋 TODO |
-| T6 | e2e: the step-up matrix (E1–E7 incl. the freshness drill + the log-grep cell), the seven enumerated production-tier C-flips, non-regression, the runner | 📋 TODO |
+| T1 | realm: `basic`+`acr` scopes, ACR-to-LoA map, the conditional level-2 TOTP subflow (max age 300), anna's seeded OTP credential | ✅ DONE |
+| T2 | policy: the `step_up` data JSON, `elevated`, the amended production denies, `stepup_denied` + sole-blocker `deny_reason`, the agent deny (all three leaf policies), mutation guards | ✅ DONE |
+| T3 | library envelope: `OpaDecision`/`DenyReason`, `OpaClient.decide()` default, `HttpOpaClient` parse, `ResilientOpaClient` **overridden** passthrough (the default-method trap) | ✅ DONE |
+| T4 | manager + emitter + audit + wiring: `decide()` adoption, `StepUpRequiredDecision`, the advice 401 branch + `STEP_UP_REQUIRED`, both audit events, the catalog service's `attribute-claims` yaml (`acr`, `auth_time`, `act_chain`), the supervised-leg agent guard in `CatalogListAuthorizer` | ✅ DONE |
+| T5 | the code-flow token miner (`mint-code-flow-token.py`, stdlib + TOTP) | ✅ DONE |
+| T6 | e2e: the step-up matrix (E1–E7 incl. the freshness drill + the log-grep cell), the seven enumerated production-tier C-flips, non-regression, the runner | ✅ DONE |
 
 ## Files in this folder
 

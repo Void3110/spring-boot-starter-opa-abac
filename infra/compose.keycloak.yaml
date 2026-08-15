@@ -6,11 +6,24 @@
 #
 # Joins the shared opa-abac-example network; reachable in-network as "keycloak".
 #
-# IMPORTANT issuer note: APISIX (in-network) discovers Keycloak at http://keycloak:8888,
-# but tokens are issued with that same issuer. We pin KC_HOSTNAME_URL to the in-network
-# address so APISIX's discovery and the token issuer agree. Browser-based login flows use
-# the host port 28888; for pure bearer-token testing (direct grant) the in-network issuer
-# is what matters and APISIX validates against the matching JWKS.
+# IMPORTANT issuer note (measured 2026-08-14, KC 26 — the step-up miner's E9 preflight pins it):
+# the `iss` claim FOLLOWS THE REQUEST's Host header. KC_HOSTNAME_STRICT=false is what decides
+# this; a `KC_HOSTNAME_URL` pin that lived below was REMOVED — it is not a Keycloak 26 option and
+# did nothing (see the note in the environment block). In-network mints
+# therefore carry iss=keycloak:8888 by convention (they address that authority), not by pin; the
+# scripted code-flow miner presents the in-network authority from the host for the same parity.
+# The openid-connect plugin validates the token SIGNATURE against the realm JWKS and does not
+# itself enforce `iss` (also measured — E9's tamper control is what proves the 200 isn't a
+# wave-through), so init-routes.sh adds an ISSUER-ALLOWLIST pre-function beside it (hardened
+# 2026-08-14): only the THREE rig authorities pass — `keycloak:8888` (in-network mints + the
+# miner), `localhost:9085` (THE GATEWAY ORIGIN: the demo SPA's whole PKCE flow runs through the
+# gateway's /realms/* passthrough, and Keycloak rewrites its advertised issuer to it — omitting
+# this 401s every SPA call, a regression this rig actually shipped for one commit), and
+# `localhost:28888` (this published port, reachable directly). `ISSUER_ALLOWLIST` in
+# init-routes.sh is the single source; a forged-Host mint is refused (E9's controls pin both the
+# deny and the gateway-origin ALLOW). STRICT=false stays: the demo SPA logs in
+# through the host port from a browser, which a strict in-network hostname would break. A
+# production deployment should still pin the hostname (KC_HOSTNAME + KC_HOSTNAME_STRICT=true).
 
 name: opa-abac-example
 
@@ -23,10 +36,11 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HTTP_ENABLED: "true"
-      # Keep the token issuer stable and equal to APISIX's in-network discovery URL.
+      # STRICT=false makes the issuer follow the request's Host header (see the issuer note above).
+      # There is deliberately no hostname pin: the SPA and the in-network callers need DIFFERENT
+      # issuers, which is exactly why the gateway carries an allowlist instead. (A `KC_HOSTNAME_URL`
+      # line lived here until 2026-08-14 — a removed v1 option that did nothing on KC 26.)
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_URL: "http://keycloak:8888"
-      KC_HOSTNAME_ADMIN_URL: "http://localhost:28888"
       # Tracing -> Jaeger (built-in OTEL).
       KC_TRACING_ENABLED: "true"
       KC_TRACING_ENDPOINT: "http://opa-abac-jaeger:4318"

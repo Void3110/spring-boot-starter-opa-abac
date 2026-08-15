@@ -38,6 +38,13 @@ public final class HttpOpaClient implements OpaClient {
     private static final List<String> UNKNOWNS = List.of("input.resource");
 
     /**
+     * The optional structured-reason field of the decision envelope (ADR 0030 §6). Fixed, unlike the
+     * configurable decision field: it is part of the library's own contract with the policy, not a
+     * per-deployment naming choice.
+     */
+    private static final String DENY_REASON_FIELD = "deny_reason";
+
+    /**
      * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
      * query string) — only {@code [A-Za-z0-9_-]} segments joined by single {@code /} are accepted,
      * whatever the {@link PolicyPathResolver} implementation returned. {@code .}/{@code ..} segments,
@@ -81,6 +88,32 @@ public final class HttpOpaClient implements OpaClient {
 
     @Override
     public boolean allow(AbacContext context) {
+        return evaluate(context).allow();
+    }
+
+    /**
+     * The same single decision, additionally reading the optional structured {@code deny_reason} from
+     * the <em>same</em> response (ADR 0030 §6) — no second round-trip.
+     *
+     * <p>Fail-closed exactly like {@link #allow(AbacContext)}, and never inventive: a transport failure,
+     * a non-200, a malformed body or a malformed reason all deny with a {@code null} reason.
+     */
+    @Override
+    public OpaDecision decide(AbacContext context) {
+        return evaluate(context);
+    }
+
+    /**
+     * The one evaluation path both {@link #allow} and {@link #decide} use.
+     *
+     * <p>Deliberately <em>not</em> written as {@code allow} delegating to {@code decide}: the interface's
+     * {@code decide} default delegates to {@code allow}, so that shape would become an infinite recursion
+     * the moment someone removed the override here — and a {@link StackOverflowError} is an
+     * {@link Error}, which escapes the {@code catch (Exception)} fail-closed handlers rather than denying
+     * (the same reasoning as {@link #isSafePath(String)}). A private helper both public methods call
+     * cannot form that cycle.
+     */
+    private OpaDecision evaluate(AbacContext context) {
         String path = null;
         try {
             path = requireSafePath(pathResolver.resolve(context));
@@ -97,7 +130,7 @@ public final class HttpOpaClient implements OpaClient {
             int status = response.statusCode();
             if (status != 200) {
                 log.warn("OPA denied (fail-closed): non-200 status {} for path '{}'", status, path);
-                return false;
+                return OpaDecision.deny();
             }
             return readDecision(response.body(), path);
         } catch (InterruptedException _) {
@@ -105,31 +138,83 @@ public final class HttpOpaClient implements OpaClient {
             // shutdown/cancellation signal survives this call.
             Thread.currentThread().interrupt();
             log.warn("OPA denied (fail-closed): interrupted for path '{}'", path);
-            return false;
+            return OpaDecision.deny();
         } catch (Exception e) {
             // Fail-closed: any transport/serialization/timeout failure denies. Never log the token —
             // exception class + message carry the URL/transport detail, not credentials.
             log.warn("OPA denied (fail-closed): {} for path '{}'", e, path);
             log.debug("OPA allow call failed", e);
-            return false;
+            return OpaDecision.deny();
         }
     }
 
-    private boolean readDecision(byte[] responseBody, String path) {
+    private OpaDecision readDecision(byte[] responseBody, String path) {
         try {
             OpaResult result = objectMapper.readValue(responseBody, OpaResult.class);
-            Object decision = result.result() == null ? null : result.result().get(config.decisionField());
-            if (decision instanceof Boolean allowed) {
-                return allowed;
+            Map<String, Object> fields = result.result();
+            Object decision = fields == null ? null : fields.get(config.decisionField());
+            if (!(decision instanceof Boolean)) {
+                log.warn("OPA denied (fail-closed): missing/non-boolean '{}' in result for path '{}'",
+                        config.decisionField(), path);
+                return OpaDecision.deny();
             }
-            log.warn("OPA denied (fail-closed): missing/non-boolean '{}' in result for path '{}'",
-                    config.decisionField(), path);
-            return false;
+            if (Boolean.TRUE.equals(decision)) {
+                // An allow is an allow. A document carrying both is contradictory, and the reason —
+                // which only ever means "a deny you could clear" — is dropped rather than passed on.
+                return OpaDecision.permit();
+            }
+            return new OpaDecision(false, readDenyReason(fields, path));
         } catch (Exception e) {
             log.warn("OPA denied (fail-closed): malformed response ({}) for path '{}'",
                     e.getClass().getSimpleName(), path);
-            return false;
+            return OpaDecision.deny();
         }
+    }
+
+    /**
+     * Read {@code result.deny_reason}, or {@code null} if it is absent or not a well-formed reason.
+     *
+     * <p>The field types are checked by hand rather than handed to {@code convertValue}: Jackson would
+     * happily <em>coerce</em> a {@code "300"} string into {@code maxAge}, and a reason whose types are
+     * not what the contract says is a policy the library does not understand. Dropping it costs a
+     * challenge and yields a plain deny; trusting it would put a guessed window on the wire. Nothing
+     * here throws — a parse problem must never widen, and must never surface as an error either.
+     */
+    private DenyReason readDenyReason(Map<String, Object> fields, String path) {
+        Object raw = fields.get(DENY_REASON_FIELD);
+        if (raw == null) {
+            return null; // the overwhelmingly common case: a plain deny
+        }
+        if (!(raw instanceof Map<?, ?> reason)) {
+            log.warn("OPA deny reason dropped (fail-closed): '{}' is not an object for path '{}'",
+                    DENY_REASON_FIELD, path);
+            return null;
+        }
+        String type = asString(reason.get("type"));
+        String requiredAcr = asString(reason.get("required_acr"));
+        Integer maxAge = asInteger(reason.get("max_age"));
+        if (type == null || requiredAcr == null || maxAge == null) {
+            log.warn("OPA deny reason dropped (fail-closed): malformed '{}' for path '{}'",
+                    DENY_REASON_FIELD, path);
+            return null;
+        }
+        return new DenyReason(type, requiredAcr, maxAge);
+    }
+
+    private static String asString(Object value) {
+        return value instanceof String s && !s.isEmpty() ? s : null;
+    }
+
+    private static Integer asInteger(Object value) {
+        // Jackson maps a JSON integer to Integer/Long depending on magnitude; a JSON float or a string
+        // is not a window this library will advertise.
+        if (value instanceof Integer i) {
+            return i;
+        }
+        if (value instanceof Long l && l == l.intValue()) {
+            return l.intValue();
+        }
+        return null;
     }
 
     /**

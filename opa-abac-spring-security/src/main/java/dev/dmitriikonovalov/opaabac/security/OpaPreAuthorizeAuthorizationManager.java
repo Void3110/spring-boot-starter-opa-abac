@@ -5,6 +5,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -79,6 +80,13 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     private final OpaClient opaClient;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
     private final ResourceResolutionSupport resolutionSupport;
+
+    /**
+     * Which allowed reads are privileged enough to audit, in the ADOPTER's vocabulary — {@code null}
+     * (the default) means the privileged-read event is never emitted. See
+     * {@link PrivilegedReadAuditPolicy}.
+     */
+    private final PrivilegedReadAuditPolicy privilegedReadAuditPolicy;
     private final ExpressionParser expressionParser = new SpelExpressionParser();
     private final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
@@ -95,10 +103,25 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             OpaClient opaClient,
             RoleDefinitionSupplier roleDefinitionSupplier,
             ResourceResolutionSupport resolutionSupport) {
+        this(opaClient, roleDefinitionSupplier, resolutionSupport, null);
+    }
+
+    /**
+     * @param privilegedReadAuditPolicy which allowed reads are privileged enough to audit, in this
+     *                                  adopter's own vocabulary, or {@code null} to emit no
+     *                                  privileged-read event (the default — see
+     *                                  {@link PrivilegedReadAuditPolicy})
+     */
+    public OpaPreAuthorizeAuthorizationManager(
+            OpaClient opaClient,
+            RoleDefinitionSupplier roleDefinitionSupplier,
+            ResourceResolutionSupport resolutionSupport,
+            PrivilegedReadAuditPolicy privilegedReadAuditPolicy) {
         this.opaClient = Objects.requireNonNull(opaClient, "opaClient");
         this.roleDefinitionSupplier =
                 Objects.requireNonNull(roleDefinitionSupplier, "roleDefinitionSupplier");
         this.resolutionSupport = resolutionSupport;
+        this.privilegedReadAuditPolicy = privilegedReadAuditPolicy;
     }
 
     /**
@@ -139,7 +162,14 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             AbacContext context =
                     new AbacContext(subject, annotation.action(), resolved.resource(), roleDefinition, Map.of());
 
-            boolean allowed = opaClient.allow(context);
+            OpaDecision decision = opaClient.decide(context);
+            if (decision == null) {
+                // A client breaking the never-null contract. Deny explicitly rather than let an NPE fall
+                // into the catch below — same outcome, but legible in the log and pinned by a test.
+                log.warn("OPA pre-authorize denied (fail-closed): OpaClient.decide returned null");
+                return DENY;
+            }
+            boolean allowed = decision.allow();
             if (allowed && resolutionSupport != null && resolved.instance() != null) {
                 // Write-through on allow only: the handler may reuse the authorized snapshot. The DECIDED
                 // LEAF is never read back by the gate — it is always resolved fresh, so this entry can
@@ -148,7 +178,22 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 resolutionSupport.cache().put(resolved.resource().type(), resolved.resource().id(),
                         resolved.instance());
             }
-            return new AuthorizationDecision(allowed);
+            if (allowed) {
+                auditPrivilegedRead(subject, roleDefinition, resolved);
+                return new AuthorizationDecision(true);
+            }
+            if (decision.denyReason() != null) {
+                // A structured deny: the policy says a fresh second factor is the SOLE blocker. Carry the
+                // reason — plus the log-only coordinates the enforcement point cannot re-derive — so the
+                // advice can mint the challenge. Still a denied decision to everything that only asks
+                // isGranted().
+                return new StepUpRequiredDecision(
+                        decision.denyReason(),
+                        resolved.resource().type(),
+                        resolved.resource().id(),
+                        resolved.roleId());
+            }
+            return DENY;
         } catch (RoleResolutionException e) {
             // B2: role-source outage → deny, never the realm fallback (ADR 0014). An outage makes the
             // role UNKNOWN; building an empty-role context would let the policy's realm fallback decide,
@@ -161,6 +206,43 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             log.warn("OPA pre-authorize denied (fail-closed): {}", e.getClass().getSimpleName());
             return DENY;
         }
+    }
+
+    /**
+     * Emit {@code PRIVILEGED_READ} (ADR 0030 §8 + Amendment 7) when — and only when — an <b>allowed</b>
+     * decision matched the adopter's {@link PrivilegedReadAuditPolicy}. <b>The trigger does not consult
+     * the action</b>: in this repo the matching provenance is a read-only ceiling, so every match IS a
+     * read and the name holds — but an adopter whose privileged role may write will see writes reported
+     * under the same event. That is deliberate (the event answers "a privileged access happened", and
+     * narrowing it to verbs would put a second copy of the permission model here), and it is the reason
+     * the name is the generic {@code PRIVILEGED_READ} rather than a verb-specific one. The match is: the resolved role carries the
+     * configured <b>provenance</b>, and the governing root's configured <b>tier attribute</b> holds one of
+     * the configured <b>tier values</b>. With no policy configured, nothing is emitted — the words
+     * {@code supervised} and {@code production} are this repo's EXAMPLE vocabulary, not the library's.
+     *
+     * <p><b>Elevation is implied by the allow and never re-derived here.</b> The policy already required
+     * it; re-checking `acr`/`auth_time` app-side would mean a second copy of the LoA map and the freshness
+     * window, and the whole point of ADR 0030 Amendment 3 is that exactly one window exists. The claims
+     * are logged verbatim, not interpreted.
+     *
+     * <p>The tier test mirrors the policy's {@code root_env_values} — the cardinality twin: a tag value in
+     * this model is a scalar string <em>or</em> a string array, and a bare {@code equals} would miss
+     * {@code ["production", "staging"]}. Absent root attributes mean no event: nothing proved this read
+     * was privileged, which is also the state the policy treats as an unproven (closed) tier.
+     */
+    private void auditPrivilegedRead(
+            AbacContext.Subject subject, RoleDefinition roleDefinition, ResolvedCheck resolved) {
+        if (privilegedReadAuditPolicy == null
+                || !privilegedReadAuditPolicy.matches(roleDefinition, resolved.resource().rootAttributes())) {
+            return;
+        }
+        AbacAuditLogger.privilegedRead(
+                subject.id(),
+                subject.attributes(),
+                resolved.resource().type(),
+                resolved.resource().id(),
+                resolved.roleId(),
+                privilegedReadAuditPolicy.provenance());
     }
 
     private static OpaPreAuthorize findAnnotation(MethodInvocation invocation) {

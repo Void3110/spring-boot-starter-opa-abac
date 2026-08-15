@@ -285,7 +285,8 @@ elevation; and Keycloak flow automation, which stays rig configuration.
    designed feature with its own audit story and capability tier, never a default.
    (Cross-reference: ADR 0028's model is narrowing-only; this deny narrows and grants nothing.)
 5. **§8's event list, refined.** The slice ships exactly **two** events — `STEP_UP_CHALLENGED`
-   (at the challenge) and `SUPERVISED_PRODUCTION_READ` (at the elevated read) — and no token-level
+   (at the challenge) and `SUPERVISED_PRODUCTION_READ` (at the elevated read; **renamed
+   `PRIVILEGED_READ` by Amendment 7** — the name below is the pre-rename one) — and no token-level
    "an elevation happened" event: the resource server never sees the Keycloak ceremony, only
    tokens, and the elevated read *is* the elevation in use. §8's "(a) an elevation" is discharged
    by the challenged/read pair.
@@ -294,3 +295,49 @@ elevation; and Keycloak flow automation, which stays rig configuration.
    `acr`/`amr` are absent from both tokens on every request-side path (including `max_age` and an
    essential-claims request); restoring the built-in `basic` + `acr` scopes is the fix, and a
    refresh grant preserves `auth_time` at the original login instant (re-measured).
+
+7. **The privileged-read event's vocabulary is the ADOPTER's, not the library's** (2026-08-14,
+   layer-3 review). §8 above pinned `SUPERVISED_PRODUCTION_READ` to *computability*: it fires from
+   the decision's own inputs — the granted allow, the resolved role, the enriched governing-root
+   attributes — at the instant the decision is made, so elevation is implied by the allow and never
+   re-derived app-side. That pin is **unchanged and remains the reason the trigger lives in the
+   manager**. What the review found is separable and was a real defect for adopters: the manager
+   also *hardcoded this repo's example nouns* — the literals `supervised` and `production` — so a
+   published-starter adopter whose vocabulary differs gets an event that can never fire, and one
+   whose vocabulary happens to match gets an event they never asked for, with no way to configure
+   or suppress either.
+
+   **Decision: the trigger stays where the data is; only its vocabulary becomes configuration.** A
+   `PrivilegedReadAuditPolicy` (provenance · root attribute · root values, the last matched
+   scalar-or-array exactly as `root_env_values` normalizes) is passed to the manager, built by the
+   starter from `opa.abac.audit.privileged-read.*`. **Unset means silent** — no policy, no event —
+   so an adopter's default is "nothing fires", and the example catalog service opts in with its own
+   nouns in `application.yml`. The alternatives were rejected on this ADR's own terms: keeping the
+   literals and documenting them leaves a published library firing on someone else's domain
+   language, and moving the trigger into the example service would force precisely the app-side
+   re-derivation of elevation that Amendment 3 and §8 forbid.
+
+   **The sweep, completed (same day, round 10).** The first pass fixed only the *trigger*. Three
+   siblings carried the same breach and were caught by the next review round: the event's own **name**
+   (`SUPERVISED_PRODUCTION_READ` → **`PRIVILEGED_READ`**, matching the property and the policy class —
+   it is the string that lands in an adopter's logs); the **wire-visible challenge description**, which
+   asserted "…to read production content" in every RFC 9470 `error_description` and problem `detail`
+   the library minted — worse than the audit event, since it states a false, domain-inappropriate fact
+   about the resource *to the caller*; and a **half-configured policy block**, which silently disabled
+   the event instead of failing startup (silently disabling an audit control on a typo is how oversight
+   quietly stops happening). The description now defaults to a domain-neutral sentence and is an
+   overridable `stepUpChallengeDescription()` seam — the example service overrides it with its
+   production wording, and unit cells pin both sides plus the unquotable-override suppression.
+
+   **Consequences.** The library's other audit event, `STEP_UP_CHALLENGED`, is vocabulary-free (it
+   reports a challenge the library itself minted) and is unaffected. The starter's public
+   `opaPreAuthorizeAuthorizationManager` bean factory gained a parameter, so its **3-argument form is
+   retained as a link-compatibility shim** (`opa-abac-spring-boot-starter` is published to Maven
+   Central and 1.0.0/1.1.0 shipped that signature); it delegates with a `null` audit policy, which is
+   exactly what a pre-C caller should get. **Remove the shim at the next MAJOR version** — that is the
+   decision this note records, rather than carrying a standing lint suppression for it. The change is additive: the
+   three-argument manager constructor is retained and now means "no privileged-read event", which is
+   the correct default for every pre-C adopter. The e2e proof is unchanged in substance — the
+   example configures the same nouns, so `run-step-up-matrix.sh`'s E2 audit grep still measures the
+   event on the wire — and two unit cells pin the seam itself: unconfigured is silent, and a
+   *different* vocabulary (`oversight` / `classification` / `restricted`) fires correctly.

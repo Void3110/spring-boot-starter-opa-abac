@@ -351,6 +351,113 @@ behind a production tier ([[adr/0030-step-up-decision-contract|ADR 0030]] §1–
 `acr`/`auth_time` ingestion. A supervised **single-`GET`** is audited by slice C; slice A audits the
 **list** path, where the supervised authority is applied.
 
+### Step-up elevation — the production tier opens, briefly (Slice C, ADR [[adr/0030-step-up-decision-contract|0030]] §5–9)
+
+Slice B closed a supervisor's production contents with a plain 403. Oversight that can *never* open
+production is a wall, not a gate — so slice C adds the elevation that opens it deliberately, for a
+bounded window, behind a fresh second factor.
+
+**The round trip, in five steps:**
+
+1. `sup-anna` reads her report's **production** catalog's contents at ordinary strength.
+2. The policy's production deny now carries a `not elevated` conjunct, so it still fires — but because
+   step-up is the **sole** blocker (she is otherwise `granted`, and no other deny fires), the decision
+   carries a structured `deny_reason`.
+3. The library's advice maps that to **`401`** with an RFC 9470 challenge and a `STEP_UP_REQUIRED`
+   problem body:
+
+   ```
+   HTTP/1.1 401 Unauthorized
+   WWW-Authenticate: Bearer error="insufficient_user_authentication",
+     error_description="A second factor is required to read production content",
+     acr_values="aal2", max_age="300"
+   ```
+
+4. The client re-authenticates with **`max_age`** *and* an essential `acr` claim; Keycloak's conditional
+   level-2 flow demands TOTP.
+5. The very next read is **200** — until the window closes.
+
+**Elevation is `loa[acr] >= 2` and `now − auth_time <= max_age + skew`, and nothing else.** Both claims
+come off the token as pure configuration (`opa.abac.subject.attribute-claims: [acr, auth_time,
+act_chain]`); the knobs live in `infra/opa/policies/step_up.json`; the clock is OPA's own.
+
+> **Why freshness, not token lifetime.** `acr` and `auth_time` are fixed at authentication, and a
+> **refresh grant preserves both** (measured on the rig). A short-lived "elevated token" would therefore
+> prove nothing: one second factor at 09:00 would cover production reads all day. Resource-server-side
+> freshness is the only control that survives refresh, and `max_age` is what forces the re-authentication
+> — omit it and Keycloak reuses the session, reissues the same stale `auth_time`, and the client loops.
+
+**The sole-blocker rule is what keeps the challenge honest.** `deny_reason` is emitted **iff** the
+step-up clause fires, the subject is `granted`, and no other deny fires. Four consequences fall out of
+that one rule rather than four separate checks:
+
+| Who | Answer | Why |
+|---|---|---|
+| An **out-of-unit** supervisor | plain **403** | not `granted` — no "this is production" to fingerprint |
+| An elevated supervisor's **write** | plain **403** | not `granted` — the read-only ceiling is not an elevation problem |
+| An **agent-marked** call | plain **403** | another deny fires — no TOTP prompt for a caller that cannot TOTP |
+| An **enrichment outage** | plain **403** | the unproven-tier deny fires — and see below |
+
+**The unproven tier is elevation-proof.** The `not elevated` conjunct amends the *production* clause
+only; the absent-`root_attributes` clause is untouched. An enrichment outage is a closed tier for a
+freshly-elevated supervisor exactly as for anyone else: elevation proves *who is present*, never *what
+the tier is*.
+
+**The supervised path is human-only.** Supervision and elevation are human ceremonies, so an
+agent-marked call — the `act_chain` delegation claim's **key** present, at any tier — is refused
+outright, in three places because the supervised surface is not one seam: the provenance-scoped deny in
+all three leaf policies (single decisions), the supervised **list leg** skipped app-side (the list's cut
+comes from `filter`, which never consults `denied`), and the claim ingested by configuration so the
+target gate can see it at all. The discriminator is the key's **presence**, never its truthiness —
+`act_chain: false` is still an agent call. The tool-gate is untouched: it still narrows, the target gate
+still decides. This is a recorded, revisitable decision, not a permanent one; a supervised agent
+read-out would be its own designed feature with its own audit story.
+
+**Two audit events**, on the dedicated `opa.abac.audit` logger (emission only — retention and routing
+are the consumer's):
+
+| Event | Where | Payload |
+|---|---|---|
+| `STEP_UP_CHALLENGED` | the advice, at 401-mint | subject, resource type + id, governing root, the challenge parameters — **no** `acr`/`auth_time`, since the subject is precisely *not* elevated yet |
+| `PRIVILEGED_READ` | the manager, on an allowed supervised read of a production root | subject, access path, governing root, resource, plus `acr` and `auth_time` **verbatim** |
+
+Elevation is **implied by the allow** and never re-derived app-side — a Java copy of the LoA map or the
+window would create a second source of truth for a number ADR 0030 insists exists once. And emission
+never affects the decision: the emit path catches and drops its own exceptions, because an audit bug
+must not become an authorization outage.
+
+**Fail-closed, layer by layer.** Each class lands where it arose, and none of them widens anything:
+
+| What went wrong | Where it lands |
+|---|---|
+| Missing / unmapped `acr`, missing or non-numeric `auth_time` | `elevated` is undefined → the production deny holds |
+| A **malformed** `deny_reason` on the wire | plain deny at the parse — the reason is dropped, never coerced |
+| An OPA outage, breaker open, retries exhausted | plain deny at the resilient wrapper — **never a fabricated reason** |
+| A reason with any **null** field | the ordinary **403** at the advice — never a half-formed challenge |
+| Audit emission throwing | nothing; the decision stands |
+
+**One freshness window, stated twice.** The realm's level-2 condition max age and `step_up.json`'s
+`max_age` are the same 300 seconds and cross-reference each other (see `infra/README.md`); the
+challenge's `acr_values`/`max_age` come **from the reason**, so the advice holds no copy of either.
+
+**Proven on the rig** by `scripts/postman/run-step-up-matrix.sh` (`ENABLE_MCP=1 ./deploy.sh up
+--pods 2`, after a `./deploy.sh down` so Keycloak re-imports the realm). Anna's tokens come from
+`mint-code-flow-token.py` — the scripted PKCE code flow, because ROPC structurally cannot carry
+`auth_time` ([[E2E-TESTING]]). The cells: **E1** her `aal1` read of a production child answers
+**401** with the challenge parameters asserted *by value* and `STEP_UP_REQUIRED` in the body;
+**E2** one TOTP later the same read is **200** on exact ids, and both audit events are grepped off
+the pod's `opa.abac.audit` channel; **E4** an out-of-unit supervisor and an *elevated* `PUT` each
+get a plain **403** with no `WWW-Authenticate`; **E5** the catalog's owner reads the same rows at
+plain `aal1` with an honest `_actions` map; **E6** an agent-client token for her own subject is
+refused on production *and* non-production content and its catalog list is the empty page, each
+paired with a human-token control on the same row; **E7** the drill overrides `data.step_up.max_age`
+to 5 s on the **leaf** path, proves a fresh elevation still opens (the positive control), waits out
+`max_age + skew`, and watches the same bearer answer **401** again; and **E3**, inside that shrunk
+window, re-authenticates *without* `max_age` over the persisted SSO session — a brand-new token,
+`iat` advanced, the **same** `auth_time`, still 401. Slice B's matrix keeps every cell it had except
+the seven this slice deliberately flips from the plain 403 to the challenge (`E2a`–`E2d`, `E4b`,
+`E4c`, `E5d`), each annotated in place.
+
 ### Prove it
 
 ```bash

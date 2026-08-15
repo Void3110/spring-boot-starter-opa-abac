@@ -17,6 +17,14 @@ public enum LibraryErrorCode implements ApiErrorCode {
     /** OPA-deny / unauthenticated / unresolved subject — the access decision said no. */
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access denied"),
 
+    /**
+     * The decision denied <em>only</em> for want of a fresher, stronger authentication (ADR 0030 §7). The
+     * response carries an RFC 9470 {@code WWW-Authenticate} challenge naming the ACR and the maximum age
+     * the client must re-authenticate with. Distinct from {@link #ACCESS_DENIED} on purpose: this one is
+     * <strong>answerable</strong>, and a plain deny must never be mistaken for it.
+     */
+    STEP_UP_REQUIRED(HttpStatus.UNAUTHORIZED, "Step-up authentication required"),
+
     /** A required dependency (e.g. the tag dictionary) was unavailable; the request was rejected, not served degraded. */
     DEPENDENCY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Dependency unavailable"),
 

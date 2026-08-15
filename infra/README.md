@@ -57,11 +57,17 @@ TOKEN=$(docker run --rm --network opa-abac-example_default curlimages/curl -s \
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" localhost:9085/actuator/health  # 200
 ```
 
-> **Issuer gotcha:** Keycloak is hostname-aware. In-network it issues/advertises
-> `http://keycloak:8888`; from the host it advertises `http://localhost:28888`. APISIX discovers
-> + validates in-network, so a token used through the gateway must be **minted in-network**
-> (issuer `keycloak:8888`) or via the real browser redirect flow — a token minted against
-> `localhost:28888` has a mismatched issuer and APISIX rejects it.
+> **Issuer gotcha:** Keycloak is hostname-aware — the `iss` claim follows the request's Host
+> header (`KC_HOSTNAME_STRICT=false`; see `compose.keycloak.yaml`'s issuer note). In-network mints
+> carry `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. The openid-connect
+> plugin validates the signature against the realm JWKS and does not itself enforce `iss`
+> (measured 2026-08-14), so the routes carry an **issuer-allowlist pre-function** beside it
+> (`ISSUER_ALLOWLIST` in `apisix/init-routes.sh`). **Three** authorities pass: `keycloak:8888`,
+> `localhost:28888`, and — load-bearing — **`localhost:9085`, the gateway origin**, because the demo
+> SPA runs its whole PKCE flow through the gateway's `/realms/*` passthrough and Keycloak rewrites
+> its advertised issuer to it. A forged-Host mint is refused 401. E9 pins both halves: the
+> foreign-issuer deny and the gateway-origin allow. Mint in-network for the suite: it is the
+> canonical authority, and the miner presents it from the host for the same parity.
 
 ## Demo SPA auth (bearer-only gateway) — opt-in
 
@@ -345,6 +351,96 @@ cd scripts/postman && ./run-production-tier-matrix.sh
 The runner restarts OPA before minting tokens (the tier denies are policy, `--watch` is unreliable)
 and needs the catalog service's **published host port** for the operator curl (`BASE_PORT=28080` +
 pod index — `docker ps` shows `catalog-1` at `28081`).
+
+## Step-up elevation (Slice C of the supervisor epic, ADR 0030 §5–9)
+
+### The realm changes (and the down-first re-import they force)
+
+Slice C opens the production tier behind a **fresh second factor**, so the realm export
+(`keycloak/realm-export.json`) grows four things — all declarative, all fixture-only:
+
+| Change | Why |
+|---|---|
+| `basic` + `acr` added to `defaultClientScopes` of **`catalog-spa` and `catalog-gateway`** | The literal scope list *replaces* Keycloak's built-in assignment, which left the built-in `basic` scope (it carries the `auth_time` session-note mapper) and the `acr` scope assigned to **no** client — ADR 0030 §Context's diagnosis. Restoring them is the whole claims fix; no custom mapper is needed. |
+| Realm attribute `acr.loa.map` = `{"aal1":1,"aal2":2}` | Names the two levels the policy's `data.step_up.loa` mirrors. |
+| Browser flow **`browser-stepup`** (bound as the realm browser flow): `level-1` conditional subflow (password) then `level-2` conditional subflow (`Condition - Level of Authentication` **level 2, max age 300** + **OTP Form**, both REQUIRED) | Demands TOTP only when the client asks for LoA 2 (`acr_values=aal2` + `max_age`). An ordinary login is unchanged: password only, `acr: aal1`. |
+| `sup-anna` gains a seeded **`otp` credential** with a fixed, committed fixture secret | So the e2e can compute codes offline. It is public **on purpose** — this is a demo realm with fixture identities, exactly like every committed fixture password here. No other persona has a factor: a supervisor who cannot satisfy level 2 simply never elevates (fail-closed). |
+
+> **One freshness window, stated twice.** The level-2 condition's **max age (300 s)** and the policy
+> data's **`step_up.max_age` (300 s, `infra/opa/policies/step_up.json`)** are the *same* window. Both
+> are JSON-hosted values and JSON holds no comments, so this table is the cross-reference: **change one,
+> change the other.** The `skew` (30 s) is decision-side only. The e2e side follows the data, not a
+> copy: the step-up matrix's challenge cells read the window off the live `data.step_up` (the runner
+> passes `shipped_max_age`/`drill_max_age` into the collection) — but
+> `scripts/postman/production-tier-matrix.postman_collection.json`'s seven C-flip cells assert the
+> challenge **literally** (`max_age="300"`), so a window change must update those cells too. The same
+> goes for `step_up.required_acr` (`aal2`): the policy's challenge reads it from data, and the same
+> seven cells plus the realm's `acr.loa.map` name it literally.
+
+Two non-obvious things, both measured on Keycloak 26.3.2 during T1 and worth keeping:
+
+- **The level-1 subflow is load-bearing, not decoration.** `Condition - Level of Authentication`
+  evaluates **true whenever the session has not yet reached any level**, whatever the client asked
+  for — so a level-2 condition on its own demands TOTP on *every* fresh login. Wrapping the password
+  in a level-1 conditional subflow is what lets an ordinary login settle at LoA 1 and leaves level 2
+  for clients that actually request it.
+- **A partial `authenticationFlows` block is fine.** Declaring only the custom flows does **not**
+  suppress Keycloak's built-ins: the import still creates `browser`, `registration`, `direct grant`,
+  `reset credentials`, `clients`, `docker auth` and `first broker login`, so the other flow bindings
+  keep resolving.
+
+**The rig must come `down` first** — Keycloak only imports the realm into a fresh container, so a
+running rig keeps the old flow, the old scopes and a factor-less `sup-anna`:
+
+```bash
+./deploy.sh down                                    # so Keycloak RE-IMPORTS the realm
+ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+```
+
+ROPC is untouched and stays structurally unable to carry `auth_time` (the mapper reads a user-session
+note the direct grant never sets), so every existing runner's `mint_token()` keeps working exactly as
+before — it just also sees `acr: aal1` now, which nothing asserts on. Step-up cells need the scripted
+code flow instead.
+
+> **One measured exception to "ROPC is untouched": `sup-anna` herself.** Keycloak's **direct-grant**
+> flow demands a code from any identity that owns a factor, so a plain ROPC mint for her now answers
+> `invalid_grant / Invalid user credentials` — which reads as a wrong password and is not. The three
+> runners that mint her (`run-supervised-scope-matrix.sh`, `run-production-tier-matrix.sh`,
+> `run-step-up-matrix.sh`) pass an `otp` parameter computed by `mint-code-flow-token.py --print-otp`,
+> so the fixture secret and the RFC 6238 parameters live in exactly one place. Every other persona is
+> unaffected.
+
+### The step-up matrix
+
+```bash
+./deploy.sh down                                   # the realm changed — Keycloak must RE-IMPORT it
+./deploy.sh build                                  # fresh app images BEFORE the up — `up` reuses an
+                                                   # existing image, so building after leaves the pods
+                                                   # on the pre-C code with nothing to tell you so
+ENABLE_MCP=1 ./deploy.sh up --pods 2               # force-enables OIDC + OPA + the user-service
+cd scripts/postman && ./run-step-up-matrix.sh
+```
+
+`ENABLE_MCP=1` is a **superset** of what the REST cells need, so the whole set runs on one flavour
+rather than two. The runner restarts OPA itself (T2 added `step_up.json` and amended the tier denies;
+`--watch` is unreliable) and then polls a **real decision** rather than `/health` — OPA answers
+`/health` before the bundle is loaded, and a decision asked in that window is undefined, which every
+fail-closed client here reads as *deny*. Anna's `aal1`/`aal2` tokens come from the scripted code flow;
+every other persona is minted in-network as usual. Fixture prefix `f00d…`, torn down on green.
+
+Two rig-level things the runner owns rather than assumes:
+
+- **The freshness drill overrides the LEAF path.** `PUT /v1/data/step_up/max_age` with body `5` — OPA's
+  data `PUT` is create/overwrite and **not** merge, so `PUT /v1/data/step_up {"max_age":5}` would take
+  `loa` and `skew` with it, leaving every token unelevatable and producing an instant, vacuous 401.
+  The runner asserts `loa` and `skew` survived, runs a **positive control** (a fresh elevation still
+  opens under the 5-second window), waits `> max_age + skew`, and only then asserts the expiry.
+  Restoration is a plain **OPA restart** in an `EXIT` trap — the file bundle is the source of truth —
+  so a run that dies mid-drill still leaves the shipped 300-second window behind it.
+- **The audit assertion is a log grep, not a cell.** Both `opa.abac.audit` events are grepped off
+  **every** catalog pod (the pool round-robins, so the challenge and the elevated read can land on
+  different ones), and `STEP_UP_CHALLENGED` is asserted to carry **no** `authTime` — at challenge time
+  the subject is precisely not elevated.
 
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 

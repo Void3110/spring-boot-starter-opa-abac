@@ -6,6 +6,144 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "accessTokenLifespan": 1800,
+  "attributes": {
+    "acr.loa.map": "{\"aal1\":1,\"aal2\":2}"
+  },
+  "browserFlow": "browser-stepup",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyInitialCounter": 0,
+  "otpPolicyLookAheadWindow": 1,
+  "authenticatorConfig": [
+    {
+      "alias": "step-up-level-1",
+      "config": {
+        "loa-condition-level": "1",
+        "loa-max-age": "36000"
+      }
+    },
+    {
+      "alias": "step-up-level-2",
+      "config": {
+        "loa-condition-level": "2",
+        "loa-max-age": "300"
+      }
+    }
+  ],
+  "authenticationFlows": [
+    {
+      "alias": "browser-stepup",
+      "description": "Browser login with conditional level-1 and level-2 subflows. Bound as the realm browser flow.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "flowAlias": "browser-stepup forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-stepup forms",
+      "description": "The two level-of-authentication subflows, in ascending order.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "flowAlias": "browser-stepup level-1",
+          "requirement": "CONDITIONAL",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "flowAlias": "browser-stepup level-2",
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-stepup level-1",
+      "description": "Password. Required so the session reaches LoA 1 before the level-2 condition is evaluated - without it the level-2 condition matches every fresh login (measured, T1).",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticatorConfig": "step-up-level-1",
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-stepup level-2",
+      "description": "TOTP. Demanded when the client requests LoA 2 (acr_values=aal2) or the last level-2 authentication is older than loa-max-age.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticatorConfig": "step-up-level-2",
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
   "roles": {
     "realm": [
       {
@@ -45,7 +183,9 @@
         "openid",
         "profile",
         "email",
-        "roles"
+        "roles",
+        "basic",
+        "acr"
       ],
       "attributes": {
         "post.logout.redirect.uris": "+"
@@ -85,7 +225,9 @@
         "openid",
         "profile",
         "email",
-        "roles"
+        "roles",
+        "basic",
+        "acr"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
@@ -441,6 +583,12 @@
           "type": "password",
           "value": "sup-anna",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "step-up fixture TOTP (secret is public on purpose - demo realm)",
+          "secretData": "{\"value\":\"stepupdemofixture123\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"counter\":0,\"period\":30,\"algorithm\":\"HmacSHA1\"}"
         }
       ],
       "realmRoles": [

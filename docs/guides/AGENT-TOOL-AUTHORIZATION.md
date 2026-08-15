@@ -47,7 +47,7 @@ The spec stops at the transport edge, deliberately:
                   │  actor) invoke THIS TOOL? │                                       │  may this        │
                   │  → agent_tools.rego (NEW) │                                       │  PRINCIPAL touch │
                   │  → ceiling ∩ capability   │                                       │  THIS RESOURCE?  │
-                  └───────────────────────────┘                                       │  → UNCHANGED     │
+                  └───────────────────────────┘                                       │  → + act_chain   │
                                                                                       └──────────────────┘
         principal ceiling ∩ agent capability                ∩            principal ceiling on the row
 ```
@@ -60,9 +60,16 @@ intersection holds **across** the two layers rather than being passed between th
 MCP server can only ever fail to narrow — it can never widen. (Asserting a caller-supplied role is
 exactly the fail-open shape [[MULTI-TENANT-ISOLATION|slice B4]] removed; it is not reintroduced.)
 
-The honest cost: the per-type policies never *see* the actor, so they cannot do agent-aware **row**
-filtering. A tool needing "this agent may see only *some* of the rows its principal may see" would
-need a propagation design, which is out of scope here.
+The honest cost: the per-type policies never *see* the actor — `actor` is the MCP server's internal
+tool-gate attribute and never travels downstream. **What they do see, since slice C (ADR 0030
+Amendment 4), is the `act_chain` wire claim** the `catalog-agent-*` clients' protocol mapper mints:
+all three per-type policies carry a provenance-scoped agent deny (`is_agent_call`, a presence-test
+on the claim key) that closes the *supervised* path to delegated calls, and the catalog service's
+list authorizer drops the supervised leg on the same claim. That is a **narrowing** input — it can
+only remove rows/decisions an agent call would otherwise get — and it is scoped to supervised
+provenance; the membership-derived ceiling is untouched. General agent-aware row filtering ("this
+agent may see only *some* of the rows its principal may see") still has no propagation design and
+stays out of scope.
 
 ## Dual identity: principal, actor, chain
 

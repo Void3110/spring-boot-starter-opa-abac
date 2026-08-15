@@ -391,8 +391,9 @@ on the machine-stable `errorCode`, not the human `detail`.
 | `404` | `RESOURCE_NOT_FOUND` | No such catalog (or not visible to the caller). |
 | `422` | `TAG_VALUE_ILLEGAL` | A tag key/value was rejected — including **any** `tags` on create. |
 | `422` | `VALIDATION_FAILED` | A domain rule rejected an otherwise well-formed request. |
+| `409` | `TAG_OPERATOR_MANAGED` | A `tags` payload would assign, re-value or strip an **operator-managed** tag (the `env` tier is written only through the operator path). |
+| `409` | `STATE_CONFLICT` | The resource changed after it was authorized, or a lifecycle rule forbids the transition. |
 | `503` | `DEPENDENCY_UNAVAILABLE` | A required dependency was unavailable; the request was rejected (fail-closed). |
-| — | `STATE_CONFLICT` | Reserved conflict code in the service's `errorCode` union. |
 
 A representative `403` body when an outsider tries to read a catalog:
 
@@ -479,7 +480,9 @@ extensions (`errorCode`, `timestamp`).
     | "VALIDATION_FAILED"
     | "TAG_VALUE_ILLEGAL"
     | "DEPENDENCY_UNAVAILABLE"
-    | "STATE_CONFLICT";
+    | "STATE_CONFLICT"
+    | "TAG_OPERATOR_MANAGED"
+    | "STEP_UP_REQUIRED";
   timestamp?: string; // date-time — when the error was produced (correlation)
 }
 ```

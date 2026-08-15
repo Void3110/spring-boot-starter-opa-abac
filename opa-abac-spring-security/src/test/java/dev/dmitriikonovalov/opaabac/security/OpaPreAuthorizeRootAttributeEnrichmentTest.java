@@ -16,6 +16,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceResolver;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import java.lang.reflect.Method;
@@ -64,7 +65,7 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
         SecurityContextHolder.getContext().setAuthentication(new AbacAuthentication(
                 new AbacContext.Subject("sup-anna", List.of(), Map.of())));
         lenient().when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
-        lenient().when(opaClient.allow(any())).thenReturn(true);
+        lenient().when(opaClient.decide(any())).thenReturn(OpaDecision.of(true));
     }
 
     @AfterEach
@@ -95,7 +96,8 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
         @Override public Map<String, Object> abacAttributes() { return attributes; }
     }
 
-    @SuppressWarnings("unused")
+    // Pointcut targets only: the gate decides before any body runs, which is why none of these have one.
+    @SuppressWarnings({"unused", "java:S1186"})
     static class SampleController {
         @OpaPreAuthorize(action = "category:view", resourceType = "'category'", resourceId = "#categoryId")
         public void getCategory(UUID categoryId) {}
@@ -133,7 +135,7 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
 
     private AbacContext capturedContext() {
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        verify(opaClient).allow(captor.capture());
+        verify(opaClient).decide(captor.capture());
         return captor.getValue();
     }
 
@@ -276,7 +278,7 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
         // into an allow-with-absent-tier, and OPA must not be asked at all.
         assertThat(decision).isNotNull();
         assertThat(decision.isGranted()).isFalse();
-        verify(opaClient, never()).allow(any());
+        verify(opaClient, never()).decide(any());
         verify(resolver, never()).resolve(anyString(), anyString());
     }
 
@@ -296,7 +298,7 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
         verify(resolver, times(1)).resolve("catalog", CATALOG_ID.toString());
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        verify(opaClient, times(2)).allow(captor.capture());
+        verify(opaClient, times(2)).decide(captor.capture());
         assertThat(captor.getAllValues())
                 .allSatisfy(context -> assertThat(context.resource().rootAttributes())
                         .containsExactlyEntriesOf(Map.of("env", "staging")));

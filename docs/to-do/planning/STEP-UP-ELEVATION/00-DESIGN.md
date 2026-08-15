@@ -221,7 +221,7 @@ consumer routes it separately. Two events:
   re-enter a decision); the advice reads the **subject** from the security context. Payload:
   subject, resource type+id, governing root, the challenge params. (No `acr`/`auth_time` — the
   subject is precisely *not* elevated at challenge time.)
-- **`SUPERVISED_PRODUCTION_READ`** — in the manager, when a decision is **allowed** and
+- **`PRIVILEGED_READ`** — in the manager, when a decision is **allowed** and
   `provenance == "supervised"` and the target's `root_attributes.env` **contains** `"production"`
   (normalized scalar-or-array, mirroring the policy's `root_env_values` — the cardinality twin).
   **Elevation is implied by the allow** — the policy already required it — and is **never

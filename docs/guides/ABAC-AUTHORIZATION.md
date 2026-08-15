@@ -42,6 +42,93 @@ body, or missing/non-boolean field ⇒ `false`. `allow()` never throws for an OP
 logs a warning (path + status, never the token) and denies. The authorization manager adds a second
 fail-closed layer: any exception while building the context or calling OPA also denies.
 
+### The decision envelope — an optional, structured `deny_reason` (ADR 0030 §6)
+
+`result.allow` is a boolean across the client, both authorization managers and the policy convention.
+Some denies, though, are **answerable**: the subject would be allowed if they re-authenticated with a
+stronger, fresher factor. Rather than version the envelope, that case travels as an **optional,
+omitted-when-absent** `deny_reason` object beside `allow`:
+
+```jsonc
+{"allow": true}                                   // unchanged
+{"allow": false}                                  // unchanged — a plain deny
+{"allow": false,                                  // an ANSWERABLE deny
+ "deny_reason": {"type": "insufficient_user_authentication",
+                 "required_acr": "aal2", "max_age": 300}}
+```
+
+Every existing consumer keeps reading `allow` and is unaffected when the field is absent. A caller that
+wants the reason asks for it explicitly:
+
+```java
+OpaDecision decision = opaClient.decide(context);   // OpaDecision(boolean allow, DenyReason denyReason)
+if (!decision.allow() && decision.hasCompleteReason()) {
+    DenyReason reason = decision.denyReason();      // type, requiredAcr, maxAge
+}
+```
+
+`OpaClient.decide` is a **`default` method** delegating to `allow` with a `null` reason, so every
+implementation written before it existed compiles and behaves identically — the additive move, chosen
+over an envelope version deliberately (ADR 0030 §6). **Two caveats, both about existing code rather
+than behavior:**
+
+- **Mocks.** A Mockito `mock(OpaClient.class)` does not run default methods, so a test that stubs
+  only `when(client.allow(any()))` now gets `null` from `decide()` — which the gate reads as a
+  fail-closed deny. Tests that mock `OpaClient` must stub `decide(...)` (e.g.
+  `thenReturn(OpaDecision.of(true))`), or use a real stub class so the default runs.
+- **Name collision.** An existing implementation that already declares its own
+  `decide(AbacContext)` member no longer compiles against the interface unless the signature is
+  compatible — a source-incompatibility the additive default cannot avoid. Rename the local member
+  (the in-repo precedent is `verdictFor`). Implementations without such a member are unaffected.
+
+**The audit channel is opt-in, in your vocabulary.** The library emits two events on the
+`opa.abac.audit` SLF4J logger. `STEP_UP_CHALLENGED` needs no configuration — it reports a challenge
+the library itself minted. `PRIVILEGED_READ` answers a question only *your* domain can
+pose ("an oversight role read sensitive-tier content"), so its trigger is configuration and
+**unset means silent**:
+
+```yaml
+opa:
+  abac:
+    audit:
+      privileged-read:
+        provenance: supervised      # your role-provenance stamp for the oversight path
+        root-attribute: env         # the governing root's tier attribute
+        root-values: [production]   # the tier(s) that make a read privileged (scalar or array)
+```
+
+The trigger is evaluated inside the decision, from the decision's own inputs — the allow, the
+resolved role, the enriched root attributes — so elevation is implied by the allow and never
+re-derived (ADR 0030 §8 + Amendment 7). Leave the block out entirely and no privileged-read event is
+ever emitted; configure it *half*-way and startup fails rather than silently disabling the control.
+
+**The challenge sentence is yours too.** The 401's RFC 9470 `error_description` and the problem
+body's `detail` share one sentence, defaulting to the domain-neutral *"Re-authentication with a
+stronger, fresher factor is required"*. Override `stepUpChallengeDescription()` on your
+`AbstractProblemAdvice` subclass to say what your step-up actually protects (the example catalog
+service does). The value is emitted inside a quoted header parameter, so an override containing a
+quote or CR/LF suppresses the challenge and falls back to the plain 403 — with a warning log, like
+every other suppression rule.
+
+**Four fail-closed rules, each landing at the layer it arises:**
+
+| Situation | Result | Why |
+|---|---|---|
+| A **malformed** reason on the wire (wrong types, missing field, not an object) | plain deny, reason **dropped** | A reason whose types are not the contract is a policy the library does not understand. Types are checked by hand rather than coerced — Jackson would turn `"300"` into a window the library then advertises. |
+| A reason accompanying **`allow: true`** | allow, reason dropped | An allow is an allow; a document carrying both is contradictory. |
+| Transport failure, non-200, breaker open, retries exhausted | plain deny, **never a fabricated reason** | A reason promises "re-authenticating clears this". During an outage that promise is false, and the client would loop on a factor that changes nothing. |
+| A reason **missing any field** at the enforcement point | the ordinary 403 | See `hasCompleteReason()` — a challenge without its window is an infinite challenge loop (ADR 0030 §7). |
+
+**A decorator MUST override `decide`.** A wrapper that implements `OpaClient` and overrides only
+`allow` inherits the default — which calls the *wrapper's own* `allow` — so the delegate's reason is
+silently swallowed and every answerable deny degrades to a plain one, with nothing failing and nothing
+logged. `ResilientOpaClient` overrides it for exactly this reason, and a test asserts the call reaches
+the delegate.
+
+**Reasons are a single-decision concern.** `compile` (the list residual) and `allowAll` (the batch)
+stay boolean: a residual is a row predicate and a batch is an affordance list, and neither is a request
+a client could re-authenticate for.
+
 ## The decision backbone — `RoleDefinition` + `RoleDefinitionSupplier`
 
 Authorization is driven **primarily by the caller's role definition**, not by raw token roles:

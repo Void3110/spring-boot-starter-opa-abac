@@ -341,13 +341,16 @@ on the typed `errorCode`, not on the human `detail`.**
 | Status | `errorCode` | When |
 |--------|-------------|------|
 | `400` | `VALIDATION_FAILED` | Malformed request — a bad `page`/`perPage` bound, a malformed uuid, a body that fails schema validation |
+| `401` | `STEP_UP_REQUIRED` | Step-up (RFC 9470): the caller is authorized except for authentication freshness — a supervisor reading production content before the second factor. The `WWW-Authenticate` header carries the challenge; re-authenticating at the challenged ACR clears the deny. Reads only (`list`/`get`) |
 | `403` | `ACCESS_DENIED` | The caller is authenticated but not permitted for this action on this category |
 | `404` | `RESOURCE_NOT_FOUND` | The catalog or category does not exist, or is not visible to the caller |
+| `409` | `TAG_OPERATOR_MANAGED` | A `tags` payload would assign, re-value or strip an **operator-managed** tag (the `env` tier is written only through the operator path) |
 | `422` | `TAG_VALUE_ILLEGAL` | A `tags` payload used an unknown key or a value the dictionary forbids (on create or update) |
 | `503` | `DEPENDENCY_UNAVAILABLE` | A required dependency (e.g. the policy engine) was unavailable — the request is **fail-closed** (rejected, not allowed) |
 
-Which statuses each endpoint can emit is defined in the spec: `list` → `400/403`; `create` →
-`400/403/404/422/503`; `get` → `403/404`; `update` → `403/404/422/503`; `delete` → `403/404`.
+Which statuses each endpoint can emit is defined in the spec: `list` → `400/401/403/404`; `create` →
+`400/403/404/409/422/503`; `get` → `401/403/404`; `update` → `400/403/404/409/422/503`; `delete` →
+`403/404/409`.
 
 <a id="example-422-tag_value_illegal"></a>
 **Example — `422 TAG_VALUE_ILLEGAL`** (a create or update whose `tags` violate the dictionary):
@@ -426,7 +429,9 @@ Field-level truth is the OpenAPI spec; these are the shapes as documented there.
     | "VALIDATION_FAILED"
     | "TAG_VALUE_ILLEGAL"
     | "DEPENDENCY_UNAVAILABLE"
-    | "STATE_CONFLICT";
+    | "STATE_CONFLICT"
+    | "TAG_OPERATOR_MANAGED"
+    | "STEP_UP_REQUIRED";
   timestamp?: string;               // ISO-8601, when the error was produced (correlation)
 }
 ```

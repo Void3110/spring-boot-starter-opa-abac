@@ -30,7 +30,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * {@code errorCode}.
  *
  * <p>Extends {@link AbstractProblemAdvice} (the shared body builder + the inherited
- * {@code AccessDeniedException} → {@code 403 ACCESS_DENIED} mapping). The status for each exception is
+ * {@code AccessDeniedException} mapping: {@code 403 ACCESS_DENIED}, or — where a decision carries a
+ * complete step-up reason, which this service's policies never emit — {@code 401 STEP_UP_REQUIRED}
+ * with an RFC 9470 challenge). The status for each exception is
  * <strong>unchanged</strong> from before. Per ADR 0011 §4 (semantic granularity) the {@code 409} conflict
  * group is split into distinct {@link UserMgmtErrorCode}s a client can branch on; generic failures
  * (not-found, validation) reuse {@link LibraryErrorCode}; the subset rule uses the library's

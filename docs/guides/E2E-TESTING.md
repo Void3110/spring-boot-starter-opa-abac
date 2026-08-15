@@ -87,11 +87,21 @@ individual prerequisites are in the per-matrix sections below and in
 
 ## The in-network token caveat (important)
 
-Keycloak is **hostname-aware**. Inside the compose network it issues and advertises the issuer
-`http://keycloak:8888`; from the host it advertises `http://localhost:28888`. **APISIX discovers and
-validates the issuer in-network**, so a token used *through the gateway* must be minted in-network
-(issuer `keycloak:8888`) — a token obtained against `localhost:28888` has a mismatched issuer and the
-gateway rejects it.
+Keycloak is **hostname-aware**: the `iss` claim follows the request's Host header
+(`KC_HOSTNAME_STRICT=false`), so an in-network mint carries `http://keycloak:8888` and a host-port
+mint carries `http://localhost:28888`. The openid-connect plugin validates the token signature
+against the realm JWKS and does not itself enforce `iss` (measured 2026-08-14), so the gateway
+carries an **issuer-allowlist guard** beside it (`ISSUER_ALLOWLIST` in `init-routes.sh`, hardened
+the same day): three authorities pass — `keycloak:8888` (every runner's in-network mints, and the
+miner's presented authority), **`localhost:9085`, the gateway origin** (the demo SPA's whole PKCE
+flow goes through the gateway's `/realms/*` passthrough, and Keycloak rewrites its advertised
+issuer to it — packaged and vite-dev alike), and `localhost:28888` (the published Keycloak port).
+A realm-signed token minted with a forged Host header is refused 401, under **any** cased spelling
+of the `Bearer` scheme. The suite still mints in-network so every token
+carries the canonical issuer. The step-up runner's E9 preflight pins all three halves — the `iss`
+value, the tamper control (the 200 is signature-validated), the foreign-issuer control across three
+cased spellings and all three guarded routes (the allowlist actually bites), and the gateway-origin
+control (it does **not** bite the browser — the half whose absence broke the SPA for one commit).
 
 So the suite does **not** grab the token from the host. The runner mints it from inside the shared
 compose network (`opa-abac-example_default`) and hands it to newman:
@@ -113,6 +123,69 @@ the in-network token directly.
 > Alternative: run newman itself inside a container attached to `opa-abac-example_default`, so its
 > own "Auth" request reaches `keycloak:8888`. The runner's default (mint-then-inject) avoids needing
 > a newman image on the network and keeps the collection host-runnable.
+
+## The code-flow token path (when ROPC is structurally wrong)
+
+Every runner above mints with **ROPC** (`mint_token()` — the direct grant). That is fine for
+everything the suite asserted before slice C, and **structurally unusable** for step-up: a direct
+grant has no authentication *event*, so Keycloak has no login instant to report and the token
+carries **no `auth_time`** at all (ADR [[adr/0030-step-up-decision-contract|0030]] §Context;
+re-measured on the rig — a ROPC token carries `acr` but never `auth_time`). Step-up's whole control
+is `now − auth_time ≤ max_age + skew`, so the step-up cells need a real browser-shaped login.
+
+`scripts/postman/mint-code-flow-token.py` is that login, scripted — **stdlib-only python3** (no
+venv, no `requests`): the PKCE authorization-code flow, the login form, and RFC 6238 TOTP computed
+offline from the realm's seeded fixture secret. It prints the access token on **stdout** and every
+diagnostic on stderr, so a runner captures it with `TOKEN="$(./mint-code-flow-token.py …)"`.
+
+```bash
+cd scripts/postman
+./mint-code-flow-token.py --user sup-anna                                    # an ordinary aal1 token
+./mint-code-flow-token.py --user sup-anna --acr aal2 --cookie-jar /tmp/a.jar # elevated, via TOTP
+./mint-code-flow-token.py --user sup-anna --acr aal2 --no-max-age \
+                          --cookie-jar /tmp/a.jar                            # SSO reuse: STALE auth_time
+```
+
+| Flag | What it is for |
+|------|----------------|
+| `--acr aal2` | sends `acr_values` **plus** an essential `acr` claim and `max_age=0`, so Keycloak's conditional level-2 subflow demands the second factor and stamps a **fresh** `auth_time` |
+| `--no-max-age` | never sends `max_age` — the **loop-prevention negative**: an existing SSO session answers, `acr` is still `aal2`, and `auth_time` is the **original** login instant. ADR 0030 §7's "the client MUST forward `max_age`", as measured behaviour |
+| `--cookie-jar FILE` | persists the Keycloak SSO session in a Mozilla-format cookie file, so a **later invocation** reuses it. Cross-invocation SSO reuse is the whole mechanism `--no-max-age` measures |
+| `--issuer` | the authority presented as the `Host` header, and therefore the `iss` the token carries (see below) |
+
+**The in-network caveat does not apply here, and that is deliberate.** Keycloak 26 derives its
+frontend URL — and therefore `iss` — from the request's `Host` header. The miner connects to
+Keycloak's **host** port (`localhost:28888`) while presenting the **in-network** authority
+(`http://keycloak:8888`), so its tokens carry exactly the issuer every in-network ROPC token
+carries, and it needs no container on the compose network. The flip side is that every URL
+Keycloak then renders (form actions, redirects) names `keycloak:8888` and is unreachable from the
+host, so the miner rebases each one onto the connect URL before following it. *(Measured
+2026-08-14: APISIX validates the token **signature** against the realm JWKS and does not itself
+enforce `iss`, so a host-issuer token happens to pass today as well — the miner takes parity by
+construction rather than leaving it to the validator's leniency.)*
+
+Three gotchas are handled inside the script, each of which reads as a different bug than it is:
+
+- **`Secure` cookies over plain http.** Keycloak's login cookies are `Secure`-flagged and a
+  well-behaved client silently withholds them on a plain-http URL; Keycloak then answers the
+  login-actions POST with a misleading `400 "Restart login cookie not found"`. The miner drives the
+  `Cookie` header by hand and writes the jar with `secure=False` on purpose.
+- **TOTP codes are one-time.** Keycloak refuses a code already consumed for the credential, so two
+  elevations inside the same 30-second window fail with a bare *"Invalid authenticator code."* —
+  indistinguishable from a wrong secret. The step-up matrix elevates several times in quick
+  succession, so the miner detects the re-rendered form, waits for the next window, and retries
+  (bounded); a genuinely wrong secret still aborts.
+- **Never hand back an unelevated token.** If `--acr` was requested and the minted token does not
+  carry it, the miner **aborts** rather than printing an `aal1` token — otherwise a silent
+  degradation would make a step-up *deny* cell pass for the wrong reason.
+
+Its contract is pinned by the step-up **runner's preflight** (`run-step-up-matrix.sh` — the E9
+block plus the dual-identity checks; the original in-ticket check was a throwaway): `aal1` +
+numeric `auth_time`; `aal2` through the TOTP step with a fresh `auth_time`; **issuer parity** with
+the in-network mints (APISIX validates the signature, not `iss`, so this is the one place a
+`DEFAULT_ISSUER` regression would be caught); and a minted token reaching a 200 through the gateway
+with a tampered-token 401 as the control, so the 200 is not a bypass. The `--no-max-age` SSO-reuse
+half (the **same** `auth_time` back with an advanced `iat`) is measured by the drill's E3 cell.
 
 ## Running it
 

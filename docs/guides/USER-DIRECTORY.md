@@ -122,7 +122,7 @@ ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2   # force-enables OIDC + user-service
 
 The flag wires the config above into the user-service pod (see `infra/compose.usermgmt.yaml`) against
 the realm's `catalog-directory` client. **The server URL is the in-network `http://keycloak:8888`** —
-`KC_HOSTNAME_ADMIN_URL` (`localhost:28888`) is a console-URL rewrite, *not* the REST path (ADR 0020
+a console-URL rewrite (Keycloak's admin-URL knob) is *not* the REST path (ADR 0020
 §6). The e2e cells live in the team matrix (`scripts/postman/run-team-matrix.sh`): a never-provisioned
 account is found while its provisioned `?subject` lookup stays an empty page, blank `q` stays empty,
 and the 50 clamp holds end-to-end.

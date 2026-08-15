@@ -19,14 +19,25 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * {@code errorCode}.
  *
  * <p>Extends {@link AbstractProblemAdvice}, which supplies the body builder and the inherited
- * {@code AccessDeniedException} → {@code 403 ACCESS_DENIED} mapping (so a denied {@code @OpaPreAuthorize}
- * call also lands as {@code problem+json}). The status for each exception is <strong>unchanged</strong>
+ * {@code AccessDeniedException} mapping (so a denied {@code @OpaPreAuthorize} call also lands as
+ * {@code problem+json}): {@code 403 ACCESS_DENIED} ordinarily, or — when the decision carries a complete
+ * step-up reason — {@code 401 STEP_UP_REQUIRED} with an RFC 9470 {@code WWW-Authenticate} challenge. The status for each exception is <strong>unchanged</strong>
  * from before — only the body shape and the typed code are new. Every catalog failure maps cleanly to a
  * {@link LibraryErrorCode}; {@link CatalogErrorCode} carries the app-specific ones (today:
  * {@code TAG_OPERATOR_MANAGED}).
  */
 @RestControllerAdvice
 public class ApiExceptionHandler extends AbstractProblemAdvice {
+
+    /**
+     * THIS service's step-up wording. The library's default is deliberately domain-neutral (it is
+     * published, and cannot know what an adopter's step-up protects); a catalog that knows its
+     * elevation guards the production tier says so — ADR 0030 §8 Amendment 7.
+     */
+    @Override
+    protected String stepUpChallengeDescription() {
+        return "A second factor is required to read production content";
+    }
 
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ProblemDetail> handleNotFound(NotFoundException ex, HttpServletRequest request) {

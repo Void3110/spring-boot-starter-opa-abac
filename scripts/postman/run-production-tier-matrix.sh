@@ -7,7 +7,8 @@
 #   E1  sup-anna on a STAGING catalog's contents  -> the four child reads 200, on EXACT ids
 #   E7  ...and her list rows carry NO _actions map at all (the pinned B contract: omitted, never a
 #       fabricated all-false map — the bulk path has no root context, so every verb is false)
-#   E2  the same four on the PRODUCTION catalog   -> each 403 (a PLAIN deny; deny_reason is slice C)
+#   E2  the same four on the PRODUCTION catalog   -> each 401 + the RFC 9470 challenge +
+#       STEP_UP_REQUIRED (slice C's flip of B's plain 403 — the C-flip cells, asserted BY VALUE)
 #   E6  the catalog's own OWNER reads those same production contents -> 200, _actions present and
 #       honest (members are structurally unaffected: the tier denies are provenance-scoped)
 #   E3  the four on an UNTAGGED catalog           -> 200 (ADR 0030 §3's default, safe only while
@@ -20,9 +21,13 @@
 # E4 + E5 together are the slice: the tier moves on the very next request when — and only when — the
 # OPERATOR moves it, and nothing the supervised population can do through the API moves it at all.
 #
-# Prereq: the full user-service rig, with images carrying T1-T4:
+# Prereq: the full user-service rig, with images carrying slice C (the E2/E4 cells assert C's 401
+# shape) and the C realm (sup-anna's seeded TOTP factor — the miner computes her direct-grant otp):
+#   ./deploy.sh down                                    # so Keycloak re-imports the realm
+#   ./deploy.sh build                                   # fresh images BEFORE the up (`up` reuses one).
+#                                                       # NOTE: builds the catalog image (+MCP when
+#                                                       # ENABLE_MCP=1) — build usermgmt explicitly.
 #   ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
-#   ./deploy.sh build                                   # fresh catalog image; build usermgmt explicitly
 #
 # T4 edited category.rego + product.rego (the four tier-deny clauses every cell here depends on), so
 # this runner RESTARTS THE OPA CONTAINER itself before minting tokens — `--watch` does not reliably
@@ -74,14 +79,36 @@ for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; br
 [ -n "$RUNTIME" ] || { echo "ERROR: need docker or podman to mint in-network tokens." >&2; exit 1; }
 
 # --- helpers -----------------------------------------------------------------
-mint_token() {
-  local user="$1" pass="$2" json
+mint_token() {   # $1 user $2 pass [$3 client $4 secret $5 otp]
+  local user="$1" pass="$2" client="${3:-$CLIENT_ID}" secret="${4:-$CLIENT_SECRET}" otp="${5:-}" json
   json="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
     -X POST "$KEYCLOAK_TOKEN_URL" \
-    -d grant_type=password -d "client_id=$CLIENT_ID" -d "client_secret=$CLIENT_SECRET" \
-    -d "username=$user" -d "password=$pass" || true)"
+    -d grant_type=password -d "client_id=$client" -d "client_secret=$secret" \
+    -d "username=$user" -d "password=$pass" ${otp:+-d "otp=$otp"} || true)"
   printf '%s' "$json" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
 }
+# sup-anna owns a TOTP factor since STEP-UP-ELEVATION (the realm seeds it so the step-up matrix can
+# elevate her), and Keycloak's DIRECT-GRANT flow demands a code from any identity that has one — a
+# plain ROPC mint for her now answers `invalid_grant / Invalid user credentials`, which reads as a
+# wrong password and is not. The code is computed by the step-up miner so the fixture secret and the
+# RFC 6238 parameters live in exactly one place. Keycloak also refuses a code it has already
+# consumed, hence the next-window retry.
+MINER="${MINER:-$SELF_DIR/mint-code-flow-token.py}"
+# The miner preflight (mirrors run-step-up-matrix.sh): without it a missing/non-executable miner
+# yields an empty otp inside the command substitution (errexit does not fire there), burns the
+# three retry windows, and dies ~93s later on the "stale realm" message — the wrong diagnosis.
+command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (the token miner)." >&2; exit 1; }
+[ -x "$MINER" ] || { echo "ERROR: $MINER not found or not executable." >&2; exit 1; }
+mint_anna_token() {   # [$1 client $2 secret]
+  local client="${1:-$CLIENT_ID}" secret="${2:-$CLIENT_SECRET}" token=""
+  for _ in 1 2 3; do
+    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")"
+    [ -n "$token" ] && break
+    sleep 31   # the current TOTP window was already spent; wait it out
+  done
+  printf '%s' "$token"
+}
+
 
 token_sub() {
   local tok="$1" payload
@@ -115,7 +142,7 @@ done
 # `editor` is her report AND the owner of the three Tier teams — one persona covering the member
 # half (E6, E5) and the reach half at once.
 echo "==> Minting the production-tier personas' tokens in-network ($NETWORK) ..."
-ANNA_TOKEN="$(mint_token sup-anna sup-anna)"
+ANNA_TOKEN="$(mint_anna_token)"
 EDITOR_TOKEN="$(mint_token editor editor)"
 for pair in "sup-anna:$ANNA_TOKEN" "editor:$EDITOR_TOKEN"; do
   name="${pair%%:*}"; tok="${pair#*:}"
@@ -252,6 +279,7 @@ echo "==> newman: the production-tier matrix (E1, E7, E2, E6, E3, E5, then E4) .
 newman run "$COLLECTION" \
   -e "$ENV_FILE" \
   --env-var "gateway=$GATEWAY" \
+  --env-var "collection_base_url=$GATEWAY/api/v1" \
   --env-var "catalog_service=$CATALOG_SERVICE" \
   --env-var "anna_token=$ANNA_TOKEN" \
   --env-var "editor_token=$EDITOR_TOKEN" \

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import java.lang.reflect.Method;
@@ -100,7 +101,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
     @Test // U22 — OPA allows → granted
     void allow_granted() throws Exception {
-        when(opaClient.allow(any())).thenReturn(true);
+        when(opaClient.decide(any())).thenReturn(OpaDecision.of(true));
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
@@ -112,7 +113,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
     @Test // U23 — OPA denies → not granted
     void deny_notGranted() throws Exception {
-        when(opaClient.allow(any())).thenReturn(false);
+        when(opaClient.decide(any())).thenReturn(OpaDecision.of(false));
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
@@ -123,7 +124,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
     @Test // U24 — OPA client throws → fail-closed deny
     void opaError_failClosedDeny() throws Exception {
-        when(opaClient.allow(any())).thenThrow(new RuntimeException("transport blew up"));
+        when(opaClient.decide(any())).thenThrow(new RuntimeException("transport blew up"));
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
@@ -154,7 +155,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     // OPA context's resource (the queried policy) stays `category`.
     void roleResourceOverride_resolvesRoleOnParent() throws Exception {
         UUID catalogId = UUID.randomUUID();
-        when(opaClient.allow(any())).thenReturn(true);
+        when(opaClient.decide(any())).thenReturn(OpaDecision.of(true));
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
 
         ArgumentCaptor<AbacContext> ctx = ArgumentCaptor.forClass(AbacContext.class);
@@ -164,7 +165,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         // The role is resolved on the parent catalog (the override), NOT on (category, null).
         verify(roleDefinitionSupplier).lookup("user-1", "catalog", catalogId.toString());
         // But the decided resource (the queried policy) is still `category`.
-        verify(opaClient).allow(ctx.capture());
+        verify(opaClient).decide(ctx.capture());
         assertThat(ctx.getValue().resource().type()).isEqualTo("category");
         assertThat(ctx.getValue().action()).isEqualTo("category:create");
     }
@@ -178,7 +179,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
         assertThat(decision.isGranted()).isFalse();
         // OPA is never asked when the override can't resolve.
-        verify(opaClient, never()).allow(any());
+        verify(opaClient, never()).decide(any());
     }
 
     @Test // unannotated method → DENY, not abstain. The manager is bound to an @OpaPreAuthorize pointcut,
@@ -199,7 +200,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {null}));
 
         assertThat(decision.isGranted()).isFalse();
-        verify(opaClient, never()).allow(any());
+        verify(opaClient, never()).decide(any());
     }
 
     @Test // U27 + U28 — RoleDefinitionSupplier consulted; AbacContext carries action + resource + role_definition
@@ -209,13 +210,13 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 "catalog-editor", Map.of("role_level", 20), Map.of("product", List.of("read", "write")));
         when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString()))
                 .thenReturn(Optional.of(roleDef));
-        when(opaClient.allow(any())).thenReturn(true);
+        when(opaClient.decide(any())).thenReturn(OpaDecision.of(true));
 
         manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        verify(opaClient).allow(captor.capture());
+        verify(opaClient).decide(captor.capture());
         AbacContext sent = captor.getValue();
         assertThat(sent.action()).isEqualTo("product:write");
         assertThat(sent.resource().type()).isEqualTo("product");
@@ -240,7 +241,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         assertThat(decision.isGranted()).isFalse();
-        verify(opaClient, never()).allow(any());
+        verify(opaClient, never()).decide(any());
     }
 
     @Test // B2 U3 — the SIBLING (designed path unbroken): supplier returns Optional.empty() (authoritative
@@ -250,28 +251,28 @@ class OpaPreAuthorizeAuthorizationManagerTest {
         UUID productId = UUID.randomUUID();
         when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString()))
                 .thenReturn(Optional.empty());
-        when(opaClient.allow(any())).thenReturn(true);
+        when(opaClient.decide(any())).thenReturn(OpaDecision.of(true));
 
         AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
 
         assertThat(decision.isGranted()).isTrue();
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        verify(opaClient).allow(captor.capture());
+        verify(opaClient).decide(captor.capture());
         assertThat(captor.getValue().roleDefinition()).isNull(); // no role_definition → fallback eligible
     }
 
     @Test // U29 — resource() SpEL resolves an AbacResource instance
     void resourceInstance_resolvedFromSpel() throws Exception {
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
-        when(opaClient.allow(any())).thenReturn(true);
+        when(opaClient.decide(any())).thenReturn(OpaDecision.of(true));
         SampleProduct product = new SampleProduct("p-42");
 
         manager.authorize(noopAuthSupplier,
                 invocationOf("writeInstance", new Class<?>[] {SampleProduct.class}, new Object[] {product}));
 
         ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
-        verify(opaClient).allow(captor.capture());
+        verify(opaClient).decide(captor.capture());
         AbacContext.Resource resource = captor.getValue().resource();
         assertThat(resource.type()).isEqualTo("product");
         assertThat(resource.id()).isEqualTo("p-42");
