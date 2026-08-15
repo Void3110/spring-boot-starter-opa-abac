@@ -190,7 +190,7 @@ newman run "$COLLECTION" \
   --env-var "apac_category_id=$APAC_CATEGORY_ID" \
   --env-var "viewer_token=$VIEWER_TOKEN" \
   --env-var "editor_token=$EDITOR_TOKEN" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/action-enrichment-matrix-report.json"
 
 # --- E4: enrichment-never-harms SMOKE CHECK with OPA down (NOT the full omit-on-failure proof) -------

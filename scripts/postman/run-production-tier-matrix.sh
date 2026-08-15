@@ -292,7 +292,7 @@ newman run "$COLLECTION" \
   --env-var "prod_product_id=$PROD_PRODUCT_ID" \
   --env-var "untagged_category_id=$UNTAGGED_CATEGORY_ID" \
   --env-var "untagged_product_id=$UNTAGGED_PRODUCT_ID" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/production-tier-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

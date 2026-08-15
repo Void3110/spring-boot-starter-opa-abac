@@ -133,7 +133,7 @@ NEWMAN_ARGS=(
   -e "$ENV_FILE"
   --env-var "access_token=$ACCESS_TOKEN"
   --env-var "b4_bootstrap=$B4_BOOTSTRAP"
-  --reporter-cli
+  --reporters cli,json
   --reporter-json-export "$REPORT_DIR/$RUN_ID/$(basename "${COLLECTION%.json}")-report.json"
 )
 [ -n "$FOLDER" ]  && NEWMAN_ARGS+=(--folder "$FOLDER")

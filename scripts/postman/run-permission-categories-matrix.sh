@@ -262,7 +262,7 @@ newman run "$COLLECTION" \
   --env-var "ladder_token=$LADDER_TOKEN" \
   --env-var "senior_token=$SENIOR_TOKEN" \
   --env-var "admin_token=$ADMIN_TOKEN" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/permission-categories-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

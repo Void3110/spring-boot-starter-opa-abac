@@ -234,7 +234,7 @@ newman run "$COLLECTION" \
   --env-var "writer_viewer_token=$WRITER_VIEWER_TOKEN" \
   --env-var "writer_editor_token=$WRITER_EDITOR_TOKEN" \
   --env-var "reader_editor_token=$READER_EDITOR_TOKEN" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/resource-resolution-matrix-report.json"
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --

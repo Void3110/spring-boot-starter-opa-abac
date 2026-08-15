@@ -184,7 +184,7 @@ newman run "$COLLECTION" \
   --env-var "stranger_token=$STRANGER_TOKEN" \
   --env-var "owner_token=$OWNER_TOKEN" \
   --env-var "phase=pre" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/hierarchy-list-matrix-pre.json"
 
 # --- RE-PARENT: move the apac Category subtree under the FOREIGN catalog ------
@@ -226,7 +226,7 @@ newman run "$COLLECTION" \
   --env-var "stranger_token=$STRANGER_TOKEN" \
   --env-var "owner_token=$OWNER_TOKEN" \
   --env-var "phase=post" \
-  --reporter-cli \
+  --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/hierarchy-list-matrix-post.json"
 
 echo "==> Hierarchy-aware list matrix: all checks passed (widening, different-sets, deny, stranger, re-parent)."
