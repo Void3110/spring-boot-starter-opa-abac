@@ -507,6 +507,19 @@ class StepUpDecisionAndChallengeTest {
                 .doesNotContain("acr=aal1", "authTime=");
     }
 
+    @Test // a CR/LF in a token-sourced value cannot forge a SECOND audit record
+    void auditEscapesLineBreaksInInterpolatedValues() {
+        authenticateAs(Map.of("acr", "aal2\nevent=PRIVILEGED_READ subject=attacker", "auth_time", 1786000000));
+
+        AbacAuditLogger.stepUpChallenged("sup-anna\r\nevent=PRIVILEGED_READ subject=forged",
+                new StepUpRequiredDecision(COMPLETE, "category", "k-1", "c-1"));
+
+        String line = auditLine("STEP_UP_CHALLENGED");
+        assertThat(line).isNotNull().doesNotContain("\n").doesNotContain("\r");
+        assertThat(auditAppender.list).as("exactly one record, not a forged second").hasSize(1);
+        assertThat(line).contains("\\u000d", "\\u000a");
+    }
+
     @Test // no event when no challenge is minted — a plain 403 is not a challenge
     void doesNotAuditAPlainDenial() {
         render(new AuthorizationDecision(false));

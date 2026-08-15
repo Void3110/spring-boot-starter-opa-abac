@@ -41,6 +41,46 @@ public final class AbacAuditLogger {
     private AbacAuditLogger() {}
 
     /**
+     * Neutralise a value before it is interpolated into a <strong>line-oriented</strong> audit record.
+     *
+     * <h2>Why the audit channel needs this and the header path's allowlist is not enough</h2>
+     * These records are the oversight evidence the events exist to produce, and their consumers are
+     * line-oriented (the e2e greps them off the pods). Several interpolated values arrive from the
+     * token or from a resolver — {@code subject} is whatever {@code opa.abac.subject.id-claim} names,
+     * {@code acr}/{@code auth_time} are copied verbatim from the JWT, {@code resourceId} is the
+     * SpEL-resolved id an adopter may bind from a request body — so an embedded CR/LF would terminate
+     * the record and let the remainder be read as a SECOND, forged event. The wire-visible half
+     * already refuses CR/LF before a value reaches a header ({@code AbstractProblemAdvice}); applying
+     * the same discipline here closes the asymmetry.
+     *
+     * <p>Values are <em>escaped</em>, not rejected: an audit record must still be emitted (a dropped
+     * record is the outcome the forgery wanted), so the line stays intact and readable with the
+     * breaks made visible.
+     *
+     * @param value any interpolated value, or {@code null}
+     * @return the value with CR/LF and other control characters escaped, or {@code null} unchanged
+     */
+    private static Object safe(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString();
+        StringBuilder out = null;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\r' || c == '\n' || Character.isISOControl(c)) {
+                if (out == null) {
+                    out = new StringBuilder(text.length() + 8).append(text, 0, i);
+                }
+                out.append(String.format("\\u%04x", (int) c));
+            } else if (out != null) {
+                out.append(c);
+            }
+        }
+        return out == null ? value : out.toString();
+    }
+
+    /**
      * Emit {@code STEP_UP_CHALLENGED} — a 401 + challenge was returned to {@code subjectId}.
      *
      * @param subjectId the challenged subject, or {@code null} if the context no longer holds one
@@ -51,13 +91,13 @@ public final class AbacAuditLogger {
             DenyReason reason = decision.reason();
             audit.info("event=STEP_UP_CHALLENGED subject={} resourceType={} resourceId={} "
                             + "governingRootId={} requiredAcr={} maxAge={} reasonType={}",
-                    subjectId,
-                    decision.resourceType(),
-                    decision.resourceId(),
-                    decision.governingRootId(),
-                    reason.requiredAcr(),
+                    safe(subjectId),
+                    safe(decision.resourceType()),
+                    safe(decision.resourceId()),
+                    safe(decision.governingRootId()),
+                    safe(reason.requiredAcr()),
                     reason.maxAge(),
-                    reason.type());
+                    safe(reason.type()));
         } catch (RuntimeException e) {
             log.debug("audit emission failed for STEP_UP_CHALLENGED ({})", e.getClass().getSimpleName());
         }
@@ -86,16 +126,16 @@ public final class AbacAuditLogger {
             String governingRootId,
             String accessPath) {
         try {
-            Map<String, Object> safe = attributes == null ? Map.of() : attributes;
+            Map<String, Object> attrs = attributes == null ? Map.of() : attributes;
             audit.info("event=PRIVILEGED_READ subject={} accessPath={} governingRootId={} "
                             + "resourceType={} resourceId={} acr={} authTime={}",
-                    subjectId,
-                    accessPath,
-                    governingRootId,
-                    resourceType,
-                    resourceId,
-                    safe.get("acr"),
-                    safe.get("auth_time"));
+                    safe(subjectId),
+                    safe(accessPath),
+                    safe(governingRootId),
+                    safe(resourceType),
+                    safe(resourceId),
+                    safe(attrs.get("acr")),
+                    safe(attrs.get("auth_time")));
         } catch (RuntimeException e) {
             log.debug("audit emission failed for PRIVILEGED_READ ({})",
                     e.getClass().getSimpleName());

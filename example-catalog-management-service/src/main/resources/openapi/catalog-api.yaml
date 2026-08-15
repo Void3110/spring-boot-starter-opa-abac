@@ -471,8 +471,11 @@ components:
         WWW-Authenticate:
           description: >-
             The RFC 9470 challenge, e.g. `Bearer error="insufficient_user_authentication",
-            error_description="...", acr_values="aal2", max_age="300"`. Its parameters come from
-            the policy's deny reason, never from a service-local copy.
+            error_description="...", acr_values="aal2", max_age="300"`. The DECIDING parameters —
+            `error`, `acr_values` and `max_age` — come from the policy's deny reason, never from a
+            service-local copy, so the challenge can never advertise a level or window the policy
+            does not enforce. `error_description` is human-facing prose owned by this service (the
+            library's default is domain-neutral; see ADR 0030 Amendment 7) and is not a control.
           schema:
             type: string
       content:

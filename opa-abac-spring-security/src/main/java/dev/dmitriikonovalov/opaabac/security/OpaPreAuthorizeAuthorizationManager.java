@@ -210,7 +210,12 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
 
     /**
      * Emit {@code PRIVILEGED_READ} (ADR 0030 §8 + Amendment 7) when — and only when — an <b>allowed</b>
-     * decision matched the adopter's {@link PrivilegedReadAuditPolicy}: the resolved role carries the
+     * decision matched the adopter's {@link PrivilegedReadAuditPolicy}. <b>The trigger does not consult
+     * the action</b>: in this repo the matching provenance is a read-only ceiling, so every match IS a
+     * read and the name holds — but an adopter whose privileged role may write will see writes reported
+     * under the same event. That is deliberate (the event answers "a privileged access happened", and
+     * narrowing it to verbs would put a second copy of the permission model here), and it is the reason
+     * the name is the generic {@code PRIVILEGED_READ} rather than a verb-specific one. The match is: the resolved role carries the
      * configured <b>provenance</b>, and the governing root's configured <b>tier attribute</b> holds one of
      * the configured <b>tier values</b>. With no policy configured, nothing is emitted — the words
      * {@code supervised} and {@code production} are this repo's EXAMPLE vocabulary, not the library's.
