@@ -215,6 +215,26 @@ class AgentSupervisedLegIT {
                 .andExpect(jsonPath("$.items[0].id").value(memberCatalog.toString()));
     }
 
+    @Test // I2 (ADR 0033): the agent degrade branch still labels HONESTLY — membership rows, all "member"
+    void anAgentMarkedCallLabelsItsSurvivingRowsMember() throws Exception {
+        // The supervised leg is skipped for an agent-marked call, so the supervised id set is EMPTY —
+        // present-but-empty, not absent. The rows that survive really did arrive by membership, so they
+        // must be labelled `member` rather than left unlabelled: a degrade branch that can still answer
+        // honestly does. (An agent-marked PURE supervisor gets the empty page, so there is nothing to
+        // label there — that is the cell above.)
+        listAs(MEMBER, "[\"agent-readonly\"]")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(memberCatalog.toString()))
+                .andExpect(jsonPath("$.items[0]._provenance").value("member"));
+
+        // And the same subject WITHOUT the claim is labelled identically — the label tracks the leg the
+        // row arrived on, not whether the request was agent-marked.
+        listAs(MEMBER, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0]._provenance").value("member"));
+    }
+
     // --- test doubles --------------------------------------------------------------------
 
     @TestConfiguration

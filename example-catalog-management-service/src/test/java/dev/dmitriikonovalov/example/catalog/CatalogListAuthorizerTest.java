@@ -12,6 +12,7 @@ import dev.dmitriikonovalov.example.catalog.config.CatalogListAuthorizer;
 import dev.dmitriikonovalov.example.catalog.config.SupervisedScopeClient;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
+import dev.dmitriikonovalov.example.catalog.security.CatalogProvenanceMemo;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -28,6 +29,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -41,6 +43,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
  * Unit tests for {@link CatalogListAuthorizer}: the fail-closed branches (Slice B4) <b>and</b> the two-leg
@@ -88,6 +93,11 @@ class CatalogListAuthorizerTest {
 
     @BeforeEach
     void authenticate() {
+        // The `_provenance` memo lives in request attributes (the repo's RequestContextHolder idiom),
+        // so bind one: without it the write is a clean no-op and the memo assertions would pass
+        // vacuously by reading an empty Optional back.
+        RequestContextHolder.setRequestAttributes(
+                new ServletRequestAttributes(new MockHttpServletRequest()));
         when(queryServiceProvider.getIfAvailable()).thenReturn(queryService);
         when(resolverProvider.getIfAvailable()).thenReturn(governedScopeResolver);
         when(supervisedProvider.getIfAvailable()).thenReturn(supervisedClient);
@@ -99,6 +109,7 @@ class CatalogListAuthorizerTest {
     @AfterEach
     void clear() {
         SecurityContextHolder.clearContext();
+        RequestContextHolder.resetRequestAttributes();
     }
 
     private void membership(UUID... ids) {
@@ -386,6 +397,66 @@ class CatalogListAuthorizerTest {
         assertThat(composition.scopeIds()).containsExactly(C1, C2);
         assertThat(composition.subtreeIds()).isNull();
         assertThat(composition.role()).isEqualTo(MEMBERSHIP_ROLE);
+    }
+
+    // --- ADR 0033 — what the `_provenance` memo carries on each branch (I2's degrade cells) -----------
+    //
+    // The memo IS the list's label. These assert what it holds where the branch is hard to reach from
+    // an IT: the advice's mapping of memo → label is CatalogProvenanceAdviceTest's (U7).
+
+    @Test // a mixed page: the memo names exactly the supervised ids, so those rows label `supervised`
+    void memoCarriesTheSupervisedIdsOnAMixedPage() {
+        membership(C1);
+        supervised(C3);
+        roleOn(C1, MEMBERSHIP_ROLE);
+        queryReturnsEmptyPage();
+
+        authorizer.readable(pageable);
+
+        assertThat(CatalogProvenanceMemo.read()).contains(Set.of(C3));
+    }
+
+    @Test // a plain member: PRESENT and EMPTY — "no supervised leg here", not "never computed"
+    void memoIsPresentButEmptyForAPlainMember() {
+        membership(C1, C2);
+        supervised();
+        roleOn(C1, MEMBERSHIP_ROLE);
+        queryReturnsEmptyPage();
+
+        authorizer.readable(pageable);
+
+        // The distinction the whole absence contract rests on: isPresent() is true, the set is empty.
+        // If the write ever moved back inside auditSupervisedRead — whose first early return fires on an
+        // empty supervised set — this is the assertion that catches it.
+        assertThat(CatalogProvenanceMemo.read()).isPresent();
+        assertThat(CatalogProvenanceMemo.read().orElseThrow()).isEmpty();
+    }
+
+    @Test // supervised-source outage: an empty set, so the surviving membership rows label `member`
+    void memoIsEmptyWhenTheSupervisedSourceIsDown() {
+        membership(C1, C2);
+        supervised(); // the client fails closed to an empty list on every failure class (U19–U23)
+        roleOn(C1, MEMBERSHIP_ROLE);
+        queryReturnsEmptyPage();
+
+        authorizer.readable(pageable);
+
+        assertThat(CatalogProvenanceMemo.read()).contains(Set.of());
+    }
+
+    @Test // membership-role outage: the page degraded to supervised-only, and the memo is exactly those
+    void memoCoversTheWholePageWhenTheMembershipLegDropped() {
+        membership(C1);
+        supervised(C3);
+        when(supplier.lookup("sub-1", "catalog", C1.toString()))
+                .thenThrow(new RoleResolutionException("source unavailable"));
+        roleOn(C3, SUPERVISOR_ROLE);
+        queryReturnsEmptyPage();
+
+        authorizer.readable(pageable);
+
+        // scope == {C3} here, so every row on the page is supervised — and the memo says so.
+        assertThat(CatalogProvenanceMemo.read()).contains(Set.of(C3));
     }
 
     // --- U34 — the PRECONDITION that makes admitting supervised rows through subtreeSpec correct -------

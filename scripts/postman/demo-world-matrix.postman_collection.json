@@ -62,7 +62,13 @@
                   "// The flagship Demo catalog is governed by a team sup-demo has nothing to do with: it must NOT leak.",
                   "pm.test('E31a the flagship demo catalog is NOT in her page', () =>",
                   "  pm.expect(ids).to.not.include(pm.environment.get('demo_catalog_id')));",
-                  "pm.collectionVariables.set('observed_sup_ids', JSON.stringify(ids.slice().sort()));"
+                  "pm.collectionVariables.set('observed_sup_ids', JSON.stringify(ids.slice().sort()));",
+                  "// ADR 0033 (T1): sup-demo is bound to NO team, so both rows arrived by supervision and say so.",
+                  "const prov = Object.fromEntries(body.items.map(i => [i.id, i._provenance]));",
+                  "pm.test('E31a both demo catalogs are labelled supervised', () => {",
+                  "  pm.expect(prov[pm.environment.get('demo_prod_catalog_id')]).to.eql('supervised');",
+                  "  pm.expect(prov[pm.environment.get('demo_open_catalog_id')]).to.eql('supervised');",
+                  "});"
                 ]
               }
             }
@@ -295,6 +301,13 @@
                   "pm.test('E31f both by exact id', () => {",
                   "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
                   "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});",
+                  "// THE CONTRAST: the same two catalogs, held by MEMBERSHIP, carry the other label. Without this",
+                  "// cell a derivation stuck on the constant 'supervised' would pass E31a.",
+                  "const prov = Object.fromEntries(body.items.map(i => [i.id, i._provenance]));",
+                  "pm.test('E31f the same two catalogs are labelled member for their owner', () => {",
+                  "  pm.expect(prov[pm.environment.get('demo_prod_catalog_id')]).to.eql('member');",
+                  "  pm.expect(prov[pm.environment.get('demo_open_catalog_id')]).to.eql('member');",
                   "});"
                 ]
               }
@@ -518,6 +531,11 @@
                   "pm.test('E32a both still present by exact id', () => {",
                   "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
                   "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});",
+                  "pm.test('E32a and both are still labelled supervised', () => {",
+                  "  const prov = Object.fromEntries(body.items.map(i => [i.id, i._provenance]));",
+                  "  pm.expect(prov[pm.environment.get('demo_prod_catalog_id')]).to.eql('supervised');",
+                  "  pm.expect(prov[pm.environment.get('demo_open_catalog_id')]).to.eql('supervised');",
                   "});"
                 ]
               }
@@ -699,6 +717,11 @@
                   "pm.test('E33a the same two, by exact id', () => {",
                   "  pm.expect(ids).to.include(pm.environment.get('demo_prod_catalog_id'));",
                   "  pm.expect(ids).to.include(pm.environment.get('demo_open_catalog_id'));",
+                  "});",
+                  "pm.test('E33a and the labels came back with the world', () => {",
+                  "  const prov = Object.fromEntries(body.items.map(i => [i.id, i._provenance]));",
+                  "  pm.expect(prov[pm.environment.get('demo_prod_catalog_id')]).to.eql('supervised');",
+                  "  pm.expect(prov[pm.environment.get('demo_open_catalog_id')]).to.eql('supervised');",
                   "});"
                 ]
               }

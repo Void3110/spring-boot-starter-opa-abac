@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.example.catalog.config;
 
 import dev.dmitriikonovalov.example.catalog.domain.CatalogEntity;
 import dev.dmitriikonovalov.example.catalog.domain.CatalogRepository;
+import dev.dmitriikonovalov.example.catalog.security.CatalogProvenanceMemo;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -313,6 +314,21 @@ public class CatalogListAuthorizer {
                 new AbacContext.Resource(CATALOG_TYPE, null, Map.of()),
                 roleDefinition,
                 Map.of());
+
+        // The leg is known HERE and discarded at the return, so record it for the response side while
+        // we still have it (ADR 0033's `_provenance`). Written UNCONDITIONALLY and INCLUDING an empty
+        // set — the advice tests presence, never emptiness, so "no supervised rows" and "never
+        // computed" stay distinguishable. Deliberately not inside auditSupervisedRead(): its two
+        // early returns (empty supervised set, no supervised row on this page) would leave a plain
+        // member's page, an agent-marked call, a supervised-source outage and a mixed page with no
+        // supervised row all memo-less — i.e. unlabelled rather than labelled "member".
+        //
+        // `supervisedIds` is the exact set the query was composed from in every shape reaching here:
+        // mixed (scope = M ∪ S, so S names the supervised rows), pure supervisor and degraded-to-
+        // supervised (scope = S, so every row is supervised), agent call and supervised-source
+        // outage (S is empty, so every row is membership). The Page.empty early returns above never
+        // reach this line — accepted: they carry zero rows to label.
+        CatalogProvenanceMemo.write(supervisedIds);
 
         Page<CatalogEntity> page =
                 abacQuery.findAuthorized(catalogs, scope, queryContext, subtreeSpec, pageable);

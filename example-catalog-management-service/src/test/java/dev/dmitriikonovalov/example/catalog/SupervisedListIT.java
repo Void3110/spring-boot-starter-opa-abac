@@ -145,6 +145,8 @@ class SupervisedListIT {
     static final String ANNA = "sup-anna";     // a PURE supervisor — member of no team
     static final String DUAL = "sup-dual";     // both a member and a supervisor
     static final String MEMBER = "plain-member";
+    /** Governs a catalog, but the role source stamps no provenance on it — I3's omit case. */
+    static final String UNSTAMPED = "unstamped-member";
 
     @Autowired MockMvc mockMvc;
     @Autowired CatalogRepository catalogs;
@@ -249,6 +251,117 @@ class SupervisedListIT {
                 .andExpect(jsonPath("$.count").value(1)));
 
         assertThat(ids).containsExactly(memberEmea.toString()); // apac still rejected by the residual
+    }
+
+    // --- I1 / I3 / I4 — the `_provenance` affordance (ADR 0033) --------------------------------------
+
+    @Test // I1: a MIXED page labels each row by the leg it actually arrived on
+    void mixedPageLabelsEachRowByItsLeg() throws Exception {
+        // The dual-hatted subject's page is {memberEmea} ∪ {supervisedA, supervisedB}. memberEmea came
+        // by membership; the other two by supervision. Asserted on exact ids, because a label that is
+        // right only by row ORDER would survive an inverted derivation.
+        Map<String, String> byId = provenanceById(listAs(DUAL, 0, 50).andExpect(status().isOk()));
+
+        assertThat(byId)
+                .containsEntry(memberEmea.toString(), "member")
+                .containsEntry(supervisedA.toString(), "supervised")
+                .containsEntry(supervisedB.toString(), "supervised");
+    }
+
+    @Test // I1: a memberless supervisor's rows are ALL supervised
+    void pureSupervisorPageIsAllSupervised() throws Exception {
+        Map<String, String> byId = provenanceById(listAs(ANNA, 0, 50).andExpect(status().isOk()));
+
+        assertThat(byId).hasSize(2);
+        assertThat(byId.values()).containsOnly("supervised");
+    }
+
+    @Test // I1 + I2: a plain member's page is ALL member — present-but-empty memo, not absence
+    void plainMemberPageIsAllMemberAndNeverAbsent() throws Exception {
+        // The subject supervises nothing, so the memo is written EMPTY. That is a real answer ("no
+        // supervised leg here"), and every row must be labelled `member` rather than left unlabelled.
+        // This is the case that would silently regress to absent if the memo write moved back inside
+        // auditSupervisedRead(), whose first early return is exactly `supervisedIds.isEmpty()`.
+        Map<String, String> byId = provenanceById(listAs(MEMBER, 0, 50).andExpect(status().isOk()));
+
+        assertThat(byId).hasSize(1).containsEntry(memberEmea.toString(), "member");
+    }
+
+    @Test // I1: on the happy path the field is absent from NO row, on any persona
+    void everyRowOnEveryHappyPathPageCarriesALabel() throws Exception {
+        for (String persona : List.of(DUAL, ANNA, MEMBER)) {
+            String body = listAs(persona, 0, 50).andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            com.fasterxml.jackson.databind.JsonNode items =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("items");
+            assertThat(items).isNotEmpty();
+            items.forEach(item -> assertThat(item.has("_provenance"))
+                    .as("_provenance present on every row of %s's page", persona)
+                    .isTrue());
+        }
+    }
+
+    @Test // I3: the list's leg-derivation and the GET's stamp-derivation AGREE, on both personas
+    void listAndGetAgreeOnBothDerivations() throws Exception {
+        // They agree by construction (the user-service synthesizes the supervised role only on the
+        // non-membership branch, ADR 0029), and this pins it: the two derivations share no code.
+        Map<String, String> listed = provenanceById(listAs(DUAL, 0, 50).andExpect(status().isOk()));
+
+        assertThat(listed).containsEntry(supervisedA.toString(), "supervised");
+        getAs(DUAL, supervisedA)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$._provenance").value("supervised"));
+
+        assertThat(listed).containsEntry(memberEmea.toString(), "member");
+        getAs(DUAL, memberEmea)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$._provenance").value("member"));
+    }
+
+    @Test // I3 / I4: a GET whose resolved role carries NO provenance stamp omits the key entirely
+    void getWithAnUnstampedRoleOmitsTheKey() throws Exception {
+        // UNSTAMPED is governed (so the read is allowed and the metadata is intact) but its role carries
+        // no `provenance` attribute — a deployment whose role source does not stamp. Absent must mean
+        // UNKNOWN: the key is not on the wire at all, and it is NOT defaulted to "member".
+        GOVERNED.put(UNSTAMPED, List.of(memberEmea));
+
+        getAs(UNSTAMPED, memberEmea)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(memberEmea.toString()))
+                .andExpect(jsonPath("$.name").exists())
+                .andExpect(jsonPath("$._provenance").doesNotExist());
+    }
+
+    @Test // I4: the generated DTO really carries the marker and the exact wire key
+    void theGeneratedDtoImplementsTheMarkerAndUsesTheExactKey() throws Exception {
+        assertThat(dev.dmitriikonovalov.example.catalog.security.CatalogProvenanceCarrier.class)
+                .isAssignableFrom(dev.dmitriikonovalov.example.catalog.openapi.model.Catalog.class);
+
+        // The key on the wire is `_provenance` — not `provenance`, the Java property name.
+        String body = listAs(ANNA, 0, 50).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        com.fasterxml.jackson.databind.JsonNode first =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(body).get("items").get(0);
+        assertThat(first.has("_provenance")).isTrue();
+        assertThat(first.has("provenance")).isFalse();
+    }
+
+    /** id → `_provenance`, reading ABSENT as a distinct outcome (a missing key never becomes "member"). */
+    private static Map<String, String> provenanceById(
+            org.springframework.test.web.servlet.ResultActions actions) throws Exception {
+        String body = actions.andReturn().getResponse().getContentAsString();
+        com.fasterxml.jackson.databind.JsonNode root =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        root.get("items").forEach(item ->
+                out.put(item.get("id").asText(),
+                        item.has("_provenance") ? item.get("_provenance").asText() : null));
+        return out;
+    }
+
+    private org.springframework.test.web.servlet.ResultActions getAs(String subject, UUID catalogId)
+            throws Exception {
+        return mockMvc.perform(get("/api/v1/catalogs/" + catalogId).header(SUBJECT_HEADER, subject));
     }
 
     // --- I5 — the read-only ceiling: a supervised row's _actions map ---------------------------------
@@ -359,6 +472,14 @@ class SupervisedListIT {
         RoleDefinitionSupplier supervisedAwareRoleSupplier() {
             return (userId, type, id) -> {
                 UUID resourceId = UUID.fromString(id);
+                if (UNSTAMPED.equals(userId)
+                        && GOVERNED.getOrDefault(userId, List.of()).contains(resourceId)) {
+                    // A deployment whose role source does not stamp `provenance` at all. The read is
+                    // allowed exactly as before; only the LABEL is unknown — and unknown must serialize
+                    // as an absent key, never as "member".
+                    return Optional.of(new RoleDefinition(
+                            "owner", Map.of(), Map.of("catalog", List.of("READ", "WRITE", "TAG"))));
+                }
                 if (GOVERNED.getOrDefault(userId, List.of()).contains(resourceId)) {
                     return Optional.of(new RoleDefinition(
                             "owner",
