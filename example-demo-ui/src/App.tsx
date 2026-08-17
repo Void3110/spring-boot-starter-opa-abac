@@ -147,6 +147,12 @@ function LoginScreen() {
         <p className="mt-6 text-center text-xs text-[var(--color-muted)]">
           Demo identities: editor (admin) · demo (editor) · viewer (read) · outsider (none) — password = username
         </p>
+        {/* Named explicitly: without these two the supervised story is invisible to a first-time
+            reader — the production catalog's locked panel looks like a bug rather than the point. */}
+        <p className="mt-1 text-center text-xs text-[var(--color-muted)]">
+          Supervised demo: sup-demo (supervisor — verifies a second factor to read production) ·
+          pm-demo (production member — no ceremony)
+        </p>
       </div>
     </div>
   )

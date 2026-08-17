@@ -308,8 +308,9 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **K16** *As a manager using the demo console*, a production catalog tells me **before I click** that
   it will ask for verification, the refusal explains itself in the server's own words, one [Verify]
   takes me to the second factor and back to the same place, and I can see how long my elevation lasts —
-  without the console ever pretending to decide what the server decides. — **SPA-CHALLENGE-UX** 📋
-  (the console consuming K8/K14's contract)
+  without the console ever pretending to decide what the server decides. — **SPA-CHALLENGE-UX** ✅
+  (the console consuming K8/K14's contract; the "never pretends" half is the measured one — the
+  console shows contents the server allowed while its own lapsed-elevation chip stayed amber)
 
 > **Future / comparison epic.** "The same team-grant decision, expressed *in the policy* (ReBAC) instead of
 > resolved by the app" — the **Phase 8** [[POC-ROADMAP|ReBAC-in-Rego]] comparison. Not a new user story so
