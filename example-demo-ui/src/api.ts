@@ -213,6 +213,15 @@ export function getCatalog(id: string): Promise<Catalog> {
   return request<Catalog>(`/api/v1/catalogs/${id}`)
 }
 
+/**
+ * Single category GET. Added for step-up restoration: coming back from Keycloak we hold only ids,
+ * and this is ONE direct read rather than list-then-find — which is what keeps "exactly one
+ * automatic retry" true instead of "one retry plus a list call that may itself be challenged".
+ */
+export function getCategory(catalogId: string, categoryId: string): Promise<Category> {
+  return request<Category>(`/api/v1/catalogs/${catalogId}/categories/${categoryId}`)
+}
+
 export function listCategories(catalogId: string, page = 0, perPage = 100): Promise<Page<Category>> {
   return request<Page<Category>>(
     `/api/v1/catalogs/${catalogId}/categories?page=${page}&perPage=${perPage}`,

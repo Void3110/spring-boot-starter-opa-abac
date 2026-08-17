@@ -69,6 +69,52 @@ Three things about that are deliberate:
 gateway's `expose_headers` — it is there (`infra/apisix/init-routes.sh`) precisely so this reads a
 header rather than a `null` and silently degrades a working feature.
 
+## [Verify]: the round trip
+
+A `StepUpRequiredError` renders a **locked panel** in the contents area that was refused — the
+server's own sentence, `acr_values` and `max_age` as plain facts, and one [Verify] button. Nothing
+modal, and **no automatic redirect ever**: the header, breadcrumbs and the resource's metadata card
+stay usable, because the caller is not locked out of the resource, only out of its contents.
+
+[Verify] calls `signinRedirect` with:
+
+| | | |
+|---|---|---|
+| `acr_values` | from the challenge | what the server said it wants |
+| `max_age` | **`0`** | forces a genuinely fresh authentication, so `auth_time` is new |
+| `claims` (via `extraQueryParams`) | essential `acr` | a bare `acr_values` is only *voluntary* and can be silently under-delivered |
+| `state` | `{v:1, catalogId, categoryId?, stepUp:true}` | **ids only** — the state travels through a third party |
+
+**`max_age: 0` is deliberate, and zero is not "no window".** Omitting `max_age` is what causes the
+infinite loop: Keycloak happily answers from the existing SSO session, returns the *same* stale
+`auth_time`, and the read 401s again forever. Echoing the challenge's own `max_age` re-authenticates
+too — measured to produce the identical prompt sequence — so `0` simply removes the reasoning.
+
+**Measured on this realm:** a `max_age`-triggered re-authentication re-asks **both** factors —
+password *then* one-time code — even on a live SSO session. OIDC `max_age` overrides the realm's
+per-level `loa-max-age` memory, and a non-zero value behaves the same way. So [Verify] costs a full
+re-login, not just a second factor.
+
+**Coming back**, the callback reads `user.state` and restores the drill-in: `getCatalog(catalogId)`,
+then `getCategory(catalogId, categoryId)` if we were a level deeper — one direct read each, never
+list-then-find. That restored load **is** the single automatic retry. Either read may itself be
+challenged and **neither triggers another redirect**; a challenged category simply leaves you on the
+catalog with the panel.
+
+**The loop guard.** On the page load that came back from a verification, a step-up refusal renders
+the panel's *passive* variant — it says verification did not unlock the contents and waits. Any
+deliberate navigation clears that flag, so a challenge you walk into fresh never claims you already
+tried. No code path calls the step-up redirect without a click, so this is structurally loop-free
+however the server behaves.
+
+`User.toStorageString()` omits `state`, so `user.state` exists only on the callback's page load and
+cannot leak into later ones. **Do not "fix" that by persisting it** — it is what makes the guard work.
+
+**Accepted limitation:** cancelling at Keycloak loses the drill-in. The location lived in the state
+of an authorization request that was never completed, so the app loads at the catalog grid. This is a
+redirect-only demo with no deep links; restoring it would mean persisting navigation somewhere the
+step-up flow does not need.
+
 ## ⚠️ Security caveat — do NOT copy the token handling to production
 
 This SPA stores its OIDC tokens in **`sessionStorage`** (`src/auth.ts`). `sessionStorage`

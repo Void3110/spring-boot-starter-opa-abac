@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Actions, ApiError } from './api'
+import { type Challenge } from './stepup'
 
 /** One error format everywhere: ApiError keeps its HTTP status ("422 — …"), the demo's denial voice. */
 export function errText(e: unknown): string {
@@ -22,20 +23,101 @@ export function NoticeLine({ notice }: { notice: Notice | null }) {
 }
 
 // Small async-data helper: load on mount + expose a reload.
+//
+// `cause` is the thrown value itself, kept beside the rendered string: a caller that needs to react
+// to the KIND of failure (a step-up challenge is the one that matters — it carries the parameters
+// the locked panel renders) cannot recover that from a formatted message. Every existing consumer
+// reads `error` and is unaffected. The retry-once policy deliberately does NOT live here — this hook
+// stays a dumb loader; the panel owns that decision.
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cause, setCause] = useState<unknown>(null)
   const load = useCallback(() => {
     setError(null)
+    setCause(null)
     fn()
       .then(setData)
-      .catch((e) =>
-        setError(e instanceof ApiError ? `${e.status} — ${e.message}` : String(e)),
-      )
+      .catch((e) => {
+        setCause(e)
+        setError(errText(e))
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
   useEffect(load, [load])
-  return { data, error, reload: load }
+  return { data, error, cause, reload: load }
+}
+
+/**
+ * The 401 moment, rendered in place: what the server refused, in the server's own words, and the one
+ * button that can change it.
+ *
+ * <p>Deliberately **not** a modal and **not** an auto-redirect. It replaces only the contents area
+ * that was refused — the header, breadcrumbs and the resource's own metadata card stay usable,
+ * because the caller is not locked out of the resource, only out of its contents. And a redirect the
+ * user did not ask for would be indistinguishable from a login loop the first time anything goes
+ * wrong.
+ *
+ * <p>The parameters are shown as plain facts rather than prose: this is a demo of an authorization
+ * mechanism, and `acr_values` / `max_age` are the mechanism.
+ *
+ * <p>`passive` is the post-verification variant: the user already answered a challenge and the read
+ * is *still* refused. It says so honestly and leaves [Verify] available for a deliberate second
+ * attempt — what it must never do is bounce them again on its own.
+ */
+export function LockedPanel({
+  challenge,
+  passive,
+  onVerify,
+}: {
+  challenge: Challenge
+  passive: boolean
+  onVerify: () => void
+}) {
+  return (
+    <div className="mt-4 rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-5">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="text-lg leading-none">
+          🔒
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold">Production contents — fresh second factor required</h3>
+
+          {/* The server's own sentence, verbatim. The console does not paraphrase an authorization
+              decision: whatever the policy author wrote is what the reader should see. */}
+          <p className="mt-1 text-sm text-[var(--color-muted)]">{challenge.description}</p>
+
+          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[var(--color-muted)]">
+            <div className="flex gap-1.5">
+              <dt className="font-medium">acr_values</dt>
+              <dd className="font-mono">{challenge.acrValues}</dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="font-medium">max_age</dt>
+              <dd className="font-mono">{challenge.maxAge}s</dd>
+            </div>
+          </dl>
+
+          {passive && (
+            <p className="mt-3 text-xs" style={{ color: 'var(--color-warn, #b45309)' }}>
+              Verification did not unlock production contents — the read is still refused. You can
+              try again, or carry on elsewhere.
+            </p>
+          )}
+
+          <button
+            onClick={onVerify}
+            className="mt-4 rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-brand-ink)]"
+          >
+            Verify
+          </button>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            Takes you to Keycloak to re-authenticate, then back to this page.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /** A pill that surfaces the current identity's role(s). */

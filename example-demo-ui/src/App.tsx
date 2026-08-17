@@ -6,6 +6,9 @@ import {
   describeUser,
   login,
   logout,
+  stepUp,
+  stepUpStateOf,
+  type StepUpState,
 } from './auth'
 import {
   type Catalog,
@@ -19,6 +22,8 @@ import {
   deleteProduct,
   ensureUser,
   getCatalog,
+  getCategory,
+  StepUpRequiredError,
   listCatalogs,
   listCategories,
   listProducts,
@@ -36,13 +41,18 @@ import {
   RoleChips,
   errText,
   useAsync,
+  LockedPanel,
 } from './components'
 import { CreateCatalogPanel, TeamPanel } from './teams'
+import { type Challenge } from './stepup'
 
 type AuthState =
   | { phase: 'loading' }
   | { phase: 'anonymous' }
-  | { phase: 'authenticated'; user: AuthUser }
+  // `restore` is set only when THIS page load is the callback from a step-up redirect. It is not
+  // persisted anywhere: User.toStorageString() omits `state`, so it exists for this load and no
+  // other — which is what makes the passive guard below structurally loop-free.
+  | { phase: 'authenticated'; user: AuthUser; restore?: StepUpState | null }
   | { phase: 'error'; message: string }
 
 // Guard against React 19 StrictMode double-invoking the bootstrap effect: a PKCE authorization code
@@ -70,7 +80,13 @@ export function App() {
     }
     bootstrap ??= resolve()
     bootstrap
-      .then((user) => setAuth(user ? { phase: 'authenticated', user } : { phase: 'anonymous' }))
+      .then((user) =>
+        setAuth(
+          user
+            ? { phase: 'authenticated', user, restore: stepUpStateOf(user) }
+            : { phase: 'anonymous' },
+        ),
+      )
       .catch((e) => setAuth({ phase: 'error', message: e instanceof Error ? e.message : String(e) }))
   }, [])
 
@@ -85,7 +101,7 @@ export function App() {
       </Splash>
     )
   if (auth.phase === 'anonymous') return <LoginScreen />
-  return <Console user={auth.user} />
+  return <Console user={auth.user} restore={auth.restore ?? null} />
 }
 
 function Splash({ children }: { children: React.ReactNode }) {
@@ -131,10 +147,69 @@ type View =
   | { kind: 'catalog'; catalog: Catalog }
   | { kind: 'category'; catalog: Catalog; category: Category }
 
-function Console({ user }: { user: AuthUser }) {
+function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
   const { username, roles } = describeUser(user)
   const mySubject = user.profile.sub
   const [view, setView] = useState<View>({ kind: 'catalogs' })
+  // Restoring the drill-in the challenge interrupted. The state carried ids only, so the objects the
+  // View needs are re-read here — getCatalog, then getCategory if we were a level deeper. Either read
+  // may itself be challenged; NEITHER triggers a redirect. The restored view's own load IS the one
+  // automatic retry, and a challenged category simply leaves the user on the catalog with the panel.
+  const [restoring, setRestoring] = useState(restore !== null)
+  // The loop guard: on the page load that came back FROM a verification, a step-up refusal means the
+  // verification did not help. The panel says so and waits. No code path calls stepUp() without a
+  // click, so this cannot become a redirect loop however the server behaves.
+  const [passive, setPassive] = useState(restore !== null)
+
+  useEffect(() => {
+    if (!restore) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const catalog = await getCatalog(restore.catalogId)
+        if (cancelled) return
+        if (restore.categoryId) {
+          // ONE direct read, not list-then-find: a list call here could be challenged in its own
+          // right and would make "exactly one automatic retry" false.
+          const category = await getCategory(restore.catalogId, restore.categoryId)
+          if (cancelled) return
+          setView({ kind: 'category', catalog, category })
+        } else {
+          setView({ kind: 'catalog', catalog })
+        }
+      } catch {
+        // The catalog itself is metadata-only and does not challenge, so this is a genuine failure
+        // (deleted, revoked, offline). Land on the grid rather than a dead end; the drill-in is lost.
+        if (!cancelled) setView({ kind: 'catalogs' })
+      } finally {
+        if (!cancelled) setRestoring(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [restore])
+
+  // Deliberate navigation clears the passive flag. Without this the flag — set for the page load
+  // that came back from a verification — would stick for the WHOLE session, so every later challenge
+  // the user walked into fresh would claim "verification did not unlock" about a verification they
+  // never attempted for it. Passive means "the read you just verified for is still refused", and
+  // that is only true of the view the callback restored; moving anywhere is a new question.
+  // (Found in the browser pass, not by a unit test — the state is only wrong on the SECOND challenge.)
+  const navigate = useCallback((next: View) => {
+    setPassive(false)
+    setView(next)
+  }, [])
+
+  // Answering a challenge is ALWAYS a deliberate click. `location` is where the user is right now,
+  // so Keycloak brings them back to the same place.
+  const verify = useCallback(
+    (challenge: Challenge, location: { catalogId: string; categoryId?: string }) => {
+      setPassive(false)
+      void stepUp(challenge.acrValues, location)
+    },
+    [],
+  )
 
   // Provision the identity's user-service profile row on login: memberships (and owning a new
   // catalog's team) key on that row, and a first-time identity doesn't have one yet. A failure
@@ -160,7 +235,7 @@ function Console({ user }: { user: AuthUser }) {
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col">
       <header className="flex items-center justify-between border-b border-[var(--color-line)] px-6 py-4">
-        <button className="flex items-center gap-3" onClick={() => setView({ kind: 'catalogs' })}>
+        <button className="flex items-center gap-3" onClick={() => navigate({ kind: 'catalogs' })}>
           <Logo />
           <span className="font-semibold">Catalog Console</span>
         </button>
@@ -201,30 +276,39 @@ function Console({ user }: { user: AuthUser }) {
         </div>
       )}
       <main className="flex-1 overflow-auto px-6 py-6">
-        {view.kind === 'catalogs' && (
+        {restoring && (
+          <p className="p-6 text-sm text-[var(--color-muted)]">Returning you to where you were…</p>
+        )}
+        {!restoring && view.kind === 'catalogs' && (
           <CatalogGrid
             // catalog:create is the one realm-role-decided verb (the B4 narrow fallback), so the
             // SPA can predict the deny from the token it already parsed for the header chips.
             canCreate={roles.includes('catalog-editor')}
-            onOpen={(catalog) => setView({ kind: 'catalog', catalog })}
+            onOpen={(catalog) => navigate({ kind: 'catalog', catalog })}
           />
         )}
-        {view.kind === 'catalog' && (
+        {!restoring && view.kind === 'catalog' && (
           <CatalogDetail
             catalog={view.catalog}
             mySubject={mySubject}
-            onHome={() => setView({ kind: 'catalogs' })}
+            passive={passive}
+            onVerify={(challenge) => verify(challenge, { catalogId: view.catalog.id })}
+            onHome={() => navigate({ kind: 'catalogs' })}
             onOpenCategory={(category) =>
-              setView({ kind: 'category', catalog: view.catalog, category })
+              navigate({ kind: 'category', catalog: view.catalog, category })
             }
           />
         )}
-        {view.kind === 'category' && (
+        {!restoring && view.kind === 'category' && (
           <CategoryDetail
             catalog={view.catalog}
             category={view.category}
-            onHome={() => setView({ kind: 'catalogs' })}
-            onUp={() => setView({ kind: 'catalog', catalog: view.catalog })}
+            passive={passive}
+            onVerify={(challenge) =>
+              verify(challenge, { catalogId: view.catalog.id, categoryId: view.category.id })
+            }
+            onHome={() => navigate({ kind: 'catalogs' })}
+            onUp={() => navigate({ kind: 'catalog', catalog: view.catalog })}
           />
         )}
       </main>
@@ -291,11 +375,15 @@ function CatalogGrid({
 function CatalogDetail({
   catalog,
   mySubject,
+  passive,
+  onVerify,
   onHome,
   onOpenCategory,
 }: {
   catalog: Catalog
   mySubject: string
+  passive: boolean
+  onVerify: (challenge: Challenge) => void
   onHome: () => void
   onOpenCategory: (c: Category) => void
 }) {
@@ -412,7 +500,20 @@ function CatalogDetail({
             cats.reload()
           }}
         />
-        {cats.error && <ErrorBox label="categories" message={cats.error} />}
+        {/* A step-up refusal is not an error to report, it is a step to take: the panel replaces the
+            error box and explains what would satisfy the server. Any OTHER failure still reads as an
+            error, including a challenge the client could not follow (request() degrades that to a
+            plain ApiError precisely so it lands here rather than as a dead [Verify]). */}
+        {cats.error && !(cats.cause instanceof StepUpRequiredError) && (
+          <ErrorBox label="categories" message={cats.error} />
+        )}
+        {cats.cause instanceof StepUpRequiredError && (
+          <LockedPanel
+            challenge={cats.cause.challenge}
+            passive={passive}
+            onVerify={() => onVerify((cats.cause as StepUpRequiredError).challenge)}
+          />
+        )}
         {!cats.data && !cats.error && <Loading what="categories" />}
         {cats.data && cats.data.items.length === 0 && (
           <Empty>No categories visible to you in this catalog.</Empty>
@@ -491,11 +592,15 @@ function CatalogDetail({
 function CategoryDetail({
   catalog,
   category,
+  passive,
+  onVerify,
   onHome,
   onUp,
 }: {
   catalog: Catalog
   category: Category
+  passive: boolean
+  onVerify: (challenge: Challenge) => void
   onHome: () => void
   onUp: () => void
 }) {
@@ -542,7 +647,16 @@ function CategoryDetail({
           prods.reload()
         }}
       />
-      {prods.error && <ErrorBox label="products" message={prods.error} />}
+      {prods.error && !(prods.cause instanceof StepUpRequiredError) && (
+        <ErrorBox label="products" message={prods.error} />
+      )}
+      {prods.cause instanceof StepUpRequiredError && (
+        <LockedPanel
+          challenge={prods.cause.challenge}
+          passive={passive}
+          onVerify={() => onVerify((prods.cause as StepUpRequiredError).challenge)}
+        />
+      )}
       {!prods.data && !prods.error && <Loading what="products" />}
       {prods.data && prods.data.items.length === 0 && (
         <Empty>No products in this category yet.</Empty>
