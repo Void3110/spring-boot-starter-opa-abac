@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { parseChallenge, lastChallengeWindow, STEP_UP_MAX_AGE_KEY } from './stepup'
+import {
+  parseChallenge,
+  lastChallengeWindow,
+  forgetChallengeWindow,
+  rememberChallengeWindow,
+  STEP_UP_MAX_AGE_KEY,
+} from './stepup'
 
 // The header the rig actually emits, captured off the wire (scripts/postman/run-step-up-matrix.sh's
 // E1a and the demo world's E31d). Pinning the REAL bytes rather than a hand-written approximation is
@@ -121,6 +127,21 @@ describe('the learned window', () => {
   it('never returns a fabricated number from a corrupt value', () => {
     store.set(STEP_UP_MAX_AGE_KEY, 'not-a-number')
     expect(lastChallengeWindow()).toBeNull()
+  })
+
+  it('is forgotten on demand — the lifecycle asymmetry the key exists for', () => {
+    // The key lives OUTSIDE the `oidc.` prefix so clearStaleState() cannot sweep it at [Verify]
+    // time. The price is that it also survives a logout, which would leave a supervisor's window
+    // telling the NEXT identity's console it is "not elevated" — noise about a mechanism that does
+    // not apply to them. Caught in the browser pass on an identity switch, not by a unit test.
+    rememberChallengeWindow(300)
+    expect(lastChallengeWindow()).toBe(300)
+    forgetChallengeWindow()
+    expect(lastChallengeWindow()).toBeNull()
+  })
+
+  it('forgetting is safe when nothing was remembered', () => {
+    expect(() => forgetChallengeWindow()).not.toThrow()
   })
 
   it('survives sessionStorage being unavailable', () => {

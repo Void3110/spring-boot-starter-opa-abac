@@ -12,6 +12,10 @@
   --color-brand-ink: #4338ca;
   --color-allow: #16a34a;
   --color-deny: #dc2626;
+  /* Amber is its own thing here, and the distinction is the point: allow/deny are the SERVER's
+     answers, amber is the CLIENT's prediction. Anything amber may turn out wrong without anything
+     being broken; anything green or red came from a decision that was actually made. */
+  --color-warn: #b45309;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 

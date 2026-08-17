@@ -110,6 +110,49 @@ however the server behaves.
 `User.toStorageString()` omits `state`, so `user.state` exists only on the callback's page load and
 cannot leak into later ones. **Do not "fix" that by persisting it** — it is what makes the guard work.
 
+## The elevation chip and the row badges
+
+A chip beside the role chips says whether a second factor is in hand, and for how long:
+
+| state | shown | when |
+|---|---|---|
+| `Elevated · m:ss` | green | LoA ≥ 2 and a window is known — counting down `auth_time + max_age − now` |
+| `Elevated (aal2)` | green | LoA ≥ 2, **no** window known — honest, never a guessed number |
+| `elevation lapsed` | **amber** | the advertised window ran out |
+| `not elevated` | **amber** | LoA < 2 *and* a challenge was seen this session |
+| *(hidden)* | — | everyone else — members and viewers see nothing new |
+
+**The window is learned, never hardcoded.** There is no `300` anywhere in this app: the countdown
+uses whatever the last challenge advertised (`stepUp.maxAge`, written by the `request()` seam). Point
+the demo at a policy with a different window and the chip follows it.
+
+**Expiry is reactive, and that is a deliberate safety property.** At zero the chip flips amber and
+**nothing on screen is hidden**. The policy's `skew` may still admit a read for a few more seconds —
+so the client pre-empting the server would be *wrong*, and would train people to distrust the UI. The
+next fetch is what finds out; if it is refused, the locked panel appears then.
+
+**Amber means "the client predicts", green and red mean "the server decided".** On a catalog row:
+
+- `supervised` — you hold it by supervision, not membership (from `_provenance`)
+- `production` — its tier (from `tags.env`)
+- amber **`production · verify to open`** — *iff* supervised **and** production **and** not elevated
+
+Each conjunct earns its place. A **member's** production catalog is never amber (their read needs no
+elevation at all — warning them would be a lie). A supervised **staging** catalog is never amber. A
+supervised production catalog **while elevated** is not amber. And an **absent** `_provenance` is
+*unknown*, not `member`: no supervised badge and never amber, because the client must not predict
+from a value the server declined to compute.
+
+Being wrong in either direction is a UI bug, never a security event — the server's `401` is the
+truth and the panel is where it lands. That asymmetry is why amber is its own colour here (`--color-warn`)
+rather than reusing the allow/deny palette.
+
+**One lifecycle subtlety worth knowing if you touch this:** `stepUp.maxAge` deliberately lives
+*outside* oidc-client-ts's `oidc.` prefix so `clearStaleState()` cannot sweep it at [Verify] time.
+The price is that it also survives a logout — so `login()` and `logout()` clear it explicitly, and
+the step-up redirect pointedly does not. Without that, a supervisor's leftover window makes the next
+identity's console claim "not elevated" about a mechanism that does not apply to them.
+
 **Accepted limitation:** cancelling at Keycloak loses the drill-in. The location lived in the state
 of an authorization request that was never completed, so the app loads at the catalog grid. This is a
 redirect-only demo with no deep links; restoring it would mean persisting navigation somewhere the

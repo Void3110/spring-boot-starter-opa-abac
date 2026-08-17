@@ -6,6 +6,7 @@ import {
   describeUser,
   login,
   logout,
+  elevationOf,
   stepUp,
   stepUpStateOf,
   type StepUpState,
@@ -39,12 +40,22 @@ import {
   Breadcrumbs,
   Logo,
   RoleChips,
+  ElevationChip,
+  CatalogBadges,
   errText,
   useAsync,
   LockedPanel,
 } from './components'
 import { CreateCatalogPanel, TeamPanel } from './teams'
-import { type Challenge } from './stepup'
+import {
+  type ChipState,
+  type Challenge,
+  badgesFor,
+  chipState,
+  isElevated,
+  lastChallengeWindow,
+  loaOf,
+} from './stepup'
 
 type AuthState =
   | { phase: 'loading' }
@@ -147,9 +158,41 @@ type View =
   | { kind: 'catalog'; catalog: Catalog }
   | { kind: 'category'; catalog: Catalog; category: Category }
 
+/**
+ * The chip, recomputed once a second.
+ *
+ * <p>A tick rather than an event because there is nothing to listen to: the window runs out on wall
+ * clock, not on anything the app does. One interval for the whole console; the arithmetic is pure
+ * and unit-tested (U5), so all this owns is *when* to ask.
+ *
+ * <p>The window is re-read from sessionStorage on every tick on purpose — a challenge arriving
+ * mid-session updates it, and deleting the key by hand must degrade the chip immediately (E16).
+ */
+function useElevationChip(user: AuthUser): ChipState {
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const { acr, authTime } = elevationOf(user)
+  const window = lastChallengeWindow()
+  return chipState({
+    loa: loaOf(acr),
+    authTime,
+    window,
+    // The window key is written ONLY when a challenge arrives, so its presence IS "a challenge was
+    // seen this session" — which is what makes the "not elevated" chip meaningful rather than noise
+    // on every member's screen.
+    challengeSeen: window !== null,
+    nowSeconds,
+  })
+}
+
 function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
   const { username, roles } = describeUser(user)
   const mySubject = user.profile.sub
+  const chip = useElevationChip(user)
+  const elevated = isElevated(chip)
   const [view, setView] = useState<View>({ kind: 'catalogs' })
   // Restoring the drill-in the challenge interrupted. The state carried ids only, so the objects the
   // View needs are re-read here — getCatalog, then getCategory if we were a level deeper. Either read
@@ -253,6 +296,7 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
                 Keycloak realm roles
               </span>
               <RoleChips roles={roles} />
+              <ElevationChip state={chip} />
             </div>
           </div>
           <button
@@ -284,6 +328,7 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
             // catalog:create is the one realm-role-decided verb (the B4 narrow fallback), so the
             // SPA can predict the deny from the token it already parsed for the header chips.
             canCreate={roles.includes('catalog-editor')}
+            elevated={elevated}
             onOpen={(catalog) => navigate({ kind: 'catalog', catalog })}
           />
         )}
@@ -291,6 +336,7 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
           <CatalogDetail
             catalog={view.catalog}
             mySubject={mySubject}
+            elevated={elevated}
             passive={passive}
             onVerify={(challenge) => verify(challenge, { catalogId: view.catalog.id })}
             onHome={() => navigate({ kind: 'catalogs' })}
@@ -326,9 +372,11 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function CatalogGrid({
   canCreate,
+  elevated,
   onOpen,
 }: {
   canCreate: boolean
+  elevated: boolean
   onOpen: (c: Catalog) => void
 }) {
   const { data, error, reload } = useAsync(() => listCatalogs(), [])
@@ -357,9 +405,22 @@ function CatalogGrid({
         {items.map((c) => (
           <button key={c.id} onClick={() => onOpen(c)} className="text-left">
             <Card>
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{c.name}</span>
-                <span className="text-xs text-[var(--color-brand-ink)]">open →</span>
+              <div className="flex items-start justify-between gap-3">
+                {/* min-w-0 lets the badge row wrap inside the title block instead of squeezing the
+                    "open →" affordance onto two lines; shrink-0 keeps that affordance intact. */}
+                <span className="min-w-0 font-medium">
+                  {c.name}
+                  <CatalogBadges
+                    badges={badgesFor({
+                      provenance: c._provenance,
+                      env: c.tags?.env,
+                      elevated,
+                    })}
+                  />
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-xs text-[var(--color-brand-ink)]">
+                  open →
+                </span>
               </div>
               {c.description && (
                 <div className="mt-0.5 text-sm text-[var(--color-muted)]">{c.description}</div>
@@ -375,6 +436,7 @@ function CatalogGrid({
 function CatalogDetail({
   catalog,
   mySubject,
+  elevated,
   passive,
   onVerify,
   onHome,
@@ -382,6 +444,7 @@ function CatalogDetail({
 }: {
   catalog: Catalog
   mySubject: string
+  elevated: boolean
   passive: boolean
   onVerify: (challenge: Challenge) => void
   onHome: () => void
@@ -406,7 +469,18 @@ function CatalogDetail({
     <div>
       <Breadcrumbs trail={[{ label: 'Catalogs', onClick: onHome }, { label: catalog.name }]} />
       <Card>
-        <div className="text-lg font-semibold">{catalog.name}</div>
+        <div className="text-lg font-semibold">
+          {catalog.name}
+          {/* Prefer the SINGLE GET's provenance over the grid row's: the row is what we navigated
+              from and may be stale, while `full` is this catalog's own freshly-derived answer. */}
+          <CatalogBadges
+            badges={badgesFor({
+              provenance: full.data?._provenance ?? catalog._provenance,
+              env: (full.data ?? catalog).tags?.env,
+              elevated,
+            })}
+          />
+        </div>
         {catalog.description && (
           <div className="mt-0.5 text-sm text-[var(--color-muted)]">{catalog.description}</div>
         )}

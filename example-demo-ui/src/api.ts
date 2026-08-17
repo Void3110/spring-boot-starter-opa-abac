@@ -19,6 +19,12 @@ export interface Catalog {
   createdAt: string
   tags?: Tags
   _actions?: Actions
+  /**
+   * By which access path this row is in front of you (ADR 0033). Server-emitted, read-only, and
+   * **optional on purpose**: absent means the server did not compute it, which is NOT the same as
+   * `'member'` — see badgesFor(), which predicts nothing from absence.
+   */
+  _provenance?: 'member' | 'supervised'
 }
 
 export interface Category {

@@ -1,4 +1,5 @@
 import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts'
+import { type ElevationClaims, elevationClaims, forgetChallengeWindow } from './stepup'
 
 // Single-origin auth (see infra/README.md "Demo SPA auth"): the browser does its entire
 // Authorization Code + PKCE flow against the gateway origin. APISIX proxies Keycloak's /realms/*
@@ -47,6 +48,9 @@ export type AuthUser = User
  * `prompt` at all.
  */
 export function login(): Promise<void> {
+  // A different identity is about to sign in: the previous one's learned window says nothing about
+  // them. (The step-up redirect must NOT do this — there the window is exactly what must survive.)
+  forgetChallengeWindow()
   return userManager.signinRedirect({ prompt: 'login' })
 }
 
@@ -128,6 +132,9 @@ export function completeLogin(): Promise<AuthUser> {
 
 /** End the session (clears local tokens + Keycloak SSO session). */
 export function logout(): Promise<void> {
+  // oidc-client-ts clears only what it owns (the `oidc.` prefix). The learned window lives outside
+  // that prefix by design, so it has to be cleared here or it outlives the session that learned it.
+  forgetChallengeWindow()
   return userManager.signoutRedirect()
 }
 
@@ -153,6 +160,14 @@ export async function freshUser(): Promise<AuthUser | null> {
 /** The current user, or null if not signed in (an expired token is refreshed on demand). */
 export function currentUser(): Promise<AuthUser | null> {
   return freshUser()
+}
+
+/**
+ * The elevation-relevant claims of the CURRENT access token. Separate from describeUser because it
+ * is read on a one-second tick and describeUser's job (username + roles) is not.
+ */
+export function elevationOf(user: AuthUser): ElevationClaims {
+  return elevationClaims(user.access_token)
 }
 
 /** Decode the username + realm roles for display. Roles live in the ACCESS token's realm_access
