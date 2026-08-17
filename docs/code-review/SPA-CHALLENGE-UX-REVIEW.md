@@ -8,7 +8,8 @@ tags:
 
 # SPA-CHALLENGE-UX — Code Review
 
-> **Verdict**: **Approved with fixes** — 9 findings, **0 Critical**, all fixed on the branch.
+> **Verdict**: **Approved with fixes** — round 1: 9 findings, 0 Critical. Verify round: **7 more,
+> all of them in round 1's own fixes**, 0 Critical. Both sets fixed on the branch.
 > **Scope**: the demo console consuming the RFC 9470 step-up challenge (locked panel, [Verify]
 > round trip, elevation chip, provenance badges) plus the `_provenance` carrier on the catalog
 > service. · **Branch**: `feature/void3110/spa-challenge-ux` vs `main` — 46 files, +4984/−129.
@@ -57,7 +58,7 @@ and the verification itself was the least verified thing in it.
 
 ## Refuted / dropped
 
-- *"Developer-machine workspace path committed to the public repo in a Mulch record"* — **independently re-checked** given the IP boundary: `git grep "/Users/dmitry" -- .mulch` and a sweep for proprietary workspace/product names across `.mulch`, `docs`, `example-demo-ui` both return nothing. Correctly refuted.
+- *"Developer-machine workspace path committed to the public repo in a Mulch record"* — **refuted in round 1, then CONFIRMED in the verify round, and the refutation was mine.** I re-checked it with a pattern matching only the absolute home form, which cannot match the **tilde** form the records actually used; the verify round caught both the leak and my too-narrow check. Two records carried it (one new here, one pre-existing from 2026-08-01) and so did this note's own first draft — while that draft asserted no such paths were tracked. All three reworded; the clean-room gate widened (below). The lesson is the finding: *a refutation is only as good as its pattern*, and a grep that returns nothing is evidence about the grep as much as about the tree.
 - *"`stepUpStateOf`'s reject branch has no test"* — refuted; the branch is covered.
 
 ## Fail-closed verification
@@ -137,6 +138,39 @@ overturned.
 | `run-tests.sh` (smoke) | ✅ 22 |
 | E10–E21 Browser-pane pass | ✅ STATUS-06 |
 
-`E33c`'s new assertion runs only under `--convergence` (a separate entry point after a realm
-re-import + re-seed) and so was **not** exercised on a live run here; its script was extracted and
-syntax-checked with `node --check` instead. Stated rather than implied.
+### Two fixes that carry no live proof — stated, not implied
+
+- **`E33c`'s new assertion** runs only under `--convergence` (a separate entry point after a realm
+  re-import + re-seed) and so was **not** exercised on a live run here; its script was extracted and
+  syntax-checked with `node --check` instead.
+- **The restore-path fix (#8) has no regression guard and could not be given one here.** The branch
+  it changes is entered only when the restored `getCategory` is *still* challenged after a completed
+  verification — which is precisely the **E12(b) state STATUS-06 records as structurally unreachable
+  on the shipped policy**, with five routes ruled out. So it cannot be driven in the Browser pane,
+  and `example-demo-ui` has no DOM test environment (the vitest suite is deliberately pure-seam:
+  no jsdom, no component tests), so it cannot be unit-tested without adding one. The fix is a
+  reasoned correction to code that now matches its own comment and the README instead of
+  contradicting them — but it is **defensive code for an unreachable state, verified by reading**.
+  Adding jsdom + a component test for the restoration effect is the honest way to close this, and
+  is recorded as a follow-up rather than smuggled into a review-fix round.
+
+### The verify round, and what it says about round 1
+
+The skill's rule — *a round that fixed something is never terminal* — paid for itself. The verify
+round found **7 findings, every one of them in the round-1 fixes**, including two that matter:
+
+- **The fix for #9 was itself vacuous**, in the same shape as the finding it fixed: it asserted on
+  the *input* page rather than on what the advice *returned*, so the exact "rebuilt items"
+  implementation its own comment named would still pass. The skeptic proved it by **mutating
+  `CatalogProvenanceAdvice` to return a rebuilt page and watching all 11 tests stay green**. I
+  reproduced that mutation after fixing it: the test now fails, and is the **only** one that does.
+- **A refutation I made in round 1 was wrong.** I re-checked the "developer path in a Mulch record"
+  finding with a pattern that could only match the absolute `/Users/...` form, and the records used
+  the **tilde** form — so my grep returned nothing and I called it refuted. Two records carried it,
+  one of them pre-existing since 2026-08-01, and this note's own first draft carried it too while
+  asserting the opposite. A prior review (`AGENT-TOOL-AUTHZ-REVIEW` #10) had already "fixed" this
+  class once; it recurred because the clean-room gate's pattern lacked the tilde form **and never
+  scanned `.mulch`, which is committed**. Both holes are now closed in `verify-package.sh`.
+
+The durable lesson is the second one: **a grep that returns nothing is evidence about the grep as
+much as about the tree**, and a refutation is only as good as its pattern.

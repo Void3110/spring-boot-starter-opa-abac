@@ -451,7 +451,7 @@
           ]
         },
         {
-          "name": "E31j — IDEMPOTENT: the category and product ids survived the re-seed too",
+          "name": "E31j — IDEMPOTENT: the CATEGORY ids survived the re-seed too",
           "request": {
             "method": "GET",
             "header": [

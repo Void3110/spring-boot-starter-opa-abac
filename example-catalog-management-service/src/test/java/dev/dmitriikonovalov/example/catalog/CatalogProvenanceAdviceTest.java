@@ -149,9 +149,16 @@ class CatalogProvenanceAdviceTest {
         Map<String, Boolean> affordances = Map.of("view", true, "update", false);
         CatalogPage page = pageOf(catalog(C1).actions(affordances), catalog(C2).actions(affordances));
 
-        write(page, HttpMethod.GET);
+        // Assert on what the advice RETURNED, not on the input we still hold a reference to.
+        // Asserting the input is the trap: `beforeBodyWrite` is a ResponseBodyAdvice, so replacing
+        // the body by returning a new object is the idiomatic implementation — and it would leave
+        // our `page` untouched, passing every assertion below while dropping _actions on the wire.
+        Object returned = write(page, HttpMethod.GET);
 
-        for (Catalog item : page.getItems()) {
+        assertThat(returned)
+                .as("the advice must stamp in place, not hand back a rebuilt body")
+                .isSameAs(page);
+        for (Catalog item : ((CatalogPage) returned).getItems()) {
             assertThat(wireHasProvenance(item))
                     .as("_provenance must be ABSENT when it was never computed")
                     .isFalse();

@@ -67,13 +67,28 @@ done
 
 # ── 3. Clean-room scan (this repo is public — MUST be empty) ────────────────────
 echo "[3] clean-room scan"
-GENERIC='glpat-[A-Za-z0-9_-]|ghp_[A-Za-z0-9]|/Users/[a-z]'
+# `~/Workspace`-style paths matter as much as absolute `/Users/...` ones: a machine-local layout
+# is the leak, and the tilde form is how people actually write it. Learned the hard way twice —
+# AGENT-TOOL-AUTHZ-REVIEW finding #10 fixed this class once, and it RECURRED in committed Mulch
+# records because the pattern below only had the absolute form (SPA-CHALLENGE-UX verify round).
+GENERIC='glpat-[A-Za-z0-9_-]|ghp_[A-Za-z0-9]|/Users/[a-z]|~/Workspace'
 BLOCKFILE="scripts/planning/cleanroom-patterns.local"
 if [ -f "$BLOCKFILE" ]; then
   PRIVATE=$(grep -vE '^\s*(#|$)' "$BLOCKFILE" | head -1)
   PATTERN="$GENERIC${PRIVATE:+|$PRIVATE}"
   HITS=$(grep -rnEi "$PATTERN" "$DIR" || true)
-  if [ -z "$HITS" ]; then ok "clean (generic + private blocklist)"
+  # `.mulch/` is COMMITTED and was never scanned — which is exactly where the recurrence hid.
+  # Records are written by `ml record` from inside a session, so nothing else gates them.
+  #
+  # CASE-SENSITIVE here, unlike the package scan above. The package scan is deliberately `-i` and
+  # pays for it with the documented `/users/<lower>` REST-path false positive (Mulch mx-e621ea),
+  # which packages avoid by wording convention. Mulch records CANNOT: they quote real endpoints
+  # like `/api/v1/users/search` all over, so an `-i` scan here fails on prose that is entirely
+  # correct. Dropping `-i` separates the two cleanly — a home path is `/Users/` and `~/Workspace`
+  # with capitals; a REST path is `/users/` lowercase. Both real forms still match.
+  MULCH_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/.mulch"
+  [ -d "$MULCH_DIR" ] && HITS="$HITS$(grep -rnE "$PATTERN" "$MULCH_DIR" || true)"
+  if [ -z "$HITS" ]; then ok "clean (generic + private blocklist; package + committed .mulch records)"
   else bad "clean-room violations:"; printf '%s\n' "$HITS" | sed 's/^/      /'; fi
 else
   bad "no $BLOCKFILE — copy the .example and tailor it (the gate fails closed)"

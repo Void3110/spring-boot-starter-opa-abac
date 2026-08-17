@@ -9,7 +9,8 @@
 #        the very same catalog — reads it with no elevation at all. That asymmetry is the demo.
 #   E32  the demo world and the matrices coexist, in BOTH directions: the supervised-scope and
 #        step-up matrices leave sup-demo's page untouched, and no d311… row ever appears in
-#        sup-anna's page. E32c additionally catches a rig left in the step-up FRESHNESS DRILL
+#        sup-anna's page. E31d, E32c and E33c each catch a rig left in the step-up FRESHNESS DRILL
+#        (all three, because --skip-matrices and --convergence are separate entry points)
 #        (max_age overridden to 5) — it compares the advertised window against the SHIPPED value
 #        read from infra/opa/policies/step_up.json, never against live OPA, which the drill moves.
 #   E33  the world converges across a realm re-import + re-seed, with no duplicate team or catalog.
@@ -188,21 +189,24 @@ echo "==> Pinning the pre-re-seed ids ..."
 # separators=(',',':') so the string is byte-comparable with the cell's JSON.stringify — python's
 # default json.dumps writes ", " between elements and JS writes ",".
 PRE_CATALOG_IDS="$(observe "$SUP_TOKEN" "$GATEWAY/api/v1/catalogs?perPage=50" \
-  "import sys,json;print(json.dumps(sorted(i['id'] for i in json.load(sys.stdin)['items']),separators=(',',':')))")"
+  "import sys,json;print(json.dumps(sorted(i['id'] for i in json.load(sys.stdin)['items']),separators=(',',':')))" || true)"
 PRE_PROD_CATEGORY_ID="$(observe "$PM_TOKEN" "$GATEWAY/api/v1/catalogs/$DEMO_PROD_CATALOG_ID/categories" \
-  "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])")"
+  "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])" || true)"
 # The PRODUCT id too — E31j's name has always claimed products survive the re-seed, but nothing
 # pinned one, so the claim went unasserted (E31k is the cell that now checks it).
 PRE_PROD_PRODUCT_ID="$(observe "$PM_TOKEN" \
   "$GATEWAY/api/v1/catalogs/$DEMO_PROD_CATALOG_ID/categories/$PRE_PROD_CATEGORY_ID/products" \
-  "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])")"
+  "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])" || true)"
+# `|| true` on each observe above is load-bearing: under `set -euo pipefail` a failing command
+# substitution in an assignment aborts the script immediately, so without it this friendly guard
+# could never fire and the operator got a bare exit instead of the reason.
 [ -n "$PRE_CATALOG_IDS" ] && [ -n "$PRE_PROD_CATEGORY_ID" ] && [ -n "$PRE_PROD_PRODUCT_ID" ] || {
   echo "ERROR: could not observe the seeded world before the re-seed." >&2; exit 1; }
 
 echo "==> Re-running the seed (it must be a no-op) ..."
 ./seed-demo-data.sh >/dev/null || { echo "ERROR: the seed re-run failed — it is not idempotent." >&2; exit 1; }
 
-echo "==> Idempotency (E31i–j): the ids after a second seed run ..."
+echo "==> Idempotency (E31i–k): the ids after a second seed run ..."
 run_folder "Idempotency" "idempotency.json" \
   --env-var "pre_reseed_catalog_ids=$PRE_CATALOG_IDS" \
   --env-var "pre_reseed_prod_category_id=$PRE_PROD_CATEGORY_ID" \
