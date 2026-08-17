@@ -73,6 +73,11 @@ for arg in "$@"; do
 done
 
 # --- preflight ---------------------------------------------------------------
+# Same guard every sibling runner has: without it a missing env file surfaces as an opaque
+# newman error several steps later, after the TOTP mints have already been spent.
+[ -f "$ENV_FILE" ] || {
+  echo "ERROR: $ENV_FILE not found. Copy: cp local.postman_environment.example.json local.postman_environment.json" >&2
+  exit 1; }
 RUNTIME=""
 for c in docker podman; do command -v "$c" >/dev/null 2>&1 && { RUNTIME="$c"; break; }; done
 [ -n "$RUNTIME" ] || { echo "ERROR: need docker or podman to mint in-network tokens." >&2; exit 1; }
@@ -186,7 +191,12 @@ PRE_CATALOG_IDS="$(observe "$SUP_TOKEN" "$GATEWAY/api/v1/catalogs?perPage=50" \
   "import sys,json;print(json.dumps(sorted(i['id'] for i in json.load(sys.stdin)['items']),separators=(',',':')))")"
 PRE_PROD_CATEGORY_ID="$(observe "$PM_TOKEN" "$GATEWAY/api/v1/catalogs/$DEMO_PROD_CATALOG_ID/categories" \
   "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])")"
-[ -n "$PRE_CATALOG_IDS" ] && [ -n "$PRE_PROD_CATEGORY_ID" ] || {
+# The PRODUCT id too — E31j's name has always claimed products survive the re-seed, but nothing
+# pinned one, so the claim went unasserted (E31k is the cell that now checks it).
+PRE_PROD_PRODUCT_ID="$(observe "$PM_TOKEN" \
+  "$GATEWAY/api/v1/catalogs/$DEMO_PROD_CATALOG_ID/categories/$PRE_PROD_CATEGORY_ID/products" \
+  "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])")"
+[ -n "$PRE_CATALOG_IDS" ] && [ -n "$PRE_PROD_CATEGORY_ID" ] && [ -n "$PRE_PROD_PRODUCT_ID" ] || {
   echo "ERROR: could not observe the seeded world before the re-seed." >&2; exit 1; }
 
 echo "==> Re-running the seed (it must be a no-op) ..."
@@ -195,7 +205,8 @@ echo "==> Re-running the seed (it must be a no-op) ..."
 echo "==> Idempotency (E31i–j): the ids after a second seed run ..."
 run_folder "Idempotency" "idempotency.json" \
   --env-var "pre_reseed_catalog_ids=$PRE_CATALOG_IDS" \
-  --env-var "pre_reseed_prod_category_id=$PRE_PROD_CATEGORY_ID"
+  --env-var "pre_reseed_prod_category_id=$PRE_PROD_CATEGORY_ID" \
+  --env-var "pre_reseed_prod_product_id=$PRE_PROD_PRODUCT_ID"
 
 if [ "$MODE" = skip-matrices ]; then
   echo ""

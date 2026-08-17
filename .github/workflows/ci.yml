@@ -35,6 +35,35 @@ jobs:
           docker run --rm -v "$PWD/example-user-management-service/src/main/resources/opa/policies:/policies:ro" \
             openpolicyagent/opa:1.10.1 test /policies -v
 
+  # The demo console is not a Gradle module, so `./gradlew build` never sees it — its
+  # vitest suite covers the seams that decide what a user is ALLOWED to see (the RFC 9470
+  # challenge parser, `request()`'s error classification, and the elevation-window
+  # arithmetic), so a regression there is an authorization-UX regression that would
+  # otherwise merge green. Node-only: no rig, no browser, no Docker.
+  demo-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: example-demo-ui/package-lock.json
+
+      - name: Install (lockfile-exact)
+        run: npm ci
+        working-directory: example-demo-ui
+
+      - name: Typecheck (tsc -b --noEmit)
+        run: npm run lint
+        working-directory: example-demo-ui
+
+      - name: Unit tests (vitest)
+        run: npm test
+        working-directory: example-demo-ui
+
   build:
     runs-on: ubuntu-latest
     strategy:

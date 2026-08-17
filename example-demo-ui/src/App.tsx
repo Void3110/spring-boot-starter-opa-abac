@@ -220,9 +220,21 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
         if (restore.categoryId) {
           // ONE direct read, not list-then-find: a list call here could be challenged in its own
           // right and would make "exactly one automatic retry" false.
-          const category = await getCategory(restore.catalogId, restore.categoryId)
-          if (cancelled) return
-          setView({ kind: 'category', catalog, category })
+          try {
+            const category = await getCategory(restore.catalogId, restore.categoryId)
+            if (cancelled) return
+            setView({ kind: 'category', catalog, category })
+          } catch (e) {
+            if (cancelled) return
+            // A CHALLENGED category is not a failed restore — it is the passive case this whole
+            // effect exists for. Landing on the grid here would throw away the catalog we already
+            // read and strand the user one level further out than the verification they just
+            // completed; the catalog's own `cats` load re-raises the challenge and renders the
+            // passive panel, which is what the user is owed. Caught separately from the catalog
+            // read above BECAUSE that one really is a hard failure (see below).
+            if (e instanceof StepUpRequiredError) setView({ kind: 'catalog', catalog })
+            else throw e
+          }
         } else {
           setView({ kind: 'catalog', catalog })
         }
@@ -481,7 +493,11 @@ function CatalogDetail({
               from and may be stale, while `full` is this catalog's own freshly-derived answer. */}
           <CatalogBadges
             badges={badgesFor({
-              provenance: full.data?._provenance ?? catalog._provenance,
+              // `?? catalog._provenance` would be WRONG here: once `full` has loaded, an ABSENT
+              // _provenance is the server declining to compute one, and substituting the grid
+              // row's label would re-assert a badge the server just withheld. Only fall back
+              // while `full` has not arrived yet.
+              provenance: full.data ? full.data._provenance : catalog._provenance,
               env: (full.data ?? catalog).tags?.env,
               elevated,
             })}

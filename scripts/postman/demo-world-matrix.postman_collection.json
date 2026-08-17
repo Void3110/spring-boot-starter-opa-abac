@@ -19,7 +19,7 @@
       "name": "Demo world",
       "item": [
         {
-          "name": "E31a \u2014 HEADLINE: sup-demo (bound to NO team) GET /catalogs -> exactly the two demo catalogs",
+          "name": "E31a — HEADLINE: sup-demo (bound to NO team) GET /catalogs -> exactly the two demo catalogs",
           "request": {
             "method": "GET",
             "header": [
@@ -75,7 +75,7 @@
           ]
         },
         {
-          "name": "E31b \u2014 the tier states: production tagged, open untagged",
+          "name": "E31b — the tier states: production tagged, open untagged",
           "request": {
             "method": "GET",
             "header": [
@@ -125,7 +125,7 @@
           ]
         },
         {
-          "name": "E31c \u2014 no ceremony: sup-demo reads the OPEN catalog's contents at aal1",
+          "name": "E31c — no ceremony: sup-demo reads the OPEN catalog's contents at aal1",
           "request": {
             "method": "GET",
             "header": [
@@ -166,7 +166,7 @@
           ]
         },
         {
-          "name": "E31d \u2014 THE CHALLENGE: sup-demo at aal1 is refused the PRODUCTION catalog's contents",
+          "name": "E31d — THE CHALLENGE: sup-demo at aal1 is refused the PRODUCTION catalog's contents",
           "request": {
             "method": "GET",
             "header": [
@@ -208,7 +208,10 @@
                   "  pm.expect(acr, 'acr_values param').to.not.eql(null);",
                   "  pm.expect(acr[1]).to.eql('aal2');",
                   "  pm.expect(age, 'max_age param').to.not.eql(null);",
-                  "  pm.expect(Number(age[1])).to.be.a('number').and.to.be.at.least(0);",
+                  "  // Pinned to the SHIPPED window, not just >= 0: this runner can be entered with",
+                  "  // --skip-matrices on a rig the step-up drill left at max_age=5, and a >= 0 check",
+                  "  // passes happily on that, quietly certifying a drilled rig as shipped-correct.",
+                  "  pm.expect(Number(age[1])).to.eql(Number(pm.environment.get('shipped_max_age')));",
                   "});",
                   "pm.test('E31d the body carries the STEP_UP_REQUIRED code the client classifies on', () =>",
                   "  pm.expect(pm.response.json().errorCode).to.eql('STEP_UP_REQUIRED'));"
@@ -218,7 +221,7 @@
           ]
         },
         {
-          "name": "E31e \u2014 the MEMBER leg: pm-demo reads the SAME production contents with no elevation",
+          "name": "E31e — the MEMBER leg: pm-demo reads the SAME production contents with no elevation",
           "request": {
             "method": "GET",
             "header": [
@@ -261,7 +264,7 @@
           ]
         },
         {
-          "name": "E31f \u2014 pm-demo's own page is exactly the two demo catalogs (a duplicate seed would show here)",
+          "name": "E31f — pm-demo's own page is exactly the two demo catalogs (a duplicate seed would show here)",
           "request": {
             "method": "GET",
             "header": [
@@ -315,7 +318,7 @@
           ]
         },
         {
-          "name": "E31g \u2014 a product exists under the production category",
+          "name": "E31g — a product exists under the production category",
           "request": {
             "method": "GET",
             "header": [
@@ -356,7 +359,7 @@
           ]
         },
         {
-          "name": "E31h \u2014 a product exists under the open category",
+          "name": "E31h — a product exists under the open category",
           "request": {
             "method": "GET",
             "header": [
@@ -403,7 +406,7 @@
       "name": "Idempotency",
       "item": [
         {
-          "name": "E31i \u2014 IDEMPOTENT: after a second seed run the catalog ids are identical",
+          "name": "E31i — IDEMPOTENT: after a second seed run the catalog ids are identical",
           "request": {
             "method": "GET",
             "header": [
@@ -448,7 +451,7 @@
           ]
         },
         {
-          "name": "E31j \u2014 IDEMPOTENT: the category and product ids survived the re-seed too",
+          "name": "E31j — IDEMPOTENT: the category and product ids survived the re-seed too",
           "request": {
             "method": "GET",
             "header": [
@@ -484,6 +487,49 @@
               }
             }
           ]
+        },
+        {
+          "name": "E31k — IDEMPOTENT: the PRODUCT ids survived the re-seed too",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pm_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{demo_prod_catalog_id}}/categories/{{pre_reseed_prod_category_id}}/products",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{demo_prod_catalog_id}}",
+                "categories",
+                "{{pre_reseed_prod_category_id}}",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// E31j's NAME promises the product ids survived, but it only ever read categories -- the",
+                  "// product half of that claim went unasserted, so a seed that recreated products on every run",
+                  "// (the exact non-idempotency the folder exists to catch) would have passed it. This is that half.",
+                  "pm.test('E31k 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('E31k still exactly one product', () => pm.expect(body.count).to.eql(1));",
+                  "pm.test('E31k the product id is unchanged', () =>",
+                  "  pm.expect(body.items[0].id).to.eql(pm.environment.get('pre_reseed_prod_product_id')));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -491,7 +537,7 @@
       "name": "Coexistence",
       "item": [
         {
-          "name": "E32a \u2014 COEXISTENCE: after the matrices ran, sup-demo's page is untouched",
+          "name": "E32a — COEXISTENCE: after the matrices ran, sup-demo's page is untouched",
           "request": {
             "method": "GET",
             "header": [
@@ -543,7 +589,7 @@
           ]
         },
         {
-          "name": "E32b \u2014 and the demo world never leaked into a MATRIX supervisor's page",
+          "name": "E32b — and the demo world never leaked into a MATRIX supervisor's page",
           "request": {
             "method": "GET",
             "header": [
@@ -575,9 +621,20 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('E32b 200 OK', () => pm.response.to.have.status(200));",
-                  "const ids = pm.response.json().items.map(i => i.id);",
+                  "const body = pm.response.json();",
+                  "const ids = body.items.map(i => i.id);",
                   "// The converse direction: the seed binds no matrix persona, so anna's exact-id assertions",
                   "// elsewhere stay valid. A stray d311... row here would silently widen her page.",
+                  "//",
+                  "// THE POSITIVE CONTROL IS LOAD-BEARING. By the time this cell runs, both matrices have",
+                  "// finished and torn down their fixtures, and each teardown deletes anna's reporting edges",
+                  "// (and the step-up one her team seats too) -- so her correct page here is EMPTY. Without",
+                  "// the count assertion below, `ids` is [] and the three not.include checks pass on an empty",
+                  "// array no matter what the seed did: the cell would assert nothing about the leak it is",
+                  "// named for. `count === 0` is what actually fails when a d311... row reaches her scope.",
+                  "pm.test('E32b sup-anna is scoped to nothing at all once the matrices tore down', () => {",
+                  "  pm.expect(body.count, 'anna has no edges and no seats here; any row is a leak').to.eql(0);",
+                  "});",
                   "pm.test('E32b no d311... catalog is in sup-anna\\'s page', () => {",
                   "  pm.expect(ids).to.not.include(pm.environment.get('demo_prod_catalog_id'));",
                   "  pm.expect(ids).to.not.include(pm.environment.get('demo_open_catalog_id'));",
@@ -589,7 +646,7 @@
           ]
         },
         {
-          "name": "E32c \u2014 the tier behaviour survived the matrices: production still challenges sup-demo",
+          "name": "E32c — the tier behaviour survived the matrices: production still challenges sup-demo",
           "request": {
             "method": "GET",
             "header": [
@@ -636,7 +693,7 @@
           ]
         },
         {
-          "name": "E32d \u2014 and the OPEN catalog still needs no ceremony",
+          "name": "E32d — and the OPEN catalog still needs no ceremony",
           "request": {
             "method": "GET",
             "header": [
@@ -676,7 +733,7 @@
       "name": "Convergence",
       "item": [
         {
-          "name": "E33a \u2014 CONVERGENCE: after a realm re-import + re-seed, the world is the same world",
+          "name": "E33a — CONVERGENCE: after a realm re-import + re-seed, the world is the same world",
           "request": {
             "method": "GET",
             "header": [
@@ -729,7 +786,7 @@
           ]
         },
         {
-          "name": "E33b \u2014 no duplicate world: pm-demo's page is still exactly two",
+          "name": "E33b — no duplicate world: pm-demo's page is still exactly two",
           "request": {
             "method": "GET",
             "header": [
@@ -772,7 +829,7 @@
           ]
         },
         {
-          "name": "E33c \u2014 and the tier states came back with it",
+          "name": "E33c — and the tier states came back with it",
           "request": {
             "method": "GET",
             "header": [
@@ -801,7 +858,14 @@
                 "exec": [
                   "pm.test('E33c 401 - the operator tag survived the re-seed', () => pm.response.to.have.status(401));",
                   "pm.test('E33c with a well-formed challenge', () =>",
-                  "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('insufficient_user_authentication'));"
+                  "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('insufficient_user_authentication'));",
+                  "// Same drill guard as E32c: --convergence is a separate entry point, so it can land on",
+                  "// a rig still holding the step-up drill's override and would otherwise never notice.",
+                  "pm.test('E33c the advertised max_age is the SHIPPED window, not a leftover drill override', () => {",
+                  "  const age = /max_age=\"([^\"]*)\"/.exec(pm.response.headers.get('WWW-Authenticate'));",
+                  "  pm.expect(age, 'max_age param').to.not.eql(null);",
+                  "  pm.expect(Number(age[1])).to.eql(Number(pm.environment.get('shipped_max_age')));",
+                  "});"
                 ]
               }
             }

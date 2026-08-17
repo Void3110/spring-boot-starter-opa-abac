@@ -141,6 +141,28 @@ class CatalogProvenanceAdviceTest {
     }
 
     @Test
+    void u7_noMemoOmitsProvenanceButLeavesTheREST_ofTheEnrichmentIntact() throws Exception {
+        // QA I2's last sub-case: the memo-less page must lose ONLY _provenance. The advice runs on
+        // every catalog body, so a version that rebuilt or replaced items instead of stamping them
+        // would silently drop _actions -- an affordance the console renders its buttons from -- and
+        // u7_noMemoOmitsTheFieldEntirely above would still pass, because it only asserts the absence.
+        Map<String, Boolean> affordances = Map.of("view", true, "update", false);
+        CatalogPage page = pageOf(catalog(C1).actions(affordances), catalog(C2).actions(affordances));
+
+        write(page, HttpMethod.GET);
+
+        for (Catalog item : page.getItems()) {
+            assertThat(wireHasProvenance(item))
+                    .as("_provenance must be ABSENT when it was never computed")
+                    .isFalse();
+            assertThat(item.getActions())
+                    .as("_actions must survive the advice untouched")
+                    .isEqualTo(affordances);
+        }
+        verifyNoRoleLookup();
+    }
+
+    @Test
     void u7_aBodyThatIsNotACatalogShapeIsUntouched() {
         CatalogProvenanceMemo.write(List.of(C1));
         Object body = Map.of("some", "other body");
