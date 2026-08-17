@@ -61,7 +61,7 @@ whole A/B/C story in the browser.
 | # | Ticket | Status |
 |---|---|---|
 | T1 | the `_provenance` affordance: spec + marker + memo + advice + tests + ADR 0033 | ✅ |
-| T2 | the SPA challenge seam: parser, `StepUpRequiredError`, `request()` classification, vitest | 📋 |
+| T2 | the SPA challenge seam: parser, `StepUpRequiredError`, `request()` classification, vitest | ✅ |
 | T3 | the locked panel, [Verify], the state-carried location, restoration, one retry | 📋 |
 | T4 | the elevation chip (learned window, reactive expiry) + the row badges | 📋 |
 | T5 | `sup-demo`/`pm-demo` in the realm, the seed's supervised block, the registry row | ✅ |

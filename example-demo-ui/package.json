@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Demo SPA for spring-boot-starter-opa-abac — a browser front-end that logs in via Keycloak (PKCE) and exercises the catalog/user-management ABAC, rendering the _actions affordance map live. Not published; not part of the Gradle build.",
+  "description": "Demo SPA for spring-boot-starter-opa-abac \u2014 a browser front-end that logs in via Keycloak (PKCE) and exercises the catalog/user-management ABAC, rendering the _actions affordance map live. Not published; not part of the Gradle build.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "tsc -b --noEmit"
+    "lint": "tsc -b --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "oidc-client-ts": "^3.1.0",
@@ -22,6 +23,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
   }
 }

@@ -24,6 +24,51 @@ The SPA is served two ways:
 Sign in as `editor` / `demo` / `viewer` / `outsider` (password == username) and watch the
 Demo catalog card's affordances change per identity.
 
+For the supervisor story, sign in as **`sup-demo`** (password == username, plus a TOTP —
+`scripts/postman/mint-code-flow-token.py --print-otp --otp-secret spachallengedemo1234` prints a
+code): she supervises `pm-demo` and is a member of no team, so both her catalogs are reachable by
+*derivation*. The untagged one opens with no ceremony; the `env=production` one asks for a fresh
+second factor. `pm-demo`, a **member** of the very same catalogs, reads production with no
+elevation at all.
+
+## Tests
+
+```bash
+npm run lint   # tsc -b --noEmit — types only
+npm test       # vitest run — the pure seams
+```
+
+`npm test` covers the seams worth testing away from a browser: the challenge parser and `request()`'s
+error classification. No DOM or component tests — the UI itself is validated by a committed
+case list run in the Browser pane (`docs/to-do/.../10-QA-TEST-CASES.md`, the E10+ cells), which is
+where UI truth actually lives.
+
+## The step-up challenge seam
+
+When a supervisor reads production content, the server answers `401` with an RFC 9470
+`WWW-Authenticate` challenge naming what would satisfy it (ADR 0030). `src/stepup.ts` parses that
+header — a real RFC 7235 `auth-param` tokenizer, because `error_description` is free text that
+contains commas — and `api.ts`'s `request()` turns a `401` + `STEP_UP_REQUIRED` + a *followable*
+challenge into a typed `StepUpRequiredError` carrying it.
+
+Three things about that are deliberate:
+
+- **A challenge the client cannot follow degrades to a plain error.** Missing `acr_values` or
+  `max_age`, a scheme that is not `Bearer`, an unparseable header → the parser returns `null` and the
+  caller gets an ordinary `ApiError`. Better an honest 401 than a [Verify] button that cannot work —
+  the client's mirror of the server's "no half-formed challenge" rule.
+- **A bodiless `401` stays the "session expired" path.** A gateway 401 carries no problem body, so
+  the two are distinguishable by construction rather than by guessing.
+- **The advertised `max_age` is remembered under `stepUp.maxAge`** — deliberately *not* under the
+  `oidc.` prefix, which oidc-client-ts's `clearStaleState()` sweeps on every `signinRedirect()`, i.e.
+  exactly when [Verify] redirects. The elevation chip counts down a window **learned from the
+  server**, never one hardcoded here.
+
+**Why the header is readable at all:** both deployments above are single-origin, so
+`WWW-Authenticate` reaches `fetch` without CORS exposure. A cross-origin adopter would need it in the
+gateway's `expose_headers` — it is there (`infra/apisix/init-routes.sh`) precisely so this reads a
+header rather than a `null` and silently degrades a working feature.
+
 ## ⚠️ Security caveat — do NOT copy the token handling to production
 
 This SPA stores its OIDC tokens in **`sessionStorage`** (`src/auth.ts`). `sessionStorage`

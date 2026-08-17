@@ -126,13 +126,21 @@ fi
 # CORS — only needed when a browser SPA on a different origin (the Vite dev server on :3000)
 # calls the gateway cross-origin. In the packaged demo the SPA is served *through* APISIX
 # (same-origin) so this is belt-and-suspenders. Enabled with the SPA posture; harmless when on.
+#
+# `WWW-Authenticate` is in expose_headers for the RFC 9470 step-up challenge (ADR 0030/0033): a
+# browser client cannot read a response header cross-origin unless it is exposed. Both of THIS demo's
+# deployments are same-origin, so the console reads the challenge either way — but a cross-origin
+# adopter would otherwise get the 401 and the STEP_UP_REQUIRED body with a `null` header, and the
+# client would honestly degrade it to a plain error: a feature that looks broken with nothing in any
+# log to say why. (On the MCP route it is inert by construction — the supervised path is human-only,
+# so an agent gets a plain 403 and never a challenge — and listed there only for uniformity.)
 if [ "${ENABLE_SPA:-0}" = "1" ]; then
   PLUGINS="$PLUGINS,\"cors\":{\
 \"_meta\":{\"priority\":4000},\
 \"allow_origins\":\"http://localhost:3000,http://localhost:9085\",\
 \"allow_methods\":\"GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD\",\
 \"allow_headers\":\"Authorization,Content-Type,Accept,Origin,X-Requested-With\",\
-\"expose_headers\":\"X-Upstream-Addr,Location\",\
+\"expose_headers\":\"X-Upstream-Addr,Location,WWW-Authenticate\",\
 \"allow_credential\":false,\
 \"max_age\":3600}"
 fi
@@ -305,7 +313,7 @@ if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
 \"allow_origins\":\"http://localhost:3000,http://localhost:9085\",\
 \"allow_methods\":\"GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD\",\
 \"allow_headers\":\"Authorization,Content-Type,Accept,Origin,X-Requested-With\",\
-\"expose_headers\":\"X-Upstream-Addr,Location\",\
+\"expose_headers\":\"X-Upstream-Addr,Location,WWW-Authenticate\",\
 \"allow_credential\":false,\
 \"max_age\":3600}"
   fi
@@ -378,7 +386,7 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
 \"allow_origins\":\"http://localhost:3000,http://localhost:9085\",\
 \"allow_methods\":\"GET,POST,PUT,DELETE,OPTIONS,PATCH,HEAD\",\
 \"allow_headers\":\"Authorization,Content-Type,Accept,Origin,X-Requested-With,Mcp-Session-Id,MCP-Protocol-Version\",\
-\"expose_headers\":\"X-Upstream-Addr,Mcp-Session-Id\",\
+\"expose_headers\":\"X-Upstream-Addr,Mcp-Session-Id,WWW-Authenticate\",\
 \"allow_credential\":false,\
 \"max_age\":3600}"
   fi
