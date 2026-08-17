@@ -88,7 +88,7 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 required." >&2; exi
 # The SHIPPED step-up window, read from the policy DATA FILE — never from live OPA. The step-up
 # matrix's freshness drill overrides max_age in OPA and restores it by restarting the container; a
 # run that died mid-drill leaves 5 behind, and comparing live-against-live would pass vacuously.
-SHIPPED_MAX_AGE="$(python3 -c "import json;print(json.load(open('$REPO_ROOT/infra/opa/policies/step_up.json'))['step_up']['max_age'])")"
+SHIPPED_MAX_AGE="$(python3 -c "import json;print(json.load(open('$REPO_ROOT/infra/opa/policies/step_up.json'))['step_up']['max_age'])" || true)"
 [ -n "$SHIPPED_MAX_AGE" ] || { echo "ERROR: could not read the shipped max_age from infra/opa/policies/step_up.json." >&2; exit 1; }
 
 # --- helpers -----------------------------------------------------------------
@@ -103,13 +103,13 @@ mint() { # user pass [otp] -> access_token ('' on failure)
 
 mint_otp() { # user pass secret -> access_token; retries ONCE in the next window (codes are one-time)
   local user="$1" pass="$2" secret="$3" code token
-  code="$(python3 mint-code-flow-token.py --print-otp --otp-secret "$secret")"
-  token="$(mint "$user" "$pass" "$code")"
+  code="$(python3 mint-code-flow-token.py --print-otp --otp-secret "$secret" || true)"
+  token="$(mint "$user" "$pass" "$code" || true)"
   if [ -z "$token" ]; then
     echo "    ... '$user': the code for this window is spent or was rejected; waiting for the next one" >&2
     python3 -c "import time;p=30;time.sleep(p-(time.time()%p)+1)"
-    code="$(python3 mint-code-flow-token.py --print-otp --otp-secret "$secret")"
-    token="$(mint "$user" "$pass" "$code")"
+    code="$(python3 mint-code-flow-token.py --print-otp --otp-secret "$secret" || true)"
+    token="$(mint "$user" "$pass" "$code" || true)"
   fi
   printf '%s' "$token"
 }
@@ -156,8 +156,8 @@ if [ "${RUN_SEED:-0}" = "1" ]; then
 fi
 
 echo "==> Minting the demo personas (sup-demo needs her TOTP; Keycloak's direct grant demands it) ..."
-SUP_TOKEN="$(mint_otp sup-demo sup-demo "$DEMO_OTP_SECRET")"; require_token sup-demo "$SUP_TOKEN"
-PM_TOKEN="$(mint pm-demo pm-demo)";                           require_token pm-demo "$PM_TOKEN"
+SUP_TOKEN="$(mint_otp sup-demo sup-demo "$DEMO_OTP_SECRET" || true)"; require_token sup-demo "$SUP_TOKEN"
+PM_TOKEN="$(mint pm-demo pm-demo || true)";                           require_token pm-demo "$PM_TOKEN"
 echo "  sup-demo + pm-demo minted; shipped step-up window = ${SHIPPED_MAX_AGE}s"
 
 # --- E33 only ----------------------------------------------------------------
@@ -238,9 +238,9 @@ export ENABLE_USER_SERVICE="${ENABLE_USER_SERVICE:-1}"
 ./run-step-up-matrix.sh          || { echo "ERROR: run-step-up-matrix.sh failed — fix it before reading E32." >&2; exit 1; }
 
 echo "==> Re-minting for the coexistence pass (the matrices consumed their own TOTP windows) ..."
-SUP_TOKEN="$(mint_otp sup-demo sup-demo "$DEMO_OTP_SECRET")"; require_token sup-demo "$SUP_TOKEN"
-PM_TOKEN="$(mint pm-demo pm-demo)";                           require_token pm-demo "$PM_TOKEN"
-ANNA_TOKEN="$(mint_otp sup-anna sup-anna "$ANNA_OTP_SECRET")"; require_token sup-anna "$ANNA_TOKEN"
+SUP_TOKEN="$(mint_otp sup-demo sup-demo "$DEMO_OTP_SECRET" || true)"; require_token sup-demo "$SUP_TOKEN"
+PM_TOKEN="$(mint pm-demo pm-demo || true)";                           require_token pm-demo "$PM_TOKEN"
+ANNA_TOKEN="$(mint_otp sup-anna sup-anna "$ANNA_OTP_SECRET" || true)"; require_token sup-anna "$ANNA_TOKEN"
 
 echo "==> Coexistence (E32a–d): the demo world after the matrices ran ..."
 run_folder "Coexistence" "coexistence.json"

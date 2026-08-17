@@ -8,8 +8,9 @@ tags:
 
 # SPA-CHALLENGE-UX — Code Review
 
-> **Verdict**: **Approved with fixes** — round 1: 9 findings, 0 Critical. Verify round: **7 more,
-> all of them in round 1's own fixes**, 0 Critical. Both sets fixed on the branch.
+> **Verdict**: **Approved with fixes** — three rounds, **27 findings, 0 Critical**, all fixed.
+> Round 1: 9, in the slice. Round 2: 7, **all in round 1's fixes**. Round 3: 11, **all in
+> round 2's fixes** — including a **fail-open I introduced into the clean-room gate itself**.
 > **Scope**: the demo console consuming the RFC 9470 step-up challenge (locked panel, [Verify]
 > round trip, elevation chip, provenance badges) plus the `_provenance` carrier on the catalog
 > service. · **Branch**: `feature/void3110/spa-challenge-ux` vs `main` — 46 files, +4984/−129.
@@ -174,3 +175,55 @@ round found **7 findings, every one of them in the round-1 fixes**, including tw
 
 The durable lesson is the second one: **a grep that returns nothing is evidence about the grep as
 much as about the tree**, and a refutation is only as good as its pattern.
+
+### Round 3 — the gate I wrote to close a leak was itself fail-open
+
+Round 2 fixed the clean-room recurrence by widening `verify-package.sh`. Round 3 found that fix
+**fail-open**, and proved it the hard way: it planted a real `~/Workspace/platform/...` leak in a
+Mulch record, stubbed `git` to exit 127, and watched the gate print **PACKAGE OK, rc=0**.
+
+The cause is the sharpest thing in this whole review. I rooted the new scan at
+`git rev-parse --show-toplevel`, discarding stderr and never checking the status — so with git
+unavailable the path became the literal `/.mulch`, `[ -d ]` was false, the scan silently did
+nothing, and the success line still claimed *"committed .mulch records"* were covered. The script's
+own preamble forbids exactly this: it computes a git-independent `$REPO_ROOT` **because** "sessions
+and subagents may start OUTSIDE the repo (where a git-rev-parse preamble fatals)". I reintroduced
+the dependency the file was written to avoid, ten lines below the comment saying not to.
+
+Round 3's other findings were the same shape — **incomplete sweeps of my own fixes**: the `|| true`
+repair reached 3 of the 10 substitutions whose guards it needed to make reachable (`SHIPPED_MAX_AGE`
+and every token mint were still unreachable, so a container-runtime failure skipped
+`require_token`'s diagnostic entirely); dropping `-i` for the `.mulch` scan silently weakened the
+**private blocklist** — codenames and internal hostnames, the highest-value half of the pattern, and
+the half most likely to be written in mixed case; and `docs/` — the third site of the original leak —
+was still outside every gate.
+
+**What changed structurally, not just textually:**
+
+- The wide scan is rooted at `$REPO_ROOT` and **fails closed** when a tree is missing.
+- Home paths are matched case-**sensitively** (so `/api/v1/users/search` does not false-positive);
+  tokens and the private blocklist case-**insensitively** (so prose casing cannot hide a codename).
+- `docs/` is scanned alongside `.mulch/`.
+- A **`clean-room` CI job** now runs on every push and PR. This is the real fix for the recurrence:
+  `verify-package.sh` only runs when a human verifies a *planning package*, while `ml record` and
+  hand-written review notes commit on a completely different path. The gate was never wired to the
+  writes it polices.
+- Three regression cases (**CR1–CR3**) in `test-parts-gates.sh`, one of which is the fail-open
+  itself: *the leak must still be caught with `git` unavailable*. **39 passed, 0 failed.**
+
+### What three rounds actually cost, and what they say
+
+27 findings, **0 Critical, none in the authorization logic** — the surface the lenses were aimed at
+came back clean every round. Every finding landed in the **verification and scaffolding layer**:
+Postman cells, shell runners, CI wiring, a gate script, docs. Of the 16 in rounds 1–2, 12 were Low.
+
+The uncomfortable pattern is that rounds 2 and 3 found defects **exclusively in the previous round's
+fixes**, and that the defects got structurally worse before they got better — a vacuous test in
+round 2, a fail-open gate in round 3. Fixes written quickly at the end of a long session are the
+least reviewed code in the change, and they are written with the least context remaining. The
+loop-termination rule is not ceremony; it is the only thing that looked at them.
+
+Two mitigations came out of this and are worth more than the fixes themselves: **prove a test by
+mutating the code it guards** (done for the advice test and for the clean-room gate — both now have
+a demonstrated failing state), and **wire a gate to the write path it polices**, not to whoever
+happens to run a verifier.

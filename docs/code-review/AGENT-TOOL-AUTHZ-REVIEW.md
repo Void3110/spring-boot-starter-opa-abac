@@ -63,7 +63,7 @@ diff base reviews the wrong range — worth `git branch -f main origin/main` bef
 | 7 | `is_agent_call` truthiness: an actor of `false` escaped to the unnarrowed human branch | **Fixed** |
 | 8 | "OFF is never wider than ON" was only tested where the downstream denied for an independent reason | **Fixed** |
 | 9 | I29's gate-off assertion ran against a stub allowing every tool, so it could not fail | **Fixed** |
-| 10 | A committed Mulch record leaked a maintainer machine-local `~/Workspace/...` path into the public repo | **Fixed** |
+| 10 | A committed Mulch record leaked a maintainer machine-local umbrella-workspace path into the public repo | **Fixed** |
 | 11 | The `catalog-agent-revoked` realm client and its capability profile were never exercised | **Fixed** (E11-b) |
 | 12 | `AgentCapabilityProfile`'s javadoc pinned the wire contract to a test class that does not exist | **Fixed** |
 | 13 | A write-only `team_id` collection variable in the catalog-e2e collection | **Fixed** |

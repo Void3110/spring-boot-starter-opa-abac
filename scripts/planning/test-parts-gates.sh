@@ -191,6 +191,42 @@ mk_pkg "$WORK/PBAD" '**Parts:** part 0 = T1–T2 · part 1 = T2–T2'
 OUT=$(cd "$WORK" && "$VP" "$WORK/PBAD" 2>&1); RC=$?
 check U18b 1 "$RC" "malformed declaration fails the package at [9]" "execution-parts problems" "$OUT"
 
+# ══ gate [3] — the clean-room scan's WIDE leg (.mulch + docs) ══════════════════
+# Written after the SPA-CHALLENGE-UX review round 3 found this leg fail-OPEN: it derived the
+# root from `git rev-parse`, so with git unavailable it scanned nothing and still printed the
+# line claiming it had. A gate you cannot prove fires is not a gate.
+echo
+echo "== gate [3] clean-room: the wide (.mulch + docs) leg =="
+
+CR_ROOT="$(cd "$(dirname "$VP")/../.." && pwd -P)"
+CR_PROBE="$CR_ROOT/.mulch/expertise/_gatetest_probe.jsonl"
+cr_cleanup() { rm -f "$CR_PROBE"; }
+trap cr_cleanup EXIT
+
+mk_pkg "$WORK/PCR" ''
+
+# CR1 — a machine-local TILDE path in a committed Mulch record must fail the package.
+printf '{"id":"probe","description":"leak ~/Workspace/somewhere/else"}\n' > "$CR_PROBE"
+OUT=$(cd "$WORK" && "$VP" "$WORK/PCR" 2>&1); RC=$?
+check CR1 1 "$RC" "gate [3] fails on a ~/Workspace path in a committed .mulch record" \
+  "clean-room violations" "$OUT"
+
+# CR2 — THE FAIL-OPEN REGRESSION. Same leak, but with `git` unavailable on PATH. The scan must
+# still run (it is rooted at the script's own location, not at git) and must still fail.
+mkdir -p "$WORK/nogit" && printf '#!/bin/sh\nexit 127\n' > "$WORK/nogit/git" && chmod +x "$WORK/nogit/git"
+OUT=$(cd "$WORK" && PATH="$WORK/nogit:$PATH" "$VP" "$WORK/PCR" 2>&1); RC=$?
+check CR2 1 "$RC" "gate [3] still catches the leak when git is unavailable (no silent skip)" \
+  "clean-room violations" "$OUT"
+cr_cleanup
+
+# CR3 — a lowercase REST path is NOT a home path: /users/search must not trip the wide leg.
+printf '{"id":"probe","description":"the endpoint is /api/v1/users/search"}\n' > "$CR_PROBE"
+OUT=$(cd "$WORK" && "$VP" "$WORK/PCR" 2>&1); RC=$?
+printf '%s' "$OUT" | grep -q 'clean-room violations' \
+  && { FAIL=$((FAIL+1)); echo "FAIL CR3           /users/search false-positived the wide leg"; } \
+  || { PASS=$((PASS+1)); echo "PASS CR3            lowercase REST paths do not trip the home-path rule"; }
+cr_cleanup
+
 echo
 echo "== $PASS passed, $FAIL failed =="
 exit "$((FAIL > 0))"
