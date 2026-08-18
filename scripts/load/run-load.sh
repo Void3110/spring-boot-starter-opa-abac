@@ -247,11 +247,11 @@ json_field() { python3 -c "import sys,json; print(json.load(sys.stdin)['$1'])"; 
 
 mint_perf_token() {
   note "minting the '$PERF_USER' load-identity token in-network ($NETWORK) ..."
-  PERF_TOKEN="$(mint_token "$PERF_USER" "$PERF_PASS")"
+  PERF_TOKEN="$(mint_token "$PERF_USER" "$PERF_PASS")" || true
   [ -n "$PERF_TOKEN" ] || red "no token for '$PERF_USER'. Either the rig is up without OIDC, or the realm predates the perf user —
   recreate Keycloak to re-import the realm export:
   docker compose -p opa-abac-example -f $REPO_ROOT/infra/compose.keycloak.yaml up -d --force-recreate keycloak"
-  PERF_SUB="$(token_sub "$PERF_TOKEN")"
+  PERF_SUB="$(token_sub "$PERF_TOKEN")" || true
   [ -n "$PERF_SUB" ] || red "could not decode the 'sub' claim from the perf token."
   note "load identity: $PERF_USER (sub $PERF_SUB)"
 }
@@ -287,7 +287,7 @@ SQL
   # Post-seed count assertion — a stale fixture population must land red, never a wrong table row.
   local count
   count="$(docker exec -i "$PG_CONTAINER" psql -U catalog -d catalog -tAc \
-    "SELECT count(*) FROM category WHERE catalog_id = '$LOAD_CATALOG_ID';")"
+    "SELECT count(*) FROM category WHERE catalog_id = '$LOAD_CATALOG_ID';")" || true
   [ "$count" = "$FIXTURE_ROWS" ] || red "post-seed count assert failed: $count categories under the load catalog (expected $FIXTURE_ROWS)."
   note "seeded: $count categories (tags cycling emea/apac/amer), count asserted."
 
@@ -314,7 +314,7 @@ SQL
   # seed time: a broken token/resolve/decide chain lands red HERE, never inside a measurement window.
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-    -H "Authorization: Bearer $PERF_TOKEN" "$GATEWAY/api/v1/catalogs/$LOAD_CATALOG_ID")"
+    -H "Authorization: Bearer $PERF_TOKEN" "$GATEWAY/api/v1/catalogs/$LOAD_CATALOG_ID")" || true
   [ "$code" = "200" ] || red "canary probe: GET the load catalog as $PERF_USER got HTTP $code (want 200) —
   the seeded ACL chain (token -> role resolve -> OPA decide) is broken; nothing will be measured."
   note "canary probe: perf reads the load catalog through the gateway (200)."
@@ -361,7 +361,7 @@ FROM generate_series(1, $m) AS i;
 SQL
   local count
   count="$(docker exec -i "$PG_CONTAINER" psql -U catalog -d catalog -tAc \
-    "SELECT count(*) FROM catalog WHERE id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")"
+    "SELECT count(*) FROM catalog WHERE id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")" || true
   [ "$count" = "$m" ] || red "post-seed count assert failed: $count multi-root catalogs (expected $m)."
 
   # Self-reset the team side: the multi-root teams AND the single load-catalog team — perf's
@@ -389,11 +389,11 @@ SQL
   # Post-bootstrap count asserts (teams + memberships) — fire-and-forget posts must land red here,
   # never as a short page inside the measurement window.
   count="$(docker exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -tAc \
-    "SELECT count(*) FROM team WHERE target_type = 'catalog' AND target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")"
+    "SELECT count(*) FROM team WHERE target_type = 'catalog' AND target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")" || true
   [ "$count" = "$m" ] || red "post-seed team count assert failed: $count multi-root teams (expected $m)."
   count="$(docker exec -i "$UM_PG_CONTAINER" psql -U usermgmt -d usermgmt -tAc \
     "SELECT count(*) FROM team_membership ms JOIN team t ON ms.team_id = t.id
-      WHERE t.target_type = 'catalog' AND t.target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")"
+      WHERE t.target_type = 'catalog' AND t.target_id::text LIKE '${MULTI_ROOT_ID_PREFIX}%';")" || true
   [ "$count" = "$m" ] || red "post-seed membership count assert failed: $count perf memberships (expected $m)."
   note "seeded: $m catalogs / $m teams / $m memberships, counts asserted."
 
@@ -402,7 +402,7 @@ SQL
   local code list_count
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
     -H "Authorization: Bearer $PERF_TOKEN" \
-    "$GATEWAY/api/v1/catalogs/dddddddd-dddd-dddd-dddd-dd$(printf '%010d' 1)")"
+    "$GATEWAY/api/v1/catalogs/dddddddd-dddd-dddd-dddd-dd$(printf '%010d' 1)")" || true
   [ "$code" = "200" ] || red "canary probe: GET a multi-root catalog as $PERF_USER got HTTP $code (want 200) —
   the seeded ACL chain (token -> role resolve -> OPA decide) is broken; nothing will be measured."
   list_count="$(curl -s --max-time 15 -H "Authorization: Bearer $PERF_TOKEN" \

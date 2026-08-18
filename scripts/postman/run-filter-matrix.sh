@@ -176,7 +176,7 @@ done
 # The holder category is UNTAGGED so the product rows alone drive each reader's cut; the tagged
 # creates exercise tag-on-create (the type-level product:assign-tags decision on top of create).
 echo "==> Creating an untagged holder Category + three region-tagged Products through the gateway ..."
-PRODUCTS_CATEGORY_ID="$(create_category "$OWNER_TOKEN" '{"name":"Products"}')"
+PRODUCTS_CATEGORY_ID="$(create_category "$OWNER_TOKEN" '{"name":"Products"}')" || true
 [ -n "$PRODUCTS_CATEGORY_ID" ] && [ "$PRODUCTS_CATEGORY_ID" != "None" ] || {
   echo "ERROR: failed to create the holder Category for products." >&2; exit 1; }
 EMEA_PRODUCT_ID="$(create_product "$OWNER_TOKEN" "$PRODUCTS_CATEGORY_ID" '{"name":"EMEA widget","priceCents":1000,"currency":"USD","tags":{"region":["emea"]}}')"

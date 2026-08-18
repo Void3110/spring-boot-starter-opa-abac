@@ -102,7 +102,7 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (the to
 mint_anna_token() {   # [$1 client $2 secret]
   local client="${1:-$CLIENT_ID}" secret="${2:-$CLIENT_SECRET}" token=""
   for _ in 1 2 3; do
-    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")"
+    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")" || true
     [ -n "$token" ] && break
     sleep 31   # the current TOTP window was already spent; wait it out
   done
@@ -224,7 +224,7 @@ create_via_gateway() {
   local what="$1" url="$2" body="$3" response id
   response="$(curl -s -X POST "$url" -H "Authorization: Bearer $EDITOR_TOKEN" \
     -H 'Content-Type: application/json' -d "$body")"
-  id="$(printf '%s' "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)"
+  id="$(printf '%s' "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)" || true
   [ -n "$id" ] || {
     echo "ERROR: could not create the fixture $what. The service answered:" >&2
     echo "  $response" >&2
@@ -246,13 +246,13 @@ echo "==> Creating a category + product under each of the three catalogs (as the
 # so a failed seed would sail on into newman as a wall of 404s. The assignment form propagates the
 # substitution's exit status, and the non-empty check catches a silent empty print.
 seed_pair=""
-seed_pair="$(seed_contents "$STAGING_CATALOG_ID" STAGING)" || exit 1
+seed_pair="$(seed_contents "$STAGING_CATALOG_ID" STAGING)" || exit 1 || true
 [ -n "$seed_pair" ] || { echo "ERROR: empty STAGING seed result" >&2; exit 1; }
 read -r STAGING_CATEGORY_ID STAGING_PRODUCT_ID <<<"$seed_pair"
-seed_pair="$(seed_contents "$PROD_CATALOG_ID" PROD)" || exit 1
+seed_pair="$(seed_contents "$PROD_CATALOG_ID" PROD)" || exit 1 || true
 [ -n "$seed_pair" ] || { echo "ERROR: empty PROD seed result" >&2; exit 1; }
 read -r PROD_CATEGORY_ID PROD_PRODUCT_ID <<<"$seed_pair"
-seed_pair="$(seed_contents "$UNTAGGED_CATALOG_ID" UNTAGGED)" || exit 1
+seed_pair="$(seed_contents "$UNTAGGED_CATALOG_ID" UNTAGGED)" || exit 1 || true
 [ -n "$seed_pair" ] || { echo "ERROR: empty UNTAGGED seed result" >&2; exit 1; }
 read -r UNTAGGED_CATEGORY_ID UNTAGGED_PRODUCT_ID <<<"$seed_pair"
 

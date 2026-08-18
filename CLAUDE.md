@@ -72,6 +72,23 @@ Read **SURVIVED**, not the score: `NO_COVERAGE` is inflated in `opa-abac-spring-
 (PIT re-runs tests once per mutant). Baseline and the two things it disproved:
 [`docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md`](docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md).
 
+### Shell-runner guards
+
+The e2e runners' failure *diagnosis* is a feature. Under `set -euo pipefail` a bare
+`X="$(cmd)"` aborts **before** the friendly `[ -n "$X" ] || { echo "..."; exit 1; }` below it, so the
+operator gets a bare exit instead of the reason. `shellcheck` does not catch it (measured).
+
+```bash
+scripts/checks/check-shell-guards.py          # policed in CI (job: shell-guards)
+scripts/checks/check-shell-guards.py --fix    # append `|| true` in place
+scripts/checks/test-shell-guards.sh           # the gate's own regression suite
+```
+
+Not every substitution is in scope, on purpose: `local X="$(…)"` cannot trip `set -e` (the exit
+status is `local`'s), a pure `printf … | sed` chain cannot fail, and one that absorbs its own failure
+(`$(cmd || echo '<unset>')`) exits 0 regardless. An **unguarded** substitution is also out of scope —
+nothing was promised. Waive a site with `# shell-guards: ignore -- <reason>`; a reason is mandatory.
+
 ### The user-directory module + rig flag
 
 `opa-abac-keycloak-directory` is an **optional** library module (the `UserDirectory` port's

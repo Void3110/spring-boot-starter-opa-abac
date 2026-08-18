@@ -145,7 +145,7 @@ echo "==> Directory preflight (E-pre): least privilege + the directory live ..."
 DIR_TOKEN="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
   -X POST "$KEYCLOAK_TOKEN_URL" \
   -d grant_type=client_credentials -d "client_id=$DIRECTORY_CLIENT_ID" -d "client_secret=$DIRECTORY_CLIENT_SECRET" \
-  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')" || true
 [ -n "$DIR_TOKEN" ] || {
   echo "ERROR: could not mint the $DIRECTORY_CLIENT_ID service token — stale realm? Recreate Keycloak:" >&2
   echo "  docker compose -p opa-abac-example -f ../../infra/compose.keycloak.yaml up -d --force-recreate keycloak" >&2
@@ -176,11 +176,11 @@ DORA_SUB="$(printf '%s' "$resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -n
 }
 
 # E-pre denied half: every write is 403 — the account holds view-users and NOTHING else.
-code="$(kc_admin POST '/users' '{"username":"evil","enabled":true}' | tail -n1)"
+code="$(kc_admin POST '/users' '{"username":"evil","enabled":true}' | tail -n1)" || true
 [ "$code" = "403" ] || { echo "ERROR: E-pre — user CREATE got HTTP $code (want 403): the service account holds more than view-users." >&2; exit 1; }
-code="$(kc_admin PUT "/users/$DORA_SUB" '{"firstName":"Hacked"}' | tail -n1)"
+code="$(kc_admin PUT "/users/$DORA_SUB" '{"firstName":"Hacked"}' | tail -n1)" || true
 [ "$code" = "403" ] || { echo "ERROR: E-pre — user UPDATE got HTTP $code (want 403): the service account holds more than view-users." >&2; exit 1; }
-code="$(kc_admin DELETE "/users/$DORA_SUB" | tail -n1)"
+code="$(kc_admin DELETE "/users/$DORA_SUB" | tail -n1)" || true
 [ "$code" = "403" ] || { echo "ERROR: E-pre — user DELETE got HTTP $code (want 403): the service account holds more than view-users." >&2; exit 1; }
 echo "  E-pre: view-users read 200; create/update/delete all 403 (least privilege pinned)."
 

@@ -103,7 +103,7 @@ echo "  viewer token: ${#VIEWER_TOKEN} chars; editor token: ${#EDITOR_TOKEN} cha
 # and the bootstrap would run, create a team nobody consults, and pass for the wrong reason.
 CATALOG_CONTAINER="${CATALOG_CONTAINER:-catalog-1}"
 ROLE_SOURCE="$("$RUNTIME" inspect "$CATALOG_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
-  | sed -n 's/^CATALOG_ROLE_SOURCE=//p' | head -1)"
+  | sed -n 's/^CATALOG_ROLE_SOURCE=//p' | head -1)" || true
 ROLE_SOURCE="${ROLE_SOURCE:-demo}"
 VIEWER_UID=""
 if [ "$ROLE_SOURCE" = "http" ]; then
@@ -118,7 +118,7 @@ if [ "$ROLE_SOURCE" = "http" ]; then
   # editor needs no such step: owner-on-create provisions the caller as a side effect.
   viewer_payload="$(printf '%s' "$VIEWER_TOKEN" | cut -d. -f2 | tr '_-' '/+')"
   while [ $(( ${#viewer_payload} % 4 )) -ne 0 ]; do viewer_payload="${viewer_payload}="; done
-  VIEWER_SUB="$(printf '%s' "$viewer_payload" | base64 -d 2>/dev/null | sed -n 's/.*"sub":"\([^"]*\)".*/\1/p')"
+  VIEWER_SUB="$(printf '%s' "$viewer_payload" | base64 -d 2>/dev/null | sed -n 's/.*"sub":"\([^"]*\)".*/\1/p')" || true
   [ -n "$VIEWER_SUB" ] || { echo "ERROR: could not decode the viewer's subject from its token." >&2; exit 1; }
   VIEWER_UID="$(curl -s -X POST "$USER_SERVICE/internal/bootstrap/users" \
       -H 'Content-Type: application/json' \

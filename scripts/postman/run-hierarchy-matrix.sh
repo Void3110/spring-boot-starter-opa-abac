@@ -110,8 +110,8 @@ read_status() {
 
 # --- mint tokens -------------------------------------------------------------
 echo "==> Minting owner/reader tokens in-network ($NETWORK) ..."
-OWNER_TOKEN="$(mint_token "$OWNER_USER" "$OWNER_PASS")"
-READER_TOKEN="$(mint_token "$READER_USER" "$READER_PASS")"
+OWNER_TOKEN="$(mint_token "$OWNER_USER" "$OWNER_PASS")" || true
+READER_TOKEN="$(mint_token "$READER_USER" "$READER_PASS")" || true
 [ -n "$OWNER_TOKEN" ] || { echo "ERROR: no owner token. Is the rig up with OIDC?" >&2; exit 1; }
 [ -n "$READER_TOKEN" ] || { echo "ERROR: no reader token." >&2; exit 1; }
 OWNER_SUB="$(token_sub "$OWNER_TOKEN")"; READER_SUB="$(token_sub "$READER_TOKEN")"
@@ -225,7 +225,7 @@ END \$\$;
 SQL
 
 echo "==> Asserting the decision FLIPPED: the moved Category is now denied to the reader (403) ..."
-MOVED_STATUS="$(read_status "$READER_TOKEN" "$FOREIGN_CATALOG_ID" "$MOVABLE_CATEGORY_ID")"
+MOVED_STATUS="$(read_status "$READER_TOKEN" "$FOREIGN_CATALOG_ID" "$MOVABLE_CATEGORY_ID")" || true
 if [ "$MOVED_STATUS" = "403" ]; then
   echo "  PASS: re-parent flipped the decision (moved Category -> 403 under the foreign Catalog)."
 else

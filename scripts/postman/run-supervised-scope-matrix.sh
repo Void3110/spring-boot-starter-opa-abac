@@ -105,7 +105,7 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required (the to
 mint_anna_token() {   # [$1 client $2 secret]
   local client="${1:-$CLIENT_ID}" secret="${2:-$CLIENT_SECRET}" token=""
   for _ in 1 2 3; do
-    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")"
+    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")" || true
     [ -n "$token" ] && break
     sleep 31   # the current TOTP window was already spent; wait it out
   done
@@ -267,7 +267,7 @@ create_via_gateway() {
   local what="$1" url="$2" body="$3" response id
   response="$(curl -s -X POST "$url" -H "Authorization: Bearer $EDITOR_TOKEN" \
     -H 'Content-Type: application/json' -d "$body")"
-  id="$(printf '%s' "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)"
+  id="$(printf '%s' "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)" || true
   [ -n "$id" ] || {
     echo "ERROR: could not create the fixture $what. The service answered:" >&2
     echo "  $response" >&2

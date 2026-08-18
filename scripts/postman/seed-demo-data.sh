@@ -145,7 +145,7 @@ ADMIN_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"
 EDITOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$EDITOR_SUB\",\"displayName\":\"$EDITOR_USER\"}" | json_field userId)"
 VIEWER_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$VIEWER_SUB\",\"displayName\":\"$VIEWER_USER\"}" | json_field userId)"
 
-TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_CATALOG_ID\"}" | json_field teamId)"
+TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_CATALOG_ID\"}" | json_field teamId)" || true
 [ -n "$TEAM_ID" ] || { echo "ERROR: failed to bootstrap the demo team." >&2; exit 1; }
 
 # Three roles with clearly different capability so the SPA's affordances visibly differ per identity.
@@ -203,7 +203,7 @@ echo ""
 echo "==> Seeding the supervised demo world (sup-demo -> pm-demo) ..."
 
 # pm-demo is minted normally (password only). If this fails, the realm predates the persona.
-REPORT_TOKEN="$(mint_token "$REPORT_USER" "$REPORT_PASS")"
+REPORT_TOKEN="$(mint_token "$REPORT_USER" "$REPORT_PASS")" || true
 [ -n "$REPORT_TOKEN" ] || {
   echo "ERROR: could not mint a token for '$REPORT_USER'." >&2
   echo "  The running realm predates the demo supervisor personas. Re-import it:" >&2
@@ -220,12 +220,12 @@ DIR_TOKEN="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
   -X POST "$KEYCLOAK_TOKEN_URL" \
   -d grant_type=client_credentials -d "client_id=$DIRECTORY_CLIENT_ID" \
   -d "client_secret=$DIRECTORY_CLIENT_SECRET" \
-  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')" || true
 [ -n "$DIR_TOKEN" ] || { echo "ERROR: could not mint the $DIRECTORY_CLIENT_ID service token (stale realm?)." >&2; exit 1; }
 SUPERVISOR_SUB="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
   -H "Authorization: Bearer $DIR_TOKEN" \
   "$KEYCLOAK_ADMIN_BASE/users?username=$SUPERVISOR_USER&exact=true&max=2" \
-  | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -n1)"
+  | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -n1)" || true
 [ -n "$SUPERVISOR_SUB" ] || {
   echo "ERROR: '$SUPERVISOR_USER' is not in the realm — re-import it (see the $REPORT_USER hint above)." >&2
   exit 1; }
@@ -249,12 +249,12 @@ seed_supervised_catalog "$DEMO_OPEN_CATALOG_ID" 'Demo Open Catalog' \
   'No tier — a supervisor reads its contents with no ceremony.'
 
 # --- the identities, the teams, the edge -------------------------------------
-SUPERVISOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$SUPERVISOR_SUB\",\"displayName\":\"$SUPERVISOR_USER\"}" | json_field userId)"
-REPORT_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$REPORT_SUB\",\"displayName\":\"$REPORT_USER\"}" | json_field userId)"
+SUPERVISOR_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$SUPERVISOR_SUB\",\"displayName\":\"$SUPERVISOR_USER\"}" | json_field userId)" || true
+REPORT_UID="$(post_json "$USER_SERVICE/internal/bootstrap/users" "{\"subject\":\"$REPORT_SUB\",\"displayName\":\"$REPORT_USER\"}" | json_field userId)" || true
 [ -n "$SUPERVISOR_UID" ] && [ -n "$REPORT_UID" ] || { echo "ERROR: failed to bootstrap the supervised personas." >&2; exit 1; }
 
-PROD_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo Production Team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_PROD_CATALOG_ID\"}" | json_field teamId)"
-OPEN_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo Open Team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_OPEN_CATALOG_ID\"}" | json_field teamId)"
+PROD_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo Production Team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_PROD_CATALOG_ID\"}" | json_field teamId)" || true
+OPEN_TEAM_ID="$(post_json "$USER_SERVICE/internal/bootstrap/teams" "{\"name\":\"Demo Open Team\",\"targetType\":\"catalog\",\"targetId\":\"$DEMO_OPEN_CATALOG_ID\"}" | json_field teamId)" || true
 [ -n "$PROD_TEAM_ID" ] && [ -n "$OPEN_TEAM_ID" ] || { echo "ERROR: failed to bootstrap the Demo * Teams." >&2; exit 1; }
 
 # `owner` is CONTROL-capable, so pm-demo's seats are what propagate to his manager (ADR 0029).
@@ -285,11 +285,11 @@ find_named() { # token listUrl name -> id ('' when absent)
 }
 ensure_contents() { # token catalogId label -> "<categoryId> <productId>"
   local token="$1" catalog="$2" label="$3" cat_id prod_id
-  cat_id="$(find_named "$token" "$GATEWAY/api/v1/catalogs/$catalog/categories" "Demo $label Category")"
+  cat_id="$(find_named "$token" "$GATEWAY/api/v1/catalogs/$catalog/categories" "Demo $label Category")" || true
   [ -n "$cat_id" ] || cat_id="$(create_category "$token" "$catalog" "{\"name\":\"Demo $label Category\"}")"
   [ -n "$cat_id" ] && [ "$cat_id" != "None" ] || {
     echo "ERROR: could not create the Demo $label Category (is $REPORT_USER still the team owner?)." >&2; exit 1; }
-  prod_id="$(find_named "$token" "$GATEWAY/api/v1/catalogs/$catalog/categories/$cat_id/products" "Demo $label Product")"
+  prod_id="$(find_named "$token" "$GATEWAY/api/v1/catalogs/$catalog/categories/$cat_id/products" "Demo $label Product")" || true
   [ -n "$prod_id" ] || prod_id="$(create_product "$token" "$catalog" "$cat_id" \
     "{\"name\":\"Demo $label Product\",\"sku\":\"DEMO-$label-1\",\"priceCents\":3400,\"currency\":\"USD\"}")"
   [ -n "$prod_id" ] && [ "$prod_id" != "None" ] || {
@@ -298,10 +298,10 @@ ensure_contents() { # token catalogId label -> "<categoryId> <productId>"
 }
 echo "==> Creating a category + product under each supervised catalog (as $REPORT_USER) ..."
 # Assignment-then-read, never `read <<<"$(fn)"`: the herestring form swallows the function's exit 1.
-pair="$(ensure_contents "$REPORT_TOKEN" "$DEMO_PROD_CATALOG_ID" Production)" || exit 1
+pair="$(ensure_contents "$REPORT_TOKEN" "$DEMO_PROD_CATALOG_ID" Production)" || exit 1 || true
 [ -n "$pair" ] || { echo "ERROR: empty Production contents result" >&2; exit 1; }
 read -r PROD_CATEGORY_ID PROD_PRODUCT_ID <<<"$pair"
-pair="$(ensure_contents "$REPORT_TOKEN" "$DEMO_OPEN_CATALOG_ID" Open)" || exit 1
+pair="$(ensure_contents "$REPORT_TOKEN" "$DEMO_OPEN_CATALOG_ID" Open)" || exit 1 || true
 [ -n "$pair" ] || { echo "ERROR: empty Open contents result" >&2; exit 1; }
 read -r OPEN_CATEGORY_ID OPEN_PRODUCT_ID <<<"$pair"
 echo "  production: category=$PROD_CATEGORY_ID product=$PROD_PRODUCT_ID"

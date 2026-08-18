@@ -313,7 +313,7 @@ echo "  category=$CATEGORY_ID product=$PRODUCT_ID foreign-category=$FOREIGN_CATE
 if [ "${SKIP_OPERATOR_CHECK:-0}" != "1" ]; then
   echo "==> E5 operator check: nothing is asserted downstream ..."
   OUTBOUND_HEADERS="$(grep -o '\.header("[^"]*"' "$REPO_ROOT/example-mcp-server/src/main/java/dev/dmitriikonovalov/example/mcp/tool/CatalogApiClient.java" \
-    | sed 's/.*"\(.*\)"/\1/' | sort -u | tr '\n' ',' )"
+    | sed 's/.*"\(.*\)"/\1/' | sort -u | tr '\n' ',' )" || true
   [ "$OUTBOUND_HEADERS" = "Accept,Authorization," ] || {
     echo "ERROR: the outbound catalog client sets headers [$OUTBOUND_HEADERS] — expected exactly Accept + Authorization." >&2
     exit 1

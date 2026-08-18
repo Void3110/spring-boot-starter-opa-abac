@@ -116,7 +116,7 @@ mint_token() {   # ROPC, in-network. $1 user $2 pass [$3 client $4 secret $5 otp
 mint_anna_token() {   # [$1 client $2 secret]
   local client="${1:-$CLIENT_ID}" secret="${2:-$CLIENT_SECRET}" token=""
   for _ in 1 2 3; do
-    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")"
+    token="$(mint_token sup-anna sup-anna "$client" "$secret" "$("$MINER" --print-otp)")" || true
     [ -n "$token" ] && break
     sleep 31   # the current TOTP window was already spent; wait it out
   done
@@ -302,7 +302,7 @@ GATEWAY_ISS_TOKEN="$(printf '%s' "$GATEWAY_ISS_JSON" | sed -n 's/.*"access_token
   echo "ERROR: could not mint the gateway-origin control token — Keycloak answered:" >&2
   echo "       $(printf '%s' "$GATEWAY_ISS_JSON" | head -c 200)" >&2
   exit 1; }
-GATEWAY_ISS_VALUE="$(token_claim "$GATEWAY_ISS_TOKEN" iss)"
+GATEWAY_ISS_VALUE="$(token_claim "$GATEWAY_ISS_TOKEN" iss)" || true
 [ "$GATEWAY_ISS_VALUE" = "$GATEWAY/realms/catalog-demo" ] || {
   echo "ERROR: the gateway-Host mint carries iss='$GATEWAY_ISS_VALUE', expected" >&2
   echo "       '$GATEWAY/realms/catalog-demo' — the E9g control would prove nothing." >&2
@@ -360,7 +360,7 @@ REFRESHED_TOKEN="$(printf '%s' "$REFRESHED_JSON" | sed -n 's/.*"access_token":"\
   echo "       $(printf '%s' "$REFRESHED_JSON" | head -c 200)" >&2
   exit 1; }
 REFRESH_SOURCE_AUTH_TIME="$(token_claim "$REFRESH_SOURCE_TOKEN" auth_time)"
-REFRESHED_AUTH_TIME="$(token_claim "$REFRESHED_TOKEN" auth_time)"
+REFRESHED_AUTH_TIME="$(token_claim "$REFRESHED_TOKEN" auth_time)" || true
 REFRESHED_IAT="$(token_claim "$REFRESHED_TOKEN" iat)"
 SOURCE_IAT="$(token_claim "$REFRESH_SOURCE_TOKEN" iat)"
 [ -n "$REFRESHED_AUTH_TIME" ] && [ "$REFRESHED_AUTH_TIME" = "$REFRESH_SOURCE_AUTH_TIME" ] || {
@@ -455,7 +455,7 @@ create_via_gateway() {
   local what="$1" url="$2" body="$3" response id
   response="$(curl -s -X POST "$url" -H "Authorization: Bearer $EDITOR_TOKEN" \
     -H 'Content-Type: application/json' -d "$body")"
-  id="$(printf '%s' "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)"
+  id="$(printf '%s' "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)" || true
   [ -n "$id" ] || {
     echo "ERROR: could not create the fixture $what. The service answered:" >&2
     echo "  $response" >&2
@@ -475,10 +475,10 @@ echo "==> Creating a category + product under each catalog (as the owner) ..."
 # Assignment-then-read, never `read <<<"$(...)"`: the herestring form swallows the substitution's
 # exit 1 (read returns 0 on the bare newline and errexit never fires), so a failed seed would sail
 # into newman as a wall of 404s naming nothing.
-seed_pair="$(seed_contents "$PROD_CATALOG_ID" PROD)" || exit 1
+seed_pair="$(seed_contents "$PROD_CATALOG_ID" PROD)" || exit 1 || true
 [ -n "$seed_pair" ] || { echo "ERROR: empty PROD seed result" >&2; exit 1; }
 read -r PROD_CATEGORY_ID PROD_PRODUCT_ID <<<"$seed_pair"
-seed_pair="$(seed_contents "$OPEN_CATALOG_ID" OPEN)" || exit 1
+seed_pair="$(seed_contents "$OPEN_CATALOG_ID" OPEN)" || exit 1 || true
 [ -n "$seed_pair" ] || { echo "ERROR: empty OPEN seed result" >&2; exit 1; }
 read -r OPEN_CATEGORY_ID OPEN_PRODUCT_ID <<<"$seed_pair"
 
@@ -594,7 +594,7 @@ run_folder "E7b drill expiry" drill-b \
 
 echo "==> E3: re-authenticating WITHOUT max_age, reusing the SSO session ..."
 ANNA_STALE_TOKEN="$("$MINER" --user sup-anna --acr aal2 --no-max-age --cookie-jar "$COOKIE_JAR")" || exit 1
-STALE_AUTH_TIME="$(token_claim "$ANNA_STALE_TOKEN" auth_time)"
+STALE_AUTH_TIME="$(token_claim "$ANNA_STALE_TOKEN" auth_time)" || true
 STALE_IAT="$(token_claim "$ANNA_STALE_TOKEN" iat)"
 [ "$STALE_AUTH_TIME" = "$DRILL_AUTH_TIME" ] || {
   echo "ERROR: the re-auth changed auth_time ($DRILL_AUTH_TIME -> $STALE_AUTH_TIME); the SSO" >&2
