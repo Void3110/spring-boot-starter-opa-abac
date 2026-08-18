@@ -13,6 +13,10 @@ tags:
 > they **mechanise defect classes that cost three adversarial review rounds to find by hand**.
 >
 > Take from the top. Each item is self-contained: no item blocks another.
+>
+> **Status 2026-08-18: items 1–8 are SHIPPED.** Item 9 remains, blocked on an upstream release.
+> Each shipped item carries the correction its own estimate needed — read those before trusting a
+> future backlog entry's effort figure: five of the eight were wrong in a way that mattered.
 
 ## Why this list exists
 
@@ -56,7 +60,15 @@ Two corrections to what this item assumed — both measured, do not re-derive:
 `HttpOpaClient.isSafePath`, where making the policy-path validator accept everything fails no test —
 then re-baseline. **Do not** gate on a repo-wide mutation score; see §What NOT to do next.
 
-## 2. A guarded-substitution check for `scripts/`
+## 2. A guarded-substitution check for `scripts/` — ✅ SHIPPED 2026-08-18 ([#116](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/116))
+
+`scripts/checks/check-shell-guards.py` (+ `--fix`, + `test-shell-guards.sh`), CI job
+`verification-layer`. **50 sites fixed across 13 runners** — not the handful this item implied.
+Corrections worth keeping: classification must be over the WHOLE pipeline (`printf | python3` and
+`printf | base64` both start with `printf` and both can fail); `local`/`declare`/`export` never trip
+`set -e`; a substitution absorbing its own failure (`$(cmd || echo x)`) exits 0. The first draft
+spliced `|| true` INSIDE a multi-line SQL string in `run-load.sh` — `bash -n` passed — which is why
+the span scanner is quote-aware and the shape is a test arm.
 
 **Value: high. Effort: ~20 lines.**
 
@@ -69,7 +81,14 @@ later guarded (`[ -n "$VAR" ]` or `require_token … "$VAR"`), and fail if that 
 `|| true`. This found `SHIPPED_MAX_AGE` and five token mints after a hand sweep had already "fixed"
 three sites and declared victory.
 
-## 3. Newman collection conformance lint
+## 3. Newman collection conformance lint — ✅ SHIPPED 2026-08-18 ([#116](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/116))
+
+`scripts/checks/check-collection-conformance.py` + `test-collection-conformance.sh`. **Clean at 18
+collections**, so the arms that matter are the PRE-FIX shapes of the real E32b and E31j. The ~13
+false positives below were two rules being too broad: the noun rule now matches only a CLAIM-shaped
+noun (`<resource> ids?`), a positive `to.include` counts as an absence-control, and a LITERAL
+`max_age="300"` pin is brittle but fails loudly rather than vacuously. No collection needs the
+`owns-drill` waiver after that.
 
 **Value: high — 5 of the first 16 findings were in one collection. Effort: medium (needs scoping).**
 
@@ -89,7 +108,10 @@ step-up matrix legitimately reads drilled values because it *owns* the drill, an
 "MEMBERS UNAFFECTED" trips the noun rule. Needs per-collection scoping (a collection can declare
 "I own the drill") and a tighter noun rule. **A noisy gate gets ignored.**
 
-## 4. `verify-package.sh` should accept a declared-collaborative package
+## 4. `verify-package.sh` should accept a declared-collaborative package — ✅ SHIPPED 2026-08-18 ([#116](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/116))
+
+`**Build: collaborative**` in the package index; arms [1]/[5] stand down. Near-misses are rejected
+and collaborative-plus-a-prompt is a contradiction. `test-parts-gates.sh` 39 → 47.
 
 **Value: medium. Effort: trivial.**
 
@@ -98,7 +120,13 @@ The gate fails two arms on any package built collaboratively rather than autonom
 legitimately prompt-less by an explicit roadmap decision, so its ship-time verify is red for reasons
 that are not defects. Let the package index declare `**Build: collaborative**` and skip both arms.
 
-## 5. Demo-console UI: replace the fixed-height shell with a sticky header
+## 5. Demo-console UI: replace the fixed-height shell with a sticky header — ✅ SHIPPED 2026-08-18 ([#117](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/117))
+
+Measured before/after at 1440×900: the window did not scroll at all, `main` grew an internal
+scroller for **45px** of overflow, and that scrollbar sat **208px inset** from the window edge.
+**The diff below is wrong in one respect** — there is no `--color-bg` token in this stylesheet, so
+taken verbatim the sticky header would have been transparent. `--color-canvas` is the body's own
+background and is what shipped.
 
 **Value: medium (it is the first thing a visitor sees). Effort: two lines.**
 
@@ -120,7 +148,13 @@ any width tested, mobile included) but it reads as a glitch.
 Normal window-edge scrollbar, header still pinned, no phantom scroll. Pre-existing since the Phase
 7.0 demo SPA (`46d63ff`); **verify in the Browser pane**, since no test in the repo covers layout.
 
-## 6. Dedupe the per-catalog lookups in the demo console
+## 6. Dedupe the per-catalog lookups in the demo console — ✅ SHIPPED 2026-08-18 ([#117](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/117))
+
+The measurement below was **2/3 right**. Real: `lookupTeamByTarget` ×2 (CatalogDetail + TeamPanel)
+and `listTeamTagDefinitions` ×2 (CatalogDetail + **Roster** — a different second caller than the
+stated cause). `listAllUsers` was ×1: that ×2 was `<StrictMode>`'s dev-only double-invoke, which
+doubles EVERY count read off the dev-tools network tab. `App.catalog-fanout.test.tsx` mounts without
+StrictMode and pins the production fan-out.
 
 **Value: medium. Effort: small.**
 
@@ -129,7 +163,13 @@ Opening one catalog issues `teams` ×2, `users` ×2 and `tag-definitions` ×2, b
 `window.fetch` and counting one grid→catalog navigation. **Not** the elevation chip's 1 Hz tick —
 that was checked explicitly, since a tick-driven refire would have been a defect introduced by T4.
 
-## 7. Guard `required_acr` against an acr the realm cannot mint
+## 7. Guard `required_acr` against an acr the realm cannot mint — ✅ SHIPPED 2026-08-18 ([#118](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/118))
+
+`scripts/checks/check-step-up-acr.py`, in the `opa-policy-tests` CI job. **Not** startup validation:
+the guide already explained why that would be wrong (the resource server would have to read realm
+config it deliberately does not couple to), so this compares `step_up.json` against the realm
+export's `acr.loa.map` instead. The guide already documented the footgun itself — the doc change is
+an update, not the new section this item implied.
 
 **Value: medium (operator footgun). Effort: small, or doc-only.**
 
@@ -139,7 +179,11 @@ downgrade and does not authenticate, so the user lands on a Keycloak error page 
 sees a response it could explain. Either validate the setting against the realm's acr↔loa mapping at
 startup, or at minimum warn where it is documented.
 
-## 8. A jsdom component test for the SPA restoration effect
+## 8. A jsdom component test for the SPA restoration effect — ✅ SHIPPED 2026-08-18 ([#117](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/117))
+
+`App.restore.test.tsx`, one `// @vitest-environment jsdom` file; suite 63 → 69 and still ~1.4s.
+Mutation-proven on the defensive arm; two further mutations survive and are EQUIVALENT, not
+uncovered (the initial view is already `{ kind: 'catalogs' }`) — recorded in the file.
 
 **Value: medium. Effort: small.**
 
