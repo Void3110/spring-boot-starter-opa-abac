@@ -461,7 +461,9 @@ function CatalogGrid({
   )
 }
 
-function CatalogDetail({
+// Exported for the request-fan-out test (App.catalog-fanout.test.tsx), which counts the calls one
+// catalog open makes.
+export function CatalogDetail({
   catalog,
   mySubject,
   elevated,
@@ -481,15 +483,17 @@ function CatalogDetail({
   // The single GET is enriched (unlike the list) — fetch it for the catalog's own _actions.
   const full = useAsync(() => getCatalog(catalog.id), [catalog.id])
   const cats = useAsync(() => listCategories(catalog.id), [catalog.id])
-  // The tag dictionary (global + this catalog's team keys) drives the tag pickers. Resolved via
-  // the governing team because only the team-scoped listing is gateway-exposed; a catalog without
-  // a resolvable team just renders the forms without tag fields.
-  const tagDefs = useAsync(async () => {
-    const teams = await lookupTeamByTarget('catalog', catalog.id)
-    const team = teams.items[0]
-    if (!team) return null
-    return listTeamTagDefinitions(team.id)
-  }, [catalog.id])
+  // ONE resolution of the governing team for the whole catalog view, and one listing of the
+  // dictionary it governs. Both are needed twice over — by the tag pickers here and by the team
+  // panel below — and resolving them independently cost an extra round trip each per catalog open.
+  // Only the team-scoped tag listing is gateway-exposed, so the dictionary waits on the team; a
+  // catalog without a resolvable team just renders the forms without tag fields.
+  const teams = useAsync(() => lookupTeamByTarget('catalog', catalog.id), [catalog.id])
+  const governingTeam = teams.data?.items[0] ?? null
+  const tagDefs = useAsync(
+    async () => (governingTeam ? listTeamTagDefinitions(governingTeam.id) : null),
+    [governingTeam?.id ?? null],
+  )
   const [tagEditing, setTagEditing] = useState<string | null>(null)
   const [catalogTagEditing, setCatalogTagEditing] = useState(false)
 
@@ -581,7 +585,9 @@ function CatalogDetail({
       </Card>
 
       <TeamPanel
-        catalogId={catalog.id}
+        teams={teams}
+        team={governingTeam}
+        tagDefs={tagDefs}
         mySubject={mySubject}
         onDictionaryChanged={tagDefs.reload}
       />
