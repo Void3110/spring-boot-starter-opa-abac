@@ -14,6 +14,7 @@ domains:
   opa-abac-methodology: {}
   opa-abac-publish: {}
   opa-abac-sb4-integration: {}
+  quality-gate-mutation: {}
 governance:
   max_entries: 150
   warn_entries: 150
