@@ -17,7 +17,7 @@ sonarqube = "7.3.1.8318"
 # Library deps
 # Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
 # com.fasterxml 2.x artifact line (Jackson 3 reads them; databind brings them transitively).
-jackson = "3.1.4"
+jackson = "3.1.5"
 slf4j = "2.0.16"
 # Resilience4j — this catalog pin is authoritative (the library modules do not import the Boot BOM
 # for it). 2.4.0 removed the internal CircuitBreakerStateMachine(name, config, Clock) constructor
