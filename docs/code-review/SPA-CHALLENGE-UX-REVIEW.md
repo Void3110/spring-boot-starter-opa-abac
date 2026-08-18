@@ -201,8 +201,8 @@ much as about the tree**, and a refutation is only as good as its pattern.
 ### Round 3 — the gate I wrote to close a leak was itself fail-open
 
 Round 2 fixed the clean-room recurrence by widening `verify-package.sh`. Round 3 found that fix
-**fail-open**, and proved it the hard way: it planted a real `~/Workspace/platform/...` leak in a
-Mulch record, stubbed `git` to exit 127, and watched the gate print **PACKAGE OK, rc=0**.
+**fail-open**, and proved it the hard way: it planted a real machine-local-path leak in a Mulch
+record, stubbed `git` to exit 127, and watched the gate print **PACKAGE OK, rc=0**.
 
 The cause is the sharpest thing in this whole review. I rooted the new scan at
 `git rev-parse --show-toplevel`, discarding stderr and never checking the status — so with git
@@ -249,3 +249,11 @@ Two mitigations came out of this and are worth more than the fixes themselves: *
 mutating the code it guards** (done for the advice test and for the clean-room gate — both now have
 a demonstrated failing state), and **wire a gate to the write path it polices**, not to whoever
 happens to run a verifier.
+
+**Coda, at ship time.** Writing *this section* leaked the path a fourth time: describing the
+reviewer's planted leak, I quoted it literally into the note. The widened gate caught it during the
+pre-ship package verify — the author of the gate, tripped by the gate, in the file explaining the
+gate. Two things follow. The class is not a lapse of attention that more care would fix; the leak
+rides in on **prose about the leak**, which is exactly when a human's guard is down. And a gate that
+only its author remembers to run would not have caught this either — the CI job is what makes it
+hold.
