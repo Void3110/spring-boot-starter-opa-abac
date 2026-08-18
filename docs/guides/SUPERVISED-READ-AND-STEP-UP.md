@@ -397,10 +397,27 @@ user lands on a Keycloak error page, and the client never receives a response it
 explain. Nothing in the resource server sees this — the failure is entirely between the browser and the
 IdP.
 
-So `required_acr` must name a level the realm's acr↔loa mapping actually mints. There is no startup
-validation of this today (it would mean the resource server reading realm configuration it deliberately
-does not couple to); it is checked by the step-up matrix passing, and it is the reason changing
-`required_acr` is a rig-configuration change and not a policy-data tweak.
+So `required_acr` must name a level the realm's acr↔loa mapping actually mints. There is still no
+**startup** validation, and there should not be — it would mean the resource server reading realm
+configuration it deliberately does not couple to. The check belongs where both halves are visible at
+once, which is the rig's own configuration:
+
+```bash
+scripts/checks/check-step-up-acr.py     # policed in CI (job: opa-policy-tests)
+```
+
+It compares `infra/opa/policies/step_up.json` against the realm export's `acr.loa.map` and fails on the
+three ways they can disagree: a `required_acr` the realm cannot mint (the footgun above), a
+`required_acr` absent from OPA's own `loa` (fails closed to a plain deny, so the operator gets silence
+where they expected a challenge), and a shared name carrying **different levels** on the two sides —
+which elevates nothing while looking correct from either file alone. A realm that knows *more* levels
+than this deployment uses is fine.
+
+Note what the policy corpus can and cannot catch here. `category.rego` / `product.rego` already refuse
+to mint a challenge unless `required_acr` maps to a numeric level in `data.step_up.loa` — but that
+guard is about OPA's data being coherent **with itself**. The stranding case passes every one of those
+guards; only a check that reads both files sees it. Changing `required_acr` remains a
+rig-configuration change, not a policy-data tweak.
 
 ## Prove it — the whole path
 

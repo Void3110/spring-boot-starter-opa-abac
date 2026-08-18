@@ -25,6 +25,11 @@ jobs:
               "example-user-management-service/src/main/resources/opa/policies/$f"
           done
 
+      - name: step-up ACR contract (step_up.json vs the realm's acr.loa.map)
+        run: |
+          scripts/checks/test-step-up-acr.sh
+          scripts/checks/check-step-up-acr.py
+
       - name: opa test — rig policy corpus (infra/opa/policies)
         run: |
           docker run --rm -v "$PWD/infra/opa/policies:/policies:ro" \
