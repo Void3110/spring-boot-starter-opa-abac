@@ -723,6 +723,51 @@
       "realmRoles": [
         "catalog-viewer"
       ]
+    },
+    {
+      "id": "d3110000-0000-0000-0000-0000000000a1",
+      "username": "sup-demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "sup-demo@example.com",
+      "firstName": "Demo",
+      "lastName": "Supervisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sup-demo",
+          "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "SPA demo fixture TOTP (secret is public on purpose - demo realm)",
+          "secretData": "{\"value\":\"spachallengedemo1234\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"counter\":0,\"period\":30,\"algorithm\":\"HmacSHA1\"}"
+        }
+      ],
+      "realmRoles": [
+        "catalog-viewer",
+        "unit-supervisor"
+      ]
+    },
+    {
+      "id": "d3110000-0000-0000-0000-0000000000a2",
+      "username": "pm-demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pm-demo@example.com",
+      "firstName": "Demo",
+      "lastName": "Manager",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pm-demo",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "catalog-editor"
+      ]
     }
   ]
 }

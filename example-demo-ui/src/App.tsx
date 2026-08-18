@@ -6,6 +6,10 @@ import {
   describeUser,
   login,
   logout,
+  elevationOf,
+  stepUp,
+  stepUpStateOf,
+  type StepUpState,
 } from './auth'
 import {
   type Catalog,
@@ -19,6 +23,8 @@ import {
   deleteProduct,
   ensureUser,
   getCatalog,
+  getCategory,
+  StepUpRequiredError,
   listCatalogs,
   listCategories,
   listProducts,
@@ -34,15 +40,30 @@ import {
   Breadcrumbs,
   Logo,
   RoleChips,
+  ElevationChip,
+  CatalogBadges,
   errText,
   useAsync,
+  LockedPanel,
 } from './components'
 import { CreateCatalogPanel, TeamPanel } from './teams'
+import {
+  type ChipState,
+  type Challenge,
+  badgesFor,
+  chipState,
+  isElevated,
+  lastChallengeWindow,
+  loaOf,
+} from './stepup'
 
 type AuthState =
   | { phase: 'loading' }
   | { phase: 'anonymous' }
-  | { phase: 'authenticated'; user: AuthUser }
+  // `restore` is set only when THIS page load is the callback from a step-up redirect. It is not
+  // persisted anywhere: User.toStorageString() omits `state`, so it exists for this load and no
+  // other — which is what makes the passive guard below structurally loop-free.
+  | { phase: 'authenticated'; user: AuthUser; restore?: StepUpState | null }
   | { phase: 'error'; message: string }
 
 // Guard against React 19 StrictMode double-invoking the bootstrap effect: a PKCE authorization code
@@ -70,7 +91,13 @@ export function App() {
     }
     bootstrap ??= resolve()
     bootstrap
-      .then((user) => setAuth(user ? { phase: 'authenticated', user } : { phase: 'anonymous' }))
+      .then((user) =>
+        setAuth(
+          user
+            ? { phase: 'authenticated', user, restore: stepUpStateOf(user) }
+            : { phase: 'anonymous' },
+        ),
+      )
       .catch((e) => setAuth({ phase: 'error', message: e instanceof Error ? e.message : String(e) }))
   }, [])
 
@@ -85,7 +112,7 @@ export function App() {
       </Splash>
     )
   if (auth.phase === 'anonymous') return <LoginScreen />
-  return <Console user={auth.user} />
+  return <Console user={auth.user} restore={auth.restore ?? null} />
 }
 
 function Splash({ children }: { children: React.ReactNode }) {
@@ -120,6 +147,12 @@ function LoginScreen() {
         <p className="mt-6 text-center text-xs text-[var(--color-muted)]">
           Demo identities: editor (admin) · demo (editor) · viewer (read) · outsider (none) — password = username
         </p>
+        {/* Named explicitly: without these two the supervised story is invisible to a first-time
+            reader — the production catalog's locked panel looks like a bug rather than the point. */}
+        <p className="mt-1 text-center text-xs text-[var(--color-muted)]">
+          Supervised demo: sup-demo (supervisor — verifies a second factor to read production) ·
+          pm-demo (production member — no ceremony)
+        </p>
       </div>
     </div>
   )
@@ -131,10 +164,113 @@ type View =
   | { kind: 'catalog'; catalog: Catalog }
   | { kind: 'category'; catalog: Catalog; category: Category }
 
-function Console({ user }: { user: AuthUser }) {
+/**
+ * The chip, recomputed once a second.
+ *
+ * <p>A tick rather than an event because there is nothing to listen to: the window runs out on wall
+ * clock, not on anything the app does. One interval for the whole console; the arithmetic is pure
+ * and unit-tested (U5), so all this owns is *when* to ask.
+ *
+ * <p>The window is re-read from sessionStorage on every tick on purpose — a challenge arriving
+ * mid-session updates it, and deleting the key by hand must degrade the chip immediately (E16).
+ */
+function useElevationChip(user: AuthUser): ChipState {
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const { acr, authTime } = elevationOf(user)
+  const window = lastChallengeWindow()
+  return chipState({
+    loa: loaOf(acr),
+    authTime,
+    window,
+    // The window key is written ONLY when a challenge arrives, so its presence IS "a challenge was
+    // seen this session" — which is what makes the "not elevated" chip meaningful rather than noise
+    // on every member's screen.
+    challengeSeen: window !== null,
+    nowSeconds,
+  })
+}
+
+function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
   const { username, roles } = describeUser(user)
   const mySubject = user.profile.sub
+  const chip = useElevationChip(user)
+  const elevated = isElevated(chip)
   const [view, setView] = useState<View>({ kind: 'catalogs' })
+  // Restoring the drill-in the challenge interrupted. The state carried ids only, so the objects the
+  // View needs are re-read here — getCatalog, then getCategory if we were a level deeper. Either read
+  // may itself be challenged; NEITHER triggers a redirect. The restored view's own load IS the one
+  // automatic retry, and a challenged category simply leaves the user on the catalog with the panel.
+  const [restoring, setRestoring] = useState(restore !== null)
+  // The loop guard: on the page load that came back FROM a verification, a step-up refusal means the
+  // verification did not help. The panel says so and waits. No code path calls stepUp() without a
+  // click, so this cannot become a redirect loop however the server behaves.
+  const [passive, setPassive] = useState(restore !== null)
+
+  useEffect(() => {
+    if (!restore) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const catalog = await getCatalog(restore.catalogId)
+        if (cancelled) return
+        if (restore.categoryId) {
+          // ONE direct read, not list-then-find: a list call here could be challenged in its own
+          // right and would make "exactly one automatic retry" false.
+          try {
+            const category = await getCategory(restore.catalogId, restore.categoryId)
+            if (cancelled) return
+            setView({ kind: 'category', catalog, category })
+          } catch (e) {
+            if (cancelled) return
+            // A CHALLENGED category is not a failed restore — it is the passive case this whole
+            // effect exists for. Landing on the grid here would throw away the catalog we already
+            // read and strand the user one level further out than the verification they just
+            // completed; the catalog's own `cats` load re-raises the challenge and renders the
+            // passive panel, which is what the user is owed. Caught separately from the catalog
+            // read above BECAUSE that one really is a hard failure (see below).
+            if (e instanceof StepUpRequiredError) setView({ kind: 'catalog', catalog })
+            else throw e
+          }
+        } else {
+          setView({ kind: 'catalog', catalog })
+        }
+      } catch {
+        // The catalog itself is metadata-only and does not challenge, so this is a genuine failure
+        // (deleted, revoked, offline). Land on the grid rather than a dead end; the drill-in is lost.
+        if (!cancelled) setView({ kind: 'catalogs' })
+      } finally {
+        if (!cancelled) setRestoring(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [restore])
+
+  // Deliberate navigation clears the passive flag. Without this the flag — set for the page load
+  // that came back from a verification — would stick for the WHOLE session, so every later challenge
+  // the user walked into fresh would claim "verification did not unlock" about a verification they
+  // never attempted for it. Passive means "the read you just verified for is still refused", and
+  // that is only true of the view the callback restored; moving anywhere is a new question.
+  // (Found in the browser pass, not by a unit test — the state is only wrong on the SECOND challenge.)
+  const navigate = useCallback((next: View) => {
+    setPassive(false)
+    setView(next)
+  }, [])
+
+  // Answering a challenge is ALWAYS a deliberate click. `location` is where the user is right now,
+  // so Keycloak brings them back to the same place.
+  const verify = useCallback(
+    (challenge: Challenge, location: { catalogId: string; categoryId?: string }) => {
+      setPassive(false)
+      void stepUp(challenge.acrValues, location)
+    },
+    [],
+  )
 
   // Provision the identity's user-service profile row on login: memberships (and owning a new
   // catalog's team) key on that row, and a first-time identity doesn't have one yet. A failure
@@ -160,7 +296,7 @@ function Console({ user }: { user: AuthUser }) {
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col">
       <header className="flex items-center justify-between border-b border-[var(--color-line)] px-6 py-4">
-        <button className="flex items-center gap-3" onClick={() => setView({ kind: 'catalogs' })}>
+        <button className="flex items-center gap-3" onClick={() => navigate({ kind: 'catalogs' })}>
           <Logo />
           <span className="font-semibold">Catalog Console</span>
         </button>
@@ -178,6 +314,7 @@ function Console({ user }: { user: AuthUser }) {
                 Keycloak realm roles
               </span>
               <RoleChips roles={roles} />
+              <ElevationChip state={chip} />
             </div>
           </div>
           <button
@@ -201,30 +338,41 @@ function Console({ user }: { user: AuthUser }) {
         </div>
       )}
       <main className="flex-1 overflow-auto px-6 py-6">
-        {view.kind === 'catalogs' && (
+        {restoring && (
+          <p className="p-6 text-sm text-[var(--color-muted)]">Returning you to where you were…</p>
+        )}
+        {!restoring && view.kind === 'catalogs' && (
           <CatalogGrid
             // catalog:create is the one realm-role-decided verb (the B4 narrow fallback), so the
             // SPA can predict the deny from the token it already parsed for the header chips.
             canCreate={roles.includes('catalog-editor')}
-            onOpen={(catalog) => setView({ kind: 'catalog', catalog })}
+            elevated={elevated}
+            onOpen={(catalog) => navigate({ kind: 'catalog', catalog })}
           />
         )}
-        {view.kind === 'catalog' && (
+        {!restoring && view.kind === 'catalog' && (
           <CatalogDetail
             catalog={view.catalog}
             mySubject={mySubject}
-            onHome={() => setView({ kind: 'catalogs' })}
+            elevated={elevated}
+            passive={passive}
+            onVerify={(challenge) => verify(challenge, { catalogId: view.catalog.id })}
+            onHome={() => navigate({ kind: 'catalogs' })}
             onOpenCategory={(category) =>
-              setView({ kind: 'category', catalog: view.catalog, category })
+              navigate({ kind: 'category', catalog: view.catalog, category })
             }
           />
         )}
-        {view.kind === 'category' && (
+        {!restoring && view.kind === 'category' && (
           <CategoryDetail
             catalog={view.catalog}
             category={view.category}
-            onHome={() => setView({ kind: 'catalogs' })}
-            onUp={() => setView({ kind: 'catalog', catalog: view.catalog })}
+            passive={passive}
+            onVerify={(challenge) =>
+              verify(challenge, { catalogId: view.catalog.id, categoryId: view.category.id })
+            }
+            onHome={() => navigate({ kind: 'catalogs' })}
+            onUp={() => navigate({ kind: 'catalog', catalog: view.catalog })}
           />
         )}
       </main>
@@ -242,9 +390,11 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function CatalogGrid({
   canCreate,
+  elevated,
   onOpen,
 }: {
   canCreate: boolean
+  elevated: boolean
   onOpen: (c: Catalog) => void
 }) {
   const { data, error, reload } = useAsync(() => listCatalogs(), [])
@@ -273,9 +423,22 @@ function CatalogGrid({
         {items.map((c) => (
           <button key={c.id} onClick={() => onOpen(c)} className="text-left">
             <Card>
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{c.name}</span>
-                <span className="text-xs text-[var(--color-brand-ink)]">open →</span>
+              <div className="flex items-start justify-between gap-3">
+                {/* min-w-0 lets the badge row wrap inside the title block instead of squeezing the
+                    "open →" affordance onto two lines; shrink-0 keeps that affordance intact. */}
+                <span className="min-w-0 font-medium">
+                  {c.name}
+                  <CatalogBadges
+                    badges={badgesFor({
+                      provenance: c._provenance,
+                      env: c.tags?.env,
+                      elevated,
+                    })}
+                  />
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-xs text-[var(--color-brand-ink)]">
+                  open →
+                </span>
               </div>
               {c.description && (
                 <div className="mt-0.5 text-sm text-[var(--color-muted)]">{c.description}</div>
@@ -291,11 +454,17 @@ function CatalogGrid({
 function CatalogDetail({
   catalog,
   mySubject,
+  elevated,
+  passive,
+  onVerify,
   onHome,
   onOpenCategory,
 }: {
   catalog: Catalog
   mySubject: string
+  elevated: boolean
+  passive: boolean
+  onVerify: (challenge: Challenge) => void
   onHome: () => void
   onOpenCategory: (c: Category) => void
 }) {
@@ -318,7 +487,22 @@ function CatalogDetail({
     <div>
       <Breadcrumbs trail={[{ label: 'Catalogs', onClick: onHome }, { label: catalog.name }]} />
       <Card>
-        <div className="text-lg font-semibold">{catalog.name}</div>
+        <div className="text-lg font-semibold">
+          {catalog.name}
+          {/* Prefer the SINGLE GET's provenance over the grid row's: the row is what we navigated
+              from and may be stale, while `full` is this catalog's own freshly-derived answer. */}
+          <CatalogBadges
+            badges={badgesFor({
+              // `?? catalog._provenance` would be WRONG here: once `full` has loaded, an ABSENT
+              // _provenance is the server declining to compute one, and substituting the grid
+              // row's label would re-assert a badge the server just withheld. Only fall back
+              // while `full` has not arrived yet.
+              provenance: full.data ? full.data._provenance : catalog._provenance,
+              env: (full.data ?? catalog).tags?.env,
+              elevated,
+            })}
+          />
+        </div>
         {catalog.description && (
           <div className="mt-0.5 text-sm text-[var(--color-muted)]">{catalog.description}</div>
         )}
@@ -412,7 +596,20 @@ function CatalogDetail({
             cats.reload()
           }}
         />
-        {cats.error && <ErrorBox label="categories" message={cats.error} />}
+        {/* A step-up refusal is not an error to report, it is a step to take: the panel replaces the
+            error box and explains what would satisfy the server. Any OTHER failure still reads as an
+            error, including a challenge the client could not follow (request() degrades that to a
+            plain ApiError precisely so it lands here rather than as a dead [Verify]). */}
+        {cats.error && !(cats.cause instanceof StepUpRequiredError) && (
+          <ErrorBox label="categories" message={cats.error} />
+        )}
+        {cats.cause instanceof StepUpRequiredError && (
+          <LockedPanel
+            challenge={cats.cause.challenge}
+            passive={passive}
+            onVerify={() => onVerify((cats.cause as StepUpRequiredError).challenge)}
+          />
+        )}
         {!cats.data && !cats.error && <Loading what="categories" />}
         {cats.data && cats.data.items.length === 0 && (
           <Empty>No categories visible to you in this catalog.</Empty>
@@ -491,11 +688,15 @@ function CatalogDetail({
 function CategoryDetail({
   catalog,
   category,
+  passive,
+  onVerify,
   onHome,
   onUp,
 }: {
   catalog: Catalog
   category: Category
+  passive: boolean
+  onVerify: (challenge: Challenge) => void
   onHome: () => void
   onUp: () => void
 }) {
@@ -542,7 +743,16 @@ function CategoryDetail({
           prods.reload()
         }}
       />
-      {prods.error && <ErrorBox label="products" message={prods.error} />}
+      {prods.error && !(prods.cause instanceof StepUpRequiredError) && (
+        <ErrorBox label="products" message={prods.error} />
+      )}
+      {prods.cause instanceof StepUpRequiredError && (
+        <LockedPanel
+          challenge={prods.cause.challenge}
+          passive={passive}
+          onVerify={() => onVerify((prods.cause as StepUpRequiredError).challenge)}
+        />
+      )}
       {!prods.data && !prods.error && <Loading what="products" />}
       {prods.data && prods.data.items.length === 0 && (
         <Empty>No products in this category yet.</Empty>

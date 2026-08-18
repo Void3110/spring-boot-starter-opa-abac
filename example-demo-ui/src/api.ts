@@ -1,4 +1,5 @@
 import { freshUser } from './auth'
+import { type Challenge, parseChallenge, rememberChallengeWindow } from './stepup'
 
 // Minimal typed client over the catalog API, through the gateway. Types mirror the OpenAPI shapes
 // (see example-catalog-management-service/.../openapi/catalog-api.yaml). Each enriched resource may
@@ -18,6 +19,12 @@ export interface Catalog {
   createdAt: string
   tags?: Tags
   _actions?: Actions
+  /**
+   * By which access path this row is in front of you (ADR 0033). Server-emitted, read-only, and
+   * **optional on purpose**: absent means the server did not compute it, which is NOT the same as
+   * `'member'` — see badgesFor(), which predicts nothing from absence.
+   */
+  _provenance?: 'member' | 'supervised'
 }
 
 export interface Category {
@@ -127,6 +134,29 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A 401 the caller can *do something about*: the server refused this read until the caller
+ * re-authenticates with a fresher, stronger factor, and said what would satisfy it (RFC 9470).
+ *
+ * <p>Every existing `instanceof ApiError` consumer keeps matching this — it is still an ApiError
+ * with a 401 status and a human message — so a caller that does not know about step-up degrades to
+ * showing the server's explanation in the ordinary error box, which is exactly right.
+ *
+ * <p>Declared here rather than in `stepup.ts` on purpose: a subclass is evaluated at module load and
+ * must see its base then, so putting it in a module that imports `ApiError` back would make
+ * correctness depend on which module the bundler entered first — the kind of cycle that passes in a
+ * unit test and throws in the app. `stepup.ts` stays dependency-free.
+ */
+export class StepUpRequiredError extends ApiError {
+  constructor(
+    status: number,
+    message: string,
+    readonly challenge: Challenge,
+  ) {
+    super(status, message)
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // freshUser refreshes an expired access token on demand (refresh grant) — without it, a demo
   // session older than the token lifespan sends a dead bearer and every call 401s at the gateway.
@@ -142,8 +172,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers })
   if (!res.ok) {
     let detail = res.statusText
+    // Captured SEPARATELY rather than by reordering the `??` below: `detail` is always present on a
+    // problem+json body, so it would permanently shadow the code and STEP_UP_REQUIRED would never
+    // be seen. The message the user reads is unchanged.
+    let errorCode: string | undefined
     try {
       const body = await res.json()
+      errorCode = body.errorCode
       detail = body.detail ?? body.errorCode ?? detail
     } catch {
       /* non-JSON error body; keep statusText */
@@ -152,6 +187,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // whole session lapsed (refresh token idle-timed-out). Say so instead of a bare "Unauthorized".
     if (res.status === 401 && detail === res.statusText) {
       detail = 'session expired — use "Switch identity" to sign in again'
+    }
+    if (res.status === 401 && errorCode === 'STEP_UP_REQUIRED') {
+      // Same-origin in both deployments (the Vite proxy in dev, nginx behind the gateway when
+      // packaged), so the header reaches fetch without CORS exposure. A cross-origin adopter needs
+      // `WWW-Authenticate` in the gateway's expose_headers — it is there (init-routes.sh) precisely
+      // so this reads a header instead of a null.
+      const challenge = parseChallenge(res.headers.get('WWW-Authenticate'))
+      if (challenge) {
+        // The window is the server's to declare; remember the one it just declared so the chip can
+        // count down a learned number instead of a hardcoded one.
+        rememberChallengeWindow(challenge.maxAge)
+        throw new StepUpRequiredError(res.status, detail, challenge)
+      }
+      // A challenge we cannot follow degrades to a PLAIN error: better an honest 401 than a [Verify]
+      // button that cannot work.
     }
     throw new ApiError(res.status, detail)
   }
@@ -167,6 +217,15 @@ export function listCatalogs(page = 0, perPage = 100): Promise<Page<Catalog>> {
 /** Single catalog GET — this IS enriched (the list endpoint is not). */
 export function getCatalog(id: string): Promise<Catalog> {
   return request<Catalog>(`/api/v1/catalogs/${id}`)
+}
+
+/**
+ * Single category GET. Added for step-up restoration: coming back from Keycloak we hold only ids,
+ * and this is ONE direct read rather than list-then-find — which is what keeps "exactly one
+ * automatic retry" true instead of "one retry plus a list call that may itself be challenged".
+ */
+export function getCategory(catalogId: string, categoryId: string): Promise<Category> {
+  return request<Category>(`/api/v1/catalogs/${catalogId}/categories/${categoryId}`)
 }
 
 export function listCategories(catalogId: string, page = 0, perPage = 100): Promise<Page<Category>> {

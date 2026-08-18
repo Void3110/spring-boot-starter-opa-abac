@@ -67,13 +67,50 @@ done
 
 # ── 3. Clean-room scan (this repo is public — MUST be empty) ────────────────────
 echo "[3] clean-room scan"
-GENERIC='glpat-[A-Za-z0-9_-]|ghp_[A-Za-z0-9]|/Users/[a-z]'
+# `~/Workspace`-style paths matter as much as absolute `/Users/...` ones: a machine-local layout
+# is the leak, and the tilde form is how people actually write it. Learned the hard way twice —
+# AGENT-TOOL-AUTHZ-REVIEW finding #10 fixed this class once, and it RECURRED in committed Mulch
+# records because the pattern below only had the absolute form (SPA-CHALLENGE-UX verify round).
+# Split so the WIDE scan below can treat the two halves differently (see there).
+GENERIC_TOKEN='glpat-[A-Za-z0-9_-]|ghp_[A-Za-z0-9]'
+GENERIC_HOME='/Users/[a-z]|~/Workspace'
+GENERIC="$GENERIC_TOKEN|$GENERIC_HOME"
 BLOCKFILE="scripts/planning/cleanroom-patterns.local"
 if [ -f "$BLOCKFILE" ]; then
   PRIVATE=$(grep -vE '^\s*(#|$)' "$BLOCKFILE" | head -1)
   PATTERN="$GENERIC${PRIVATE:+|$PRIVATE}"
   HITS=$(grep -rnEi "$PATTERN" "$DIR" || true)
-  if [ -z "$HITS" ]; then ok "clean (generic + private blocklist)"
+  # THE WIDE SCAN. `.mulch/` and `docs/` are COMMITTED and were covered by nothing — which is
+  # exactly where this leak class hid twice (a Mulch record, and a review note asserting the
+  # opposite in the same file). Records are written by `ml record` mid-session and review notes by
+  # hand, so no other gate sees either.
+  #
+  # Rooted at $REPO_ROOT, NOT at `git rev-parse`: this script's own preamble forbids deriving the
+  # root from git precisely because sessions and subagents start outside the repo — and a failed
+  # rev-parse here would silently make the path `/.mulch`, skip the scan, and still print the line
+  # claiming it ran. That is a fail-OPEN in a clean-room gate, so it fails closed instead.
+  #
+  # TWO greps per tree, because the halves need opposite casing:
+  #   * home paths CASE-SENSITIVE — `-i` would match REST paths like `/api/v1/users/search`, which
+  #     these trees quote constantly (the documented false positive, Mulch mx-e621ea). A real home
+  #     path has capitals: `/Users/`, `~/Workspace`.
+  #   * tokens + the PRIVATE blocklist CASE-INSENSITIVE — codenames and internal hostnames are
+  #     prose, written in whatever case the sentence wanted. This is the highest-value half of the
+  #     pattern and must not inherit the home-path half's case-sensitivity.
+  WIDE_CI="$GENERIC_TOKEN${PRIVATE:+|$PRIVATE}"
+  for tree in "$REPO_ROOT/.mulch" "$REPO_ROOT/docs"; do
+    if [ ! -d "$tree" ]; then
+      bad "cannot locate ${tree#"$REPO_ROOT"/} — clean-room scan INCOMPLETE (failing closed)"
+      continue
+    fi
+    HITS="$HITS
+$(grep -rnE "$GENERIC_HOME" "$tree" || true)
+$(grep -rnEi "$WIDE_CI" "$tree" || true)"
+  done
+  # Blank lines are an artefact of the newline-joined accumulation above; strip them so the
+  # emptiness test means "no hits" and the report never glues two violations onto one line.
+  HITS=$(printf '%s\n' "$HITS" | grep -v '^[[:space:]]*$' || true)
+  if [ -z "$HITS" ]; then ok "clean (generic + private blocklist; package + committed .mulch and docs)"
   else bad "clean-room violations:"; printf '%s\n' "$HITS" | sed 's/^/      /'; fi
 else
   bad "no $BLOCKFILE — copy the .example and tailor it (the gate fails closed)"

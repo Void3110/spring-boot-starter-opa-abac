@@ -9,7 +9,7 @@ tags:
 
 # SPA-CHALLENGE-UX — the console consumes the challenge
 
-> **Status: Planning — mini package, collaborative build.**
+> **Status: ✅ SHIPPED 2026-08-18 — mini package, collaborative build.**
 > Design settled 2026-08-15 (grill-me: ten forks; [[00-DESIGN]] §Considered-and-rejected).
 > The **collaborative follow-up** the supervisor epic deferred from slice C
 > ([[STEP-UP-ELEVATION]], shipped 2026-08-15) — Phase 10 of [[POC-ROADMAP]], after A/B/C.
@@ -60,12 +60,12 @@ whole A/B/C story in the browser.
 
 | # | Ticket | Status |
 |---|---|---|
-| T1 | the `_provenance` affordance: spec + marker + memo + advice + tests + ADR 0033 | 📋 |
-| T2 | the SPA challenge seam: parser, `StepUpRequiredError`, `request()` classification, vitest | 📋 |
-| T3 | the locked panel, [Verify], the state-carried location, restoration, one retry | 📋 |
-| T4 | the elevation chip (learned window, reactive expiry) + the row badges | 📋 |
-| T5 | `sup-demo`/`pm-demo` in the realm, the seed's supervised block, the registry row | 📋 |
-| T6 | the pane pass (E10–E21), the launch attach entry, the ratchet, close-out | 📋 |
+| T1 | the `_provenance` affordance: spec + marker + memo + advice + tests + ADR 0033 | ✅ |
+| T2 | the SPA challenge seam: parser, `StepUpRequiredError`, `request()` classification, vitest | ✅ |
+| T3 | the locked panel, [Verify], the state-carried location, restoration, one retry | ✅ |
+| T4 | the elevation chip (learned window, reactive expiry) + the row badges | ✅ |
+| T5 | `sup-demo`/`pm-demo` in the realm, the seed's supervised block, the registry row | ✅ |
+| T6 | the pane pass (E10–E21), the launch attach entry, the ratchet, close-out | ✅ |
 
 Decomposition: [[01-DECOMPOSITION]] · QA cases: [[10-QA-TEST-CASES]] · per-ticket record: `STATUS-01…06`.
 

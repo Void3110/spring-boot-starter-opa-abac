@@ -45,6 +45,13 @@ ENABLE_OIDC=1 ./deploy.sh up --pods 2
 #   pm-bob, pm-carol, pm-dave, pm-erin -> catalog-editor           (the reports whose seats propagate)
 #   outsider-eve              -> catalog-viewer                    (neither member nor supervisor: E3)
 #   The `unit-supervisor` realm role is a UX-only eligibility marker and grants NOTHING.
+#
+# Demo-console supervised personas (SPA-CHALLENGE-UX — owned by scripts/postman/seed-demo-data.sh,
+# NOT by any matrix; password == username):
+#   sup-demo  -> catalog-viewer + unit-supervisor + a seeded TOTP  (supervises pm-demo; bound to NO
+#                team, so her whole page is derived. Her TOTP secret is `spachallengedemo1234`,
+#                public on purpose; direct-grant therefore needs `-d otp=<code>`)
+#   pm-demo   -> catalog-editor                                    (the report; owns both Demo * Teams)
 
 # no token -> 302 redirect to Keycloak login (unauth_action: auth)
 curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 302
@@ -441,6 +448,35 @@ Two rig-level things the runner owns rather than assumes:
   **every** catalog pod (the pool round-robins, so the challenge and the elevated read can land on
   different ones), and `STEP_UP_CHALLENGED` is asserted to carry **no** `authTime` — at challenge time
   the subject is precisely not elevated.
+
+### The demo console's supervised world (SPA-CHALLENGE-UX)
+
+The browser demo gets its **own** supervisor pair so a fresh rig tells the whole A/B/C story without
+running a matrix: **`sup-demo`** (seeded TOTP, bound to no team) supervises **`pm-demo`** (owner of
+both `Demo * Teams`). They are realm additions, so they need the same **down-first re-import** every
+realm change here does — and the seed says so itself if it finds a realm that predates them:
+
+```bash
+./deploy.sh down                                   # the realm changed — Keycloak must RE-IMPORT it
+./profile.sh up                                    # `down` stops base Postgres; the next up needs it
+ENABLE_SPA=1 ENABLE_MCP=1 ./deploy.sh up --pods 2  # BOTH flags on the SAME up (see below)
+cd scripts/postman && ./seed-demo-data.sh
+```
+
+**Both flags on one `up`.** `deploy.sh` tears the SPA stack down on any `up` without `ENABLE_SPA=1`,
+and the MCP stack down without `ENABLE_MCP=1`. A session that drives the packaged console *and* runs
+`run-step-up-matrix.sh` (whose preflight hard-fails without the MCP server) must carry both, or the
+second command quietly removes what the first needed.
+
+`seed-demo-data.sh` then seeds `d311…0002` **Demo Production Catalog** (`env=production`) and
+`d311…0003` **Demo Open Catalog** (untagged), a category + product under each, and the single edge
+`sup-demo -> {pm-demo}`. Signed in as `sup-demo`, the console shows both catalogs by derivation,
+opens the untagged one with no ceremony, and answers the production one's challenge with one TOTP.
+`pm-demo`, a *member* of the same catalogs, reads production with no elevation at all — the member /
+supervisor asymmetry, visible in a browser.
+
+Because `sup-demo` and `pm-demo` belong to the seed and every matrix's teardown is scoped to its own
+names/ids/subjects, the demo world and the matrices coexist on one rig in either order.
 
 ## Cross-service HTTP resilience (Slice B3) — opt-in
 

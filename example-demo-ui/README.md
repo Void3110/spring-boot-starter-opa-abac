@@ -24,6 +24,140 @@ The SPA is served two ways:
 Sign in as `editor` / `demo` / `viewer` / `outsider` (password == username) and watch the
 Demo catalog card's affordances change per identity.
 
+For the supervisor story, sign in as **`sup-demo`** (password == username, plus a TOTP —
+`scripts/postman/mint-code-flow-token.py --print-otp --otp-secret spachallengedemo1234` prints a
+code): she supervises `pm-demo` and is a member of no team, so both her catalogs are reachable by
+*derivation*. The untagged one opens with no ceremony; the `env=production` one asks for a fresh
+second factor. `pm-demo`, a **member** of the very same catalogs, reads production with no
+elevation at all.
+
+## Tests
+
+```bash
+npm run lint   # tsc -b --noEmit — types only
+npm test       # vitest run — the pure seams
+```
+
+`npm test` covers the seams worth testing away from a browser: the challenge parser and `request()`'s
+error classification. No DOM or component tests — the UI itself is validated by a committed
+case list run in the Browser pane (`docs/to-do/.../10-QA-TEST-CASES.md`, the E10+ cells), which is
+where UI truth actually lives.
+
+## The step-up challenge seam
+
+When a supervisor reads production content, the server answers `401` with an RFC 9470
+`WWW-Authenticate` challenge naming what would satisfy it (ADR 0030). `src/stepup.ts` parses that
+header — a real RFC 7235 `auth-param` tokenizer, because `error_description` is free text that
+contains commas — and `api.ts`'s `request()` turns a `401` + `STEP_UP_REQUIRED` + a *followable*
+challenge into a typed `StepUpRequiredError` carrying it.
+
+Three things about that are deliberate:
+
+- **A challenge the client cannot follow degrades to a plain error.** Missing `acr_values` or
+  `max_age`, a scheme that is not `Bearer`, an unparseable header → the parser returns `null` and the
+  caller gets an ordinary `ApiError`. Better an honest 401 than a [Verify] button that cannot work —
+  the client's mirror of the server's "no half-formed challenge" rule.
+- **A bodiless `401` stays the "session expired" path.** A gateway 401 carries no problem body, so
+  the two are distinguishable by construction rather than by guessing.
+- **The advertised `max_age` is remembered under `stepUp.maxAge`** — deliberately *not* under the
+  `oidc.` prefix, which oidc-client-ts's `clearStaleState()` sweeps on every `signinRedirect()`, i.e.
+  exactly when [Verify] redirects. The elevation chip counts down a window **learned from the
+  server**, never one hardcoded here.
+
+**Why the header is readable at all:** both deployments above are single-origin, so
+`WWW-Authenticate` reaches `fetch` without CORS exposure. A cross-origin adopter would need it in the
+gateway's `expose_headers` — it is there (`infra/apisix/init-routes.sh`) precisely so this reads a
+header rather than a `null` and silently degrades a working feature.
+
+## [Verify]: the round trip
+
+A `StepUpRequiredError` renders a **locked panel** in the contents area that was refused — the
+server's own sentence, `acr_values` and `max_age` as plain facts, and one [Verify] button. Nothing
+modal, and **no automatic redirect ever**: the header, breadcrumbs and the resource's metadata card
+stay usable, because the caller is not locked out of the resource, only out of its contents.
+
+[Verify] calls `signinRedirect` with:
+
+| | | |
+|---|---|---|
+| `acr_values` | from the challenge | what the server said it wants |
+| `max_age` | **`0`** | forces a genuinely fresh authentication, so `auth_time` is new |
+| `claims` (via `extraQueryParams`) | essential `acr` | a bare `acr_values` is only *voluntary* and can be silently under-delivered |
+| `state` | `{v:1, catalogId, categoryId?, stepUp:true}` | **ids only** — the state travels through a third party |
+
+**`max_age: 0` is deliberate, and zero is not "no window".** Omitting `max_age` is what causes the
+infinite loop: Keycloak happily answers from the existing SSO session, returns the *same* stale
+`auth_time`, and the read 401s again forever. Echoing the challenge's own `max_age` re-authenticates
+too — measured to produce the identical prompt sequence — so `0` simply removes the reasoning.
+
+**Measured on this realm:** a `max_age`-triggered re-authentication re-asks **both** factors —
+password *then* one-time code — even on a live SSO session. OIDC `max_age` overrides the realm's
+per-level `loa-max-age` memory, and a non-zero value behaves the same way. So [Verify] costs a full
+re-login, not just a second factor.
+
+**Coming back**, the callback reads `user.state` and restores the drill-in: `getCatalog(catalogId)`,
+then `getCategory(catalogId, categoryId)` if we were a level deeper — one direct read each, never
+list-then-find. That restored load **is** the single automatic retry. Either read may itself be
+challenged and **neither triggers another redirect**; a challenged category simply leaves you on the
+catalog with the panel.
+
+**The loop guard.** On the page load that came back from a verification, a step-up refusal renders
+the panel's *passive* variant — it says verification did not unlock the contents and waits. Any
+deliberate navigation clears that flag, so a challenge you walk into fresh never claims you already
+tried. No code path calls the step-up redirect without a click, so this is structurally loop-free
+however the server behaves.
+
+`User.toStorageString()` omits `state`, so `user.state` exists only on the callback's page load and
+cannot leak into later ones. **Do not "fix" that by persisting it** — it is what makes the guard work.
+
+## The elevation chip and the row badges
+
+A chip beside the role chips says whether a second factor is in hand, and for how long:
+
+| state | shown | when |
+|---|---|---|
+| `Elevated · m:ss` | green | LoA ≥ 2 and a window is known — counting down `auth_time + max_age − now` |
+| `Elevated (aal2)` | green | LoA ≥ 2, **no** window known — honest, never a guessed number |
+| `elevation lapsed` | **amber** | the advertised window ran out |
+| `not elevated` | **amber** | LoA < 2 *and* a challenge was seen this session |
+| *(hidden)* | — | everyone else — members and viewers see nothing new |
+
+**The window is learned, never hardcoded.** There is no `300` anywhere in this app: the countdown
+uses whatever the last challenge advertised (`stepUp.maxAge`, written by the `request()` seam). Point
+the demo at a policy with a different window and the chip follows it.
+
+**Expiry is reactive, and that is a deliberate safety property.** At zero the chip flips amber and
+**nothing on screen is hidden**. The policy's `skew` may still admit a read for a few more seconds —
+so the client pre-empting the server would be *wrong*, and would train people to distrust the UI. The
+next fetch is what finds out; if it is refused, the locked panel appears then.
+
+**Amber means "the client predicts", green and red mean "the server decided".** On a catalog row:
+
+- `supervised` — you hold it by supervision, not membership (from `_provenance`)
+- `production` — its tier (from `tags.env`)
+- amber **`production · verify to open`** — *iff* supervised **and** production **and** not elevated
+
+Each conjunct earns its place. A **member's** production catalog is never amber (their read needs no
+elevation at all — warning them would be a lie). A supervised **staging** catalog is never amber. A
+supervised production catalog **while elevated** is not amber. And an **absent** `_provenance` is
+*unknown*, not `member`: no supervised badge and never amber, because the client must not predict
+from a value the server declined to compute.
+
+Being wrong in either direction is a UI bug, never a security event — the server's `401` is the
+truth and the panel is where it lands. That asymmetry is why amber is its own colour here (`--color-warn`)
+rather than reusing the allow/deny palette.
+
+**One lifecycle subtlety worth knowing if you touch this:** `stepUp.maxAge` deliberately lives
+*outside* oidc-client-ts's `oidc.` prefix so `clearStaleState()` cannot sweep it at [Verify] time.
+The price is that it also survives a logout — so `login()` and `logout()` clear it explicitly, and
+the step-up redirect pointedly does not. Without that, a supervisor's leftover window makes the next
+identity's console claim "not elevated" about a mechanism that does not apply to them.
+
+**Accepted limitation:** cancelling at Keycloak loses the drill-in. The location lived in the state
+of an authorization request that was never completed, so the app loads at the catalog grid. This is a
+redirect-only demo with no deep links; restoring it would mean persisting navigation somewhere the
+step-up flow does not need.
+
 ## ⚠️ Security caveat — do NOT copy the token handling to production
 
 This SPA stores its OIDC tokens in **`sessionStorage`** (`src/auth.ts`). `sessionStorage`

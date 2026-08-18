@@ -7,6 +7,11 @@
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
       "cwd": "example-demo-ui"
+    },
+    {
+      "name": "demo-ui-packaged",
+      "url": "http://localhost:9085",
+      "port": 9085
     }
   ]
 }

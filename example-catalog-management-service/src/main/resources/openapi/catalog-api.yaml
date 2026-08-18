@@ -570,11 +570,14 @@ components:
     Catalog:
       type: object
       required: [id, name, createdAt]
-      # x-implements stamps the per-type Enrichable marker onto the generated DTO (action enrichment,
-      # Phase 6); the readOnly _actions affordance map is attached by ActionEnrichmentAdvice after the
-      # handler returns (server-emitted, never accepted on input).
+      # x-implements stamps the per-type marker interfaces onto the generated DTO. CatalogEnrichable
+      # (action enrichment, Phase 6) carries the readOnly _actions affordance map, attached by
+      # ActionEnrichmentAdvice after the handler returns; CatalogProvenanceCarrier (ADR 0033) carries
+      # the readOnly _provenance label, attached by CatalogProvenanceAdvice. Both are server-emitted
+      # and never accepted on input.
       x-implements:
         - dev.dmitriikonovalov.example.catalog.security.CatalogEnrichable
+        - dev.dmitriikonovalov.example.catalog.security.CatalogProvenanceCarrier
       properties:
         id:
           type: string
@@ -604,6 +607,23 @@ components:
           description: >
             Affordance map — which actions the caller may perform on this resource
             (server-emitted; absent when enrichment could not be computed).
+        # DELIBERATELY no `enum:` key. Under this generator (openapi-generator `spring`) an inline
+        # enum — even one meant purely as documentation — emits a per-DTO NESTED enum type (see
+        # ProblemDetail.ErrorCodeEnum, the live precedent) whose getter returns that nested type and
+        # therefore cannot satisfy CatalogProvenanceCarrier's `String getProvenance()`: a compile
+        # failure, with no configOptions knob to suppress it. The vocabulary is enforced by the
+        # emitting advice and documented here in prose.
+        _provenance:
+          type: string
+          readOnly: true
+          description: >
+            By which access path this catalog is in front of you — `member` (a membership grant;
+            membership always wins when both apply) or `supervised` (the disjoint supervised read
+            path, ADR 0029). Affordance, not enforcement (ADR 0033): a client uses it to explain and
+            to predict, never to decide. **Absent when the server did not compute it** — never null,
+            never a default — so an absent value means *unknown*, not `member`. Present on catalog
+            list items and on the single-catalog GET only; categories and products inherit their
+            catalog's value on drill-in.
 
     CatalogRequest:
       type: object

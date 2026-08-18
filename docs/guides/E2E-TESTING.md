@@ -74,6 +74,15 @@ binds its viewer to that team as a `reader`. Those steps **skip themselves** on 
 where no team model exists. Each runner detects the flavour by reading the catalog pod's own
 `CATALOG_ROLE_SOURCE` and prints which one it found — nothing to pass, nothing to remember.
 
+> **EXPORT the optional flavour flags — do not pass them as a command prefix.** Several runners
+> recreate the catalog pods mid-run through `deploy.sh up` and forward the optional flags as
+> `"${ENABLE_SPA:-0}"` / `"${ENABLE_MCP:-0}"`; `deploy.sh`'s flag-off arms **tear those stacks down**.
+> A rig brought up with `ENABLE_SPA=1 ENABLE_MCP=1 ./deploy.sh up` (a prefix assignment, which the
+> shell does not export) therefore loses the packaged SPA and the MCP server the moment
+> `run-supervised-scope-matrix.sh` restores its pods — and the next runner fails on a missing
+> dependency it never touched. Use `export ENABLE_SPA=1 ENABLE_MCP=1` for any session that mixes the
+> demo console with the matrices; `run-demo-world-matrix.sh` exports them itself for exactly this reason.
+
 > Read the flavour from the **catalog pod**, not from whether the user-service is reachable.
 > `ENABLE_OIDC=1 ./deploy.sh up` recreates the catalog pods on the static supplier but leaves an
 > already-running `usermgmt` container alone, so a reachability probe reports "membership rig" on a
@@ -408,6 +417,43 @@ isolation, data-filter and supervised matrices) until the SUPERVISED-SCOPE layer
 them real (`docs/code-review/SUPERVISED-SCOPE-REVIEW.md`, finding 1). Bare top-level
 `pm.expect(...)` calls outside any `pm.test` are the inverse smell: they fail as an unnamed script
 error and abort the request's remaining checks — wrap them.
+
+### Demo-world matrix (SPA-CHALLENGE-UX)
+
+The only runner here that **owns no fixtures**: it asserts the world `seed-demo-data.sh` builds for
+the browser console (family `d311…`), which is what makes it safe to run beside everything else.
+
+```bash
+export ENABLE_SPA=1 ENABLE_MCP=1            # see the flavour note above — export, do not prefix
+./deploy.sh up --pods 2
+cd scripts/postman && ./seed-demo-data.sh
+./run-demo-world-matrix.sh                  # E31 + idempotency + E32 (runs two matrices: slow)
+./run-demo-world-matrix.sh --skip-matrices  # the world only — a fast check
+./run-demo-world-matrix.sh --convergence    # E33, after a realm re-import + a re-seed
+```
+
+What it pins:
+
+- **E31** — `sup-demo`, bound to **no** team, sees exactly the two `d311…` catalogs by *derivation*
+  from the single edge to `pm-demo`. The untagged one opens with no ceremony; the `env=production`
+  one answers her a well-formed **RFC 9470** challenge (`insufficient_user_authentication`,
+  `acr_values=aal2`, numeric `max_age`, body `errorCode: STEP_UP_REQUIRED`) — the exact wire
+  condition the console's locked panel consumes. `pm-demo`, a **member** of that same catalog, reads
+  it with no elevation at all: the asymmetry the demo exists to show.
+- **Idempotency** — the runner pins the ids, re-runs the seed, and asserts nothing moved. The seed
+  is find-or-create, not delete-and-recreate, so the demo world is a stable place to come back to.
+- **E32** — coexistence in **both** directions: the supervised-scope and step-up matrices leave
+  `sup-demo`'s page untouched, and no `d311…` row ever appears in `sup-anna`'s. E32c also catches a
+  rig left in the step-up **freshness drill** — it compares the advertised `max_age` against the
+  shipped value read from `infra/opa/policies/step_up.json`, never against live OPA, which the
+  drill moves.
+- **E33** — the world converges across a realm re-import plus a re-seed, with no duplicate team or
+  catalog. Whether the *subjects* were stable is **recorded, not asserted**: the realm export pins
+  both users' `id`, and the seed converges either way (find-or-create by subject, REPLACE edge).
+
+`sup-demo` carries a seeded TOTP (fixture secret `spachallengedemo1234`, public on purpose), so every
+mint for her passes `-d otp=<code>`; Keycloak enforces codes one-time per credential, so the runner
+retries a spent code in the next 30-second window.
 
 ## Environment
 

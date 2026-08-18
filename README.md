@@ -21,8 +21,8 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 > **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
 > engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
 > `plan → decompose → autonomous-implement → review` — where each pass leaves artifacts (in **Mulch**
-> and this vault) that make the next one sharper. **27 feature slices, 32 ADRs, 1202 unit/IT tests +
-> `opa test` 389/389 + an 18-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
+> and this vault) that make the next one sharper. **28 feature slices, 33 ADRs, 1225 unit/IT tests +
+> 63 browser-free SPA unit tests + `opa test` 389/389 + a 19-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
 > security review** — all delivered this way, with the prompts and per-slice retrospectives kept
 > verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
 
@@ -79,6 +79,15 @@ spring-boot-starter}` + the `opa-abac-bom` platform. The three `example-*` servi
 - **Cross-service HTTP resilience** — a backend-agnostic `CallGuard` (Resilience4j) with per-edge
   retry/backoff/circuit-break that makes outages rarer **without** ever re-opening the fail-closed
   outage→deny contract.
+- **Supervised read path + step-up elevation** — a unit manager who is a member of **no** team sees the
+  catalogs their reports own, read-only, by **derivation** rather than membership (a second, disjoint
+  access path — membership always wins). An operator-controlled `env` tier marks a catalog
+  **production**, and reading production *contents* answers a standard **RFC 9470** challenge
+  (`insufficient_user_authentication` + `acr_values` + `max_age`): one second factor opens it for a
+  bounded, **server-enforced** `auth_time` window that a token refresh cannot silently extend. Rows
+  carry a `_provenance` label saying which access path put them in front of you, and the demo console
+  consumes the challenge end to end — an inline locked panel, one [Verify] round trip that returns you
+  to the same place, and a countdown that is honest about being a *prediction* rather than a decision.
 - **Agent tool-call authorization** — a third example service puts an **MCP tool surface** in front of the
   catalog and gates it: effective authority is the **principal's ceiling ∩ the agent's declared
   capability**, computed in Rego, over the catalog's *unchanged* policies. **Zero library change.**
@@ -450,6 +459,16 @@ spurious "provisioning failed" banner on first login (dev-mode, cosmetic, **no**
 impact). It was fixed the same day (a single-flight guard + treating a `409`-on-create as success) and
 re-verified live with a fresh user. That's the point of the browser gate: it catches the experience-level
 warts the assertion suites structurally can't see.
+
+The supervisor slice added a **committed, re-runnable** browser case list rather than a one-off pass:
+`E10–E21` in the slice's QA cases, driven against the packaged SPA. It proves the challenge round trip
+(panel → [Verify] → **back to the same catalog *or category***, one automatic retry, no second
+redirect), and — the cell that matters most — that the console **never pre-empts the server**: with the
+elevation window lapsed, the chip reads amber while the contents render anyway, because the server
+answered inside its skew. The parser's negatives are driven **on the wire** (seven malformed
+`WWW-Authenticate` headers must degrade to a plain error, never a [Verify] that cannot work), and a
+member's identical read must show **nothing new at all**. Record:
+[`docs/to-do/implemented/SPA-CHALLENGE-UX/STATUS-06.md`](docs/to-do/implemented/SPA-CHALLENGE-UX/STATUS-06.md).
 
 For **1.1.0** the browser gate ran again as a **delta** pass, focused on the paths the release touched
 (the fail-closed OPA-client path-validation rewrite): allow paths round-trip, deny paths deny (outsider's

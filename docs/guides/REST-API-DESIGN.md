@@ -255,6 +255,25 @@ client-actionable failure the handlers discriminate, not one code per status.
   `items` element of a page too, and is **omitted entirely when enrichment could not be computed** (absent
   ⇒ could-not-compute; never an empty `{}` or all-`false` map). It is **affordance, not enforcement** — the
   real gate decides independently. *(Adopted in Phase 6; see [[ACTION-ENRICHMENT]].)*
+- **A catalog** may additionally carry a `readOnly` **`_provenance`** label — *by which access path is
+  this row in front of you?* — with the vocabulary `member` (a membership grant; membership always wins
+  when both apply) or `supervised` (the disjoint supervised read path). Same mechanism as `_actions`
+  (a marker interface on the schema's `x-implements`, a response advice after the handler returns,
+  server-emitted and never accepted on input) and the same honesty contract: **absent when the server
+  did not compute it**, so an absent value means *unknown*, never `member`. **One semantic, two
+  derivations, pinned to agree**: on the list it comes from the query leg, on the single GET from the
+  resolved role's provenance stamp. It is likewise **affordance, not enforcement** — a client uses it to
+  explain and to *predict* ("this production catalog will ask me for a second factor"), and
+  predicted-and-wrong is a UI bug, never a security event. Catalog list items and the single-catalog GET
+  only; categories and products inherit their catalog's value on drill-in.
+  *(Adopted in Phase 10; ADR [[0033-catalog-provenance-affordance|0033]], [[SPA-CHALLENGE-UX]].)*
+
+  > **Spec gotcha, load-bearing:** `_provenance` is declared `type: string` with its vocabulary in the
+  > `description` and **no `enum:` key**. Under this generator an inline `enum` — even one meant purely as
+  > documentation — emits a per-DTO *nested* enum type (`ProblemDetail.ErrorCodeEnum` is the live
+  > precedent) whose getter cannot satisfy a shared marker interface's `String` getter: a compile failure,
+  > with no `configOptions` knob to suppress it. A vocabulary shared through `x-implements` is documented
+  > in prose and enforced by the emitter.
 
 ### Readonly and server-owned fields
 
@@ -541,6 +560,11 @@ of these is a deliberate slice, not a drive-by.
 > **Adopted in Phase 6:** the **`_actions` affordance map** on enriched resources/pages (now
 > [§4](#4-request-and-response-bodies), ADR [[0016-action-enrichment-affordance-metadata|0016]],
 > [[ACTION-ENRICHMENT]]) — `readOnly`, server-emitted, omitted when not computed; affordance, not enforcement.
+>
+> **Adopted in Phase 10:** the **`_provenance` label** on catalog rows (now
+> [§4](#4-request-and-response-bodies), ADR [[0033-catalog-provenance-affordance|0033]],
+> [[SPA-CHALLENGE-UX]]) — `readOnly`, server-emitted, **absent when not computed**; one semantic with two
+> derivations (the list's query leg, the GET's role stamp) pinned to agree; affordance, not enforcement.
 >
 > When a target is adopted, move its row out of this section and into the body as a normal rule — retiring
 > the "Targets" note the same way the body's adopted-in-Phase notes above were retired as features landed.

@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Step-up elevation matrix (Slice C, ADR 0030 §5-9)",
-    "description": "A supervisor's production contents open behind a FRESH second factor, for a bounded window. E1 the challenge, E2 the round trip, E4 the fingerprinting negatives, E5 members unaffected, E6 the human-only supervised path (through MCP), E7 the freshness drill, E3 the loop-prevention negative (inside the drill's shrunk window). Driven by run-step-up-matrix.sh, which mints the aal1/aal2 tokens with mint-code-flow-token.py — ROPC cannot carry auth_time. Fixture-id prefix f00d...",
+    "name": "Step-up elevation matrix (Slice C, ADR 0030 \u00a75-9)",
+    "description": "A supervisor's production contents open behind a FRESH second factor, for a bounded window. E1 the challenge, E2 the round trip, E4 the fingerprinting negatives, E5 members unaffected, E6 the human-only supervised path (through MCP), E7 the freshness drill, E3 the loop-prevention negative (inside the drill's shrunk window). Driven by run-step-up-matrix.sh, which mints the aal1/aal2 tokens with mint-code-flow-token.py \u2014 ROPC cannot carry auth_time. Fixture-id prefix f00d...",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -118,10 +118,10 @@
   "item": [
     {
       "name": "Matrix",
-      "description": "E1 the challenge · E2 the round trip · E4 the fingerprinting negatives · E5 members unaffected.",
+      "description": "E1 the challenge \u00b7 E2 the round trip \u00b7 E4 the fingerprinting negatives \u00b7 E5 members unaffected.",
       "item": [
         {
-          "name": "E1pre — the deny below is the TIER, not a missing role: anna reads the production CATALOG -> 200",
+          "name": "E1pre \u2014 the deny below is the TIER, not a missing role: anna reads the production CATALOG -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -149,7 +149,7 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// The root read is metadata-only and carries no tier, so it opens for a supervisor at",
-                  "// aal1 — and catalog.rego deliberately emits no deny_reason at all (a factor there would",
+                  "// aal1 \u2014 and catalog.rego deliberately emits no deny_reason at all (a factor there would",
                   "// open nothing). Without this cell every 401 below could be 'anna has no role'.",
                   "pm.test('E1pre anna reaches the production catalog itself (200)', function () {",
                   "    pm.response.to.have.status(200);",
@@ -164,7 +164,7 @@
           ]
         },
         {
-          "name": "E1a — THE CHALLENGE: anna at aal1 lists the production catalog's categories -> 401",
+          "name": "E1a \u2014 THE CHALLENGE: anna at aal1 lists the production catalog's categories -> 401",
           "request": {
             "method": "GET",
             "header": [
@@ -198,8 +198,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
-                  "// Slice B answered this with a plain 403. C's sole-blocker rule fires — anna IS granted,",
-                  "// her token is not elevated, and no other deny applies — so the decision carries a",
+                  "// Slice B answered this with a plain 403. C's sole-blocker rule fires \u2014 anna IS granted,",
+                  "// her token is not elevated, and no other deny applies \u2014 so the decision carries a",
                   "// structured deny_reason and the library's advice mints the RFC 9470 challenge.",
                   "stepUpChallenged('E1a the category LIST', pm.response, pm.environment.get('shipped_max_age'));"
                 ]
@@ -208,7 +208,7 @@
           ]
         },
         {
-          "name": "E1b — anna at aal1 GETs a category under the production catalog -> 401",
+          "name": "E1b \u2014 anna at aal1 GETs a category under the production catalog -> 401",
           "request": {
             "method": "GET",
             "header": [
@@ -244,7 +244,7 @@
           ]
         },
         {
-          "name": "E1c — anna at aal1 GETs a product under the production catalog -> 401",
+          "name": "E1c \u2014 anna at aal1 GETs a product under the production catalog -> 401",
           "request": {
             "method": "GET",
             "header": [
@@ -282,7 +282,7 @@
           ]
         },
         {
-          "name": "E1d — CONTROL: the same aal1 token on the UNTAGGED catalog's category -> 200",
+          "name": "E1d \u2014 CONTROL: the same aal1 token on the UNTAGGED catalog's category -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -321,7 +321,7 @@
           ]
         },
         {
-          "name": "E2a — THE ROUND TRIP: the same read with an aal2 token -> 200",
+          "name": "E2a \u2014 THE ROUND TRIP: the same read with an aal2 token -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -351,7 +351,7 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// One TOTP later, on the very same resource. Nothing was granted, nothing was tagged,",
-                  "// no pod restarted — only the token's acr + auth_time moved.",
+                  "// no pod restarted \u2014 only the token's acr + auth_time moved.",
                   "opened('E2a the elevated category READ', pm.response,",
                   "       pm.environment.get('prod_category_id'));"
                 ]
@@ -360,7 +360,7 @@
           ]
         },
         {
-          "name": "E2b — the elevated LIST opens too, on exact ids -> 200",
+          "name": "E2b \u2014 the elevated LIST opens too, on exact ids -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -402,7 +402,7 @@
           ]
         },
         {
-          "name": "E2c — and the product below it -> 200",
+          "name": "E2c \u2014 and the product below it -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -441,7 +441,7 @@
           ]
         },
         {
-          "name": "E4a — FINGERPRINTING: an OUT-OF-UNIT supervisor on the same production category -> plain 403",
+          "name": "E4a \u2014 FINGERPRINTING: an OUT-OF-UNIT supervisor on the same production category -> plain 403",
           "request": {
             "method": "GET",
             "header": [
@@ -472,7 +472,7 @@
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// sup-victor's unit does not reach this catalog, so his role never synthesizes and he is",
                   "// not `granted`. The sole-blocker rule therefore withholds the reason: he learns that he",
-                  "// may not read it, and NOT that a second factor would help — which would tell him the",
+                  "// may not read it, and NOT that a second factor would help \u2014 which would tell him the",
                   "// resource exists and is production.",
                   "plainDeny('E4a the out-of-unit supervisor', pm.response);"
                 ]
@@ -481,7 +481,7 @@
           ]
         },
         {
-          "name": "E4b — THE WRITE CEILING: ELEVATED anna PUTs the production category -> plain 403",
+          "name": "E4b \u2014 THE WRITE CEILING: ELEVATED anna PUTs the production category -> plain 403",
           "request": {
             "method": "PUT",
             "header": [
@@ -520,7 +520,7 @@
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// She is elevated and still denied: a supervisor's reach is read-only, which is not an",
                   "// elevation problem. `granted` is false for a write verb, so no reason is emitted and",
-                  "// no challenge is offered — a TOTP prompt here would be an unfulfillable promise.",
+                  "// no challenge is offered \u2014 a TOTP prompt here would be an unfulfillable promise.",
                   "plainDeny('E4b the elevated write', pm.response);"
                 ]
               }
@@ -528,7 +528,7 @@
           ]
         },
         {
-          "name": "E5a — MEMBERS UNAFFECTED: the catalog's OWNER reads the production categories at plain aal1 -> 200",
+          "name": "E5a \u2014 MEMBERS UNAFFECTED: the catalog's OWNER reads the production categories at plain aal1 -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -564,7 +564,7 @@
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// The owner's token is an ordinary ROPC one: acr aal1, no auth_time at all. Every C deny",
                   "// is provenance-scoped to `supervised`, so a member is structurally out of reach of all",
-                  "// of it — and their _actions map stays honest and present.",
+                  "// of it \u2014 and their _actions map stays honest and present.",
                   "pageOfExactly('E5a the owner\\'s production category list', pm.response,",
                   "              [pm.environment.get('prod_category_id')]);",
                   "pm.test('E5a no challenge is offered to a member', function () {",
@@ -582,7 +582,7 @@
           ]
         },
         {
-          "name": "E5b — the owner GETs the production product at plain aal1 -> 200",
+          "name": "E5b \u2014 the owner GETs the production product at plain aal1 -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -623,11 +623,185 @@
       ]
     },
     {
+      "name": "E10 provenance",
+      "description": "ADR 0033's `_provenance` on the wire, on the step-up fixture pair. anna holds both catalogs by SUPERVISION and `editor` holds the same two by MEMBERSHIP, so the same ids carry opposite labels - which is what makes these cells falsifiable rather than a constant. E10c/E10d cross-check the single-GET derivation (the resolved role's provenance stamp) against the list's (the query leg): different code paths, same answer.",
+      "item": [
+        {
+          "name": "E10a \u2014 PROVENANCE: anna's page labels BOTH step-up catalogs `supervised`",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E10a 200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "const byId = Object.fromEntries(items.map(i => [i.id, i._provenance]));",
+                  "// anna is a member of NO team here (the runner clears her seats before seeding), so both rows",
+                  "// arrived by supervision and must say so \u2014 on exact ids, not by position.",
+                  "pm.test('E10a the production catalog is labelled supervised', () =>",
+                  "  pm.expect(byId[pm.environment.get('prod_catalog_id')]).to.eql('supervised'));",
+                  "pm.test('E10a the untagged catalog is labelled supervised too (the label is the LEG, not the tier)', () =>",
+                  "  pm.expect(byId[pm.environment.get('open_catalog_id')]).to.eql('supervised'));",
+                  "pm.test('E10a no row on a happy-path page is left unlabelled', () =>",
+                  "  items.forEach(i => pm.expect(i, `row ${i.id}`).to.have.property('_provenance')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E10b \u2014 ...and the REPORT's own page labels the same ids `member`",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E10b 200 OK', () => pm.response.to.have.status(200));",
+                  "const items = pm.response.json().items;",
+                  "const byId = Object.fromEntries(items.map(i => [i.id, i._provenance]));",
+                  "// THE CONTRAST that makes E10a load-bearing: the very same two catalogs, read by the owner who",
+                  "// holds them by MEMBERSHIP, carry the other label. A derivation stuck on one value fails here.",
+                  "pm.test('E10b the production catalog is labelled member for its owner', () =>",
+                  "  pm.expect(byId[pm.environment.get('prod_catalog_id')]).to.eql('member'));",
+                  "pm.test('E10b the untagged catalog likewise', () =>",
+                  "  pm.expect(byId[pm.environment.get('open_catalog_id')]).to.eql('member'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E10c \u2014 the GET derivation AGREES with the list: anna GETs the production catalog -> supervised",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{anna_aal1_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The root read is metadata-only and never challenges (E1pre pins that), so this is a 200 and the",
+                  "// label comes from the SECOND derivation - the resolved role's provenance stamp, not the list leg.",
+                  "// The two share no code; ADR 0033 says they agree by construction, and this is where that is checked",
+                  "// on the wire.",
+                  "pm.test('E10c 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E10c the single GET says supervised', () =>",
+                  "  pm.expect(pm.response.json()._provenance).to.eql('supervised'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E10d \u2014 and the owner's GET of the same catalog says member",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{editor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs/{{prod_catalog_id}}",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs",
+                "{{prod_catalog_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E10d 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('E10d the single GET says member for the member', () =>",
+                  "  pm.expect(pm.response.json()._provenance).to.eql('member'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "E6 agents",
       "description": "The supervised path is human-only: the target-gate cells over REST with the agent-client bearer, each paired with a same-subject human control.",
       "item": [
         {
-          "name": "E6a — the AGENT reads the PRODUCTION category -> plain 403, no challenge",
+          "name": "E6a \u2014 the AGENT reads the PRODUCTION category -> plain 403, no challenge",
           "request": {
             "method": "GET",
             "header": [
@@ -657,9 +831,9 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// The token is anna's own subject minted by an agent client, so it carries act_chain.",
-                  "// The deny is the provenance-scoped agent clause, NOT the step-up clause — so the",
+                  "// The deny is the provenance-scoped agent clause, NOT the step-up clause \u2014 so the",
                   "// sole-blocker rule withholds the reason and no challenge is offered. A TOTP prompt to",
-                  "// something that cannot answer one is the §7 loop, and this is where it is prevented.",
+                  "// something that cannot answer one is the \u00a77 loop, and this is where it is prevented.",
                   "plainDeny('E6a the agent on production', pm.response);"
                 ]
               }
@@ -667,7 +841,7 @@
           ]
         },
         {
-          "name": "E6b — the AGENT reads the PRODUCTION product -> plain 403",
+          "name": "E6b \u2014 the AGENT reads the PRODUCTION product -> plain 403",
           "request": {
             "method": "GET",
             "header": [
@@ -705,7 +879,7 @@
           ]
         },
         {
-          "name": "E6c — ANY TIER: the AGENT reads the UNTAGGED catalog's category -> still plain 403",
+          "name": "E6c \u2014 ANY TIER: the AGENT reads the UNTAGGED catalog's category -> still plain 403",
           "request": {
             "method": "GET",
             "header": [
@@ -744,7 +918,7 @@
           ]
         },
         {
-          "name": "E6d — the AGENT's catalog LIST -> membership-only, i.e. the empty page",
+          "name": "E6d \u2014 the AGENT's catalog LIST -> membership-only, i.e. the empty page",
           "request": {
             "method": "GET",
             "header": [
@@ -777,7 +951,7 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// `filter` never consults `denied` (invariant 5), so no rego clause can reach the",
-                  "// supervised LIST leg — CatalogListAuthorizer skips it app-side when the subject",
+                  "// supervised LIST leg \u2014 CatalogListAuthorizer skips it app-side when the subject",
                   "// carries the act_chain KEY. anna is a member of no team, so membership-only IS the",
                   "// empty page. 200 and empty, never 403: the leg is skipped, not denied.",
                   "pm.test('E6d the agent list answers 200', function () {",
@@ -794,7 +968,7 @@
           ]
         },
         {
-          "name": "E6i — THE ROOT TYPE: the AGENT reads the production CATALOG itself -> plain 403 (catalog.rego's supervised-agent deny; E1pre is the human 200 control)",
+          "name": "E6i \u2014 THE ROOT TYPE: the AGENT reads the production CATALOG itself -> plain 403 (catalog.rego's supervised-agent deny; E1pre is the human 200 control)",
           "request": {
             "method": "GET",
             "header": [
@@ -822,9 +996,9 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// The token is anna's own subject minted by an agent client, so it carries act_chain.",
-                  "// The deny is the provenance-scoped agent clause, NOT the step-up clause — so the",
+                  "// The deny is the provenance-scoped agent clause, NOT the step-up clause \u2014 so the",
                   "// sole-blocker rule withholds the reason and no challenge is offered. A TOTP prompt to",
-                  "// something that cannot answer one is the §7 loop, and this is where it is prevented.",
+                  "// something that cannot answer one is the \u00a77 loop, and this is where it is prevented.",
                   "plainDeny('E6i the agent on production', pm.response);"
                 ]
               }
@@ -832,7 +1006,7 @@
           ]
         },
         {
-          "name": "E6e — CONTROL: the SAME subject WITHOUT the claim reads that category -> 200",
+          "name": "E6e \u2014 CONTROL: the SAME subject WITHOUT the claim reads that category -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -862,7 +1036,7 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// Without this cell E6c would be unfalsifiable: an empty reach and a closed door look",
-                  "// identical from outside. Same person, same row, same tier — only the delegation claim",
+                  "// identical from outside. Same person, same row, same tier \u2014 only the delegation claim",
                   "// differs, and that is what decides it.",
                   "opened('E6e the human reaches the same row', pm.response,",
                   "       pm.environment.get('open_category_id'));"
@@ -872,7 +1046,7 @@
           ]
         },
         {
-          "name": "E6f — CONTROL: the same subject's HUMAN catalog list DOES carry both rows",
+          "name": "E6f \u2014 CONTROL: the same subject's HUMAN catalog list DOES carry both rows",
           "request": {
             "method": "GET",
             "header": [
@@ -1031,7 +1205,7 @@
           ]
         },
         {
-          "name": "E6g — through MCP the AGENT never even reaches the target-gate: tool-gate deny",
+          "name": "E6g \u2014 through MCP the AGENT never even reaches the target-gate: tool-gate deny",
           "request": {
             "method": "POST",
             "header": [
@@ -1198,7 +1372,7 @@
           ]
         },
         {
-          "name": "E6h — ...and so is anna HERSELF: the MCP ceiling is membership-derived",
+          "name": "E6h \u2014 ...and so is anna HERSELF: the MCP ceiling is membership-derived",
           "request": {
             "method": "POST",
             "header": [
@@ -1251,11 +1425,11 @@
                   "mcpDenied('E6h the pure supervisor has no tool-gate ceiling at all', pm.response,",
                   "          'tool-gate', 'tool-gate-denied');",
                   "// NO ALLOW CELL LIVES IN THIS FOLDER, deliberately. Both MCP cells here assert a DENY, so on their",
-                  "// own a wholesale tool-gate outage would keep them green — but the tool-gate's allow/deny contrast",
+                  "// own a wholesale tool-gate outage would keep them green \u2014 but the tool-gate's allow/deny contrast",
                   "// is OWNED by run-agent-tool-matrix.sh (its E2 'allow half' calls a tool with an agent-client token",
                   "// whose principal IS a member, which is the only shape that can be allowed here: a plain human",
                   "// token has no agent capability, so the intersection is empty and even the catalog's OWNER is",
-                  "// tool-gate-denied — measured). That runner is part of T6's E8 non-regression sweep, so a globally",
+                  "// tool-gate-denied \u2014 measured). That runner is part of T6's E8 non-regression sweep, so a globally",
                   "// closed tool-gate fails the SUITE. This folder's job is narrower: it documents WHY the target-gate",
                   "// cells above are REST rather than MCP."
                 ]
@@ -1269,7 +1443,7 @@
       "name": "E7a drill positive control",
       "item": [
         {
-          "name": "E7a — POSITIVE CONTROL: a FRESH elevation still opens production under the 5s override -> 200",
+          "name": "E7a \u2014 POSITIVE CONTROL: a FRESH elevation still opens production under the 5s override -> 200",
           "request": {
             "method": "GET",
             "header": [
@@ -1299,7 +1473,7 @@
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
                   "// The override is a LEAF PUT (/v1/data/step_up/max_age). A whole-document PUT would have",
-                  "// replaced the object and taken `loa` and `skew` with it — and then EVERY token would be",
+                  "// replaced the object and taken `loa` and `skew` with it \u2014 and then EVERY token would be",
                   "// unelevatable and the 401 below would arrive instantly and prove nothing. This cell is",
                   "// what makes the expiry cell honest.",
                   "opened('E7a a fresh elevation under the shrunk window', pm.response,",
@@ -1315,7 +1489,7 @@
       "name": "E7b drill expiry",
       "item": [
         {
-          "name": "E7b — ...and after the window closes, the SAME token answers 401 again",
+          "name": "E7b \u2014 ...and after the window closes, the SAME token answers 401 again",
           "request": {
             "method": "GET",
             "header": [
@@ -1344,8 +1518,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
-                  "// The very same bearer that answered 200 a moment ago. Nothing about the token changed —",
-                  "// no expiry, no revocation, no refresh — only wall-clock time passed. The freshness",
+                  "// The very same bearer that answered 200 a moment ago. Nothing about the token changed \u2014",
+                  "// no expiry, no revocation, no refresh \u2014 only wall-clock time passed. The freshness",
                   "// control is the only thing that can have moved.",
                   "stepUpChallenged('E7b the elevation has expired on the wire', pm.response, pm.environment.get('drill_max_age'));"
                 ]
@@ -1359,7 +1533,7 @@
       "name": "E3 loop prevention",
       "item": [
         {
-          "name": "E3 — LOOP PREVENTION: re-auth WITHOUT max_age reuses the SSO session -> still 401",
+          "name": "E3 \u2014 LOOP PREVENTION: re-auth WITHOUT max_age reuses the SSO session -> still 401",
           "request": {
             "method": "GET",
             "header": [
@@ -1388,9 +1562,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "eval(pm.collectionVariables.get('stepUpHelpers'));",
-                  "// A brand-new access token, minted seconds ago, carrying acr aal2 — and the SAME stale",
+                  "// A brand-new access token, minted seconds ago, carrying acr aal2 \u2014 and the SAME stale",
                   "// auth_time, because the SSO session answered and no authentication happened. ADR 0030",
-                  "// §7's 'the client MUST forward max_age', measured: a client that drops it loops forever.",
+                  "// \u00a77's 'the client MUST forward max_age', measured: a client that drops it loops forever.",
                   "// The runner asserted auth_time(stale) == auth_time(drill) shell-side before this ran.",
                   "stepUpChallenged('E3 the SSO-reused token is still not elevated', pm.response, pm.environment.get('drill_max_age'));",
                   "pm.test('E3 the stale token really is a NEWER token (iat advanced)', function () {",

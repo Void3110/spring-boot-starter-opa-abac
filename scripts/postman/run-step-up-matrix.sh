@@ -522,6 +522,12 @@ run_folder() {  # $1 folder, $2 report suffix, then extra --env-var pairs
 echo "==> newman: E1 the challenge, E2 the round trip, E4 the negatives, E5 the members ..."
 run_folder "Matrix" matrix
 
+# ADR 0033: the same two catalogs, labelled `supervised` for anna and `member` for their owner —
+# the contrast is what makes the cells falsifiable. E10c/E10d cross-check the single-GET derivation
+# (the role's provenance stamp) against the list's (the query leg).
+echo "==> newman: E10 — the _provenance affordance on both derivations ..."
+run_folder "E10 provenance" provenance
+
 # --- E2's second half: both audit events on the wire path --------------------
 # The pool round-robins, so the challenge and the elevated read can land on different pods; grep all
 # of them. This asserts the emission POINTS exist in a live process, which no unit test can.

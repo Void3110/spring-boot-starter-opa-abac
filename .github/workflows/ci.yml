@@ -35,6 +35,62 @@ jobs:
           docker run --rm -v "$PWD/example-user-management-service/src/main/resources/opa/policies:/policies:ro" \
             openpolicyagent/opa:1.10.1 test /policies -v
 
+  # The clean-room boundary is a RELEASE property of this repo (it is public and clean-room),
+  # but until now nothing enforced it on the write path. `scripts/planning/verify-package.sh`
+  # scans it — and only when a human happens to verify a planning package, which is neither on
+  # push nor on PR. Meanwhile `ml record` writes committed `.mulch/` records mid-session and
+  # review notes are written by hand: both leaked a machine-local path at least once, and one
+  # leak survived two weeks and a review that declared the class fixed. This job is the trigger
+  # that actually fires after those writes.
+  clean-room:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Home paths are matched CASE-SENSITIVELY on purpose: `-i` would also match REST paths
+      # like `/api/v1/users/search`, which these trees quote constantly. A real home path has
+      # capitals (`/Users/`, `~/Workspace`); a REST path does not.
+      - name: No machine-local paths or tokens in committed trees
+        run: |
+          if grep -rnE '/Users/[a-z]|~/Workspace' .mulch docs 2>/dev/null; then
+            echo "::error::machine-local path committed to a public repo (see hits above)"
+            exit 1
+          fi
+          if grep -rnEi 'glpat-[A-Za-z0-9_-]|ghp_[A-Za-z0-9]' .mulch docs 2>/dev/null; then
+            echo "::error::what looks like an access token is committed (see hits above)"
+            exit 1
+          fi
+          echo "clean-room: .mulch and docs carry no machine-local paths or tokens"
+
+  # The demo console is not a Gradle module, so `./gradlew build` never sees it — its
+  # vitest suite covers the seams that decide what a user is ALLOWED to see (the RFC 9470
+  # challenge parser, `request()`'s error classification, and the elevation-window
+  # arithmetic), so a regression there is an authorization-UX regression that would
+  # otherwise merge green. Node-only: no rig, no browser, no Docker.
+  demo-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: example-demo-ui/package-lock.json
+
+      - name: Install (lockfile-exact)
+        run: npm ci
+        working-directory: example-demo-ui
+
+      - name: Typecheck (tsc -b --noEmit)
+        run: npm run lint
+        working-directory: example-demo-ui
+
+      - name: Unit tests (vitest)
+        run: npm test
+        working-directory: example-demo-ui
+
   build:
     runs-on: ubuntu-latest
     strategy:

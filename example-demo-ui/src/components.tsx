@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Actions, ApiError } from './api'
+import { type BadgeState, type ChipState, type Challenge, formatRemaining } from './stepup'
 
 /** One error format everywhere: ApiError keeps its HTTP status ("422 — …"), the demo's denial voice. */
 export function errText(e: unknown): string {
@@ -22,20 +23,101 @@ export function NoticeLine({ notice }: { notice: Notice | null }) {
 }
 
 // Small async-data helper: load on mount + expose a reload.
+//
+// `cause` is the thrown value itself, kept beside the rendered string: a caller that needs to react
+// to the KIND of failure (a step-up challenge is the one that matters — it carries the parameters
+// the locked panel renders) cannot recover that from a formatted message. Every existing consumer
+// reads `error` and is unaffected. The retry-once policy deliberately does NOT live here — this hook
+// stays a dumb loader; the panel owns that decision.
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cause, setCause] = useState<unknown>(null)
   const load = useCallback(() => {
     setError(null)
+    setCause(null)
     fn()
       .then(setData)
-      .catch((e) =>
-        setError(e instanceof ApiError ? `${e.status} — ${e.message}` : String(e)),
-      )
+      .catch((e) => {
+        setCause(e)
+        setError(errText(e))
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
   useEffect(load, [load])
-  return { data, error, reload: load }
+  return { data, error, cause, reload: load }
+}
+
+/**
+ * The 401 moment, rendered in place: what the server refused, in the server's own words, and the one
+ * button that can change it.
+ *
+ * <p>Deliberately **not** a modal and **not** an auto-redirect. It replaces only the contents area
+ * that was refused — the header, breadcrumbs and the resource's own metadata card stay usable,
+ * because the caller is not locked out of the resource, only out of its contents. And a redirect the
+ * user did not ask for would be indistinguishable from a login loop the first time anything goes
+ * wrong.
+ *
+ * <p>The parameters are shown as plain facts rather than prose: this is a demo of an authorization
+ * mechanism, and `acr_values` / `max_age` are the mechanism.
+ *
+ * <p>`passive` is the post-verification variant: the user already answered a challenge and the read
+ * is *still* refused. It says so honestly and leaves [Verify] available for a deliberate second
+ * attempt — what it must never do is bounce them again on its own.
+ */
+export function LockedPanel({
+  challenge,
+  passive,
+  onVerify,
+}: {
+  challenge: Challenge
+  passive: boolean
+  onVerify: () => void
+}) {
+  return (
+    <div className="mt-4 rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)] p-5">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="text-lg leading-none">
+          🔒
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold">Production contents — fresh second factor required</h3>
+
+          {/* The server's own sentence, verbatim. The console does not paraphrase an authorization
+              decision: whatever the policy author wrote is what the reader should see. */}
+          <p className="mt-1 text-sm text-[var(--color-muted)]">{challenge.description}</p>
+
+          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[var(--color-muted)]">
+            <div className="flex gap-1.5">
+              <dt className="font-medium">acr_values</dt>
+              <dd className="font-mono">{challenge.acrValues}</dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="font-medium">max_age</dt>
+              <dd className="font-mono">{challenge.maxAge}s</dd>
+            </div>
+          </dl>
+
+          {passive && (
+            <p className="mt-3 text-xs" style={{ color: 'var(--color-warn)' }}>
+              Verification did not unlock production contents — the read is still refused. You can
+              try again, or carry on elsewhere.
+            </p>
+          )}
+
+          <button
+            onClick={onVerify}
+            className="mt-4 rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--color-brand-ink)]"
+          >
+            Verify
+          </button>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            Takes you to Keycloak to re-authenticate, then back to this page.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /** A pill that surfaces the current identity's role(s). */
@@ -52,6 +134,94 @@ export function RoleChips({ roles }: { roles: string[] }) {
           {r}
         </span>
       ))}
+    </span>
+  )
+}
+
+/**
+ * The elevation chip: whether a second factor is currently in hand, and for how much longer.
+ *
+ * <p>The countdown is the window the **server advertised** in its last challenge (T2 remembers it),
+ * never a constant in this file. At zero the chip flips amber and <b>nothing on screen is hidden</b>
+ * — the policy's skew may still admit a read for a few more seconds, and the client has no business
+ * pre-empting that. The next fetch is what finds out; this is a prediction, honestly labelled.
+ *
+ * <p>Hidden entirely for members and viewers: they never need elevation, so a chip would be noise
+ * about a mechanism that does not apply to them (K13).
+ */
+export function ElevationChip({ state }: { state: ChipState }) {
+  if (state.kind === 'hidden') return null
+
+  const amber = state.kind === 'lapsed' || state.kind === 'not-elevated'
+  const label =
+    state.kind === 'elevated'
+      ? `Elevated · ${formatRemaining(state.remaining)}`
+      : state.kind === 'elevated-unknown-window'
+        ? 'Elevated (aal2)'
+        : state.kind === 'lapsed'
+          ? 'elevation lapsed'
+          : 'not elevated'
+  const title =
+    state.kind === 'elevated'
+      ? 'A fresh second factor is in hand. The countdown is the window the server advertised.'
+      : state.kind === 'elevated-unknown-window'
+        ? 'A second factor is in hand. No window was advertised this session, so no countdown is shown.'
+        : state.kind === 'lapsed'
+          ? 'The advertised window has run out — a prediction. Nothing is hidden; the next read is what decides.'
+          : 'Production content is in play and no second factor is in hand.'
+
+  return (
+    <span
+      title={title}
+      className="rounded-md px-1.5 py-0.5 text-xs font-medium"
+      style={
+        amber
+          ? { color: 'var(--color-warn)', background: 'color-mix(in srgb, var(--color-warn) 12%, transparent)' }
+          : { color: 'var(--color-allow)', background: 'color-mix(in srgb, var(--color-allow) 12%, transparent)' }
+      }
+    >
+      {label}
+    </span>
+  )
+}
+
+/**
+ * The row markers on a catalog: how you hold it, what tier it is, and — only when the client can
+ * honestly predict it — that opening it will ask for a second factor.
+ *
+ * <p>Amber is a **prediction from three inputs** the client already has; the server's 401 is the
+ * truth and the locked panel is where it lands. Predicted-and-wrong is a UI bug, never a security
+ * event — which is why amber never suppresses anything, it only forewarns.
+ */
+export function CatalogBadges({ badges }: { badges: BadgeState }) {
+  if (!badges.supervised && !badges.production) return null
+  return (
+    <span className="ml-2 inline-flex flex-wrap items-center gap-1 align-middle">
+      {badges.supervised && (
+        <span
+          title="You hold this catalog by supervision, not membership — it is in your page because someone who reports to you governs it."
+          className="rounded-md bg-[var(--color-canvas)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]"
+        >
+          supervised
+        </span>
+      )}
+      {badges.production && (
+        <span
+          title={
+            badges.amber
+              ? 'Production tier, held by supervision, and no second factor in hand — opening its contents will ask you to verify. A prediction: the server decides.'
+              : 'Production tier.'
+          }
+          className="rounded-md px-1.5 py-0.5 text-xs"
+          style={
+            badges.amber
+              ? { color: 'var(--color-warn)', background: 'color-mix(in srgb, var(--color-warn) 12%, transparent)' }
+              : { color: 'var(--color-muted)', background: 'var(--color-canvas)' }
+          }
+        >
+          {badges.amber ? 'production · verify to open' : 'production'}
+        </span>
+      )}
     </span>
   )
 }
