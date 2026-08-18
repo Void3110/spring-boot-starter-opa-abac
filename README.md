@@ -47,14 +47,14 @@ zookie/consistency story, no reverse index) and honest prior art in the Spring/O
 
 ## Status
 
-✅ **1.1.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
+✅ **1.2.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
 (unit + Testcontainers ITs + `opa test` + a newman gateway matrix + a static-analysis quality gate + a
 browser-driven UI QA of the demo SPA), the codebase targets **Spring Boot 4.0 on Java 25**, and the
 library is resolvable under `dev.dmitriikonovalov`.
 
 ```kotlin
 // build.gradle.kts — pull in the whole line via the BOM, then reference modules version-free
-implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.1.0"))
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.2.0"))
 implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
 ```
 
@@ -122,6 +122,21 @@ delivered as its own reviewed slice. The technical plan lives in
 [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md); the release runbook
 is [`RELEASING.md`](RELEASING.md); the full picture (architecture, ADRs, guides) is in
 [`docs/`](docs/README.md).
+
+**1.2.0 (2026-08-18):** two capability phases. **Agent tool-call authorization** — an MCP tool surface
+(`example-mcp-server`, Spring AI) behind the same OPA gate, with two-layer enforcement: the tool-gate can
+only ever *narrow*, and the target gate still decides (ADR 0028). And the **supervisor read path** — a unit
+manager who is a member of no team reads the catalogs of the teams their reports own or manage, read-only,
+through a **second access path that is disjoint from membership by construction** (`supervised := S \ M`,
+membership always wins). Production detail on that path is gated by an operator-managed `env` tier and
+opens only behind a **fresh second factor**: the library emits an **RFC 9470 `401` challenge**, and the
+control is resource-server-side `auth_time` freshness — measured, because a refresh grant *preserves*
+`acr`/`auth_time`, so a short-lived "elevated token" would prove nothing. The demo console consumes the
+challenge end to end. New public surface is **additive only** (`OpaDecision`, `DenyReason`,
+`StepUpRequiredDecision`, `PrivilegedReadAuditPolicy`, `AbacAuditLogger`, `OpaClient.decide()`,
+`input.resource.root_attributes`); the pre-1.2.0 three-argument manager bean factory is retained as a
+link-compatibility shim. See [`SUPERVISED-READ-AND-STEP-UP.md`](docs/guides/SUPERVISED-READ-AND-STEP-UP.md)
+and [`AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md).
 
 **1.1.0 (2026-07-15):** a **static-analysis quality gate** was adopted (a pinned local SonarQube running
 the built-in `Sonar way` rules — the repo's own gate; see [`.sonar-local/`](.sonar-local/README.md)) and
