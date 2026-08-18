@@ -145,6 +145,33 @@ slowing the existing suite.
 
 ---
 
+## 9. Three Boot-managed CVEs — waiting on Spring Boot 4.0.8
+
+**Value: hygiene. Effort: one line, once upstream moves. BLOCKED on an external release.**
+
+Added **2026-08-18** at the 1.2.0 pre-publish sweep (full detail and method:
+`docs/code-review/PRE-PUBLISH-SWEEP-2026-08-18.md`). Three MODERATE advisories affect versions that
+**Spring Boot 4.0.7 manages**, not versions this repo pins:
+
+| Advisory | Dep | Fixed in |
+|---|---|---|
+| GHSA-5gvw-p9qm-jgwh, GHSA-mhm7-754m-9p8w, GHSA-5jmj-h7xm-6q6v | `com.fasterxml.jackson.core:jackson-databind:2.21.4` | 2.21.5 |
+| GHSA-qv9r-c865-cp47 | `org.apache.logging.log4j:log4j-api:2.25.4` | 2.25.5 |
+
+**Not fixed at the 1.2.0 cut, deliberately.** Boot **4.0.8 did not exist** on Central (checked), so the
+only way to close them was to override the BOM's managed versions — which is the thing the BOM exists to
+prevent — for advisories with **nil measured reachability** here: `@JsonView` **0** usages,
+`@JsonUnwrapped` **0**, `MapMessage` **0**, and GHSA-5jmj needs case-insensitive deserialization, which
+is never enabled. The one advisory on a version *this repo* pins was fixed in the release
+(`jackson` 3.1.4 → 3.1.5).
+
+**The action is to re-check, not to patch:** when a Boot 4.0.x patch lands, bump `springBoot` in
+`gradle/libs.versions.toml` and re-run the sweep (§CVE of the sweep note has the exact OSV method —
+query **resolved** coordinates via `dependencyInsight`, never the dependency tree). Override the BOM
+only if Boot stalls *and* a reachable path appears.
+
+---
+
 ## Related
 
 - [[SPA-CHALLENGE-UX]] — the slice these came out of
