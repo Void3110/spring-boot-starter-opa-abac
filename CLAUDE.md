@@ -57,6 +57,21 @@ docker compose -f .sonar-local/docker-compose.yml up -d && ./.sonar-local/bootst
 ./.sonar-local/sonar-local.sh          # findings on files changed vs origin/main
 ```
 
+### Mutation testing (PIT)
+
+**Report-only, no threshold** — the question line coverage cannot answer: does a test actually *fail*
+when the code it guards breaks? Wired in the root build as a `JavaExec` on PIT's own CLI (the
+`info.solidsoft.pitest` plugin cannot apply on Gradle 9). Not part of `build`; run it deliberately.
+
+```bash
+./gradlew mutationTest        # six modules, ~1m20s warm
+```
+
+Read **SURVIVED**, not the score: `NO_COVERAGE` is inflated in `opa-abac-spring-data` and
+`example-catalog-management-service`, where `--targetTests` excludes the Docker-backed `*IT` classes
+(PIT re-runs tests once per mutant). Baseline and the two things it disproved:
+[`docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md`](docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md).
+
 ### The user-directory module + rig flag
 
 `opa-abac-keycloak-directory` is an **optional** library module (the `UserDirectory` port's
