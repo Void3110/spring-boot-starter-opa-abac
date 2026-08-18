@@ -1,13 +1,14 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/release
 ---
 
 # Release 1.2.0 — the cut plan
 
-> **Status: 📋 planned, not started.** Written 2026-08-18. The mechanics live in
+> **Status: ✅ SHIPPED 2026-08-18.** 1.2.0 is on Maven Central (deployment `2a04e9a3-0c5e-4d82-bd95-0fe7dfc72183`,
+> tag `v1.2.0` at `d3d8261`). Sweep record: [[PRE-PUBLISH-SWEEP-2026-08-18]]. Written 2026-08-18. The mechanics live in
 > [`RELEASING.md`](../../../../RELEASING.md) §3–§5 — this page is *what is specific to 1.2.0*, not a
 > re-statement of the runbook. Prime `ml prime opa-abac-publish --budget 8000` before starting.
 
