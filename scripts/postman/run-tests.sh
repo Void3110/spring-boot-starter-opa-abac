@@ -119,7 +119,7 @@ echo "  token acquired (${#ACCESS_TOKEN} chars)."
 # and the bootstrap would run, create a team nobody consults, and pass for the wrong reason.
 CATALOG_CONTAINER="${CATALOG_CONTAINER:-catalog-1}"
 ROLE_SOURCE="$("$RUNTIME" inspect "$CATALOG_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
-  | sed -n 's/^CATALOG_ROLE_SOURCE=//p' | head -1)"
+  | sed -n 's/^CATALOG_ROLE_SOURCE=//p' | head -1)" || true
 ROLE_SOURCE="${ROLE_SOURCE:-demo}"
 if [ "$ROLE_SOURCE" = "http" ]; then
   B4_BOOTSTRAP="true"
@@ -136,7 +136,7 @@ if [ "$ROLE_SOURCE" = "http" ]; then
   # auth/gateway regression) and all downstream assertions cascade. The bootstrap endpoint is
   # idempotent (subject-keyed upsert), so calling it every run is safe — the same discipline every
   # matrix runner already follows.
-  DEMO_SUB="$(token_sub "$ACCESS_TOKEN")"
+  DEMO_SUB="$(token_sub "$ACCESS_TOKEN")" || true
   [ -n "$DEMO_SUB" ] || { echo "ERROR: could not decode the token's sub claim." >&2; exit 1; }
   echo "==> Bootstrapping the '$USERNAME' profile row (sub $DEMO_SUB) ..."
   curl -sf -X POST "$USER_SERVICE/internal/bootstrap/users" -H 'Content-Type: application/json' \

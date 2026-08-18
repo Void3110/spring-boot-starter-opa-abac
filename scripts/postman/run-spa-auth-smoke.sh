@@ -73,7 +73,7 @@ check "invalid token -> 401" "401" "$bad_tok"
 
 # 3) Valid in-network token -> 200 (validation passes; request flows through).
 echo "==> Minting a valid '$SMOKE_USER' token in-network ($NETWORK) ..."
-TOK="$(mint_token "$SMOKE_USER" "$SMOKE_PASS")"
+TOK="$(mint_token "$SMOKE_USER" "$SMOKE_PASS")" || true
 [ -n "$TOK" ] || { echo "ERROR: failed to mint a token (is Keycloak up? network $NETWORK?)" >&2; exit 1; }
 ok_tok="$(code -H "Authorization: Bearer $TOK" "$GATEWAY$PROBE_PATH")"
 check "valid token -> 200 (health)" "200" "$ok_tok"

@@ -191,6 +191,49 @@ mk_pkg "$WORK/PBAD" '**Parts:** part 0 = T1–T2 · part 1 = T2–T2'
 OUT=$(cd "$WORK" && "$VP" "$WORK/PBAD" 2>&1); RC=$?
 check U18b 1 "$RC" "malformed declaration fails the package at [9]" "execution-parts problems" "$OUT"
 
+# ══ gate [0] — declared build mode (collaborative packages, 2026-08-18) ═══════
+# A package built WITH the maintainer has no AUTONOMOUS-IMPLEMENTATION-PROMPT.md by
+# design. Before the declaration existed, verify demanded one and then reported "no
+# prompt to check", so SPA-CHALLENGE-UX's ship-time verify was red for non-defects.
+echo
+echo "== gate [0] build mode =="
+
+# Default is unchanged and STRICTER: no declaration + no prompt is still red.
+mk_pkg "$WORK/PAUTO" ''
+rm -f "$WORK/PAUTO/AUTONOMOUS-IMPLEMENTATION-PROMPT.md"
+OUT=$(cd "$WORK" && "$VP" "$WORK/PAUTO" 2>&1); RC=$?
+check B1 1 "$RC" "no declaration: a missing prompt is still a failure" "missing AUTONOMOUS-IMPLEMENTATION-PROMPT.md" "$OUT"
+check B1b 1 "$RC" "…and [5] still reports it" "no prompt to check" "$OUT"
+
+# Declared collaborative, prompt absent: both arms stand down, package is green.
+mk_pkg "$WORK/PCOLLAB" ''
+rm -f "$WORK/PCOLLAB/AUTONOMOUS-IMPLEMENTATION-PROMPT.md"
+{ fm; printf '# PCOLLAB — index\n\n**Build: collaborative**\n\nticket table lives here.\n'; } > "$WORK/PCOLLAB/PCOLLAB.md"
+OUT=$(cd "$WORK" && "$VP" "$WORK/PCOLLAB" 2>&1); RC=$?
+check B2 0 "$RC" "declared collaborative + no prompt is green" "declared collaborative" "$OUT"
+check B2b 0 "$RC" "…and [5] says it stood down" "skipped (collaborative build)" "$OUT"
+
+# Declared collaborative while SHIPPING a prompt is a contradiction, not a shortcut:
+# one of the two is stale, and trusting the declaration would skip real checks.
+mk_pkg "$WORK/PBOTH" ''
+{ fm; printf '# PBOTH — index\n\n**Build: collaborative**\n\nticket table lives here.\n'; } > "$WORK/PBOTH/PBOTH.md"
+OUT=$(cd "$WORK" && "$VP" "$WORK/PBOTH" 2>&1); RC=$?
+check B3 1 "$RC" "collaborative + a prompt present is a contradiction" "but AUTONOMOUS-IMPLEMENTATION-PROMPT.md is present" "$OUT"
+
+# Near-misses are errors, not silent fall-through. Falling through would only ever be
+# stricter — this is about not lying to the author about which mode ran.
+# The fixture KEEPS its prompt file on purpose, so the near-miss is the ONLY thing
+# that can turn it red. An earlier draft deleted the prompt too — then the package
+# failed on the missing prompt whatever [0] decided, and the arm passed for the
+# wrong reason (it survived a bad->ok mutation of the near-miss branch).
+for near in 'Build: collaborative' '**Build**: collaborative' '- **Build: collaborative**'; do
+  mk_pkg "$WORK/PNEAR" ''
+  { fm; printf '# PNEAR — index\n\n%s\n\nticket table.\n' "$near"; } > "$WORK/PNEAR/PNEAR.md"
+  OUT=$(cd "$WORK" && "$VP" "$WORK/PNEAR" 2>&1); RC=$?
+  check "B4" 1 "$RC" "near-miss rejected: $near" "near-miss Build declaration" "$OUT"
+  rm -rf "$WORK/PNEAR"
+done
+
 # ══ gate [3] — the clean-room scan's WIDE leg (.mulch + docs) ══════════════════
 # Written after the SPA-CHALLENGE-UX review round 3 found this leg fail-OPEN: it derived the
 # root from `git rev-parse`, so with git unavailable it scanned nothing and still printed the

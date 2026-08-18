@@ -147,13 +147,13 @@ echo "  team $TEAM_ID governs catalog $DEMO_CATALOG_ID (curator + emea-reader + 
 echo "==> Creating the pagination fixture set (5 EMEA + 3 APAC categories) through the gateway ..."
 EMEA_IDS=()
 for i in 1 2 3 4 5; do
-  id="$(create_category "$OWNER_TOKEN" "{\"name\":\"EMEA-$i\",\"tags\":{\"region\":[\"emea\"]}}")"
+  id="$(create_category "$OWNER_TOKEN" "{\"name\":\"EMEA-$i\",\"tags\":{\"region\":[\"emea\"]}}")" || true
   [ -n "$id" ] && [ "$id" != "None" ] || { echo "ERROR: failed to create EMEA-$i." >&2; exit 1; }
   EMEA_IDS+=("$id")
 done
 APAC_IDS=()
 for i in 1 2 3; do
-  id="$(create_category "$OWNER_TOKEN" "{\"name\":\"APAC-$i\",\"tags\":{\"region\":[\"apac\"]}}")"
+  id="$(create_category "$OWNER_TOKEN" "{\"name\":\"APAC-$i\",\"tags\":{\"region\":[\"apac\"]}}")" || true
   [ -n "$id" ] && [ "$id" != "None" ] || { echo "ERROR: failed to create APAC-$i." >&2; exit 1; }
   APAC_IDS+=("$id")
 done

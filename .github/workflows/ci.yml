@@ -62,6 +62,31 @@ jobs:
           fi
           echo "clean-room: .mulch and docs carry no machine-local paths or tokens"
 
+  # The e2e runners are the operator's interface to the rig, and their failure
+  # DIAGNOSIS is a feature: `set -e` aborting before a script's own `[ -n "$X" ]`
+  # guard turns a readable error into a bare exit status. shellcheck does not
+  # catch that (measured), so the invariant is policed here. The gate's own
+  # regression suite runs alongside it — a gate nothing proves is a gate that
+  # rots into a rubber stamp.
+  # Renamed from shell-guards when the collection lint joined it: both police the
+  # verification layer itself, which no other gate in this repo reads at all.
+  verification-layer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Gate self-test (check-shell-guards.py)
+        run: scripts/checks/test-shell-guards.sh
+
+      - name: Guarded substitutions must survive to their own guard
+        run: scripts/checks/check-shell-guards.py
+
+      - name: Conformance gate self-test (check-collection-conformance.py)
+        run: scripts/checks/test-collection-conformance.sh
+
+      - name: e2e cells must be able to fail
+        run: scripts/checks/check-collection-conformance.py
+
   # The demo console is not a Gradle module, so `./gradlew build` never sees it — its
   # vitest suite covers the seams that decide what a user is ALLOWED to see (the RFC 9470
   # challenge parser, `request()`'s error classification, and the elevation-window
