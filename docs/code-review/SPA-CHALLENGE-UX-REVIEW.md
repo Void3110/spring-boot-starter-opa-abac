@@ -144,16 +144,38 @@ overturned.
 - **`E33c`'s new assertion** runs only under `--convergence` (a separate entry point after a realm
   re-import + re-seed) and so was **not** exercised on a live run here; its script was extracted and
   syntax-checked with `node --check` instead.
-- **The restore-path fix (#8) has no regression guard and could not be given one here.** The branch
-  it changes is entered only when the restored `getCategory` is *still* challenged after a completed
-  verification — which is precisely the **E12(b) state STATUS-06 records as structurally unreachable
-  on the shipped policy**, with five routes ruled out. So it cannot be driven in the Browser pane,
-  and `example-demo-ui` has no DOM test environment (the vitest suite is deliberately pure-seam:
-  no jsdom, no component tests), so it cannot be unit-tested without adding one. The fix is a
-  reasoned correction to code that now matches its own comment and the README instead of
-  contradicting them — but it is **defensive code for an unreachable state, verified by reading**.
-  Adding jsdom + a component test for the restoration effect is the honest way to close this, and
-  is recorded as a follow-up rather than smuggled into a review-fix round.
+- **The restore-path fix (#8): its HAPPY path is now proven live; its defensive branch is not.**
+  The fix restructured the restoration effect into a nested `try/catch`, and *both* paths run
+  through that new nesting. A post-fix regression pass in the Browser pane (below) drove the
+  category-level round trip end to end and confirmed the happy path is intact — [Verify] still
+  lands back on **that category** with its product, not on the catalog and not on the grid. What
+  remains unproven is the **challenged** branch, entered only when the restored `getCategory` is
+  *still* refused after a completed verification: that is precisely the **E12(b) state STATUS-06
+  records as structurally unreachable**, with five routes ruled out, and `example-demo-ui` has no
+  DOM test environment to unit-test it in. So: the restructuring is verified, the defensive arm
+  inside it is still **verified by reading**. Adding jsdom + a component test is the honest way to
+  close the remainder, and is a recorded follow-up.
+
+### Post-fix regression pass in the Browser pane (2026-08-18)
+
+The E10–E21 pass in STATUS-06 predates the round-1 fixes, two of which changed `App.tsx`. Those
+changes were therefore shipped on unit tests alone until this pass. Re-run against the deployed
+bundle (`index-Cc8QhXJO.js`, confirmed to be the post-fix build), scoped to the changed code paths
+rather than repeating the whole matrix:
+
+| # | cell | result |
+|---|---|---|
+| R1 | E10 catalog round trip | ✅ landed back on the same catalog, categories rendered, chip `Elevated · 4:51` |
+| **R2** | **E10 category round trip** | ✅ **the decisive one** — challenged at the category level, [Verify] → back on **that category** with its product; not the catalog, not the grid |
+| R3 | E17(d) badges, grid + detail | ✅ `supervised` on both, amber on `…0002` only; detail card labels correctly after `full` loads (the `#4` change) |
+| R4 | E16 reload | ✅ grid, session restored, chip present, learned window survived |
+| — | E17(a) honesty gap | ✅ re-reproduced: contents rendered while the chip stayed honestly amber on a stale learned window |
+| — | logout clears the window | ✅ `stepUp.maxAge` null after "Switch identity" (T4's fix still holds) |
+| R6 | E15 `pm-demo` | ✅ no chip, no supervised badge, neutral `production`, production contents with no ceremony |
+
+**No regressions.** The drill used for R2 (`max_age=5`) was restored by restarting `opa-abac-opa`
+and re-verified with a real decision probe: `max_age 300`, `skew 30`, `required_acr aal2`, `loa`
+intact.
 
 ### The verify round, and what it says about round 1
 
