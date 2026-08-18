@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/implemented
+  - status/done
   - type/project
   - area/architecture
   - area/spring

@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/done
+  - status/active
   - type/project
   - area/abac
   - area/opa

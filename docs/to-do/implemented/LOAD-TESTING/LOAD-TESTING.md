@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/shipped
+  - status/done
   - type/index
   - area/infra
   - area/architecture

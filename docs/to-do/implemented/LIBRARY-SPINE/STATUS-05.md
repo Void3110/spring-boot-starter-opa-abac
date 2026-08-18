@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/implemented
+  - status/done
   - type/project
   - area/catalog-service
   - area/abac

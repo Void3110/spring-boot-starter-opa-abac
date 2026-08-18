@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planning
+  - status/planned
   - type/design
   - area/methodology
 ---
