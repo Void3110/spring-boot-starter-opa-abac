@@ -382,7 +382,10 @@ Slice C opens the production tier behind a **fresh second factor**, so the realm
 > `scripts/postman/production-tier-matrix.postman_collection.json`'s seven C-flip cells assert the
 > challenge **literally** (`max_age="300"`), so a window change must update those cells too. The same
 > goes for `step_up.required_acr` (`aal2`): the policy's challenge reads it from data, and the same
-> seven cells plus the realm's `acr.loa.map` name it literally.
+> seven cells plus the realm's `acr.loa.map` name it literally. The `step_up.json` ↔ `acr.loa.map` half
+> of that is mechanically checked — `scripts/checks/check-step-up-acr.py`, run in CI — because a
+> `required_acr` the realm cannot mint strands the user on a Keycloak error page rather than degrading
+> (see `docs/guides/SUPERVISED-READ-AND-STEP-UP.md`).
 
 Two non-obvious things, both measured on Keycloak 26.3.2 during T1 and worth keeping:
 
