@@ -194,7 +194,10 @@ function useElevationChip(user: AuthUser): ChipState {
   })
 }
 
-function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
+// Exported for the jsdom restoration test (App.restore.test.tsx). The restoration effect's
+// defensive arm is only reachable through a mounted component — the rest of this suite is
+// deliberately pure-seam, and that arm was the one branch verified by reading rather than running.
+export function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
   const { username, roles } = describeUser(user)
   const mySubject = user.profile.sub
   const chip = useElevationChip(user)
@@ -294,8 +297,15 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
   useEffect(provision, [provision])
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col">
-      <header className="flex items-center justify-between border-b border-[var(--color-line)] px-6 py-4">
+    /* The shell grows with its content and lets the WINDOW scroll: `h-full` + an
+       internally-scrolling `main` put the scrollbar in the middle of the page,
+       inside the centred 1024px column, and on a ~900px-tall viewport the 73px
+       header ate almost exactly the overflow — a scrollbar for ~71px of content.
+       The header pins instead. Its background is load-bearing: without one, rows
+       scroll visibly through it (`--color-canvas` is the body's own background;
+       there is no `--color-bg` token in this stylesheet). */
+    <div className="mx-auto flex min-h-full max-w-5xl flex-col">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-canvas)] px-6 py-4">
         <button className="flex items-center gap-3" onClick={() => navigate({ kind: 'catalogs' })}>
           <Logo />
           <span className="font-semibold">Catalog Console</span>
@@ -337,7 +347,7 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
           </button>
         </div>
       )}
-      <main className="flex-1 overflow-auto px-6 py-6">
+      <main className="flex-1 px-6 py-6">
         {restoring && (
           <p className="p-6 text-sm text-[var(--color-muted)]">Returning you to where you were…</p>
         )}
