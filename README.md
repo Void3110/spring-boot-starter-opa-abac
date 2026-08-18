@@ -4,8 +4,8 @@ Production-grade **ABAC authorization for Spring Boot** powered by **Open Policy
 plus a **runnable example** that demonstrates the whole picture end to end.
 
 > Fine-grained, attribute-based access control with hierarchical resources, batch evaluation,
-> and partial-evaluation data filtering — the features real applications need and existing
-> libraries don't provide.
+> and partial-evaluation data filtering — the combination real applications need, and that
+> existing libraries leave you to assemble yourself.
 
 [![CI](https://github.com/Void3110/spring-boot-starter-opa-abac/actions/workflows/ci.yml/badge.svg)](https://github.com/Void3110/spring-boot-starter-opa-abac/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -14,9 +14,9 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 
 > ### 🔍 Two things to look at here
 >
-> **1. The library** — production-grade ABAC authorization for Spring Boot on OPA, with the features
-> real apps need and existing libraries don't: hierarchical resources, batch evaluation, and
-> partial-evaluation data filtering. *(The rest of this README.)*
+> **1. The library** — production-grade ABAC authorization for Spring Boot on OPA, with the
+> combination real apps need: hierarchical resources, batch evaluation, and partial-evaluation data
+> filtering, over a relationship spine. *(The rest of this README.)*
 >
 > **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
 > engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
@@ -25,6 +25,25 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 > 63 browser-free SPA unit tests + `opa test` 389/389 + a 19-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
 > security review** — all delivered this way, with the prompts and per-slice retrospectives kept
 > verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
+
+## Is this ABAC or ReBAC?
+
+**Both, and the distinction is worth being precise about: this is a relationship-shaped model evaluated
+through an attribute mechanism.**
+
+The access *spine* is relational — team membership is the sole path to a catalog, an ancestor grant
+widens a descendant list, and a manager reaches a report's catalogs by derivation. Tags, permission
+categories and the environment tier are attributes that *refine* what a relationship already opened.
+The difference from a Zanzibar-style engine is **where the relationship graph lives**: here it stays in
+your application's database and reaches the policy as resolved input, so a list query gets OPA's
+partial-evaluation residual composed into it as a JPA `Specification` — the database filters, and paging
+and counts stay exact — rather than an id set the application must push into a query of its own.
+
+That trade is real in both directions, and there are cases where you should reach for SpiceDB or
+OpenFGA instead — reverse lookups ("who can see this?"), deep user-defined graphs, or a graph shared
+across services with no common database. **[`docs/architecture/REBAC-AND-ABAC.md`](docs/architecture/REBAC-AND-ABAC.md)**
+makes the full comparison, with what this library deliberately does *not* have (no tuple store, no
+zookie/consistency story, no reverse index) and honest prior art in the Spring/OPA space.
 
 ## Status
 
@@ -499,6 +518,8 @@ the one-command rerun).
 The full architecture, decision records, and per-feature guides live in [`docs/`](docs/README.md):
 - **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
 - **Agent / MCP authorization** — [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) + [ADR 0028](docs/architecture/adr/0028-agent-tool-call-authorization.md) — the two-layer model, the tri-state capability seam, the roster-is-a-hint rule, and the fail-closed table
+- **Supervised read & step-up** — [`docs/guides/SUPERVISED-READ-AND-STEP-UP.md`](docs/guides/SUPERVISED-READ-AND-STEP-UP.md) + ADRs [0029](docs/architecture/adr/0029-supervised-read-scope.md)–[0033](docs/architecture/adr/0033-catalog-provenance-affordance.md) — the second, disjoint access path; the operator-managed environment tier; the RFC 9470 step-up challenge and its resource-server-side freshness control
+- **ReBAC vs ABAC positioning** — [`docs/architecture/REBAC-AND-ABAC.md`](docs/architecture/REBAC-AND-ABAC.md) — the relationship spine, the partial-evaluation-vs-`ListObjects` difference, what this library deliberately lacks, and when to pick SpiceDB/OpenFGA instead
 - **Architecture & ADRs** — [`docs/architecture/`](docs/architecture/)
 - **Roadmap** — [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md)
 - **AI-assisted methodology** — [`docs/methodology/`](docs/methodology/README.md) (the `plan → implement → review` loop this repo is built with, framed + indexed) + the deep reference [`docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md`](docs/guides/AUTONOMOUS-IMPLEMENTATION-FLOW.md) and the portable phase [`templates/`](docs/methodology/templates/)

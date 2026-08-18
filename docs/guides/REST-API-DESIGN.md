@@ -197,7 +197,7 @@ state). This keeps the contract simple; adopt `PATCH` only if partial update bec
 a service; a service only sees already-authenticated requests, and an ordinary authorization denial is a
 `403`. (The library's `AbacFilter` lets an *anonymous* request through to the security layer, which then
 denies — also `403`, never `401`.) The **one** service-emitted `401` is the step-up challenge
-([[TEAM-BASED-AUTHORIZATION]] §Step-up elevation, ADR 0030): when a second factor is the denial's *sole*
+([[SUPERVISED-READ-AND-STEP-UP]] §Step-up elevation, ADR 0030): when a second factor is the denial's *sole*
 blocker, the advice answers `401` + an RFC 9470 `WWW-Authenticate` challenge + `STEP_UP_REQUIRED` —
 a deny that names its remedy, not an authentication failure. Every other denial stays `403`.
 
