@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  type Page,
+  type TagDefinition,
   type Catalog,
   type DirectoryUser,
   type Membership,
@@ -12,14 +14,12 @@ import {
   ensureUser,
   listAllUsers,
   listMembers,
-  listTeamTagDefinitions,
-  lookupTeamByTarget,
   listRoleDefinitions,
   removeMember,
   searchDirectory,
   transferOwnership,
 } from './api'
-import { type Notice, NoticeLine, errText, useAsync } from './components'
+import { type Async, type Notice, NoticeLine, errText, useAsync } from './components'
 import { RolesSection } from './roles'
 import { TagKeysSection } from './tags'
 
@@ -42,23 +42,31 @@ const DEFAULT_ROLE = 'member'
  * typed denial (403/409/422) tell the story.
  */
 export function TeamPanel({
-  catalogId,
+  teams,
+  team,
+  tagDefs,
   mySubject,
   onDictionaryChanged,
 }: {
-  catalogId: string
+  /**
+   * The governing-team lookup, RESOLVED BY THE CALLER. It used to be made here — a one-shot
+   * filtered request (DIRECTORY-QUERY-FILTERS: ?targetType&targetId, no page-walk, no truncated
+   * miss) — but the catalog view needs the same team for its tag pickers, so each open paid for
+   * it twice. The loading and error states still come from this result; only the call moved.
+   */
+  teams: Async<Page<Team>>
+  /** The governing team itself, or null once the lookup resolved and found none. */
+  team: Team | null
+  /** The dictionary that team governs, listed once by the caller and shared with the roster. */
+  tagDefs: Async<Page<TagDefinition> | null>
   mySubject: string
   /** Fired after a tag-key change so the parent's tag pickers can refresh their dictionary. */
   onDictionaryChanged?: () => void
 }) {
-  // One-shot lookup (DIRECTORY-QUERY-FILTERS): the governing team answers in a single filtered
-  // request (?targetType&targetId) — no page-walk, no truncated miss. The user list only resolves
-  // roster rows to display names now — the member picker searches the identity directory
-  // server-side (USER-DIRECTORY-PORT) and can offer accounts that were never provisioned.
-  const teams = useAsync(() => lookupTeamByTarget('catalog', catalogId), [catalogId])
+  // The user list only resolves roster rows to display names now — the member picker searches the
+  // identity directory server-side (USER-DIRECTORY-PORT) and can offer accounts that were never
+  // provisioned.
   const users = useAsync(() => listAllUsers(), [])
-
-  const team = teams.data?.items[0]
 
   return (
     <div className="mt-6">
@@ -84,6 +92,7 @@ export function TeamPanel({
       {team && (
         <Roster
           team={team}
+          tagKeys={tagDefs}
           users={users.data ?? []}
           usersReady={users.data !== null}
           mySubject={mySubject}
@@ -110,6 +119,7 @@ function PanelNote({ tone, children }: { tone: 'muted' | 'deny'; children: React
 
 function Roster({
   team,
+  tagKeys,
   users,
   usersReady,
   mySubject,
@@ -117,6 +127,8 @@ function Roster({
   onDictionaryChanged,
 }: {
   team: Team
+  /** The team's dictionary, listed ONCE by the catalog view and shared with its tag pickers. */
+  tagKeys: Async<Page<TagDefinition> | null>
   users: User[]
   usersReady: boolean
   mySubject: string
@@ -126,8 +138,6 @@ function Roster({
   const members = useAsync(() => listMembers(team.id), [team.id])
   // Owner-only (team:define-roles) — everyone else falls back to the hardcoded system ladder.
   const roleDefs = useAsync(() => listRoleDefinitions(team.id), [team.id])
-  // The dictionary this team sees (global + its own keys) — the TagKeysSection edits it.
-  const tagKeys = useAsync(() => listTeamTagDefinitions(team.id), [team.id])
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   // Hold the manage controls until the directory is in: `me` and display names come from it, and
@@ -249,10 +259,9 @@ function Roster({
             (me && roster.find((m) => m.userId === me.id)?.roleCode) ?? '',
           )
         }
-        onChanged={() => {
-          tagKeys.reload()
-          onDictionaryChanged?.() // the pickers in the categories section share this dictionary
-        }}
+        // One reload, not two: the dictionary is now a single shared result, so refreshing the
+        // parent's copy IS refreshing this section's.
+        onChanged={() => onDictionaryChanged?.()}
       />
       <NoticeLine notice={notice} />
     </div>

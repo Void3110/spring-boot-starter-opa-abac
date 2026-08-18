@@ -194,7 +194,10 @@ function useElevationChip(user: AuthUser): ChipState {
   })
 }
 
-function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
+// Exported for the jsdom restoration test (App.restore.test.tsx). The restoration effect's
+// defensive arm is only reachable through a mounted component — the rest of this suite is
+// deliberately pure-seam, and that arm was the one branch verified by reading rather than running.
+export function Console({ user, restore }: { user: AuthUser; restore: StepUpState | null }) {
   const { username, roles } = describeUser(user)
   const mySubject = user.profile.sub
   const chip = useElevationChip(user)
@@ -294,8 +297,15 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
   useEffect(provision, [provision])
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col">
-      <header className="flex items-center justify-between border-b border-[var(--color-line)] px-6 py-4">
+    /* The shell grows with its content and lets the WINDOW scroll: `h-full` + an
+       internally-scrolling `main` put the scrollbar in the middle of the page,
+       inside the centred 1024px column, and on a ~900px-tall viewport the 73px
+       header ate almost exactly the overflow — a scrollbar for ~71px of content.
+       The header pins instead. Its background is load-bearing: without one, rows
+       scroll visibly through it (`--color-canvas` is the body's own background;
+       there is no `--color-bg` token in this stylesheet). */
+    <div className="mx-auto flex min-h-full max-w-5xl flex-col">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-canvas)] px-6 py-4">
         <button className="flex items-center gap-3" onClick={() => navigate({ kind: 'catalogs' })}>
           <Logo />
           <span className="font-semibold">Catalog Console</span>
@@ -337,7 +347,7 @@ function Console({ user, restore }: { user: AuthUser; restore: StepUpState | nul
           </button>
         </div>
       )}
-      <main className="flex-1 overflow-auto px-6 py-6">
+      <main className="flex-1 px-6 py-6">
         {restoring && (
           <p className="p-6 text-sm text-[var(--color-muted)]">Returning you to where you were…</p>
         )}
@@ -451,7 +461,9 @@ function CatalogGrid({
   )
 }
 
-function CatalogDetail({
+// Exported for the request-fan-out test (App.catalog-fanout.test.tsx), which counts the calls one
+// catalog open makes.
+export function CatalogDetail({
   catalog,
   mySubject,
   elevated,
@@ -471,15 +483,17 @@ function CatalogDetail({
   // The single GET is enriched (unlike the list) — fetch it for the catalog's own _actions.
   const full = useAsync(() => getCatalog(catalog.id), [catalog.id])
   const cats = useAsync(() => listCategories(catalog.id), [catalog.id])
-  // The tag dictionary (global + this catalog's team keys) drives the tag pickers. Resolved via
-  // the governing team because only the team-scoped listing is gateway-exposed; a catalog without
-  // a resolvable team just renders the forms without tag fields.
-  const tagDefs = useAsync(async () => {
-    const teams = await lookupTeamByTarget('catalog', catalog.id)
-    const team = teams.items[0]
-    if (!team) return null
-    return listTeamTagDefinitions(team.id)
-  }, [catalog.id])
+  // ONE resolution of the governing team for the whole catalog view, and one listing of the
+  // dictionary it governs. Both are needed twice over — by the tag pickers here and by the team
+  // panel below — and resolving them independently cost an extra round trip each per catalog open.
+  // Only the team-scoped tag listing is gateway-exposed, so the dictionary waits on the team; a
+  // catalog without a resolvable team just renders the forms without tag fields.
+  const teams = useAsync(() => lookupTeamByTarget('catalog', catalog.id), [catalog.id])
+  const governingTeam = teams.data?.items[0] ?? null
+  const tagDefs = useAsync(
+    async () => (governingTeam ? listTeamTagDefinitions(governingTeam.id) : null),
+    [governingTeam?.id ?? null],
+  )
   const [tagEditing, setTagEditing] = useState<string | null>(null)
   const [catalogTagEditing, setCatalogTagEditing] = useState(false)
 
@@ -571,7 +585,9 @@ function CatalogDetail({
       </Card>
 
       <TeamPanel
-        catalogId={catalog.id}
+        teams={teams}
+        team={governingTeam}
+        tagDefs={tagDefs}
         mySubject={mySubject}
         onDictionaryChanged={tagDefs.reload}
       />

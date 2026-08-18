@@ -29,7 +29,19 @@ export function NoticeLine({ notice }: { notice: Notice | null }) {
 // the locked panel renders) cannot recover that from a formatted message. Every existing consumer
 // reads `error` and is unaffected. The retry-once policy deliberately does NOT live here — this hook
 // stays a dumb loader; the panel owns that decision.
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
+/**
+ * What {@link useAsync} returns. Named so a component can accept a result its CALLER already
+ * resolved — the catalog view and its team panel need the same governing team, and each resolving
+ * its own cost a round trip per catalog open.
+ */
+export interface Async<T> {
+  data: T | null
+  error: string | null
+  cause: unknown
+  reload: () => void
+}
+
+export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): Async<T> {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cause, setCause] = useState<unknown>(null)
