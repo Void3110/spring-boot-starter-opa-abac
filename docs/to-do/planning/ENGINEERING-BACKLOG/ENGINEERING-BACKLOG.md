@@ -33,22 +33,28 @@ both, because the invariant is repo-specific.
 
 ---
 
-## 1. Mutation testing (PIT) on the Java modules
+## 1. Mutation testing (PIT) on the Java modules — ✅ SHIPPED 2026-08-18
 
-**Value: highest. Effort: low — a Gradle plugin + a threshold.**
+**Baseline + full findings: `docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md`.**
 
-The single defect that survived a full adversarial round was a **test that could not fail**: it
-asserted on the input object rather than on what the code under test returned, so the exact broken
-implementation its own comment named would have passed. It was caught by a reviewer *mutating the
-production code by hand* — which is precisely what PIT automates.
+Wired report-only over six modules (both library authorization surfaces, `spring-data`,
+`keycloak-directory`, the starter, and `example-catalog-management-service`). `./gradlew mutationTest`,
+~1m20s warm. **1668 mutations, 1123 killed, 98 survived**; test strength 83–94% per module.
 
-- Add `info.solidsoft.pitest` to the library modules + `example-catalog-management-service`.
-- Start with a **reporting** run, no threshold, to establish the baseline; only then gate.
-- Scope it to the authorization surfaces first (`opa-abac-core`, `opa-abac-spring-security`) — a
-  surviving mutant there is worth more than one in a DTO.
+Two corrections to what this item assumed — both measured, do not re-derive:
 
-Do not gate the whole repo on a mutation score on day one; a noisy gate gets ignored, which is worse
-than none.
+- **Not a Gradle plugin.** `info.solidsoft.pitest` last shipped 2023-09 and cannot apply on Gradle 9
+  (`ReportingExtension.baseDir`, removed). PIT is wired as a `JavaExec` on its own CLI in the root
+  build. `pitestRuntime` must stay **first** on the classpath — Boot's test starter drags ASM 9.7.1,
+  which cannot read Java 25 class files.
+- **PIT does not catch the defect that motivated this item.** Reverting `CatalogProvenanceAdviceTest`
+  to its vacuous pre-fix form yields a byte-identical PIT report: a sibling test already covers the
+  return value, and no mutator generates "return a rebuilt-but-equivalent object". **The manual
+  discipline — prove a test by mutating the code it guards — stays a review step.**
+
+**Follow-up (not scheduled):** close the five survivor rows in the baseline note — chiefly
+`HttpOpaClient.isSafePath`, where making the policy-path validator accept everything fails no test —
+then re-baseline. **Do not** gate on a repo-wide mutation score; see §What NOT to do next.
 
 ## 2. A guarded-substitution check for `scripts/`
 

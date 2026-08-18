@@ -13,6 +13,13 @@ vanniktechMavenPublish = "0.37.0"
 # SonarQube scanner for the LOCAL pre-push gate (.sonar-local/ — this public repo has no hosted
 # Sonar). 7.x is Gradle-9-ready; the 6.x line calls the removed Convention API and breaks on Gradle 9.
 sonarqube = "7.3.1.8318"
+# PIT mutation testing (ENGINEERING-BACKLOG item 1) — REPORTING-ONLY baseline, no threshold gate.
+# Driven through PIT's own command-line entry point from the root build, NOT via the
+# `info.solidsoft.pitest` Gradle plugin: that plugin has not shipped since 2023-09 and fails to
+# apply on this repo's Gradle 9 wrapper (it reads `ReportingExtension.baseDir`, removed in Gradle 9).
+# PIT's CLI contract is stable, so the engine tracks its own latest line here.
+pitest = "1.25.9"
+pitestJunit5 = "1.2.3"
 
 # Library deps
 # Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
@@ -91,6 +98,11 @@ assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql" }
+# PIT: the CLI entry point (`MutationCoverageReport`) plus the JUnit-5 bridge. Both go on the
+# `pitest` configuration the root build creates for each mutated module — PIT ships a JUnit-4
+# runner by default and discovers zero tests without the bridge.
+pitest-command-line = { module = "org.pitest:pitest-command-line", version.ref = "pitest" }
+pitest-junit5-plugin = { module = "org.pitest:pitest-junit5-plugin", version.ref = "pitestJunit5" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
