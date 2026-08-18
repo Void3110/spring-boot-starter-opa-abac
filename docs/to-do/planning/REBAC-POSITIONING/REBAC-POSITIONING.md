@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/abac
   - area/methodology
@@ -8,9 +8,27 @@ tags:
 
 # ReBAC / Zanzibar positioning — a README section + a comparison note
 
-> **Status: 📋 idea, not scheduled.** Opened 2026-08-18. Trigger: a maintainer conversation with an
-> external LLM that classified this repo's example as a **ReBAC + ABAC hybrid**, not pure ABAC.
-> **Nothing in that conversation is treated as fact here** — see *Verify before publishing*.
+> **Status: ✅ DELIVERED 2026-08-18.** Opened and executed the same day. Trigger: a maintainer
+> conversation with an external LLM that classified this repo's example as a **ReBAC + ABAC hybrid**,
+> not pure ABAC. **Nothing in that conversation was treated as fact** — every competitor claim was
+> read from the other project's own documentation before publishing (see *Verify before publishing*,
+> and the **Sources** section of the delivered note).
+>
+> **Delivered:** [[REBAC-AND-ABAC]] (`docs/architecture/REBAC-AND-ABAC.md`) + a README section
+> (*Is this ABAC or ReBAC?*).
+>
+> **What verification changed, versus the plan below.** Two claims did not survive and the
+> deliverables say so:
+> 1. **The `ListObjects`-vs-partial-eval differentiator is weaker than drafted.**
+>    **AuthZed Materialize** — Leopard-inspired, commercial AuthZed Dedicated — precomputes permissions
+>    and streams them into *your own* database, colocated with the data, for native SQL filtering,
+>    sorting and paging. The honest difference is therefore *when the predicate is produced and what
+>    must be kept in sync*, not "who can filter in the database".
+> 2. **Spring/OPA partial-eval data filtering is not novel.** [Thunx](https://github.com/xenit-eu/thunx)
+>    is actively maintained (v0.16.1, 2026-07) and translates OPA query sets into QueryDSL predicates;
+>    `jferrater/opa-data-filter-spring-boot-starter` did the same for JPA/Mongo (dormant since 2023).
+>    The delivered note names both, and the README's blanket *"existing libraries don't provide"*
+>    claim was narrowed to the **combination** as a direct consequence.
 
 ## The observation
 
