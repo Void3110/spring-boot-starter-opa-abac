@@ -68,7 +68,9 @@ jobs:
   # catch that (measured), so the invariant is policed here. The gate's own
   # regression suite runs alongside it — a gate nothing proves is a gate that
   # rots into a rubber stamp.
-  shell-guards:
+  # Renamed from shell-guards when the collection lint joined it: both police the
+  # verification layer itself, which no other gate in this repo reads at all.
+  verification-layer:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -78,6 +80,12 @@ jobs:
 
       - name: Guarded substitutions must survive to their own guard
         run: scripts/checks/check-shell-guards.py
+
+      - name: Conformance gate self-test (check-collection-conformance.py)
+        run: scripts/checks/test-collection-conformance.sh
+
+      - name: e2e cells must be able to fail
+        run: scripts/checks/check-collection-conformance.py
 
   # The demo console is not a Gradle module, so `./gradlew build` never sees it — its
   # vitest suite covers the seams that decide what a user is ALLOWED to see (the RFC 9470

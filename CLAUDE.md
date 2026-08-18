@@ -79,7 +79,7 @@ The e2e runners' failure *diagnosis* is a feature. Under `set -euo pipefail` a b
 operator gets a bare exit instead of the reason. `shellcheck` does not catch it (measured).
 
 ```bash
-scripts/checks/check-shell-guards.py          # policed in CI (job: shell-guards)
+scripts/checks/check-shell-guards.py          # policed in CI (job: verification-layer)
 scripts/checks/check-shell-guards.py --fix    # append `|| true` in place
 scripts/checks/test-shell-guards.sh           # the gate's own regression suite
 ```
@@ -88,6 +88,21 @@ Not every substitution is in scope, on purpose: `local X="$(…)"` cannot trip `
 status is `local`'s), a pure `printf … | sed` chain cannot fail, and one that absorbs its own failure
 (`$(cmd || echo '<unset>')`) exits 0 regardless. An **unguarded** substitution is also out of scope —
 nothing was promised. Waive a site with `# shell-guards: ignore -- <reason>`; a reason is mandatory.
+
+### e2e collection conformance
+
+Nothing else in this repo reads a `.postman_collection.json` — the Sonar gate scans changed `.java`
+only — so a cell that **cannot fail** reports green forever. Three rules, each a defect that recurred:
+**ABSENCE-ONLY** (only `not.include`, which an empty page satisfies), **NAME-OVERCLAIM** (the name
+claims ids the request never reads), **UNPINNED-WINDOW** (reads `max_age` without pinning a value).
+
+```bash
+scripts/checks/check-collection-conformance.py   # policed in CI (job: verification-layer)
+scripts/checks/test-collection-conformance.sh    # its regression suite
+```
+
+A collection that legitimately breaks a rule declares it on one line of `info.description` —
+`conformance-lint: owns-drill`. A waiver no cell needs is itself an error, so declarations cannot rot.
 
 ### The user-directory module + rig flag
 
