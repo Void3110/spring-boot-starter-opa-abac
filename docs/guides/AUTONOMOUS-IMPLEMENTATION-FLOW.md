@@ -204,8 +204,32 @@ a **1:1 structural mirror** of every prior slice:
 | `<SLICE>.md` | `type/index` — what the slice delivers, file glossary, **ticket status table**, critical path, conventions (clean-room + commit identity). |
 | `01-DECOMPOSITION.md` | `type/project` — the ordered tickets **T1…TN**, each with **Goal / Deliverables / Acceptance / What-NOT-to-touch**, + a cross-cutting acceptance block, + the **critical path** (which tickets are sequential, which parallel, which independently landable). **The work list.** |
 | `10-QA-TEST-CASES.md` | `type/project` — concrete U*/I*/E* cases the implementation must satisfy (these become each ticket's *Acceptance*). |
-| `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | The self-contained prompt (the [§4](#4-the-autonomous-implementation-promptmd-template) template). **Kept verbatim — a deliverable, not scaffolding.** |
+| `AUTONOMOUS-IMPLEMENTATION-PROMPT.md` | The self-contained prompt (the [§4](#4-the-autonomous-implementation-promptmd-template) template). **Kept verbatim — a deliverable, not scaffolding.** *Absent in a declared-collaborative package — see below.* |
 | `STATUS-01.md … STATUS-0N.md` | One stub per ticket, filled at each checkpoint during the run: *What shipped · Tests · Architecture review + refactor · Integration/e2e · Decisions · Commit.* |
+
+### Collaborative packages
+
+A slice built **with** the maintainer rather than by an autonomous run has no
+`AUTONOMOUS-IMPLEMENTATION-PROMPT.md`, by design. Such a package declares it on one line of its
+index:
+
+```markdown
+**Build: collaborative**
+```
+
+`verify-package.sh` then stands down its two prompt arms — `[1]` (the prompt file) and `[5]` (prompt
+invariants) — and every other gate still applies. Absence of the declaration means **autonomous**,
+which is the stricter reading, so forgetting it can only ever over-report.
+
+Two things are deliberately errors rather than conveniences: a **near-miss** (`Build: collaborative`
+unbolded, `**Build**: collaborative`, a bulleted variant) is rejected instead of silently falling
+through, so the gate never lies about which mode it ran; and declaring collaborative **while shipping
+a prompt** is a contradiction — one of the two is stale, and trusting the declaration there would
+skip real checks.
+
+Before this existed (2026-08-18) a collaborative package verified **red** at ship time for reasons
+that were not defects — the gate demanded a prompt and then reported "no prompt to check".
+[[SPA-CHALLENGE-UX]] is the first package to carry the declaration.
 
 **The decomposition discipline — what makes a good ticket:**
 

@@ -13,8 +13,10 @@ tags:
 > Design settled 2026-08-15 (grill-me: ten forks; [[00-DESIGN]] §Considered-and-rejected).
 > The **collaborative follow-up** the supervisor epic deferred from slice C
 > ([[STEP-UP-ELEVATION]], shipped 2026-08-15) — Phase 10 of [[POC-ROADMAP]], after A/B/C.
-> **Not an autonomous run**: no implementation prompt, no orchestrator; `verify-package.sh` gates
-> [1] (the prompt file) and [5] (prompt invariants) fail by design, the rest must pass.
+> **Build: collaborative**
+> **Not an autonomous run**: no implementation prompt, no orchestrator. `verify-package.sh` reads the
+> declaration above and skips its two prompt arms ([1] the prompt file, [5] prompt invariants); every
+> other gate must pass. Before 2026-08-18 those two failed by design and the package verified red.
 > **Release gating:** the 1.2.0 Maven Central cut waits for this slice, then ships the whole story.
 > **Validated:** 2026-08-15 — mechanical gate at its by-design state; a three-critic adversarial pass
 > (backend seam · SPA/OIDC · fixtures/registry/docs) returned 4 run-stoppers + 12 should-fixes, all

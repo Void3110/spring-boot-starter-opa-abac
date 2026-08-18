@@ -45,11 +45,50 @@ bad() { printf '  \033[0;31m✗\033[0m %s\n' "$1"; FAIL=1; }
 [ -d "$DIR" ] || { echo "no such package folder: $DIR"; exit 1; }
 echo "Verifying package: $DIR"
 
+# ── 0. Build mode ───────────────────────────────────────────────────────────────
+# A package may declare, on ONE line of its index, that it was built WITH the
+# maintainer rather than by an autonomous run:
+#
+#     **Build: collaborative**
+#
+# Absence means autonomous — the stricter reading, since it runs both prompt arms.
+# A collaborative package legitimately has no AUTONOMOUS-IMPLEMENTATION-PROMPT.md,
+# so demanding one and then reporting "no prompt to check" made ship-time verify
+# red for reasons that were not defects (SPA-CHALLENGE-UX, 2026-08-18).
+#
+# A NEAR-MISS is an error rather than a silent fall-through to autonomous. Falling
+# through would only ever be stricter, so this is about not lying to the author
+# about which mode ran — the same stance check-parts.py takes on `**Parts:**`.
+INDEX="$DIR/$SLICE.md"
+BUILD_MODE=autonomous
+echo "[0] build mode"
+if [ -f "$INDEX" ] && grep -qE '^[[:space:]]*>?[[:space:]]*\*\*Build:[[:space:]]+collaborative\*\*' "$INDEX"; then
+  BUILD_MODE=collaborative
+  ok "declared collaborative — the prompt arms [1]/[5] do not apply"
+elif [ -f "$INDEX" ] && grep -qiE '^[[:space:]]*>?[[:space:]]*[-*]?[[:space:]]*\*{0,2}Build\*{0,2}[[:space:]]*:[[:space:]]*\*{0,2}collaborative' "$INDEX"; then
+  bad "near-miss Build declaration — write it exactly as **Build: collaborative**"
+else
+  ok "autonomous (the default)"
+fi
+
 # ── 1. Required files ───────────────────────────────────────────────────────────
 echo "[1] required files"
-for f in "$SLICE.md" 00-DESIGN.md 01-DECOMPOSITION.md 10-QA-TEST-CASES.md AUTONOMOUS-IMPLEMENTATION-PROMPT.md; do
+for f in "$SLICE.md" 00-DESIGN.md 01-DECOMPOSITION.md 10-QA-TEST-CASES.md; do
   if [ -f "$DIR/$f" ]; then ok "$f"; else bad "missing $f"; fi
 done
+if [ "$BUILD_MODE" = collaborative ]; then
+  # Declaring collaborative while shipping a prompt is a contradiction: one of the
+  # two is stale, and silently trusting the declaration would skip real checks.
+  if [ -f "$DIR/AUTONOMOUS-IMPLEMENTATION-PROMPT.md" ]; then
+    bad "declared collaborative but AUTONOMOUS-IMPLEMENTATION-PROMPT.md is present"
+  else
+    ok "no prompt file (collaborative)"
+  fi
+elif [ -f "$DIR/AUTONOMOUS-IMPLEMENTATION-PROMPT.md" ]; then
+  ok "AUTONOMOUS-IMPLEMENTATION-PROMPT.md"
+else
+  bad "missing AUTONOMOUS-IMPLEMENTATION-PROMPT.md"
+fi
 STATUS_COUNT=$(find "$DIR" -maxdepth 1 -name 'STATUS-*.md' | wc -l | tr -d ' ')
 if [ "$STATUS_COUNT" -ge 1 ]; then ok "STATUS stubs: $STATUS_COUNT"; else bad "no STATUS-NN.md stubs"; fi
 
@@ -133,6 +172,7 @@ if [ -f "$P" ]; then
   grep -qi 'ARCHITECTURE REVIEW' "$P" && ok "has the ★ architecture-review gate"       || bad "prompt: no ★ architecture-review gate"
   grep -qi 'CHECKPOINT'         "$P" && ok "has checkpoints"                           || bad "prompt: no CHECKPOINT step"
   grep -qi 'Co-Authored-By'     "$P" && ok "addresses the commit-trailer convention"   || bad "prompt: no Co-Authored-By note"
+elif [ "$BUILD_MODE" = collaborative ]; then ok "skipped (collaborative build)"
 else bad "no prompt to check"
 fi
 
