@@ -19,6 +19,7 @@ to navigate with backlinks and graph view. `[[wikilinks]]` resolve to notes by t
 | [`methodology/`](methodology/README.md) | **How this repo is built with AI agents** — the `plan → decompose → autonomous-implement → review` method framed as an **engineered loop** (Mulch + the vault as the accumulators that make it compound), plus the portable phase [`templates/`](methodology/templates/). This repo is the reference implementation of the method. |
 | [`api/`](api/) | The **hand-written REST reference** for the two demo services — an [index](api/README.md) + the cross-cutting conventions (RFC-7807 errors, `_actions` enrichment, the subject-relative pagination envelope, bearer auth) + per-resource pages (catalog/category/product; user/team/membership/role-definition/tag-definition). The **OpenAPI specs** (`example-*/src/main/resources/openapi/*.yaml`) + each service's Swagger UI at `/swagger-ui.html` remain the source of truth; these pages add the human narrative. |
 | [`code-review/`](code-review/) | The review workflow and checklist used by the `/deep-review` skill. |
+| [`audits/`](audits/) | Dated, report-only staleness audits of the living docs against the code (`/doc-audit`). The latest report's frontmatter is the manifest the next incremental run diffs against. |
 | [`article/`](article/) | Working notes for the article series — arguments and worked examples accumulated while building, to be turned into publishable prose later. |
 | [`to-do/`](to-do/) | Feature work, organized by lifecycle. See below. |
 
