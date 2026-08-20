@@ -8,7 +8,11 @@ tags:
 
 # ADR 0004 — The dynamic tag dictionary: three layers, global + team, match-in-Rego
 
-**Status:** Accepted (Phase 4.5)
+**Status:** Accepted (Phase 4.5) — *layer 2's "assignment is a normal `write`" and the rejected
+`assign-tags` capability were superseded in Phase 6.5/6.7 ([[0007-coarse-grained-permission-categories|ADR 0007]] /
+[[0015-control-plane-vocabulary-categorization|ADR 0015]]): a dedicated `assign-tags` fine action now
+exists under the `TAG` category and gates assignment via the delta dispatch. Per the ADR convention the
+body below is unedited.*
 **Date:** 2026-06
 **Context tags:** user-service, tag dictionary, ABAC, attribute-based grants
 

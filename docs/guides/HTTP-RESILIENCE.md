@@ -148,7 +148,8 @@ On **retries-exhausted** *and* **breaker-open** (the delegate is not called at a
 
 The plain `HttpOpaClient` never throws — it swallows failures into the fail-closed value. So the
 `ResilientOpaClient` decorator retries on the **returned sentinel**: `compile` on `fromError()` (the exact
-failure flag, distinct from a real `denyAll()`); `allow` on `false`; `allowAll` on any-`false`. A genuine
+failure flag, distinct from a real `denyAll()`); `allow` on `false`; `allowAll` **only on an all-`false` (or null/short) block** — a mixed block is a
+real 200 answer with genuine per-row denies and is never retried. A genuine
 policy deny *also* retries — accepted because the OPA gate is a local sidecar at 1 retry / ~50ms and an OPA
 decision is deterministic (a real deny stays `false`, never widens): one extra fast hop on a deny, fully
 fail-closed, while a transient blip recovers the real answer.

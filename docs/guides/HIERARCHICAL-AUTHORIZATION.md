@@ -65,8 +65,10 @@ opa:
         product: [category, catalog]
 ```
 
-`RoleDefinition` is **unchanged** — inheritability is a property of the *type-relationship*, not of a role's
-grant.
+`RoleDefinition` is **unchanged** — but since [[0031-inheritance-confined-to-membership-roles|ADR 0031]]
+the type-relationship declaration is necessary, not sufficient: the role must additionally carry
+`attributes.provenance == "membership"`. A synthesized (supervised) role never inherits; direct grants
+are unaffected.
 
 ## The Rego clause
 
@@ -82,9 +84,14 @@ direct_grant if { verb in permissions.effective_actions(input.role_definition, i
 # OPT-IN: only ancestor types declared inheritable for this leaf type count. The role is root-resolved,
 # so role_definition.permissions is keyed by the ANCESTOR type.
 inherited_grant if {
+    membership_derived                      # ADR 0031: only membership-derived roles inherit
     some ancestor in input.resource.ancestors
     data.<pkg>.inheritable[input.resource.type][ancestor.type]
     verb in permissions.effective_actions(input.role_definition, ancestor.type)
+}
+
+membership_derived if {
+    input.role_definition.attributes.provenance == "membership"
 }
 
 # deny-overrides: an explicit leaf deny wins over any grant.

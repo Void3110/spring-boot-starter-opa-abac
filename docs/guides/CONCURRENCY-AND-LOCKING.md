@@ -134,12 +134,14 @@ advances once per writer.
   rows** written by several paths concurrently, where you want the next writer to see committed state,
   not retry. This is the **default** for mutations here.
 - **Optimistic (`@Version` + retry)** — *retries* on conflict. Best for **warm** rows where writes
-  are rare and blocking is wasteful. Offered as an optional `mutateWithRetry(id, fn)` (unlocked read
-  + mutate + save, retrying on the version conflict) — reach for it deliberately, not by default.
+  are rare and blocking is wasteful. **Not shipped as a helper**: an optimistic `mutateWithRetry` was
+  considered and not built — `AbstractCrudService` exposes `mutate(id, fn)` (pessimistic) only, and
+  `@Version` on the base entity means an unlocked save at least *fails* on drift rather than silently
+  last-writer-wins.
 
 A plain `save()` after an unlocked read is the path that caused the incident above. Prefer `mutate`;
-use `mutateWithRetry` when you've decided optimistic is the right trade; use a bare `save` only for
-brand-new entities or single-writer paths.
+if optimistic-with-retry is genuinely the right trade somewhere, build it deliberately at that call
+site; use a bare `save` only for brand-new entities or single-writer paths.
 
 ## The rollback-only trap — don't catch a `@Transactional` exception inside the tx
 

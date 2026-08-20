@@ -322,6 +322,10 @@ exception is the narrow `catalog:create` realm-role fallback in `catalog.rego`. 
        policy-prefix: ""        # per-type resolver posts to /v1/data/<type>
        decision-field: allow
        subject:
+         # REQUIRED behind a signature-validating gateway ONLY: the default extractor does
+         # structural + exp checks, not signature verification, and refuses to run without
+         # this explicit acknowledgment (fails closed). See "Signature trust" below.
+         trust-forwarded-jwt: true
          id-claim: sub
          roles-claim: realm_access.roles
          username-claim: preferred_username

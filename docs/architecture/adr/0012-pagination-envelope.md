@@ -113,6 +113,12 @@ All **9 public list endpoints** adopt the envelope; **none** change their author
 pagination. Converting catalogs/products to residual filtering would be a behavioral change (their row sets
 could shrink) smuggled inside a shape slice — if ever wanted, that is its own decision.
 
+> **That decision was since taken, deliberately:** Slice B4 ([[0018-team-scoped-resource-isolation|ADR 0018]])
+> moved `listCatalogs` to the paged residual seam (a two-leg governed/supervised scope, **no coarse
+> gate** — the roots list is membership-shaped), and products became residual-filtered as well
+> ([[0025-taggable-products|ADR 0025]] — `listProducts` keeps its coarse `product:list` gate on top).
+> The envelope shape this ADR pinned is what let those moves happen without another API change.
+
 - **`/internal/**` stays unpaginated, deliberately** — guide §8 pins that surface as plain, bounded,
   network-isolated shapes; a one-line "unpaginated by design" note keeps the absence legible.
 - **The wire change is a clean break** (bare array → envelope): pre-publication, no external consumers,

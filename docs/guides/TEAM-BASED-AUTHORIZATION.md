@@ -94,9 +94,12 @@ catalog @OpaPreAuthorize(action, resourceType, resourceId)
 ```
 
 - **`HttpRoleDefinitionSupplier`** lives in the **catalog app** (selected by `catalog.role-source=http`,
-  default `demo`). It calls the resolve API on the JDK `HttpClient`, returns `Optional<RoleDefinition>`,
-  and **fails closed**: a non-200 (incl. the 204 no-match), a timeout, a connection refused, or a
-  malformed body → `Optional.empty()` → the policy default-denies.
+  default `demo`). It calls the resolve API on the JDK `HttpClient` and is **tri-state**
+  (Slice B2, [[0014-supplier-outage-error-distinct|ADR 0014]]): a 200 with a valid body → the role;
+  a **204** → `Optional.empty()` — the *authoritative* no-role, and the policy default-denies; **every
+  other failure** (blank 200, 4xx, 5xx, timeout, refused, parse error) **throws** — no OPA call is
+  made, the request fails closed as `503 DEPENDENCY_UNAVAILABLE`, so an outage can never read as
+  "no role".
 - **The resolve API is internal.** `GET /internal/effective-role` is not gateway-fronted — an
   in-network attribute source the catalog calls. `200 {RoleDefinition}` or **`204`** (empty, *not* an
   error) on no-match. The role's stored permissions are returned with the wildcard `"*"` (system roles
@@ -174,8 +177,9 @@ CONTROL-seat reach rule, the operator-managed `env` tier, the RFC 9470 elevation
 ## Run it end to end
 
 ```bash
-# Bring the full rig up with OIDC + the user-service; the catalog pods resolve roles from it.
-ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+# Bring the full rig up with the identity directory (force-enables OIDC + the user-service);
+# the catalog pods resolve roles from it and the matrix's directory cells have their backend.
+ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2
 
 # Run the team-based ABAC matrix (mints in-network tokens, bootstraps the team data, asserts):
 cd scripts/postman && ./run-team-matrix.sh
