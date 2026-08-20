@@ -78,11 +78,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 ### Epic D — "Lists show me only what I may see" (data filtering)
 
 - **D1** *As a viewer with a tag-gated role*, `GET …/categories` returns **only** the categories I may see
-  — the rows I can't see never leave the database. — **Phase 5** ([[DATA-FILTERING]]) 📋 planned
+  — the rows I can't see never leave the database. — **Phase 5** ([[DATA-FILTERING]]) ✅
 - **D2** *As two different users*, we hit the **same** list endpoint and get **different** row sets, decided
-  by the same policy. — **Phase 5** 📋
+  by the same policy. — **Phase 5** ✅ (the data-filter matrix's four-way contrast)
 - **D3** *As a platform super-admin* with an unconditional grant, the same endpoint returns **everything**
-  (the filter degrades to "match all"). — **Phase 5** 📋
+  (the filter degrades to "match all"). — **Phase 5** ✅ (proven by an allow-all owner grant; a distinct platform super-admin *persona* remains future)
 - **D4** *As a user with no grant*, the list is empty (`[]`), not an error and not a leak. — **Phase 5** 📋
 - **D5** *As any user*, I page through a filtered list (`page`/`perPage`) and the envelope's `count`
   reflects only what **I** may see; walking the pages never repeats or drops a row. — **Phase 5.95**
@@ -93,25 +93,25 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 > A grant on a Catalog should govern the Categories and Products nested under it, **N levels deep** — not
 > just the root and the leaf. Opt-in per relation, fail-closed, deny-overridable. Pinned by ADR
 > [[0008-hierarchical-resource-authorization|0008]]. Ships as two slices: **5.5-A** (single-resource) then
-> **5.5-B** (lists). — **Phase 5.5** ([[POC-ROADMAP]]) 📋 planned
+> **5.5-B** (lists). — **Phase 5.5** ([[POC-ROADMAP]]) ✅ shipped (both slices; proven by the hierarchy + hierarchy-list e2e matrices)
 
 - **H1** *As a user granted access on a Catalog*, I can read a **Product three levels down**
   (`catalog/{id}/category/{id}/product/{id}`) without a separate grant on the product — the grant is
-  inherited down the **whole** ancestor chain, not just root+leaf. — **Phase 5.5-A** 📋
+  inherited down the **whole** ancestor chain, not just root+leaf. — **Phase 5.5-A** ✅
 - **H2** *As an owner*, inheritance is **opt-in**: a resource type only inherits from an ancestor where I've
   declared the relation inheritable; by default a type is authorized on itself (no surprise widening). —
-  **Phase 5.5-A** 📋
+  **Phase 5.5-A** ✅
 - **H3** *As an owner*, an explicit **deny** on a specific node wins over an inherited grant — I can share a
-  Catalog yet carve out one Category that stays private (deny-overrides). — **Phase 5.5-A** 📋
+  Catalog yet carve out one Category that stays private (deny-overrides). — **Phase 5.5-A** ✅
 - **H4** *As an admin moving a Category* under a different Catalog, access **re-derives correctly and
   immediately** — the moved subtree now inherits the new parent's grants, and nothing is left pointing at
-  the old lineage (re-parenting is consistent and atomic). — **Phase 5.5-A** 📋
+  the old lineage (re-parenting is consistent and atomic). — **Phase 5.5-A** ✅
 - **H5** *As a user granted on a Catalog*, `GET …/products` (a list) returns the products **anywhere under
   that Catalog** — the inherited grant **widens** the rows the filter returns, decided in SQL, on top of
-  the Phase-5 tag filter. — **Phase 5.5-B** 📋
+  the Phase-5 tag filter. — **Phase 5.5-B** ✅
 - **H6** *As any user*, if the ancestor chain can't be resolved (broken/cyclic/too-deep lineage), I get my
   **direct** access only — never more (a failed walk never widens, never strips a direct grant). —
-  **Phase 5.5-A** 📋
+  **Phase 5.5-A** ✅
 
 ### Epic E — "The UI shows only the buttons I can click" (action enrichment)
 
@@ -233,26 +233,26 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 > The starter secures what a **person** calls. An AI agent calling tools on someone's behalf is a second
 > caller shape: it holds a delegated token and picks actions itself. These stories capture the cut a
 > **dual-identity** decision makes — the human is the ceiling, the agent's capability profile only narrows
-> — proven by [[AGENT-TOOL-AUTHZ]] (Phase 9) on a new `example-mcp-server`. Planned, not yet shipped.
+> — proven by [[AGENT-TOOL-AUTHZ]] (Phase 9) on a new `example-mcp-server`. ✅ **Shipped 2026-07-31** ([[0028-agent-tool-call-authorization|ADR 0028]]); live proof: `scripts/postman/run-agent-tool-matrix.sh` (E1–E11).
 
 - **J1** *As a user whose agent acts for me*, the agent can never do anything **I** couldn't do myself: my
   own role is the ceiling, and a capability profile that claims more than my role grants still yields only
-  my role's actions. — **Phase 9 (agent tool-call authz)** 📋 (the no-widening case, proven in `opa test`
+  my role's actions. — **Phase 9 (agent tool-call authz)** ✅ (the no-widening case, proven in `opa test`
   **and** live on the rig)
 - **J2** *As a user*, my agent is further **restricted** to the job I gave it: a capability profile narrower
   than my role means the agent may call only that subset — an out-of-capability tool is denied even though
-  I could have called it myself. — **Phase 9** 📋
+  I could have called it myself. — **Phase 9** ✅
 - **J3** *As an agent*, I see only the tools I may actually call — the advertised tool list is filtered to
   my effective authority, so I don't burn turns discovering denials. The list is a **hint**: a tool listed
-  a moment ago whose capability was revoked is still denied when I call it. — **Phase 9** 📋
+  a moment ago whose capability was revoked is still denied when I call it. — **Phase 9** ✅
 - **J4** *As an agent*, a denial tells me **which layer** refused (the tool-gate vs the resource's own
   policy) as a structured, advisory error — enough to pick another tool or ask for escalation, never a
-  silent failure and never a stack trace. — **Phase 9** 📋
+  silent failure and never a stack trace. — **Phase 9** ✅
 - **J5** *As an operator*, when the decision service is unreachable the agent path **denies** and the tool
   list degrades to un-filtered (never empty, never wider): no outage ever grants an agent something it
-  couldn't do while healthy. — **Phase 9** 📋 (the fail-closed drill)
+  couldn't do while healthy. — **Phase 9** ✅ (the fail-closed drill)
 - **J6** *As a person signing in normally*, nothing changes: a token with no agent actor is an ordinary
-  human call, decided exactly as before. — **Phase 9** 📋
+  human call, decided exactly as before. — **Phase 9** ✅
 
 ### Epic K — "I can see what my people are working on, without joining their teams" (supervised read scope)
 
