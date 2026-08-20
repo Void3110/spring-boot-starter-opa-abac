@@ -40,9 +40,12 @@ route?"*, not *"may this caller perform this action on this resource?"*.
 
 The application does the attribute-level decision itself, via the library
 ([[ABAC-AUTHORIZATION]]): it extracts the `Subject` from the forwarded JWT, looks up the caller's
-`RoleDefinition`, and asks OPA whether the **action** is permitted on the **resource type** —
-`input.role_definition.permissions[input.resource.type]`. Fine-grained authorization belongs here because
-only the app knows the resource semantics; the gateway shouldn't carry that knowledge.
+`RoleDefinition`, and asks OPA whether the **action** is permitted on the **resource type**. Since
+Phase 6.5 ([[0007-coarse-grained-permission-categories|ADR 0007]]) that map holds **coarse category
+tokens** (`READ`/`WRITE`/`TAG`/`GRANT`), and the policy decides via
+`permissions.effective_actions(input.role_definition, input.resource.type)` — the tokens expanded
+through `data.permission_categories`, minus `denied_actions`. Fine-grained authorization belongs here
+because only the app knows the resource semantics; the gateway shouldn't carry that knowledge.
 
 ### Why the app re-derives identity (and doesn't trust gateway headers)
 
@@ -57,28 +60,37 @@ natively (`AbacFilter` + `AbacSubjectExtractor`). Reasons:
   headers. Re-deriving the Subject from the (gateway-validated) JWT inside the app keeps the trust model
   explicit and the decision self-contained.
 
-The gateway's job shrinks to **authn + forward + (optional) coarse route check**; everything
+The gateway's job shrinks to **authn + forward + (optional) coarse route check**, plus two
+structural edge guards — the `/internal/*` 404 block and the token-issuer allow-list; everything
 attribute-level moves into the app.
 
 ## Signature trust between the layers
 
 The app does **not** re-verify the JWT signature — it trusts that the gateway already did
-(`openid-connect` against the JWKS) and does structural + `exp` checks only. This is safe **only because**
+(`openid-connect` against the JWKS) and does structural + `exp` checks only. That posture is an
+explicit opt-in: `opa.abac.subject.trust-forwarded-jwt=true`; without it the default extractor
+refuses and the app fails closed. This is safe **only because**
 the app sits behind a validating gateway and is not directly exposed. A `verifySignature` mode is reserved
 for a gateway-less deployment but not implemented in this slice. See the loud tradeoff note in
 [[ABAC-AUTHORIZATION]].
 
 ## Per-type policy documents
 
-The app posts to `/v1/data/<type>`, so OPA holds one rego document per resource type
-(`catalog`/`category`/`product`), each `package <type>` with `default allow := false`. Per-type documents
+The app posts to `/v1/data/<type>`, so OPA holds one rego document per resource type —
+`catalog`/`category`/`product` for the catalog service, `team`/`role` for user-management, and
+`agent_tools` for the MCP tool gate — each `package <type>` with `default allow := false`. Per-type documents
 keep each type's rules, tests, and ownership separable as the policy surface grows — chosen over a single
 shared `allow` rule. The pluggable `PolicyPathResolver` makes per-type the default while still allowing a
 single-document or tenant/version-routed override.
 
-The decision is **role-definition-driven**: a rule allows when the action verb is present in
-`input.role_definition.permissions[input.resource.type]`, falling back to subject roles when no role
-definition is on the input. `gateway.rego` stays coarse for the APISIX layer.
+The decision is **role-definition-driven**: a rule allows when the action verb is in
+`permissions.effective_actions(input.role_definition, input.resource.type)` — the coarse category
+tokens in `permissions[<type>]` expanded through `data.permission_categories` and narrowed by
+`denied_actions` (deny-overrides), then by `required_tags` ([[0007-coarse-grained-permission-categories|ADR 0007]]).
+A literal verb placed in that map expands to **nothing** and denies (fail-closed). There is **no
+general subject-roles fallback**: since Slice B4 ([[0018-team-scoped-resource-isolation|ADR 0018]])
+every verb requires a resolved role definition, except the single verb-gated `catalog:create`
+onboarding check. `gateway.rego` stays coarse for the APISIX layer.
 
 ## What this buys
 

@@ -15,9 +15,11 @@ tags:
 > assignment gates**. This guide is the shipped contract; the design record (the ten settled
 > forks) lives in the PERMISSION-CATEGORIES package under `docs/to-do/implemented/`.
 
-## The four categories and the expansion table
+## The five categories and the expansion table
 
-A `RoleDefinition.permissions` value is a list of **category tokens** per resource type:
+A `RoleDefinition.permissions` value is a list of **category tokens** per resource type
+(four of the five are authorable on a custom role; `CONTROL` is management-plane vocabulary,
+Phase 6.7):
 
 | Category | Expands to (fine actions) | Plane(s) the action is live on |
 |---|---|---|
@@ -49,13 +51,16 @@ The table lives in **OPA `data`** — `infra/opa/policies/permission_categories.
 - `effective_from_categories(cats)` — the expansion of a literal category set. Pre-B4 the **blanket
   realm fallback** mapped through it (`catalog-viewer → {READ}`, `catalog-editor → {READ,WRITE,TAG}`);
   B4 removed that fallback, and the one surviving realm-role grant — narrow `catalog:create` — is a
-  **direct `verb == "create"` check** in `catalog.rego`, not a category expansion. So this helper now
-  serves the resolved-`role_definition` path only.
+  **direct `verb == "create"` check** in `catalog.rego`, not a category expansion. B4 thereby left this helper
+  **unused by any production rule** — it is kept as shared package API and covered only by
+  `permissions_test.rego`.
 
 > **Post-B4 (ADR [[0018-team-scoped-resource-isolation|0018]]) there is no blanket realm-role fallback.**
-> Team membership is the **sole** access path to the catalog hierarchy: with no `role_definition`
-> resolved, the policies **deny** view/list/update/delete (a bare realm role no longer grants anything on
-> an instance). The **only** surviving fallback is a narrow, verb-gated **`catalog:create`** grant — a
+> Team membership was the **sole** access path to the catalog hierarchy as of B4: with no
+> `role_definition` resolved, the policies **deny** view/list/update/delete (a bare realm role no longer
+> grants anything on an instance). Phase 10 (ADR [[0029-supervised-read-scope|0029]]) later added a
+> second, **disjoint**, read-only path — the supervised scope, a synthesized `provenance=supervised`
+> role on the non-membership branch; membership still always wins (`supervised := S \ M`). The **only** surviving fallback is a narrow, verb-gated **`catalog:create`** grant — a
 > realm `catalog-editor` may *onboard* a catalog (creation is definitionally pre-membership), but that is
 > the asterisk, not a general grant. Earlier slices (5.97–B3) carried a blanket fallback
 > (`catalog-viewer → READ`, `catalog-editor → READ+WRITE+TAG` on any resource); B4 removed it — see the
@@ -112,13 +117,18 @@ violation answers `422 problem+json errorCode=ROLE_DEFINITION_INVALID`, includin
 `roleLevel` (deliberately not a schema constraint, so the whole contract has one shape):
 
 1. `roleLevel ∈ {10, 20, 25, 30}`;
-2. every permission token is one of the four categories (flat verbs and fine actions are retired
+2. every permission token is one of the four **authorable** categories (`CONTROL` is management-plane only; flat verbs and fine actions are retired
    at the API boundary);
 3. granted categories ⊆ the level's ceiling (`GRANT` only at 30);
 4. **strict denials** — per type, `denied_actions[type] ⊆ expand(granted for that type)`
    (wildcard-aware lookup, mirroring the policy);
 5. the explicit `roleLevel` is the **single source** of `attributes.role_level` — an
-   attributes-supplied value is overwritten.
+   attributes-supplied value is overwritten;
+6. `requiredTags`/`matchMode` follow the same funnel (a `matchMode` without tags is normalized away);
+7. `attributes.provenance` is **system-owned** (ADR [[0031-inheritance-confined-to-membership-roles|0031]] §3) —
+   a client-supplied value is stripped, so a role cannot buy back inheritance by claiming
+   `provenance: "membership"`. The `CONTROL`/`TAG` authoring rejection is covered under the
+   assignment gates below.
 
 The internal bootstrap endpoint routes through the same service — seeding is **not** a
 validation bypass.

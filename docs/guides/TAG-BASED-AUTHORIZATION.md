@@ -54,7 +54,8 @@ TagDefinition(key, scope GLOBAL|TEAM, teamId?, valueType STRING|ENUM,
 **Read:** `GET /api/v1/tag-definitions[?teamId=]` **and** `GET /api/v1/teams/{teamId}/tag-definitions`
 (any authenticated caller — the vocabulary isn't sensitive, and an *assigner* needs it to know what is
 legal to assign; the two paths serve identical rows, and only the team-scoped one is gateway-exposed).
-**Manage** (a team's keys): `POST/PUT/DELETE /api/v1/teams/{teamId}/tag-definitions`, secured
+**Manage** (a team's keys): `POST /api/v1/teams/{teamId}/tag-definitions` and
+`PUT/DELETE /api/v1/teams/{teamId}/tag-definitions/{key}`, secured
 by `@OpaPreAuthorize(team:define-tags)` — **owner or administrator** (admins curate the vocabulary writers
 assign from). Global/system keys are immutable (409).
 
@@ -112,7 +113,9 @@ carries a positive `internal-blocked` route that 404s `/internal/*` at the edge.
 
 ## Layer 2 — assignment (validated against the dictionary)
 
-On Category create/update the caller supplies a `tags` map. Before persisting, the catalog fetches the
+On Catalog / Category / Product create/update the caller supplies a `tags` map (products became
+taggable in ADR [[0025-taggable-products|0025]]; catalog and product writes use the same delta
+dispatch as the category one — content delta → `update`, tags delta → `assign-tags`). Before persisting, the catalog fetches the
 **applicable** definitions (global keys + the governing team's keys) from the user-service's internal
 `GET /internal/tag-definitions?resourceType&resourceId`, via a fail-closed `TagDefinitionClient`, and
 validates each entry (known key, value type, cardinality, regex). Valid tags land in the Category's `tags`
@@ -162,12 +165,12 @@ resource-side model *with the default inverted to fail-closed* — it would get 
 
 | The role… | …sees | Why |
 |-----------|-------|-----|
-| has the `read` permission, **no** `requiredTags` | **every** readable resource | no requirement → vacuously satisfied → the role's full reach |
-| has `read` + `requiredTags={region:[emea]}` | **only** `region=emea` resources | the requirement narrows the reach to matching tags |
-| has `read` + `requiredTags={region:[emea], tier:[gold]}`, `ALL_OF` | resources matching `emea` **and** `gold` | universal (`every`) over the required keys |
-| has `read` + same two keys, `ANY_OF` | resources matching `emea` **or** `gold` | existential (`some … in`) over the required keys |
+| grants the `READ` category (→ `view`/`list`), **no** `requiredTags` | **every** readable resource | no requirement → vacuously satisfied → the role's full reach |
+| grants `READ` + `requiredTags={region:[emea]}` | **only** `region=emea` resources | the requirement narrows the reach to matching tags |
+| grants `READ` + `requiredTags={region:[emea], tier:[gold]}`, `ALL_OF` | resources matching `emea` **and** `gold` | universal (`every`) over the required keys |
+| grants `READ` + same two keys, `ANY_OF` | resources matching `emea` **or** `gold` | existential (`some … in`) over the required keys |
 | has **no** role definition at all | **nothing** (`DENY_ALL` on lists) | the fail-closed boundary — `filter` requires `has_role_definition` |
-| has no `read` permission | **nothing** | the permission check fails before tags are even considered |
+| grants no `READ` category | **nothing** | the effective-actions check fails before tags are even considered |
 
 > So the genuine empty list comes from **no role definition** (the fail-closed boundary), *not* from "a
 > role with no tags". A role with the permission and no tag requirement sees everything it's permitted to —
@@ -187,7 +190,7 @@ invariant holds in both flag states.
 **A worked data-flow** (the e2e demo, traced through the rego):
 
 ```
-Member holds role "regional-reader":  permissions={category:[read]}, requiredTags={region:[emea]}, ANY_OF
+Member holds role "regional-reader":  permissions={category:[READ]}, requiredTags={region:[emea]}, ANY_OF
 
 GET /categories/X   where X is tagged region=apac
   1. resolve the member's effective role            → regional-reader
@@ -210,6 +213,7 @@ Identical permission; only the resource's tags differ. That contrast *is* the fe
 ```java
 record RoleDefinition(String code, Map<String,Object> attributes,
     Map<String,List<String>> permissions,
+    Map<String,List<String>> deniedActions,  // denied_actions — deny-overrides (Phase 6.5)
     Map<String,List<String>> requiredTags,   // {tagKey -> [acceptable values]}
     TagMatchMode matchMode)                   // ANY_OF | ALL_OF (default ANY_OF)
 ```
@@ -270,9 +274,9 @@ because the gate was attribute-blind and was deleted with the flip; the library'
 
 | Operation | Capability | Mechanism |
 |-----------|-----------|-----------|
-| Define/edit a **team-scoped** tag key | `owner` or `administrator` | `@OpaPreAuthorize(team:define-tags)` on the user-service — the management verb; the resource-side `define-tags` fine action ships in the 6.5 expansion math, its endpoint enforcement deferred to the control-plane slice (Phase 6.7) |
+| Define/edit a **team-scoped** tag key | `owner` or `administrator` | `@OpaPreAuthorize(team:define-tags)` on the user-service — the management verb; enforcement closed in Phase 6.7 — `define-tags` is granted by the `TAG` capability token (owner/administrator carry it; ADR [[0015-control-plane-vocabulary-categorization|0015]]) |
 | Edit a **GLOBAL/system** key | nobody (seeded, immutable) | update/delete a `system` key → 409 |
-| **Assign** validated values to a resource | `write` on that resource | the existing `@OpaPreAuthorize(<type>:write)` |
+| **Assign** validated values to a resource | the `TAG` category (`assign-tags`) on that resource | `@OpaPreAuthorize(<type>:assign-tags)` via the delta dispatch — tags delta asks `assign-tags`, content delta asks `update` |
 | Set a role's **`requiredTags`** | the role-def management capability (`owner`) | extends the Phase-4 role-def API |
 
 Mirrors Databricks governed-tags / AWS tag-policy governance: admins curate the dictionary; writers assign
@@ -282,7 +286,7 @@ from it; the role author decides what a role requires.
 
 The whole feature in one contrast — **two Categories, one role, different tags → one allowed, one denied**:
 
-- A team-scoped `regional-reader` role grants `category:read` and requires `region` ANY_OF `[emea]`.
+- A team-scoped `regional-reader` role grants the `READ` category on `category` and requires `region` ANY_OF `[emea]`.
 - A member with that role reads a Category tagged `region=[emea]` → **200**.
 - The **same** member reads a Category tagged `region=[apac]` → **403** — identical permission; only the
   tags differ.
@@ -331,9 +335,10 @@ the governing-root trap disappear by construction.
 
 ## Boundaries (deferred)
 
-`@AutoTag` auto-population (a JPA listener) · subject-tag-vs-resource-tag equality matching · partial-eval
-→ JPA `Specification` list filtering over the same `tags` JSONB (Phase 5) · the general per-instance /
-hierarchical authorization path in the library (Phase 5) · ReBAC-in-Rego (Phase 7).
+`@AutoTag` auto-population (a JPA listener) · subject-tag-vs-resource-tag equality matching ·
+ReBAC-in-Rego (Phase 8). *(Formerly listed here and since shipped: partial-eval → JPA list filtering
+over the same `tags` JSONB — `filter_tags_satisfied`, [[PARTIAL-EVALUATION-FILTERING]] — and the
+per-instance / hierarchical path, [[HIERARCHICAL-AUTHORIZATION]].)*
 
 ## Related
 - [[TEAM-BASED-AUTHORIZATION]] (Phase 4, the app-resolved role) · [[ABAC-AUTHORIZATION]] (the spine)
