@@ -86,8 +86,10 @@ unchanged.
 The manager `put`s the resolved instance after an **allow** (and on the `resource()` path); an injectable
 typed accessor (`AbacResourceCache.get(type, id, Class<T>)`) lets the handler and later read-side
 consumers (Phase-6 enrichment) reuse it. Storage is request-attributes (`RequestContextHolder`): no scope
-proxying, naturally request-bounded, and a clean **no-op outside a web request** — the cache never
-affects a decision. The gate itself **never reads** the cache; every evaluation resolves fresh.
+proxying, naturally request-bounded, and a clean **no-op outside a web request**.
+*Amended by [[0032-root-attribute-enrichment-input-contract|ADR 0032]]:* the decided **leaf** is still
+never read back (resolved fresh, written only on allow), but the governing **root** is now a
+decision-read memo — the gate read-through-memoizes the root's attributes into its own input.
 
 ### 5. Version binding: the decision and the action see the same resource version
 
@@ -119,8 +121,10 @@ For **team members** on id'd endpoints, the decision basis moves from the realm-
 (tag-blind, leaf-lookup 204) to **team role on the governing root + tag rules** — the model the repo was
 always demonstrating. Concretely: a member whose team role grants a tag-matched write gains access the
 fallback denied; a member whose team role does *not* support the write loses the access the fallback
-leaked. **Non-members are unchanged** (no role definition at the root either → the fallback still
-decides). Creates and lists (type-level, no id) are unchanged — the create-targets-the-parent question
+leaked. **Non-members were unchanged** at 5.97 (no role definition at the root either → the then-live
+fallback still decided) — *Slice B4 ([[0018-team-scoped-resource-isolation|ADR 0018]]) later removed
+that blanket fallback*; non-members are now denied on id'd endpoints, with only the verb-gated
+`catalog:create` check surviving. Creates and lists (type-level, no id) are unchanged — the create-targets-the-parent question
 belongs to the Phase-6.5 action-vocabulary redesign, not here.
 
 ## Considered options

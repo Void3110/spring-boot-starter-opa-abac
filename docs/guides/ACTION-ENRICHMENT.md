@@ -140,7 +140,9 @@ Excluded by design: `list`/`create` (collection-level) · `define-tags` (control
 
 3. **The cache is an attribute snapshot, never a verdict.** *Presence ≠ authorized.* The advice reads the
    cache only for **resolved attributes**; every per-action verdict is computed fresh from `bulk`. The
-   gate still never reads the cache to decide (the 5.97 invariant). The list path
+   gate never reads the cache for the decided **leaf** (always resolved fresh); since
+   [[0032-root-attribute-enrichment-input-contract|ADR 0032]] it does read-through-memoize the
+   governing **root** there — a narrowing of the original 5.97 invariant, not a break. The list path
    ([[PARTIAL-EVALUATION-FILTERING]]) write-throughs its **post-filter survivor rows** into the same cache,
    so the advice has one read path for both single-GET and list — no double-load, no attribute drift
    (it caches the same instance the query returned). Denied/dropped rows are never written.
@@ -183,6 +185,11 @@ That's it — no handler change; the advice attaches `_actions` after the handle
   its `_actions` **cache-misses and is omitted** — the documented degrade. If a later phase gates the read,
   enrichment lights up automatically.
 - **`Membership` is not enriched** (the per-membership affordance is a different registry, out of scope).
+- **Supervised/production-tier rows get no `_actions`.** The advice builds its per-verb contexts
+  without `root_attributes` (ADR [[0032-root-attribute-enrichment-input-contract|0032]] post-dates the
+  slice), so a provenance- or tier-scoped decision cannot be mirrored — the map is **omitted** for such
+  rows rather than lying. Threading root context through enrichment is open work; the console's
+  amber-predicts UX covers the gap meanwhile.
 - The page-size is bounded by the existing `perPage ≤ 100` cap (ADR 0012); no separate enrichment limit.
 
 ## Proven by

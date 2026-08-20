@@ -25,7 +25,7 @@ succeeds. Folders:
 2. **Catalog** — create → get; capture `catalog_id`.
 3. **Category** — create under the catalog; capture `category_id`.
 4. **Product** — create → get (field-level assertions) → update → list → delete → get-after-delete
-   (404); capture `product_id`.
+   (403 — the gate denies a missing id, Phase 5.97); capture `product_id`.
 5. **Cleanup** — delete the catalog (cascade removes category + any product).
 
 Requests chain via **collection** variables (`catalog_id` → `category_id` → `product_id`). Each
@@ -249,16 +249,16 @@ cp local.postman_environment.example.json local.postman_environment.json   # fir
 > run — the registry catalog id(s) plus the teams targeting them; the FK cascades take memberships,
 > custom roles, and tag definitions along (see the registry section of `scripts/postman/README.md`,
 > including the shared-`3333…` caveat). A failed run keeps its fixtures for debugging;
-> `KEEP_FIXTURES=1 ./run-<matrix>.sh` keeps them on success too. Exceptions: `run-matrix.sh` cleans
-> up via its own in-collection DELETEs (so `KEEP_FIXTURES` does not apply), and the SPA smoke seeds
-> nothing persistent. Shared identity profile rows (editor/demo/viewer/outsider) are never deleted,
+> `KEEP_FIXTURES=1 ./run-<matrix>.sh` keeps them on success too. Exceptions: the SPA smoke seeds
+> nothing persistent (`run-matrix.sh` is *not* one — its in-collection DELETEs remove the catalog and
+> its shell teardown honours `KEEP_FIXTURES` for the team row). Shared identity profile rows (editor/demo/viewer/outsider) are never deleted,
 > and runners stay fully self-seeding, so re-runs are unaffected — the payoff is a shared store (and
 > demo-UI user directory / catalog grid) that stays free of fixture noise between e2e sessions.
 
 `run-matrix.sh` mints **two** in-network tokens (the `viewer` and `editor` realm users) and injects
 `viewer_token` + `editor_token`. Expected: editor seeds a catalog/category/product (201), viewer reads
-them (200), viewer writes are denied (**403**), editor updates/deletes (200/204). 12 requests, all
-green; stable across reruns.
+them (200), viewer writes are denied (**403**), editor updates/deletes (200/204). 14 requests (the B4 self-service claim + the roster read ride
+along), all green; stable across reruns.
 
 ### Tag-based ABAC matrix (Phase 4.5)
 
@@ -267,7 +267,7 @@ matched against a role's `requiredTags`, in Rego. It needs the full rig **with t
 (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`). At run time it mints in-network tokens,
 seeds a demo catalog as a team-target, bootstraps two tag-gated roles (a `regional-reader` requiring
 `region` ANY_OF `[emea]`, a `strict-reader` requiring `region:[emea]` **and** `sensitivity:[public,
-internal]` ALL_OF), and creates three differently-tagged Categories through the gateway. Then 7 requests:
+internal]` ALL_OF), and creates three differently-tagged Categories through the gateway. Then 9 requests:
 
 | # | Case | Expected |
 |---|------|----------|
@@ -277,9 +277,10 @@ internal]` ALL_OF), and creates three differently-tagged Categories through the 
 | 4a / 4b | owner defines a team tag key / a member tries | **201** / **403** |
 | 5 | assigning a value outside the dictionary | **422** (never stored) |
 
-Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision. A team key
-defined at runtime governs assignment + decisions immediately — no redeploy. All 7 green; stable across
-reruns. Guide: [[TAG-BASED-AUTHORIZATION]].
+Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision (rows 6a/6b
+are the ADR [[0022-root-read-tag-exemption|0022]] pair — the gated writer READS the untagged root
+catalog `200`, mutating it stays `403`). A team key defined at runtime governs assignment + decisions
+immediately — no redeploy. All 9 green; stable across reruns. Guide: [[TAG-BASED-AUTHORIZATION]].
 
 ### Data-filtering matrix (Phase 5)
 
@@ -292,14 +293,17 @@ mechanism level via the Postgres statement log, see [[PARTIAL-EVALUATION-FILTERI
 It needs the full rig with the user-service (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`).
 At run time it mints tokens, seeds a demo catalog as a team-target, bootstraps two single-region-gated
 reader roles (`emea-reader`, `apac-reader`), binds an allow-all owner, leaves the `outsider` user **unbound**
-(no role definition), and creates three region-tagged Categories through the gateway. Then 4 list requests:
+(no role definition), and creates three region-tagged Categories — and, since ADR
+[[0025-taggable-products|0025]], three region-tagged Products under an untagged holder category —
+through the gateway. The four-way contrast then runs **twice** (8 list requests), once over categories
+and once over products:
 
 | # | Subject | `GET …/categories` returns |
 |---|---------|----------------------------|
 | 1 | reader gated to `region=emea` | **only the emea row** (1 row) |
 | 2 | reader gated to `region=apac` | **only the apac row** (1 row) — a *different* set, same endpoint |
 | 3 | owner (allow-all) | **all three rows** |
-| 4 | stranger (**no role definition**) | **`[]`** — the `filter` rule has no subject-roles fallback, so a missing role fails *closed* to an empty list, never the whole table |
+| 4 | stranger (**no role definition**) | **`403`** at the coarse type-level gate — membership is the sole access path (B4), so a missing role fails *closed* before the list is even cut |
 
 Requests 1+2 are the decisive contrast: the **same endpoint** yields **different rows**, decided by the
 same policy that decides single resources. Request 4 is the fail-closed boundary (the one the pre-impl
@@ -372,7 +376,8 @@ boundary and decide nothing if stored.
 the catalog's `AbacResourceResolver` registered, id'd `@OpaPreAuthorize` decisions resolve the
 **instance** and decide on its real tags + ancestors, the role looked up once on the governing root.
 Same full rig; run `./deploy.sh build` first so the pods carry the 5.97 app code. It seeds the
-dedicated `8888…` fixture pair (registered; the team-less `8889` must never be granted on) and three
+dedicated `8888…` fixture pair (registered; `8889` is its **own governed island** — its own team +
+creator membership, and the E4 subject is deliberately *not* a member of it) and three
 subjects, then asserts the behavior-matrix cells:
 
 | # | Case | Asserts |
@@ -380,7 +385,7 @@ subjects, then asserts the behavior-matrix cells:
 | E1 | **the headline flip** — viewer-realm member, tag-matched write role, PUT the emea Category | **200** (pre-5.97: 403 — the leaf lookup found no role and the tag-blind fallback denied) |
 | E2 | **the hole closes** — editor-realm member, same role, PUT the apac Category | **403** (pre-5.97: 200 — the realm fallback leaked a write the team role's tags deny) |
 | E3 | the narrowing — read-only team role + editor realm, PUT | **403** (role definition present → fallback disabled) |
-| E4 | non-member unchanged — editor realm, PUT in the team-**less** catalog | **200** via the fallback (byte-identical cell) |
+| E4 | non-member denied (Slice B4) — editor realm, PUT in the separately-governed `8889` catalog whose team the subject is not a member of | **403** — the realm fallback that used to decide this cell is gone |
 | E5 | hierarchy parity — catalog-root read grant, GET a nested Category | **200 via the gate** (the inherited grant survived the move from layer 3) |
 | E6 | the product sibling (T5's `tags_satisfied` conjunct, live) | apac product write **403** / emea **200** |
 | — | the pinned missing-id posture | a nonexistent id behind an annotated `resourceId` → **403**, was 404 |
@@ -399,7 +404,8 @@ before minting tokens (additive — the `bulk` rule adds no new decision, so the
 byte-identical). It seeds the dedicated `aaaa…` team-governed catalog (a read-only and a
 read+write role; emea/apac categories) and asserts the cells: a read-only subject's `_actions` is honest
 (`view:true`, every mutating verb `false`), a writer's are all `true`, each `items` element of a page
-carries its own complete map (one bulk per page), the verb set excludes `assign-tags` for catalog, and —
+carries its own complete map (one bulk per page), the catalog verb set is exactly `[view, update, delete, assign-tags]` (catalogs became taggable —
+ADR [[0022-root-read-tag-exemption|0022]] / [[0025-taggable-products|0025]]), and —
 the load-bearing pair — **affordance ≠ enforcement** (a `_actions:false` matches a real `403` on the
 mutation) and **omit-on-failure** (the script pauses OPA and asserts the response is never a 5xx and never
 carries a fabricated all-`false` map). The team `_actions` degrades to absent on the ungated `getTeam`
@@ -471,9 +477,11 @@ retries a spent code in the next 30-second window.
 
 ## CI
 
-CI does **not** run the rig yet (it runs `./gradlew build` only), so the e2e suite is a local/manual
-gate for now. Wiring an e2e job into `.github/workflows/ci.yml` (compose up → newman → teardown) is a
-sensible follow-up, tracked separately.
+CI does **not** stand the rig up, so the newman suite is still a local/manual gate — but CI is more
+than the Gradle build: `.github/workflows/ci.yml` also runs `opa test` over the policy corpus (both
+copies + the step-up ACR contract), the `verification-layer` job (the shell-guard and collection-
+conformance gates with their self-tests), the demo-ui typecheck + vitest, and the clean-room scan.
+Wiring a rig e2e job (compose up → newman → teardown) remains a sensible follow-up, tracked separately.
 
 ## Related
 

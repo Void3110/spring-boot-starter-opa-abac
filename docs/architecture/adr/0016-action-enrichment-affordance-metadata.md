@@ -117,7 +117,10 @@ is always complete for its type.
 ### 5. The verdict context is attribute-rich, fed from the request-scoped cache (no re-load)
 
 Each `_actions` verdict is computed against the resource's **resolved attributes** (tags; the ancestor
-chain), the same context enforcement sees — a reference-level `(type,id)` context would make the map lie
+chain) — the same context enforcement sees, *with one shipped gap*: the advice builds its per-verb
+contexts without `root_attributes` (ADR 0032 post-dates this ADR), so provenance/tier-scoped rows —
+supervised or production-tier reads — get **no `_actions` at all** rather than a lying map; threading
+root context through enrichment is open work — a reference-level `(type,id)` context would make the map lie
 (a tag-granted action would read `false`; a tag-keyed deny would read `true`). The attributes come from
 the **Phase-5.97 `AbacResourceCache`**, generalized so the **list path also writes its post-filter
 survivor rows** into it keyed `(type,id)` (today only the single-resource gate writes). The advice has
@@ -132,9 +135,11 @@ The **`AbacResourceCache` interface moves down into `opa-abac-core`** (it is pur
 (`core ← spring-data/spring-security ← starter`) is preserved.
 
 **The cache is an attribute snapshot, never a verdict.** *Presence ≠ authorized-for-any-action.* Every
-per-action verdict — gate or enrichment — is computed fresh from `bulk`. This is safe because the gate
-**never reads** the cache to decide (5.97 invariant); a present entry is only ever *consumed* downstream
-of a fresh gate decision for the matching action.
+per-action verdict — gate or enrichment — is computed fresh from `bulk`. The shipped invariant is
+narrower than this section's original claim: the decided **leaf** is never read back (always resolved
+fresh), but since root-attribute enrichment ([[0032-root-attribute-enrichment-input-contract|ADR 0032]])
+the governing **root** *is* a decision-read memo — `resolveRootAttributes` read-through-memoizes the
+root's tags into the decision input, absent-when-unproven.
 
 ### 6. OPA wiring: reuse `allowAll` verbatim — zero `OpaClient` change; the `bulk` primitive extended to every enriched type
 

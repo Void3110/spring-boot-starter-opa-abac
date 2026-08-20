@@ -139,10 +139,11 @@ cannot trip `/internal/effective-role`.
 ### 6. Library ships OPA resilience via **optional/conditional Resilience4j**
 
 The published starter offers the resilient `OpaClient` decorator, auto-configured **`@ConditionalOnClass`
-Resilience4j** — R4j is an **optional** starter dependency. An adopter who adds R4j (and the config) gets
-retry/breaker on OPA calls; an adopter who does not gets today's plain `HttpOpaClient`, unchanged. This is
-the standard Spring Boot "optional integration" pattern — the library *offers* resilience without
-*forcing* R4j on every adopter, keeping the lean-starter promise.
+Resilience4j**. *As shipped this drifted from the "optional dependency" intent:*
+`opa-abac-spring-security` declares R4j as **`api`**, so a starter consumer gets it (and the decorator)
+**transitively, on by default**. Opting out means excluding `io.github.resilience4j` from the dependency
+(the `@ConditionalOnClass` then backs off to the plain `HttpOpaClient`) or using the config kill-switch.
+The conditional wiring still earns its keep for exactly that exclusion path.
 
 The **example app** turns it on (adds R4j, sets config), so the rig demonstrates the real feature; the
 resolve/tag clients use the same R4j for their (necessarily app-side) resilience. Net: **same R4j, same
@@ -172,7 +173,12 @@ not a three-edge rewrite. The injectable clock is *also* what makes the resilien
 
 ### 8. Keep both versions — design the seam now, **don't build the second line in B3**
 
-The intended end state keeps **two baselines indefinitely** — Java 21 / Spring Boot 3.x (R4j-backed) *and*
+> **Superseded by [[0026-spring-boot-4-single-line-port|ADR 0026]] §1:** the dual-line door is closed —
+> 1.0 ships a **single Boot 4 / Java 25 line**. The `CallGuard` seam this section motivated still exists
+> and still pays (the native-backend swap remains a one-impl change); only the two-artifact-lines end
+> state below is dead.
+
+The originally intended end state kept **two baselines indefinitely** — Java 21 / Spring Boot 3.x (R4j-backed) *and*
 Java 25-26 / Spring Boot 4 (native-backed) — because some adopters are pinned to Java 21 and cannot
 migrate. The **probable shape is two separately-compiled artifact lines** (e.g. `opa-abac-*:1.x` on
 Java 21, `opa-abac-*:2.x` on Java 25), each compiling cleanly against its own baseline — *not* one

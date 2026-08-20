@@ -16,8 +16,8 @@ tags:
 > This ADR pins a **cross-cutting** decision that until now lived only in prose
 > ([[TWO-LAYER-AUTHORIZATION]]) and was implied across slices. It records *why* authorization is enforced
 > at three independent layers and *why the app never trusts the gateway* — a principle expensive to
-> reverse and surprising to a reader who sees "but the gateway already checked." Two of the three layers
-> are shipped; the DB layer arrives with [[DATA-FILTERING]] (ADR 0005).
+> reverse and surprising to a reader who sees "but the gateway already checked." All three layers
+> are shipped; the DB layer landed with [[DATA-FILTERING]] (ADR 0005, Phase 5).
 
 ## Context
 
@@ -77,9 +77,10 @@ lists). Each layer **fails closed** independently.
 - **Cost:** apparent redundancy (three checks for one conceptual rule) — justified because each answers a
   distinct question; an extra OPA round-trip per single-resource return (mitigated by the load-then-check
   caching the loaded entity for the handler, as the tag demo does).
-- **Boundary:** this ADR records the *model*; the **shipped** state is layers 1–2 (gateway coarse +
-  app `@OpaPreAuthorize`/load-then-check). Layer 3 (DB partial-eval) is ADR 0005 / Phase 5. The prose
-  guide [[TWO-LAYER-AUTHORIZATION]] is renamed/extended to three layers when layer 3 ships.
+- **Boundary:** this ADR records the *model*; all three layers ship — layer 3 (DB partial-eval,
+  ADR 0005 / Phase 5) is documented in [[PARTIAL-EVALUATION-FILTERING]]. The prose guide
+  [[TWO-LAYER-AUTHORIZATION]] deliberately kept its name (the gateway↔app trust boundary it explains
+  is layer-1↔2); the three-layer picture lives here and in the filtering guide.
 
 ## Related
 - ADR 0005 (the DB layer — partial-eval → `Specification`) · ADR 0004 (the per-resource tag grant the app

@@ -193,6 +193,12 @@ no-role → fallback is a *designed* path (non-members, type-level creates per 5
 - **Follow-on:** Slice B3 (resilience) softens the deny wall; Phase 6.7 (control-plane vocabulary) and
   Phase 6 (enrichment) are unaffected (they don't touch the role-source seam).
 
+> **Superseded in one respect by [[0018-team-scoped-resource-isolation|ADR 0018]] (Slice B4):** the
+> blanket realm fallback §Decision 6 deliberately *retained* was later **removed** — membership became
+> the sole access path, and only the verb-gated `catalog:create` onboarding check survives. The
+> tri-state supplier contract this ADR pinned (authoritative no-role ≠ outage) is unchanged and is
+> exactly what made that removal safe.
+
 ## Related
 
 - [[PERMISSION-CATEGORIES-REVIEW]] — C1/C4, the finding this closes (and the 6.5 aggravation).
