@@ -40,7 +40,10 @@ on the **leaf** id. Three consequences:
   role looked up ONCE on the governing root (ancestors[0], else the leaf)
         │
         ▼
-  AbacContext { resource.attributes = instance.abacAttributes(), resource.ancestors = chain } ──► OPA
+  root_attributes = governing root's tags (read-through-memoized; ABSENT when unproven — ADR 0032)
+        │
+        ▼
+  AbacContext { resource.attributes, resource.ancestors = chain, resource.root_attributes } ──► OPA
         │
         ▼ on ALLOW
   AbacResourceCache.put(type, id, instance)     — the handler reuses the authorized snapshot
@@ -51,9 +54,11 @@ on the **leaf** id. Three consequences:
   repositories, loading **by id alone** — URL scoping stays in the handler).
 - **`AncestorChainSupplier`** (core): bound by the **starter** to the hierarchy module's
   `AncestorResolver` when one is configured — apps never implement it.
-- **`AbacResourceCache`** (spring-security): request-scoped (request attributes), write-through on
-  allow, a clean no-op outside web requests, **never read by decisions** — every evaluation resolves
-  fresh.
+- **`AbacResourceCache`** (interface in core; the request-attributes impl in spring-security):
+  request-scoped, write-through on allow, a clean no-op outside web requests. The decided **leaf** is
+  never read back — every leaf evaluation resolves fresh; since
+  [[0032-root-attribute-enrichment-input-contract|ADR 0032]] the governing **root** is
+  read-through-memoized into the decision input (absent-when-unproven, fail-closed).
 - **Version binding**: read handlers return the snapshot (the response is the state the decision
   saw); mutating handlers load fresh in-transaction and call
   `VersionGuard.requireUnchanged(snapshot, fresh)` **before any write** — drift throws
@@ -111,7 +116,9 @@ The list paths (`AbacQueryService`, all four `findAuthorized` overloads, paginat
 `CategoryListAuthorizer`) — list-path cache population is Phase 6's, with action enrichment as the
 cache's first read-side consumer. Type-level checks (lists, creates) — the create-targets-the-parent
 question belongs to the Phase-6.5 action vocabulary. The `resource()`-SpEL branch's decision inputs
-(it now also populates the cache). user-mgmt registers nothing — the live opt-in coexistence proof.
+(it now also populates the cache). At 5.97 user-mgmt registered nothing — the live opt-in
+coexistence proof at the time; a `team` resolver (`TeamResourceResolver`) was added later for the
+Phase-6 enrichment, so today *both* example services register one.
 The Rego mechanism needs **zero policy changes**; the only 5.97 policy diff is the audit-mandated
 `tags_satisfied` conjunct ported to `product.rego`/`catalog.rego` (a pure narrowing, vacuous for
 tag-free roles).

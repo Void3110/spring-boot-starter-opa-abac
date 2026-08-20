@@ -132,8 +132,10 @@ normalizes a scalar to a singleton set). The list and a single-GET decide the **
 `category.rego` gains a **`filter`** entrypoint (and a `bulk` rule), additive — `allow` is untouched. Two
 deliberate differences from `allow`:
 
-1. **Role-definition-only.** `filter` requires `has_role_definition` and has **no** subject-roles fallback
-   (unlike `allow`, which grants read from JWT roles when no role definition is present). A list request
+1. **Role-definition-only.** `filter` requires `has_role_definition` and has **no** subject-roles fallback.
+   (Since Slice B4 — ADR [[0018-team-scoped-resource-isolation|0018]] — `allow` has none either: a request
+   with no role definition fails closed at every verb, the one exception being the verb-gated
+   `catalog:create` onboarding check.) A list request
    with no role definition compiles to an unsatisfiable residual → `DENY_ALL` → an **empty list**, never the
    whole table. Modelled on `team.rego`.
 2. **Partial-eval-friendly tag match.** A two-body helper (`attr == v` for a scalar, `v in attr` for an
@@ -152,10 +154,14 @@ the batch recheck. See [[PERMISSION-MODEL]] and ADR
 > **Slice B4 — `catalog.rego` gains a `filter` too, but a different shape.** The category `filter` cuts
 > rows by **tags** (the residual is a tag predicate). A catalog is a **root** whose visibility is a
 > **membership** question — "which team governs it, am I a member?" — which partial-eval cannot see on the
-> row. So the catalog `filter` carries **no tag conjunct**: it is purely role-def-only and compiles to an
-> unconditional `ALLOW_ALL` when the role grants `list` (else `DENY_ALL`). The which-rows cut is instead an
-> app-supplied **base scope** (`id IN (governed ids)`) from a `GovernedScopeResolver`, AND-ed with this
-> residual inside `findAuthorized`. Same fail-closed boundary (no role → `DENY_ALL` → empty), different
+> row. So the catalog cut is **membership-shaped**: the which-rows question is answered by an
+> app-supplied **base scope** (`id IN (governed ids)`) from a `GovernedScopeResolver`, AND-ed with the
+> residual inside `findAuthorized`. The catalog `filter` itself is role-def-gated **and tag-gated** —
+> its body ends in `filter_tags_satisfied`, so it folds to `ALLOW_ALL` only when the role grants `list`
+> and carries **no** `required_tags` (root reads may also be exempted by
+> `data.config.root_read_tag_exemption`, ADR [[0022-root-read-tag-exemption|0022]]); a tag-requiring
+> role gets a real residual over the catalog's own tags. Same fail-closed boundary (no role →
+> `DENY_ALL` → empty), different
 > source of "which rows." See [[MULTI-TENANT-ISOLATION]] + ADR
 > [[adr/0018-team-scoped-resource-isolation|0018]].
 
@@ -177,11 +183,13 @@ the batch recheck. See [[PERMISSION-MODEL]] and ADR
 > no write-through at all.
 
 ```java
-@OpaPreAuthorize(action = "category:read", resourceType = "'category'")   // coarse gate (layer 2)
-public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) {
+@OpaPreAuthorize(action = "category:list", resourceType = "'category'",
+        roleResourceType = "'catalog'", roleResourceId = "#catalogId")    // coarse gate (layer 2)
+public ResponseEntity<CategoryPage> listCategories(UUID catalogId, UUID parentId,
+        Integer page, Integer perPage) {
     requireCatalog(catalogId);
-    var entities = categoryListAuthorizer.readable(catalogId, parentId);  // residual cut in SQL (layer 3)
-    return ResponseEntity.ok(entities.stream().map(CatalogMapper::toDto).toList());
+    var page_ = categoryListAuthorizer.readable(catalogId, parentId, page, perPage); // residual cut in SQL (layer 3)
+    return ResponseEntity.ok(page_);
 }
 ```
 
@@ -250,13 +258,15 @@ combined = scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )
 - **The allowlist-batch path is independently hierarchy-aware:** each per-row `AbacContext` carries the row's
   ancestor chain, so `opaClient.allowAll` decides each row by the same `final_allow = (direct OR inherited)
   AND NOT denied` as a single-GET (`subtreeSpec` is not applied there — it would be redundant).
-- **The coarse list gate:** the type-level `@OpaPreAuthorize(<type>:read)` on a list endpoint evaluates
+- **The coarse list gate:** the type-level `@OpaPreAuthorize(<type>:list)` on a list endpoint evaluates
   `allow` with only a resource type (no ancestors), so a subject whose role grants read only on an
   inheritable **ancestor** type would be denied at the gate before the widening runs. A small additive
   `allow` clause (`category.rego`) lets such a subject pass the **coarse** "may you read `<type>` at all"
-  gate when its role inheritably grants the verb — the **fine** which-rows cut still happens in SQL. It is
-  scoped to a list request (no resource id), so single-resource decisions are unchanged; a true stranger is
-  still denied.
+  gate when its role inheritably grants the verb — the **fine** which-rows cut still happens in SQL. Two
+  confinements: it opens only for **membership-derived** roles (the ADR
+  [[0031-inheritance-confined-to-membership-roles|0031]] provenance conjunct — a synthesized supervised
+  role does not inherit), and it is scoped to a type-level request (no resource id), so single-resource
+  decisions are unchanged; a true stranger is still denied.
 
 The 3-arg `findAuthorized` stays byte-compatible (it delegates with `subtreeSpec = null`); `opa-abac-core`,
 the residual model, the operator set, and `RoleDefinition` are untouched. Wiring is opt-in, default-off (the
