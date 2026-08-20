@@ -9,7 +9,7 @@ tags:
 
 # ADR 0007 — Coarse-grained permission categories + the five-tier ceiling model
 
-**Status:** Accepted (planned — Phase 6.5)
+**Status:** Accepted (implemented — Phase 6.5)
 **Date:** 2026-06
 **Context tags:** role definitions, coarse-vs-fine permissions, delegation, anti-escalation
 
@@ -146,10 +146,11 @@ denials`.
   explicitly the price of the senior persona. The "which roles may I assign?" UI list is a set computation —
   but it is structurally the same question as action enrichment (Phase 6, [[ACTION-ENRICHMENT]]), so it has
   a home.
-- **Additivity:** reuses the shipped `role_level` attribute (the `owner 40 / administrator 30 / member 20 /
-  viewer 10` seeds) and the `{type: [verbs]}` permissions shape — a *category* token is new; a plain action
-  token still works, so existing flat roles keep deciding unchanged. The new pieces (the `data` expansion
-  table, the deny list, the level ceilings, the two gates) are additive.
+- **Additivity:** reuses the shipped `role_level` attribute and the `{type: [tokens]}` permissions
+  shape; the new pieces (the `data` expansion table, the deny list, the level ceilings, the two gates)
+  are additive. *Superseded in one respect by the implementation addendum's clean cut:* there are **no
+  legacy-verb aliases** — a plain action token expands to nothing and **denies** (stale flat roles fail
+  closed rather than keep deciding), and `viewer` renamed to `reader`.
 - **Follow-on:** the category→action expansion and the deny-override are the substrate action **enrichment**
   (Phase 6) reports against ("which of this role's actions may I perform?"), and the "which roles may I
   assign?" question is the same batch shape.
@@ -177,6 +178,9 @@ implementation; the structural ones are recorded here:
   participates fully in the effective-set math meanwhile.
 - **The realm fallback maps through the same expansion table** (`catalog-viewer → {READ}`,
   `catalog-editor → {READ, WRITE, TAG}`), preserving the pre-6.5 fallback reach exactly.
+  *Amended by [[0018-team-scoped-resource-isolation|ADR 0018]] (Slice B4):* the blanket realm fallback
+  was **removed** — membership is the sole access path, and the only surviving realm-role check is
+  verb-gated to `catalog:create` onboarding.
 - **`viewer` renames to `reader`** (code ↔ tier alignment under the clean cut); `owner` keeps
   level 40 (any value strictly above 30 satisfies the gate).
 
