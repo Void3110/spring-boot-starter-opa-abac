@@ -135,9 +135,9 @@ Two important caveats, both visible in the code:
    check. The URL is for routing and scoping; [[ABAC-AUTHORIZATION|the ABAC model]] decides access.
 
 2. **Scope is validated, not assumed.** When a child is addressed through its parents, the controller
-   confirms the child actually belongs to them, and returns `404` if not — e.g. `getCategory` loads via
-   `findByIdAndCatalogId(categoryId, catalogId)`, so `/catalogs/A/categories/{a-category-of-B}` is a `404`,
-   never a leak of B's data. Don't trust the path; verify the lineage.
+   confirms the child actually belongs to them, and returns `404` if not — the resolver loads by id
+   alone, so the **handler owns the URL-scope check**: `/catalogs/A/categories/{a-category-of-B}` is a
+   `404`, never a leak of B's data. Don't trust the path; verify the lineage.
 
 ### When a path wants a 4th level
 
@@ -187,7 +187,7 @@ state). This keeps the contract simple; adopt `PATCH` only if partial update bec
 |---|---|---|
 | `400 Bad Request` | request **syntax**/shape invalid (Bean-Validation failure, unparseable body, illegal argument) | empty `name`, `priceCents` < 0 |
 | `401 Unauthorized` | **step-up only** (RFC 9470): the denial's sole blocker is authentication freshness — re-authenticating at the challenged ACR clears it | a supervisor's production read before TOTP; body `STEP_UP_REQUIRED` + `WWW-Authenticate` challenge |
-| `403 Forbidden` | the ABAC decision **denied** access | non-owner calling `team:manage` |
+| `403 Forbidden` | the ABAC decision **denied** access | non-owner calling `team:add-member` |
 | `404 Not Found` | the resource (or its claimed parent) doesn't exist | unknown `catalogId`; child not under the parent |
 | `409 Conflict` | the request collides with current **state** (a uniqueness/immutability/lifecycle conflict) | duplicate team target; editing a system (immutable) role |
 | `422 Unprocessable Entity` | the request is **syntactically valid but semantically rejected** by a domain rule | a tag value not in the dictionary; the role-subset rule |
@@ -295,45 +295,55 @@ The default. A method annotation runs **before** the controller body, deciding f
 coarse `action` + `resourceType` (and optionally a `resourceId` from the path):
 
 ```java
-@OpaPreAuthorize(action = "category:read", resourceType = "'category'")
-public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) { ... }
+@OpaPreAuthorize(action = "category:list", resourceType = "'category'",
+        roleResourceType = "'catalog'", roleResourceId = "#catalogId")
+public ResponseEntity<CategoryPage> listCategories(UUID catalogId, UUID parentId,
+        Integer page, Integer perPage) { ... }
 
-@OpaPreAuthorize(action = "team:manage", resourceType = "'team'", resourceId = "#teamId")
+@OpaPreAuthorize(action = "team:add-member", resourceType = "'team'", resourceId = "#teamId")
 public ResponseEntity<Membership> addMember(UUID teamId, AddMemberRequest request) { ... }
 ```
 
 - `resourceType` is a SpEL **string literal** (`"'team'"`) → the OPA policy document for that type.
 - `resourceId` is a SpEL expression over the method args (`"#teamId"`) when the decision is about a
   specific instance's *identity* (e.g. resolve the caller's role on that team).
-- This gate sees the subject and the type/id — **not** the resource's stored attributes. It answers "may
-  this subject act on this *kind* of thing here", not "...given this row's tags".
+- `roleResourceType`/`roleResourceId` point the **role resolution** at a parent when the gate is
+  type-level for the resource itself — a category *list* resolves the caller's role on the governing
+  **catalog** (the B4 parent-resolution seam; [[0018-team-scoped-resource-isolation|ADR 0018]]).
+- With an app-registered `AbacResourceResolver`, an **id'd** gate is *attribute-rich*: the library
+  resolves the instance before deciding, so the decision sees the row's real tags and ancestors —
+  not just the type/id ([[0013-attribute-rich-pre-authorization|ADR 0013]],
+  [[ATTRIBUTE-RICH-PRE-AUTHORIZATION]]).
 - On deny it raises `AccessDeniedException` → `403`. On any OPA error it **fails closed** → deny.
 
 Use it for: every write, every type-level read, and any decision that resolves purely from the subject's
 role on a parent (the whole user-service management surface is this pattern, keyed on `#teamId`).
 
-### b) Load-then-check — when the resource's own attributes decide
+### b) The attribute-rich id'd gate — when the resource's own attributes decide
 
-When the decision depends on the **stored resource's tags** (per-instance, attribute-based), the
-annotation can't help — it runs before the row is loaded. Load first, then authorize the instance so its
-tags reach OPA:
+When the decision depends on the **stored resource's tags** (per-instance, attribute-based), the same
+annotation still carries it — since Phase 5.97 ([[0013-attribute-rich-pre-authorization|ADR 0013]]) an
+id'd `@OpaPreAuthorize` resolves the instance through the app-registered `AbacResourceResolver`
+**before** deciding, so the row's real tags and ancestors reach OPA. The handler then reuses the
+authorized snapshot from the request cache and keeps the URL-scope `404`:
 
 ```java
+@OpaPreAuthorize(action = "category:view", resourceType = "'category'", resourceId = "#categoryId")
 public ResponseEntity<Category> getCategory(UUID catalogId, UUID categoryId) {
-    var entity = requireCategory(catalogId, categoryId);   // load (404 if missing / wrong parent)
-    categoryAuthorizer.require("read", entity);            // the entity's TAGS drive the decision
+    var entity = cachedCategory(categoryId)                       // the gate's own resolved snapshot
+            .orElseGet(() -> categories.findById(categoryId)
+                    .orElseThrow(() -> new NotFoundException("Category not found: " + categoryId)));
+    if (!entity.getCatalogId().equals(catalogId)) {               // the resolver loads by id alone —
+        throw new NotFoundException("Category not found: " + categoryId);   // URL scope is the handler's 404
+    }
     return ResponseEntity.ok(CatalogMapper.toDto(entity));
 }
 ```
 
-Use it for: reads/writes whose grant is **tag-based** (a clearance against the row's tags). Note the
-ordering — *load, then check* — and that a missing row is a `404` before authz even runs, so existence
-isn't leaked through a `403`/`404` difference for a row the caller could never see anyway.
-
-> **Consistency note (flagged in the review):** today only `getCategory` uses load-then-check;
-> `getCatalog`/`getProduct` use annotation-only `@OpaPreAuthorize(..., resourceId=...)`. That asymmetry is
-> intentional for the demo (only categories carry dictionary tags), but an endpoint author adding a
-> tag-bearing resource should reach for load-then-check. See [[REST-API-DESIGN-REVIEW]].
+All three single-resource reads (`getCatalog`/`getCategory`/`getProduct`) are this shape — the
+pre-5.97 *load-then-check* authorizer this section used to document is gone. An existence probe still
+answers `404` for a row the caller could never see, because the resolver's miss is a deny and the
+handler's scope check runs on the authorized row only.
 
 ### c) Partial-evaluation list filter — which rows a collection returns
 
@@ -342,10 +352,12 @@ coarse "may read this type at all" gate; the **row cut** happens in SQL via an O
 residual AND-ed with the path scope:
 
 ```java
-@OpaPreAuthorize(action = "category:read", resourceType = "'category'")   // coarse gate (layer 2)
-public ResponseEntity<List<Category>> listCategories(UUID catalogId, UUID parentId) {
+@OpaPreAuthorize(action = "category:list", resourceType = "'category'",
+        roleResourceType = "'catalog'", roleResourceId = "#catalogId")    // coarse gate (layer 2)
+public ResponseEntity<CategoryPage> listCategories(UUID catalogId, UUID parentId,
+        Integer page, Integer perPage) {
     requireCatalog(catalogId);
-    var entities = categoryListAuthorizer.readable(catalogId, parentId);  // residual ∧ scope (layer 3)
+    var page_ = categoryListAuthorizer.readable(catalogId, parentId, page, perPage); // residual ∧ scope (layer 3)
     ...
 }
 ```
@@ -402,12 +414,14 @@ A consumer branches on `errorCode`, not on the human `detail`. The vocabulary is
 
 - the library (`opa-abac-spring-security`) ships an **`ApiErrorCode` interface** (`code()` / `status()` /
   `problemType()` / `title()`) and a **`LibraryErrorCode`** enum for the failures it raises / the generic
-  ones — `ACCESS_DENIED` (403), `DEPENDENCY_UNAVAILABLE` (503), `VALIDATION_FAILED` (400),
-  `RESOURCE_NOT_FOUND` (404), `STATE_CONFLICT` (409), `TAG_VALUE_ILLEGAL` / `ROLE_SUBSET_VIOLATION` (422);
+  ones — `ACCESS_DENIED` (403), `STEP_UP_REQUIRED` (401, RFC 9470), `DEPENDENCY_UNAVAILABLE` (503),
+  `VALIDATION_FAILED` (400), `RESOURCE_NOT_FOUND` (404), `STATE_CONFLICT` (409),
+  `TAG_VALUE_ILLEGAL` / `ROLE_SUBSET_VIOLATION` (422);
 - **each service ships its own enum** implementing the same interface for its domain failures (the
   user-service splits the 409 conflict group into `TEAM_TARGET_EXISTS`, `MEMBERSHIP_CONFLICT`,
   `ROLE_CODE_CONFLICT`, `ROLE_IMMUTABLE`, `TAG_KEY_CONFLICT`, `TAG_DEFINITION_IMMUTABLE`, plus
-  `TAG_DEFINITION_INVALID` at 422; the catalog reuses library codes only);
+  `TAG_DEFINITION_INVALID` / `ROLE_DEFINITION_INVALID` / `REPORTING_EDGE_INVALID` at 422; the catalog
+  adds `TAG_OPERATOR_MANAGED` at 409 for the operator-managed tag keys);
 - granularity is **semantic** — one code per *distinct, client-actionable* failure the handlers
   discriminate, **not** one per HTTP status (`TAG_VALUE_ILLEGAL` ≠ `ROLE_SUBSET_VIOLATION`, both 422);
 - `errorCode` is a **typed `enum` member of each spec's `ProblemDetail` schema** (the union of codes that
@@ -457,7 +471,10 @@ is a disclosure bug.
   all pages, never `items.length` and never an estimate. Under ABAC two users paging the same URL
   legitimately see different counts (*the count is the count of rows __you__ may see*) — that holds on
   every query path, including the partial-eval filter's allowlist fallback and the kill-switch.
-- **`page`/`perPage` echo the request verbatim** — nothing clamps.
+- **`page`/`perPage` echo the request verbatim** — nothing clamps. *One deliberate carve-out:* the
+  **identity-directory search** fronts an unbounded external directory, so it returns a bounded list
+  with the **effective (clamped) `limit` echoed** instead of the envelope — the no-clamp rule protects
+  paging over *our* rows; a federated search has no authoritative `count` to promise.
 - In the spec, the envelope is one 3-field `PageEnvelope` component per spec file with thin
   `allOf` compositions per resource (`CatalogPage`, `UserPage`, …, each adding a required typed `items`)
   and shared `components/parameters/Page` + `PerPage`. The base is deliberately defined once *per spec*
@@ -512,21 +529,25 @@ machine-to-machine payloads on a network-isolated surface; the envelope is a pub
 
 ## 8. The internal API surface
 
-The user-management-service exposes a second, **in-network-only** surface under `/internal/**`, distinct
+**Each example service** exposes a second, **in-network-only** surface under `/internal/**`, distinct
 from the public `/api/v1/**`:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /internal/effective-role` | the catalog service's ABAC supplier resolves a caller's effective role on a resource |
-| `GET /internal/tag-definitions` | the catalog service fetches the tag dictionary applicable to a resource |
-| `POST /internal/bootstrap/*` | idempotent test/demo seeding with runtime-known ids (subjects, resource ids) |
+| `GET /internal/effective-role` · `POST /internal/effective-roles` | the catalog's ABAC supplier resolves a caller's effective role (single + the ADR 0024 batch) |
+| `GET /internal/tag-definitions` | the catalog fetches the tag dictionary applicable to a resource |
+| `GET /internal/governed-targets` · `GET /internal/supervised-targets` | the two-leg list's scope sources (B4 governance; ADR 0029 supervision) |
+| `POST /internal/bootstrap/*` | idempotent test/demo seeding with runtime-known ids (subjects, resource ids, resource-tags) |
+| `GET /internal/catalog/{id}/created-by` *(catalog)* | the cross-service ownership probe (ADR 0019) |
 
 Rules for this surface:
 - **Path-prefixed and `permitAll()`** in the service's `SecurityConfig` — these are *not* `@OpaPreAuthorize`-gated.
-- **Never gateway-fronted.** APISIX routes only `/api/v1/**`; `/internal/**` is reachable only inside the
-  compose/cluster network. Its security is **network isolation**, by design and by deployment, not a token
-  check. This must be stated wherever the endpoints are defined, because an internal endpoint accidentally
-  exposed through the gateway would be an unauthenticated hole.
+- **Never gateway-fronted.** Its security is **network isolation plus an explicit gateway block**, not
+  a token check: the rig's APISIX carries a catch-all route in front of the catalog pod, so
+  `/internal/*` is positively 404-blocked by the priority-70 `internal-blocked` route
+  (`infra/apisix/init-routes.sh`) — **any new in-network-only prefix must be added to that block**,
+  because with a catch-all in play an internal endpoint NOT in the block would be an unauthenticated
+  hole. State this wherever such endpoints are defined.
 - **Returns core types / plain shapes**, and uses `204 No Content` for a "no result" (e.g. no membership →
   no effective role) so the caller treats it as "empty", not an error.
 - **Unpaginated by design** (5.95): internal list shapes are bounded machine-to-machine payloads — the
@@ -598,8 +619,9 @@ of these is a deliberate slice, not a drive-by.
       page, never 404; composite pair = both-or-`400`; absent = the unchanged paged list — [§7](#7-pagination)).
 
 ### An internal endpoint
-- [ ] Under `/internal/**`, `permitAll()`, **never** gateway-fronted; its isolation documented at the
-      definition site.
+- [ ] Under `/internal/**`, `permitAll()`, **never** gateway-fronted — and listed in the gateway's
+      `internal-blocked` 404 route (the rig fronts the pod with a catch-all); isolation documented at
+      the definition site.
 
 ---
 
