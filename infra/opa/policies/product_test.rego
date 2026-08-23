@@ -1281,3 +1281,15 @@ test_elevation_is_a_human_ceremony if {
 	product.elevated with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with time.now_ns as stepup_now_ns
 }
+
+# --- boolean-valued attributes are PRESENT keys (the truthiness trap, 2026-08-24) ----
+
+# A `false`-valued attribute for a required tag key must land on the ordinary no-match deny —
+# never on a resource_tag_values eval conflict (a truthiness-guarded fallback also fires on
+# `false`; two outputs = the data API's HTTP 500). The direct helper pin makes the
+# singleton-clause routing explicit; before the key-presence guard this test ERRORED, not failed.
+test_tag_boolean_false_attribute_denies_without_conflict if {
+	not product.allow with input as product_tag_input(regional_writer_any, {"region": false})
+	product.resource_tag_values("region") == {false}
+		with input as product_tag_input(regional_writer_any, {"region": false})
+}

@@ -612,3 +612,15 @@ test_agent_never_enters_the_filter_residual if {
 		{"action": "catalog:list", "resource": {"type": "catalog", "attributes": {}}},
 	)
 }
+
+# --- boolean-valued attributes are PRESENT keys (the truthiness trap, 2026-08-24) ----
+
+# A `false`-valued attribute for a required tag key must land on the ordinary no-match deny —
+# never on a resource_tag_values eval conflict (a truthiness-guarded fallback also fires on
+# `false`; two outputs = the data API's HTTP 500). The direct helper pin makes the
+# singleton-clause routing explicit; before the key-presence guard this test ERRORED, not failed.
+test_tag_boolean_false_attribute_denies_without_conflict if {
+	not catalog.allow with input as catalog_tag_input(regional_catalog_writer, {"region": false})
+	catalog.resource_tag_values("region") == {false}
+		with input as catalog_tag_input(regional_catalog_writer, {"region": false})
+}

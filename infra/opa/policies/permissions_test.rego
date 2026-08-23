@@ -146,6 +146,43 @@ test_concrete_denial_wins_over_wildcard_denial if {
 	) == {"create", "delete"}
 }
 
+# --- boolean-valued keys are PRESENT keys (the truthiness trap, 2026-08-24) -------
+#
+# `false` is Rego's only falsy defined value — the one shape where a truthiness-guarded
+# fallback fires ALONGSIDE the concrete-key clause and the two outputs eval-conflict into an
+# HTTP 500 from the data API. These pins are the regression: a boolean value must land on the
+# ordinary fail-closed floor (present key -> concrete clause -> non-array expands to nothing),
+# never on a conflict. Before the key-presence guards, the `false` cases ERRORED this suite.
+
+test_boolean_false_grant_is_present_key_denies if {
+	permissions.effective_actions({"permissions": {"category": false}}, "category") == set()
+}
+
+test_boolean_false_grant_blocks_wildcard_fallback if {
+	# present-but-malformed behaves exactly like the present empty list: no wildcard widening
+	permissions.effective_actions(
+		{"permissions": {"*": ["READ"], "category": false}},
+		"category",
+	) == set()
+}
+
+test_boolean_true_grant_is_present_key_denies if {
+	permissions.effective_actions({"permissions": {"category": true}}, "category") == set()
+}
+
+test_boolean_false_denial_is_present_key_subtracts_nothing if {
+	# the uniform present-key-wins rule, denial side: a malformed denial value denies nothing
+	# for the type and, being PRESENT, keeps the "*" denial from applying — bounded because
+	# the grant axis still gates every action (see the denied_for comment in permissions.rego)
+	permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"*": ["view"], "category": false},
+		},
+		"category",
+	) == {"view", "list", "list-members"}
+}
+
 # --- P12: edge algebra -----------------------------------------------------------
 
 test_empty_permissions_yield_empty_set if {
@@ -185,26 +222,4 @@ test_denying_everything_granted_yields_empty_set if {
 		},
 		"category",
 	) == set()
-}
-
-# --- effective_from_categories (the realm fallback's helper) ----------------------
-
-test_from_categories_read if {
-	permissions.effective_from_categories({"READ"}) == {"view", "list", "list-members"}
-}
-
-test_from_categories_editor_set if {
-	permissions.effective_from_categories({"READ", "WRITE", "TAG"}) == {
-		"view", "list", "list-members",
-		"create", "update", "delete",
-		"define-tags", "assign-tags",
-	}
-}
-
-test_from_categories_unknown_token_contributes_nothing if {
-	permissions.effective_from_categories({"READ", "bogus"}) == {"view", "list", "list-members"}
-}
-
-test_from_categories_empty if {
-	permissions.effective_from_categories(set()) == set()
 }

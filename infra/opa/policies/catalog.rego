@@ -142,8 +142,14 @@ resource_tag_values(key) := values if {
 	values := {value}
 }
 
+# Key PRESENCE, not truthiness: `false` is Rego's only falsy defined value, so a truthiness
+# guard here fires ALONGSIDE the singleton clause above (which happily binds `false`) — two
+# clauses, two outputs, and OPA answers eval_conflict_error (the data API's HTTP 500) instead
+# of deciding. Testing the key keeps a false-valued attribute on the singleton path, where
+# {false} intersects no acceptable tag set -> the ordinary no-match deny. An absent key still
+# yields the empty set. (External consumer review, 2026-08-23.)
 resource_tag_values(key) := set() if {
-	not input.resource.attributes[key]
+	not key in object.keys(input.resource.attributes)
 }
 
 # A single required key is satisfied when the resource's value(s) for it intersect the
