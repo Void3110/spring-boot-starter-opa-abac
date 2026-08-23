@@ -1318,3 +1318,56 @@ test_filter_malformed_denial_fails_closed if {
 		"environment": {},
 	}
 }
+
+# --- round-3 pins (deep review 2026-08-24): the remaining malformed-shape escapes ----
+
+# (a) A NON-OBJECT denied_actions map fails the LIST residual closed — the decision side
+# already collapses via denied_for's object guards; the residual must not be wider.
+test_filter_nonobject_denied_actions_fails_closed if {
+	not product.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "product:list",
+		"resource": {"type": "product"},
+		"role_definition": {
+			"code": "r",
+			"attributes": {"role_level": 15},
+			"permissions": {"product": ["READ"]},
+			"denied_actions": "corrupt",
+		},
+		"environment": {},
+	}
+}
+
+# (b) A present NON-COLLECTION required_tags is a requirement nothing satisfies: the configured
+# narrowing must never silently drop (count() type-errored to undefined and the vacuous clause
+# passed; has_required_tags is now presence-keyed). Decision AND list, with a positive baseline.
+test_malformed_required_tags_scalar_denies if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"product": ["READ", "WRITE"]},
+	}
+	full_input := {
+		"subject": {"id": "u", "roles": []},
+		"action": "product:update",
+		"resource": {"type": "product", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	product.allow with input as object.union(full_input, {"role_definition": base})
+	not product.allow with input as object.union(
+		full_input,
+		{"role_definition": object.union(base, {"required_tags": false})},
+	)
+	not product.allow with input as object.union(
+		full_input,
+		{"role_definition": object.union(base, {"required_tags": 123})},
+	)
+	not product.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "product:list",
+		"resource": {"type": "product"},
+		"role_definition": object.union(base, {"required_tags": false}),
+		"environment": {},
+	}
+		with data.config as {}
+}

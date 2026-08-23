@@ -64,10 +64,19 @@ anyway). Two Rego mechanics are load-bearing and documented in-module, both meas
 | 6 | **The LIST-path denial sibling** (`filter_list_denied`, catalog/category/product): `"list" in denied_actions[type]` over a non-collection value is undefined, so `not filter_list_denied` succeeded and the residual silently dropped a malformed denial — the filter was wider than the decision on the same shape. | **Fixed** — second `filter_list_denied` clause (`not is_array(denied)`) in all three files; both clauses fold to constants at partial-eval (input-known), residual shape unchanged; pinned by `test_filter_malformed_denial_fails_closed` ×3 with positive baselines |
 | 7 | **`EffectiveRoleService.expandWildcard` NPE**: `Map.of(targetType, map.get("*"))` throws on a present-null `"*"` value — and that shape is *storable* (the write path `nullSafe`-iterates values, so it validates clean) → HTTP 500 on the resolve wire. | **Fixed** — null-guard returns the map unchanged (a null wildcard expands nothing, matching the policy side) |
 
+## Medium Issues (round 3 — the next stratum)
+
+| # | Issue | Status |
+|---|-------|--------|
+| 10 | **Residual-wider-than-decision asymmetry introduced by round 2**: a *non-object* `denied_actions` map left both `filter_list_denied` clauses undefined (indexing a non-object is undefined), so `filter` passed while the decision side newly denies via `denied_for`'s object guards — measured `allow=false, filter=true` in all three per-type policies. | **Fixed** — third `filter_list_denied` clause (`not is_object(denied_actions)`, bound so a wholly-absent map stays non-denying) ×3 + filter pins ×3 |
+| 11 | **Pre-existing member of the same class on `main`**: `required_tags: false` (or a number) type-errors `count()` → `has_required_tags` undefined → the vacuous `tags_satisfied` clause passes — the configured tag narrowing silently drops on decision AND list, violating the files' own "malformed → deny" header. Measured `allow=true` with `required_tags: false`/`123`. | **Fixed** — `has_required_tags` re-keyed on presence with an explicit empty-object carve-out (present non-object = a requirement nothing satisfies → deny) ×3 + decision/filter pins with positive baselines ×3 |
+
 ## Low Issues
 
 | # | Issue | Status |
 |---|-------|--------|
+| 12 | Round 2's filter comment misdocumented the PE mechanism ("folds to constants — input.resource.type is known"): `input.resource` *is* the unknown, the clauses fold to negated type-eq guards, and safety on fired guards holds via the unsupported-residual → batch-recheck degradation, not constant folding. | **Fixed** — comment corrected ×3, naming the real mechanism |
+| 13 | The `expandWildcard` NPE fix (#7) shipped without a pinning test (the contract-suite `Map.of` fixtures cannot hold nulls). | **Fixed** — `presentNullWildcardValueResolvesWithoutExpandingOrThrowing` (HashMap fixtures through the public `resourceRole` seam) |
 | 3 | Java shadows of the wildcard lookup (`RoleDefinitionService.grantedTokensFor`, `TypeLevelRoleDefinitionSupplier.permissionsFor`/`deniedFor`) used `get() == null`, treating a present-null key as absent — diverging from the presence rule the policy now pins. (`expandWildcard` already used `containsKey`; its null-value bug is #7 above.) | **Fixed** — `containsKey` in all three lookups |
 | 4 | Mutation-prove round 1: mutant M4 (`denied_for` empty-clause guards) survived — no test covered a `false` denial without a `"*"` key. | **Fixed** — the round-2 denial suite kills it (`test_boolean_false_denial_without_wildcard_also_denies`) |
 | 5 | The Mulch record shipped with round 1 pinned the refuted denial semantics and under-scoped the sweep rule (function heads only). | **Fixed** — record `mx-c615a4` rewritten (axis asymmetry, the three measured traps, assigned-heads + Java-shadows sweep rule) |
@@ -127,10 +136,12 @@ Round 2 (12 mutants over the shape-guarded rework): 11 killed — truthiness rev
 site, dropped shape guards, the un-hoist (M11 — 7 tests fail), the `object.get`-binding
 reversion (M12 — 138 tests fail) — plus M10 (`is_object` in the empty-fallback clause), a
 documented **equivalent mutant** (`object.keys` already errors-to-undefined on non-objects;
-kept as stated intent). Round 3 (final tree, 10 mutants): **8 killed** — including the three new
+kept as stated intent). Round 3 (10 mutants): **8 killed** — including the three new
 `filter_list_denied` shape clauses, each by its own file's filter pin — and **2 survived exactly
 as predicted**: M14/M15 are the totality bindings (#8), decision-invisible by construction and
-marked equivalent in-module before the round ran.
+marked equivalent in-module before the round ran. Round 4 (the round-3 guards, 6 mutants —
+the non-object-map filter clause and the presence-keyed `has_required_tags`, per file): **all 6
+killed**, each by its own file's new pin.
 
 ## Autonomous-run check
 
@@ -151,7 +162,7 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
 
 ## Test results
 
-- `opa test infra/opa/policies`: **403/403** · mirror bundle: **32/32** · `opa check --strict`:
+- `opa test infra/opa/policies`: **409/409** · mirror bundle: **32/32** · `opa check --strict`:
   clean on both
 - `./gradlew build` (all modules, Testcontainers ITs against the changed bundle): **green**
 - `.sonar-local/sonar-local.sh` (Java touched): **CLEAN — 0 open findings**
@@ -166,7 +177,12 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
 - Adversarial review: round 1 — 8 lenses, 8 confirmed (1 Critical), 2 refuted; round 2 — 11
   confirmed: 6 were the commit-the-working-tree process artifact (the lenses diff committed HEAD;
   they independently truth-tabled the uncommitted fixes as correct), 5 were new (#6–#9 above);
-  round 3 — terminal no-fix round on the committed tree (result recorded below before push).
+  round 3 — 5 confirmed (#10–#13), 4 refuted (incl. the Java `deniedFor` present-null claims —
+  re-derived independently: the supplier's maps are internally built via `List.copyOf`/`Map.of`,
+  nulls unreachable — and the filter wildcard-denial claim, safe via the batch-recheck
+  degradation); round 4 — terminal no-fix round (verdict recorded below before push). The
+  convergence followed the recorded strata pattern (mx-ab7cda): code edge → latent siblings →
+  deeper policy edges + comment tail.
 
 ## Commits
 

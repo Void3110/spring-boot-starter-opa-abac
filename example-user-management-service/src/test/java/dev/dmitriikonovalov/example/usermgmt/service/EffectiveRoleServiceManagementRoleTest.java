@@ -12,6 +12,8 @@ import dev.dmitriikonovalov.example.usermgmt.domain.TeamMembershipRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.TeamRepository;
 import dev.dmitriikonovalov.example.usermgmt.domain.UserRepository;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -74,5 +76,26 @@ class EffectiveRoleServiceManagementRoleTest {
     void noMembershipIsEmpty() {
         when(memberships.findByTeamIdAndUserId(TEAM, USER)).thenReturn(Optional.empty());
         assertThat(service.managementRole(TEAM, USER)).isEmpty();
+    }
+
+    @Test // deep review 2026-08-24: a present-null "*" value is storable (the write path
+    // nullSafe-iterates values, so it validates clean) — the resolve wire must narrow
+    // (expand nothing), never NPE (Map.of rejected the null before the guard).
+    void presentNullWildcardValueResolvesWithoutExpandingOrThrowing() {
+        UUID roleId = UUID.randomUUID();
+        TeamMembership m = new TeamMembership(UUID.randomUUID(), TEAM, USER, roleId);
+        Map<String, List<String>> nullStarGrants = new HashMap<>();
+        nullStarGrants.put("*", null);
+        Map<String, List<String>> nullStarDenials = new HashMap<>();
+        nullStarDenials.put("*", null);
+        RoleDefinitionEntity role = new RoleDefinitionEntity(
+                roleId, "corrupt-role", false, TEAM, Map.of("role_level", 20), nullStarGrants);
+        role.setDeniedActions(nullStarDenials);
+        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+
+        RoleDefinition resolved = service.resourceRole(m, "catalog");
+
+        assertThat(resolved.permissions()).containsOnlyKeys("*");
+        assertThat(resolved.deniedActions()).containsOnlyKeys("*");
     }
 }

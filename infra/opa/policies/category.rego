@@ -415,8 +415,22 @@ tags_satisfied if {
 	not has_required_tags
 }
 
+# A present required_tags key COUNTS AS a requirement whatever its shape: the old count()>0
+# guard type-errored to undefined on a scalar (false, a number) and `not has_required_tags`
+# then passed vacuously — silently dropping the whole configured tag narrowing on the decision
+# AND the list residual (measured; deep review 2026-08-24, round 3 — the header always promised
+# malformed -> deny). Keyed on presence, with one deliberate carve-out: a present EMPTY OBJECT
+# is "no requirement" (back-compat with the count()>0 reading). A present non-object is a
+# requirement no match rule can satisfy -> tags_satisfied fails -> deny.
 has_required_tags if {
-	count(input.role_definition.required_tags) > 0
+	"required_tags" in object.keys(input.role_definition)
+	not empty_required_tags
+}
+
+empty_required_tags if {
+	required := input.role_definition.required_tags
+	is_object(required)
+	count(required) == 0
 }
 
 # ---------------------------------------------------------------------------
@@ -470,12 +484,27 @@ filter_list_denied if {
 # A malformed consulted denial fails the LIST path closed too: `in` over a non-collection is
 # undefined, so without this clause the membership guard above silently DROPS the denial and
 # the residual is wider than the decision (the allow path collapses to deny on the same shape
-# via permissions.denied_for). Both clauses fold to constants at partial-eval time —
-# input.role_definition and input.resource.type are known — so the residual shape is
-# unchanged. (Deep review 2026-08-24, round 2.)
+# via permissions.denied_for).
+#
+# PARTIAL-EVAL NOTE (corrected in round 3): input.resource — including .type — is the UNKNOWN
+# (the app compiles with unknowns=["input.resource"]), so these clauses do NOT fold to
+# constants; they fold to (negated) type-eq guards over the enumerated denied_actions keys, and
+# a fired guard makes the residual unsupported -> the client degrades to the batch
+# allow-recheck (fail-closed by the documented degradation path). Only a denial-free role's
+# residual keeps its unchanged shape. (Deep review 2026-08-24, rounds 2-3.)
 filter_list_denied if {
 	denied := input.role_definition.denied_actions[input.resource.type]
 	not is_array(denied)
+}
+
+# A NON-OBJECT denied_actions map is undefined under BOTH clauses above (indexing a non-object
+# is undefined), which would leave the residual WIDER than the decision — the allow side
+# collapses on the same shape via denied_for's object guards. The binding keeps a wholly-absent
+# map non-denying: an absent ref leaves `denied_actions` unbound and this clause never fires.
+# (Deep review 2026-08-24, round 3.)
+filter_list_denied if {
+	denied_actions := input.role_definition.denied_actions
+	not is_object(denied_actions)
 }
 
 # No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).
