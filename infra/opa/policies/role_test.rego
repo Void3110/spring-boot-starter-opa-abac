@@ -146,3 +146,30 @@ test_malformed_permissions_false if {
 test_empty_input_false if {
 	not role.assignable with input as {}
 }
+
+# --- malformed denial in a snapshot (deep review 2026-08-24) ---------------------
+
+# A malformed consulted denial value collapses effective_actions to undefined, so the subset
+# walk never runs -> not assignable. The actor side is the amplifier that matters: a corrupt
+# actor snapshot must never WIDEN what that actor may hand out (dropping the actor's "*"
+# denial would have done exactly that).
+test_malformed_denial_in_actor_role_not_assignable if {
+	verdict(
+		{"permissions": {"catalog": ["READ", "WRITE"]}, "denied_actions": {"*": ["delete"]}},
+		{"permissions": {"catalog": ["READ"]}},
+	)
+	not verdict(
+		{
+			"permissions": {"catalog": ["READ", "WRITE"]},
+			"denied_actions": {"*": ["delete"], "catalog": false},
+		},
+		{"permissions": {"catalog": ["READ"]}},
+	)
+}
+
+test_malformed_denial_in_candidate_role_not_assignable if {
+	not verdict(
+		{"permissions": {"catalog": ["READ", "WRITE"]}},
+		{"permissions": {"catalog": ["READ"]}, "denied_actions": {"catalog": false}},
+	)
+}

@@ -151,8 +151,14 @@ test_concrete_denial_wins_over_wildcard_denial if {
 # `false` is Rego's only falsy defined value — the one shape where a truthiness-guarded
 # fallback fires ALONGSIDE the concrete-key clause and the two outputs eval-conflict into an
 # HTTP 500 from the data API. These pins are the regression: a boolean value must land on the
-# ordinary fail-closed floor (present key -> concrete clause -> non-array expands to nothing),
-# never on a conflict. Before the key-presence guards, the `false` cases ERRORED this suite.
+# ordinary fail-closed floor, never on a conflict. Before the key-presence guards, the `false`
+# cases ERRORED this suite.
+#
+# The two axes fail closed DIFFERENTLY (deep review 2026-08-24): a malformed GRANT value
+# under-grants (present key wins, non-array expands to nothing -> empty set), while a malformed
+# CONSULTED DENIAL value collapses the whole answer to undefined (-> consumer default deny),
+# because silently dropping a configured subtraction would be extra access. Only the consulted
+# denial lookup is validated — garbage under an unconsulted key stays inert.
 
 test_boolean_false_grant_is_present_key_denies if {
 	permissions.effective_actions({"permissions": {"category": false}}, "category") == set()
@@ -170,17 +176,65 @@ test_boolean_true_grant_is_present_key_denies if {
 	permissions.effective_actions({"permissions": {"category": true}}, "category") == set()
 }
 
-test_boolean_false_denial_is_present_key_subtracts_nothing if {
-	# the uniform present-key-wins rule, denial side: a malformed denial value denies nothing
-	# for the type and, being PRESENT, keeps the "*" denial from applying — bounded because
-	# the grant axis still gates every action (see the denied_for comment in permissions.rego)
-	permissions.effective_actions(
+test_boolean_false_denial_collapses_the_answer_to_deny if {
+	# the denial axis fails CLOSED: a malformed consulted denial must never read as
+	# "subtracts nothing" — the whole answer goes undefined -> every consumer default-denies
+	not permissions.effective_actions(
 		{
 			"permissions": {"category": ["READ"]},
 			"denied_actions": {"*": ["view"], "category": false},
 		},
 		"category",
+	)
+}
+
+test_boolean_false_denial_without_wildcard_also_denies if {
+	not permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"category": false},
+		},
+		"category",
+	)
+}
+
+test_malformed_wildcard_denial_consulted_via_fallback_denies if {
+	not permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"*": false},
+		},
+		"category",
+	)
+}
+
+test_nonobject_denied_actions_denies if {
+	not permissions.effective_actions(
+		{"permissions": {"category": ["READ"]}, "denied_actions": "corrupt"},
+		"category",
+	)
+}
+
+test_malformed_denial_under_unconsulted_key_is_inert if {
+	# only the consulted lookup is validated — garbage under ANOTHER type key must not brick
+	# this one (narrowest safe reading; the write path rejects the shape anyway)
+	permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"product": false},
+		},
+		"category",
 	) == {"view", "list", "list-members"}
+}
+
+test_wildcard_denial_still_applies_beside_unconsulted_garbage if {
+	permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"*": ["view"], "product": false},
+		},
+		"category",
+	) == {"list", "list-members"}
 }
 
 # --- P12: edge algebra -----------------------------------------------------------

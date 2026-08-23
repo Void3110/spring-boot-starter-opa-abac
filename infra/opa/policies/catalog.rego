@@ -149,7 +149,8 @@ resource_tag_values(key) := values if {
 # {false} intersects no acceptable tag set -> the ordinary no-match deny. An absent key still
 # yields the empty set. (External consumer review, 2026-08-23.)
 resource_tag_values(key) := set() if {
-	not key in object.keys(input.resource.attributes)
+	attributes := object.get(input.resource, "attributes", {})
+	not key in object.keys(attributes)
 }
 
 # A single required key is satisfied when the resource's value(s) for it intersect the
@@ -240,6 +241,17 @@ filter if {
 # The role explicitly withholds "list" for this type (deny-overrides at the list boundary).
 filter_list_denied if {
 	"list" in input.role_definition.denied_actions[input.resource.type]
+}
+
+# A malformed consulted denial fails the LIST path closed too: `in` over a non-collection is
+# undefined, so without this clause the membership guard above silently DROPS the denial and
+# the residual is wider than the decision (the allow path collapses to deny on the same shape
+# via permissions.denied_for). Both clauses fold to constants at partial-eval time —
+# input.role_definition and input.resource.type are known — so the residual shape is
+# unchanged. (Deep review 2026-08-24, round 2.)
+filter_list_denied if {
+	denied := input.role_definition.denied_actions[input.resource.type]
+	not is_array(denied)
 }
 
 # No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).

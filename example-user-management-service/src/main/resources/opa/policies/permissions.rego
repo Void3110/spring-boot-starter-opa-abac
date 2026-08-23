@@ -45,42 +45,80 @@ package permissions
 # the same fail-closed floor a stale token lands on. (External consumer review, 2026-08-23.)
 tokens_for(role_def, type) := role_def.permissions[type]
 
-tokens_for(role_def, type) := role_def.permissions["*"] if {
-	not type in object.keys(role_def.permissions)
+tokens_for(role_def, type) := tokens if {
+	permissions := object.get(role_def, "permissions", {})
+	tokens := permissions["*"]
+	not type in object.keys(permissions)
 }
 
+# The object.get binding makes this clause actually FIRE for a wholly-absent permissions map
+# (a guard over object.keys(<absent ref>) never succeeds — measured; see the denied_for mirror
+# below), so the header's totality claim holds by construction instead of leaning on the
+# comprehension absorption in effective_actions. Decision-invisible either way — the grant axis
+# lands on the empty expansion regardless — which makes this binding doctrine, not behavior
+# (and its mutant equivalent). (Deep review 2026-08-24, round 2.)
 tokens_for(role_def, type) := [] if {
-	not type in object.keys(role_def.permissions)
-	not "*" in object.keys(role_def.permissions)
+	permissions := object.get(role_def, "permissions", {})
+	is_object(permissions)
+	not type in object.keys(permissions)
+	not "*" in object.keys(permissions)
 }
 
-# The denied fine actions for a type — the exact mirror of tokens_for (see the header note on
-# why denials must be wildcard-aware too), key-presence guards included. Mirroring makes the
-# present-key-wins rule uniform, with one consequence worth stating: a present-but-malformed
-# denial value behaves like the present empty list — it denies nothing for the type AND blocks
-# the "*" denial fallback. That cannot exceed the role: the grant axis still gates every
-# action independently, so the worst case is the role's own expanded grants.
-denied_for(role_def, type) := role_def.denied_actions[type]
+# The denied fine actions for a type — the wildcard-aware mirror of tokens_for, with one
+# deliberate asymmetry: the denial axis is SHAPE-GUARDED. A malformed grant value only
+# under-grants (it expands to nothing — the safe direction), but a malformed denial value
+# would only under-DENY: dropping a configured subtraction is extra access, because
+# deny-overrides exists to narrow BELOW the grants (ADR 0007). So a CONSULTED denial value
+# that is not an array leaves this function UNDEFINED, and effective_actions deliberately
+# propagates that (see the hoist note there): the whole answer collapses and every consumer
+# lands on its default deny. Only the consulted lookup is validated — garbage under a type key
+# this call never reads stays inert. (Deep review 2026-08-24; the first cut of this fix read
+# present-but-malformed as "subtracts nothing", which is precisely the widening this guard
+# exists to prevent.)
+denied_for(role_def, type) := denied if {
+	denied := role_def.denied_actions[type]
+	is_array(denied)
+}
 
-denied_for(role_def, type) := role_def.denied_actions["*"] if {
+denied_for(role_def, type) := denied if {
+	denied := role_def.denied_actions["*"]
+	is_array(denied)
 	not type in object.keys(role_def.denied_actions)
 }
 
+# The binding through object.get is load-bearing: `object.keys(role_def.denied_actions)` with
+# the map wholly ABSENT is an undefined ref inside the guard, and the clause then never fires —
+# measured on 1.10.1 (the first cut of this fix had exactly that, masked by the comprehension
+# absorption the hoist in effective_actions removed). Binding the default {} makes the
+# absent-map case a DEFINED empty object, so this clause reliably answers [] for it.
+# (is_object is intent-stating belt, not load-bearing: on a non-object map the object.keys
+# guards already error->undefined and the clause cannot fire — an equivalent mutant, kept so
+# the fail-closed intent survives any future builtin-semantics drift.)
 denied_for(role_def, type) := [] if {
-	not type in object.keys(role_def.denied_actions)
-	not "*" in object.keys(role_def.denied_actions)
+	denied_actions := object.get(role_def, "denied_actions", {})
+	is_object(denied_actions)
+	not type in object.keys(denied_actions)
+	not "*" in object.keys(denied_actions)
 }
 
 # --- the effective set --------------------------------------------------------
 
 # effective_actions(role_def, type): expand the granted category tokens through the table, then
-# subtract the denials. Total — a missing/malformed role_def or type yields the EMPTY set (deny),
-# and an unknown token contributes nothing (the set comprehension simply finds no expansion).
+# subtract the denials. Total on the GRANT axis — a missing/malformed role_def or type yields the
+# EMPTY set (deny), and an unknown token contributes nothing — and deliberately NOT total on the
+# denial axis: a malformed consulted denial leaves denied_for undefined and this function
+# undefined with it, so every consumer lands on its default deny.
+#
+# THE HOIST IS LOAD-BEARING. `denied_list := denied_for(...)` must stay a direct binding OUTSIDE
+# any comprehension: a set comprehension absorbs an undefined body into the EMPTY set (measured
+# on OPA 1.10.1), so the previous `{a | some a in denied_for(...)}` shape would silently turn
+# "malformed denial -> whole answer undefined" into "malformed denial -> subtract nothing" —
+# the exact widening the denied_for shape guard exists to prevent.
 effective_actions(role_def, type) := actions if {
 	expanded := {action |
 		some token in tokens_for(role_def, type)
 		some action in data.permission_categories[token]
 	}
-	denied := {action | some action in denied_for(role_def, type)}
-	actions := expanded - denied
+	denied_list := denied_for(role_def, type)
+	actions := expanded - {action | some action in denied_list}
 }

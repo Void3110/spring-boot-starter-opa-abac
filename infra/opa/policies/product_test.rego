@@ -1293,3 +1293,28 @@ test_tag_boolean_false_attribute_denies_without_conflict if {
 	product.resource_tag_values("region") == {false}
 		with input as product_tag_input(regional_writer_any, {"region": false})
 }
+
+# The LIST-path sibling of the denial shape guard (deep review 2026-08-24, round 2): a malformed
+# consulted denial value must fail the residual closed — `in` over a non-collection is undefined,
+# so without the second filter_list_denied clause the residual would be WIDER than the decision.
+test_filter_malformed_denial_fails_closed if {
+	well_formed := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"product": ["READ"]},
+	}
+	product.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "product:list",
+		"resource": {"type": "product"},
+		"role_definition": well_formed,
+		"environment": {},
+	}
+	not product.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "product:list",
+		"resource": {"type": "product"},
+		"role_definition": object.union(well_formed, {"denied_actions": {"product": false}}),
+		"environment": {},
+	}
+}

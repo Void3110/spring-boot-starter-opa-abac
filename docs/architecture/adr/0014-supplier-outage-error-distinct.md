@@ -37,7 +37,8 @@ Because both reach the policy as "no `role_definition`", an **outage** triggers 
 → the **realm fallback fires**. A subject carrying realm `catalog-editor` therefore *widens* to
 READ+WRITE+TAG during a user-management outage, and any narrowing their **resolved** role carried
 (`denied_actions`, `required_tags`) **evaporates** — `effective_from_categories` does no subtraction on
-the fallback path. **An outage makes access wider, not narrower.** This is the single
+the fallback path *(historical: that helper was deleted 2026-08-24, long after B4 removed the fallback
+it served)*. **An outage makes access wider, not narrower.** This is the single
 widening-on-failure path in the codebase (every other failure is fail-closed); it was found as
 [[PERMISSION-CATEGORIES-REVIEW]] C1/C4 and consciously carried as tracked follow-up B2 — Phase 6.5
 **aggravated** it (pre-6.5 the resolved role had no `denied_actions`/`required_tags` to erase).

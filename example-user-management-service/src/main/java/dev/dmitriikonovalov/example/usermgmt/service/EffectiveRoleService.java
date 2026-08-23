@@ -262,7 +262,15 @@ public class EffectiveRoleService {
     private static Map<String, List<String>> expandWildcard(
             Map<String, List<String>> map, String targetType) {
         if (map.containsKey("*") && !map.containsKey(targetType)) {
-            return Map.of(targetType, map.get("*"));
+            List<String> star = map.get("*");
+            // A present-null "*" value is storable (the write path nullSafe-iterates values, so it
+            // validates clean) and Map.of rejects null — without this guard the resolve wire 500s
+            // on such a row. Returning the map unchanged narrows: a null wildcard expands nothing,
+            // exactly like the policy side (deep review 2026-08-24).
+            if (star == null) {
+                return map;
+            }
+            return Map.of(targetType, star);
         }
         return map;
     }

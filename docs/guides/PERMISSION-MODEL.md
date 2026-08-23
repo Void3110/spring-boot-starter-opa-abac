@@ -44,16 +44,21 @@ The table lives in **OPA `data`** — `infra/opa/policies/permission_categories.
 `infra/opa/policies/permissions.rego`:
 
 - `effective_actions(role_def, type)` = the union of the expansions of the tokens granted for
-  `type`, **minus** `denied_actions[type]`. Lookup is **wildcard-aware**: the concrete type key
-  wins; `"*"` backs it up when the key is absent — for grants **and** denials symmetrically (the
-  Java resolve wire, `EffectiveRoleService.expandWildcard`, shadows identically, so the two homes
-  cannot diverge).
-- `effective_from_categories(cats)` — the expansion of a literal category set. Pre-B4 the **blanket
-  realm fallback** mapped through it (`catalog-viewer → {READ}`, `catalog-editor → {READ,WRITE,TAG}`);
+  `type`, **minus** `denied_actions[type]`. Lookup is **wildcard-aware** and keyed on **presence,
+  not truthiness**: the concrete type key wins whatever its value; `"*"` backs it up only when the
+  key is absent (the Java resolve wire, `EffectiveRoleService.expandWildcard`, shadows the same
+  presence rule, so the two homes cannot diverge). The two axes fail closed **differently**
+  (2026-08-24): a malformed **grant** value expands to nothing (under-grants — safe), while a
+  malformed **consulted denial** value makes the whole answer **undefined** and every consumer
+  lands on its default deny — silently dropping a configured subtraction would be extra access,
+  because deny-overrides narrows *below* the grants.
+- `effective_from_categories(cats)` — **removed 2026-08-24.** Pre-B4 the **blanket realm
+  fallback** mapped through it (`catalog-viewer → {READ}`, `catalog-editor → {READ,WRITE,TAG}`);
   B4 removed that fallback, and the one surviving realm-role grant — narrow `catalog:create` — is a
-  **direct `verb == "create"` check** in `catalog.rego`, not a category expansion. B4 thereby left this helper
-  **unused by any production rule** — it is kept as shared package API and covered only by
-  `permissions_test.rego`.
+  **direct `verb == "create"` check** in `catalog.rego`, not a category expansion. That left the
+  helper with **no production caller**, performing **no denial subtraction** (unsafe as a second
+  expansion entry point), and a comment describing a removed mechanism — so it was deleted rather
+  than kept as package API.
 
 > **Post-B4 (ADR [[0018-team-scoped-resource-isolation|0018]]) there is no blanket realm-role fallback.**
 > Team membership was the **sole** access path to the catalog hierarchy as of B4: with no

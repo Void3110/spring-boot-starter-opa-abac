@@ -1394,3 +1394,45 @@ test_tag_boolean_false_attribute_denies_without_conflict if {
 	category.resource_tag_values("region") == {false}
 		with input as tag_input(regional_reader_any, {"region": false})
 }
+
+# The decision-level witness for the denial-axis shape guard (deep review 2026-08-24): the
+# same input that ALLOWS under a well-formed role_definition must DENY outright when the
+# consulted denial value is malformed — never widen by dropping the "*" subtraction.
+malformed_denial_reader := {
+	"code": "regional-reader",
+	"attributes": {"role_level": 15},
+	"permissions": {"category": ["READ"]},
+	"denied_actions": {"*": ["view"], "category": false},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+test_malformed_denial_in_role_definition_denies_at_the_decision if {
+	category.allow with input as tag_input(regional_reader_any, {"region": ["emea"]})
+	not category.allow with input as tag_input(malformed_denial_reader, {"region": ["emea"]})
+}
+
+# The LIST-path sibling of the denial shape guard (deep review 2026-08-24, round 2): a malformed
+# consulted denial value must fail the residual closed — `in` over a non-collection is undefined,
+# so without the second filter_list_denied clause the residual would be WIDER than the decision.
+test_filter_malformed_denial_fails_closed if {
+	well_formed := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"category": ["READ"]},
+	}
+	category.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:list",
+		"resource": {"type": "category"},
+		"role_definition": well_formed,
+		"environment": {},
+	}
+	not category.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:list",
+		"resource": {"type": "category"},
+		"role_definition": object.union(well_formed, {"denied_actions": {"category": false}}),
+		"environment": {},
+	}
+}

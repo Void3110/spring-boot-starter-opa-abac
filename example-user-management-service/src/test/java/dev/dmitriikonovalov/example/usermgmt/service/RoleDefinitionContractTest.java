@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.example.usermgmt.service;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -172,5 +173,23 @@ class RoleDefinitionContractTest {
         assertThatCode(() -> RoleDefinitionService.validateContract(
                         20, Map.of("team", List.of("READ")), NO_DENIALS))
                 .doesNotThrowAnyException();
+    }
+
+    // --- presence, not nullness: the wildcard lookup (deep review 2026-08-24) -------
+
+    @Test
+    void presentNullTypeKeyDoesNotWidenDenialValidationIntoWildcard() {
+        // {"category": null, "*": [READ]} + a denial on category: under the old nullness
+        // semantics the denial validated against the wildcard's expansion; under key-presence
+        // (mirroring permissions.rego) a present-null grant expands to nothing, so the denial
+        // no longer subtracts from anything and must be rejected. Reachable: the write path
+        // nullSafe-iterates values, so a present-null entry validates clean and can be stored.
+        Map<String, List<String>> permissions = new HashMap<>();
+        permissions.put("category", null);
+        permissions.put("*", List.of("READ"));
+        Map<String, List<String>> denials = Map.of("category", List.of("view"));
+        assertThatThrownBy(() -> RoleDefinitionService.validateContract(20, permissions, denials))
+                .isInstanceOf(RoleDefinitionInvalidException.class)
+                .hasMessageContaining("is not granted for type");
     }
 }
