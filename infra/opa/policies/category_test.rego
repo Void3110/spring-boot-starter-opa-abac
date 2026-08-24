@@ -1527,3 +1527,13 @@ test_empty_required_tags_collections_are_no_requirement if {
 		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
 	)
 }
+
+# Round-5 pin: the type-level discriminator is presence-keyed — a present malformed id
+# (false: the recorded single-value escape) is an INSTANCE request, never type-level;
+# absent and explicit-null stay type-level.
+test_type_level_request_is_presence_keyed if {
+	category.is_type_level_request with input as {"resource": {"type": "category"}}
+	category.is_type_level_request with input as {"resource": {"type": "category", "id": null}}
+	not category.is_type_level_request with input as {"resource": {"type": "category", "id": false}}
+	not category.is_type_level_request with input as {"resource": {"type": "category", "id": "x1"}}
+}

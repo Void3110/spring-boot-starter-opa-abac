@@ -88,6 +88,15 @@ has_role_definition if {
 	"permissions" in object.keys(input.role_definition)
 }
 
+# A present but NON-OBJECT role_definition also counts as "has one" — present-but-malformed
+# must block the fallback, never widen (an explicit JSON null stays an honest ABSENT: the
+# app serializes a missing role as null, exactly like the null resource id).
+# (Deep review 2026-08-24, round 5.)
+has_role_definition if {
+	input.role_definition != null
+	not is_object(input.role_definition)
+}
+
 # Deny-overrides (the final narrowing AND, ported from category.rego/product.rego): an explicit
 # operator deny wins over any grant. This is the ROOT type's half of the ADR-0010 §3 invariant —
 # single-GET and list must agree on "denied". The list side already honors it (the SQL residual

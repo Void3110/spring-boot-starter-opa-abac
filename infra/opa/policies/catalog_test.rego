@@ -752,3 +752,29 @@ test_empty_required_tags_collections_are_no_requirement if {
 		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
 	)
 }
+
+# Round-5 pin: a present NON-OBJECT role_definition also blocks the create fallback
+# (present-but-malformed never reads as absent); an explicit null stays honestly absent.
+test_fallback_closed_for_nonobject_role_definition if {
+	not catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": "corrupt"},
+	)
+	catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": null},
+	)
+}
+
+# Round-5 mirror of category's decision-level malformed-denial witness (sibling cell parity):
+# the same input that allows under a well-formed role must deny outright when the consulted
+# denial value is malformed — never widen by dropping the "*" subtraction.
+catalog_malformed_denial_writer := object.union(
+	regional_catalog_writer,
+	{"denied_actions": {"*": ["delete"], "catalog": false}},
+)
+
+test_malformed_denial_in_role_definition_denies_at_the_decision if {
+	catalog.allow with input as catalog_tag_input(regional_catalog_writer, {"region": "emea"})
+	not catalog.allow with input as catalog_tag_input(catalog_malformed_denial_writer, {"region": "emea"})
+}

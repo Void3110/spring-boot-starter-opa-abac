@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.usermgmt.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -78,24 +79,29 @@ class EffectiveRoleServiceManagementRoleTest {
         assertThat(service.managementRole(TEAM, USER)).isEmpty();
     }
 
-    @Test // deep review 2026-08-24: a present-null "*" value WAS storable before the write
-    // path's null rejection (round 4) — legacy rows may still hold it, and the resolve wire
-    // must narrow (expand nothing), never NPE (Map.of rejected the null before the guard).
-    void presentNullWildcardValueResolvesWithoutExpandingOrThrowing() {
+    @Test // deep review 2026-08-24 (r5 axis split): a present-null "*" GRANT on a legacy row
+    // resolves NARROWED (the core constructor normalizes null to an empty list, which expands
+    // to nothing) — but a present-null DENIAL value must refuse to resolve: the same
+    // normalization would make it a well-formed "subtracts nothing", silently dropping the
+    // configured denial (wider than main's NPE-500-deny on the identical row).
+    void presentNullWildcardGrantNarrowsButNullDenialRefusesToResolve() {
         UUID roleId = UUID.randomUUID();
         TeamMembership m = new TeamMembership(UUID.randomUUID(), TEAM, USER, roleId);
         Map<String, List<String>> nullStarGrants = new HashMap<>();
         nullStarGrants.put("*", null);
-        Map<String, List<String>> nullStarDenials = new HashMap<>();
-        nullStarDenials.put("*", null);
         RoleDefinitionEntity role = new RoleDefinitionEntity(
                 roleId, "corrupt-role", false, TEAM, Map.of("role_level", 20), nullStarGrants);
-        role.setDeniedActions(nullStarDenials);
         when(roles.findById(roleId)).thenReturn(Optional.of(role));
 
         RoleDefinition resolved = service.resourceRole(m, "catalog");
-
         assertThat(resolved.permissions()).containsOnlyKeys("*");
-        assertThat(resolved.deniedActions()).containsOnlyKeys("*");
+        assertThat(resolved.permissions().get("*")).isEmpty(); // normalized: grants NOTHING
+
+        Map<String, List<String>> nullStarDenials = new HashMap<>();
+        nullStarDenials.put("*", null);
+        role.setDeniedActions(nullStarDenials);
+        assertThatThrownBy(() -> service.resourceRole(m, "catalog"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("denied_actions");
     }
 }

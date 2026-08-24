@@ -57,7 +57,11 @@ allow if {
 # id. The app serializes that as an ABSENT key OR an explicit `null` (a Java `null` id) — both mean
 # "type-level", so this helper accepts either. (`not input.resource.id` alone is UNDEFINED — not true —
 # for an explicit `null`, which silently closed the coarse type-level gate; Slice B4 made it null-safe.)
-is_type_level_request if not input.resource.id
+# KEY PRESENCE on the first clause (round 5): `not input.resource.id` alone is a truthiness
+# test, so a present `id: false` read as type-level and flipped an instance decision onto the
+# wider type-level gate. A present malformed id is an INSTANCE request (which then fails
+# resolution -> deny); only an absent or explicitly-null id is type-level.
+is_type_level_request if not "id" in object.keys(input.resource)
 
 is_type_level_request if input.resource.id == null
 
@@ -149,6 +153,15 @@ inherited_grant if {
 # dies in the token chain. (Deep review 2026-08-24, round 4.)
 has_role_definition if {
 	"permissions" in object.keys(input.role_definition)
+}
+
+# A present but NON-OBJECT role_definition also counts as "has one" — present-but-malformed
+# must block the fallback, never widen (an explicit JSON null stays an honest ABSENT: the
+# app serializes a missing role as null, exactly like the null resource id).
+# (Deep review 2026-08-24, round 5.)
+has_role_definition if {
+	input.role_definition != null
+	not is_object(input.role_definition)
 }
 
 # ---------------------------------------------------------------------------

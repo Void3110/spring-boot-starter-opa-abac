@@ -180,7 +180,7 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
 
 ## Test results
 
-- `opa test infra/opa/policies`: **413/413** · mirror bundle: **32/32** · `opa check --strict`:
+- `opa test infra/opa/policies`: **418/418** · mirror bundle: **32/32** · `opa check --strict`:
   clean on both
 - `./gradlew build` (all modules, Testcontainers ITs against the changed bundle): **green**
 - `.sonar-local/sonar-local.sh` (Java touched): **CLEAN — 0 open findings**
@@ -190,7 +190,7 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   `effective_actions` / `false` at `category.allow` / `false` at `role.assignable` (was 500 on
   `main`, was **allow** after round 1)
 - e2e (newman): not run this branch — the diff changes malformed-shape behavior only; well-formed
-  paths are covered by the 432 policy tests + the Testcontainers ITs. The standing pre-release
+  paths are covered by the 418 (+32 mirror) policy tests + the Testcontainers ITs. The standing pre-release
   fleet re-run (carried since the 08-20 handoff) covers the gateway path before the next cut.
 - Adversarial review: round 1 — 8 lenses, 8 confirmed (1 Critical), 2 refuted; round 2 — 11
   confirmed: 6 were the commit-the-working-tree process artifact (the lenses diff committed HEAD;
@@ -200,12 +200,41 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   nulls unreachable — and the filter wildcard-denial claim, safe via the batch-recheck
   degradation); round 4 — 5 confirmed (#14–#17 + one duplicate of #15's sibling scope), 2
   refuted (both re-raising the filter wildcard-denial shape, again cleared via the batch-recheck
-  degradation); round 5 — terminal no-fix round (verdict recorded below before push). The
-  convergence followed the recorded strata pattern (mx-ab7cda): code edge → latent siblings →
-  deeper policy edges → the last negated-consumer + doc tail.
+  degradation); round 5 — 7 confirmed (the resolve-wire Critical ×2 lenses + 5 lower, all fixed
+  or reconciled — see the Round 5 section), 1 refuted; round 6 — terminal no-fix round (verdict
+  recorded below before push). The convergence followed the recorded strata pattern (mx-ab7cda):
+  code edge → latent siblings → deeper policy edges → the last negated consumer → the pipeline
+  seam (guard-vs-normalizer ordering) + doc tail.
+
+## Round 5 — the resolve-wire widening (Critical, against round 4's own fix)
+
+The round-4 `expandWildcard` null-guard's justification was **factually wrong**: the pass-through
+map flows into the core `RoleDefinition` canonical constructor, whose `copyOfStringListMap`
+normalizes `null → List.of()`, so the wire ships `{"*": []}` — a *well-formed subtracts-nothing*
+— not the claimed policy-side deny-all collapse. On `main` the identical legacy row NPE'd →
+500 → `RoleResolutionException` → the ADR-0014 deny: **fail-closed**. Round 4 made the corrupt
+row resolve with every denial dropped. Fix: the axes split *before* construction —
+`requireListValues` refuses to resolve a null **denial** value (throw → the deliberate
+500→deny), while a null **grant** value passes through and normalizes to an empty grant
+(narrows). Comments corrected; the test now pins the *outcomes* (grant `[]`-normalized, denial
+throws). The pipeline lesson joined the Mulch record: **trace the whole pipe — a downstream
+normalizer can rewrite the malformed value before it reaches the PDP, so the guard must sit
+upstream of it.** Also from round 5: a present **non-object** `role_definition` now blocks the
+create fallback (explicit null stays honestly absent) ×3 + pins; `is_type_level_request`
+presence-keyed in category/product (a present `id: false` was read as type-level — the widening
+gate) + helper pins; the decision-level malformed-denial witness mirrored into
+catalog/product suites; this note's stale counts and Commits section reconciled; the newman
+deferral (#17) sharpened: the pre-release e2e pass must **author** the negative cell (POST a
+role with a null map value → 422 + problem code), not merely re-run existing collections.
 
 ## Commits
 
-- `682ce72` fix(policies): guard fallback clauses on key presence, not truthiness (round 1)
-- round 2+3: denial-axis shape guard + hoist + object.get bindings, filter-path sibling, Java
-  presence lookups + NPE guard, docs, tests, review note (this commit)
+- `682ce72` fix(policies): guard fallback clauses on key presence, not truthiness — round 1
+- `3f66816` fix(policies): shape-guard the denial axis; align the list residual; presence-fix
+  the Java shadows — round 2 (the refuted-Critical fix + hoist + bindings)
+- `a6f2fc9` fix(policies): close the residual-vs-decision asymmetry and the required_tags
+  scalar escape — round 3
+- `cfdafae` fix(policies): presence-key has_role_definition; empty-collection carve-out; reject
+  null map values at the write path — round 4
+- round 5: the resolve-wire axis split (`requireListValues`), non-object `role_definition`,
+  `is_type_level_request` presence, pin mirrors, note reconciliation (this commit)

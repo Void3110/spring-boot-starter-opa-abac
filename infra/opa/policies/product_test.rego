@@ -1409,3 +1409,24 @@ test_empty_required_tags_collections_are_no_requirement if {
 		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
 	)
 }
+
+# Round-5 pin: the type-level discriminator is presence-keyed — a present malformed id
+# (false: the recorded single-value escape) is an INSTANCE request, never type-level;
+# absent and explicit-null stay type-level.
+test_type_level_request_is_presence_keyed if {
+	product.is_type_level_request with input as {"resource": {"type": "product"}}
+	product.is_type_level_request with input as {"resource": {"type": "product", "id": null}}
+	not product.is_type_level_request with input as {"resource": {"type": "product", "id": false}}
+	not product.is_type_level_request with input as {"resource": {"type": "product", "id": "x1"}}
+}
+
+# Round-5 mirror of category's decision-level malformed-denial witness (sibling cell parity).
+product_malformed_denial_writer := object.union(
+	regional_writer_any,
+	{"denied_actions": {"*": ["delete"], "product": false}},
+)
+
+test_malformed_denial_in_role_definition_denies_at_the_decision if {
+	product.allow with input as product_tag_input(regional_writer_any, {"region": "emea"})
+	not product.allow with input as product_tag_input(product_malformed_denial_writer, {"region": "emea"})
+}
