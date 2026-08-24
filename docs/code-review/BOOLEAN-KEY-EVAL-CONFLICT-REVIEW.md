@@ -203,7 +203,16 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   degradation); round 5 — 7 confirmed (the resolve-wire Critical ×2 lenses + 5 lower, all fixed
   or reconciled — see the Round 5 section), 1 refuted; round 6 — 9 confirmed, 0 refuted (see the
   Round 6 section; two Mediums against this branch's own rounds-4/5 additions, both fixed);
-  round 7 — terminal no-fix round (verdict recorded below before push). The convergence followed the recorded strata pattern (mx-ab7cda):
+  round 7 — 2 confirmed, both Low, zero behavior-changing: (a) the wildcard-denial filter
+  claim re-raised through one lens and was killed by the round's own critic-sibling refutation
+  with the deeper measurement — under PE the `"*"` key emits a `not "*" = input.resource.type`
+  guard, `CompileResponseParser` marks the non-EQ unsupported → batch allow-recheck
+  (wildcard-aware) → fail-closed, and the shipped wire projects `"*"` app-side before OPA sees
+  it (pinned U38); the confirmed variant had measured full-eval `filter` with a concrete type,
+  a path the list flow never takes — **cleared, no code change** (fourth time this claim died);
+  (b) the round-6 DTO normalization was unpinned — test added
+  (`UserMgmtMapperRoleDefinitionTest`). Round 8 — terminal no-fix round (verdict recorded
+  below before push). The convergence followed the recorded strata pattern (mx-ab7cda):
   code edge → latent siblings → deeper policy edges → the last negated consumer → the pipeline
   seam (guard-vs-normalizer ordering) + doc tail.
 
