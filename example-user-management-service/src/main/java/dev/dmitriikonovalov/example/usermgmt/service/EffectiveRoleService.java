@@ -264,15 +264,16 @@ public class EffectiveRoleService {
         if (map.containsKey("*") && !map.containsKey(targetType)) {
             List<String> star = map.get("*");
             // A present-null "*" GRANT value on a legacy row (storable before validateContract's
-            // null rejection) must not NPE (Map.of rejects null); the pass-through is safe on
-            // this axis ONLY: the core RoleDefinition constructor normalizes null values to
-            // empty lists, and an empty GRANT expands to nothing — it narrows. The DENIAL map
-            // never reaches here with a null value — requireListValues refuses to resolve it,
-            // because the same normalization would turn the null into a well-formed
-            // "subtracts nothing" and silently DROP the configured denial (wider than main's
-            // NPE-500-deny on the identical row). (Deep review 2026-08-24, rounds 2+4+5.)
+            // null rejection) must not NPE (Map.of rejects null). It projects to an EMPTY grant
+            // for the target type — the SAME collapse the well-formed twin gets below — so the
+            // sibling concrete keys are dropped identically and a corrupt row can never resolve
+            // WIDER than its twin (a raw pass-through retained siblings: {"*": null,
+            // "category": [...]} out-granted {"*": [], "category": [...]}). The DENIAL map
+            // never reaches here with a null value — requireListValues refuses to resolve it
+            // (the core constructor would normalize the null into a well-formed
+            // "subtracts nothing"). (Deep review 2026-08-24, rounds 2+4+5+6.)
             if (star == null) {
-                return map;
+                return Map.of(targetType, List.of());
             }
             return Map.of(targetType, star);
         }

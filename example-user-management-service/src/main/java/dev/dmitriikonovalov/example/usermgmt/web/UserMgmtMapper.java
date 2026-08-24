@@ -75,8 +75,8 @@ public final class UserMgmtMapper {
                 .teamId(e.getTeamId())
                 .roleLevel(roleLevelOf(e))
                 .attributes(e.getAttributes())
-                .permissions(e.getPermissions())
-                .deniedActions(e.getDeniedActions())
+                .permissions(nullSafeValues(e.getPermissions()))
+                .deniedActions(nullSafeValues(e.getDeniedActions()))
                 .requiredTags(e.getRequiredTags());
         if (e.getMatchMode() != null) {
             dto.matchMode(
@@ -84,6 +84,22 @@ public final class UserMgmtMapper {
                             .valueOf(e.getMatchMode()));
         }
         return dto;
+    }
+
+    /**
+     * Legacy rows could store null map values (the write path rejects them now, and the resolve
+     * wire refuses null denials); the documented schema says every value is an array, so
+     * normalize on read. Display-path only — the DTO is never a decision input.
+     * (Deep review 2026-08-24, round 6.)
+     */
+    private static java.util.Map<String, java.util.List<String>> nullSafeValues(
+            java.util.Map<String, java.util.List<String>> map) {
+        if (map == null) {
+            return java.util.Map.of();
+        }
+        var out = new java.util.LinkedHashMap<String, java.util.List<String>>();
+        map.forEach((k, v) -> out.put(k, v == null ? java.util.List.of() : v));
+        return out;
     }
 
     /** The G1 round-trip lens: roleLevel is read from {@code attributes.role_level} (null if unreadable). */

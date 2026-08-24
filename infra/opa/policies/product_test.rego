@@ -1430,3 +1430,25 @@ test_malformed_denial_in_role_definition_denies_at_the_decision if {
 	product.allow with input as product_tag_input(regional_writer_any, {"region": "emea"})
 	not product.allow with input as product_tag_input(product_malformed_denial_writer, {"region": "emea"})
 }
+
+# Round-6 pin: a present NON-OBJECT root_attributes on the supervised path is an UNPROVABLE
+# tier -> closed (the unproven-tier clause is a truthiness test, so truthy garbage read as
+# "present" and fell through to the OPEN untagged tier). Baseline: absent root_attributes
+# already lands on the unproven-tier deny.
+test_supervised_nonobject_root_attributes_stays_closed if {
+	base := {
+		"subject": {"id": "s", "roles": [], "attributes": {}},
+		"action": "product:view",
+		"resource": {"type": "product", "id": "x1", "attributes": {}},
+		"role_definition": {
+			"attributes": {"provenance": "supervised"},
+			"permissions": {"product": ["READ"]},
+		},
+		"environment": {},
+	}
+	product.denied_other with input as base
+	product.denied_other with input as object.union(
+		base,
+		{"resource": {"type": "product", "id": "x1", "attributes": {}, "root_attributes": "corrupt"}},
+	)
+}

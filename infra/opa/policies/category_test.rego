@@ -1537,3 +1537,25 @@ test_type_level_request_is_presence_keyed if {
 	not category.is_type_level_request with input as {"resource": {"type": "category", "id": false}}
 	not category.is_type_level_request with input as {"resource": {"type": "category", "id": "x1"}}
 }
+
+# Round-6 pin: a present NON-OBJECT root_attributes on the supervised path is an UNPROVABLE
+# tier -> closed (the unproven-tier clause is a truthiness test, so truthy garbage read as
+# "present" and fell through to the OPEN untagged tier). Baseline: absent root_attributes
+# already lands on the unproven-tier deny.
+test_supervised_nonobject_root_attributes_stays_closed if {
+	base := {
+		"subject": {"id": "s", "roles": [], "attributes": {}},
+		"action": "category:view",
+		"resource": {"type": "category", "id": "x1", "attributes": {}},
+		"role_definition": {
+			"attributes": {"provenance": "supervised"},
+			"permissions": {"category": ["READ"]},
+		},
+		"environment": {},
+	}
+	category.denied_other with input as base
+	category.denied_other with input as object.union(
+		base,
+		{"resource": {"type": "category", "id": "x1", "attributes": {}, "root_attributes": "corrupt"}},
+	)
+}

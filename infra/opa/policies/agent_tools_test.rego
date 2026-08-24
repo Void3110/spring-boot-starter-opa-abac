@@ -424,3 +424,14 @@ test_a_longer_chain_does_not_widen if {
 	# Same decision as the single-hop agent: the chain is recorded, not consulted.
 	agent_tools.allow with input as request(subject, "view", product_tool, principal_role_def)
 }
+
+# The malformed-denial decision witness on the tool-gate's principal ceiling (deep review
+# 2026-08-24, round 6): a malformed consulted denial collapses effective_actions and the
+# human branch's ceiling membership fails -> deny.
+test_malformed_denial_in_principal_role_denies_the_human_call if {
+	agent_tools.allow with input as request(human_subject, "view", product_tool, principal_role_def)
+	not agent_tools.allow with input as request(
+		human_subject, "view", product_tool,
+		object.union(principal_role_def, {"denied_actions": {"*": ["delete"], "product": false}}),
+	)
+}

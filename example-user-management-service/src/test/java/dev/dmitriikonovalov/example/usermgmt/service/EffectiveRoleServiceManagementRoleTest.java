@@ -89,13 +89,16 @@ class EffectiveRoleServiceManagementRoleTest {
         TeamMembership m = new TeamMembership(UUID.randomUUID(), TEAM, USER, roleId);
         Map<String, List<String>> nullStarGrants = new HashMap<>();
         nullStarGrants.put("*", null);
+        nullStarGrants.put("category", List.of("WRITE")); // sibling key: must NOT survive
         RoleDefinitionEntity role = new RoleDefinitionEntity(
                 roleId, "corrupt-role", false, TEAM, Map.of("role_level", 20), nullStarGrants);
         when(roles.findById(roleId)).thenReturn(Optional.of(role));
 
         RoleDefinition resolved = service.resourceRole(m, "catalog");
-        assertThat(resolved.permissions()).containsOnlyKeys("*");
-        assertThat(resolved.permissions().get("*")).isEmpty(); // normalized: grants NOTHING
+        // the corrupt wildcard projects to an EMPTY target grant — the same collapse the
+        // well-formed twin gets, siblings dropped — so corrupt never out-grants well-formed
+        assertThat(resolved.permissions()).containsOnlyKeys("catalog");
+        assertThat(resolved.permissions().get("catalog")).isEmpty();
 
         Map<String, List<String>> nullStarDenials = new HashMap<>();
         nullStarDenials.put("*", null);

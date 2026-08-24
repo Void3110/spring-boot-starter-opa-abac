@@ -90,12 +90,12 @@ anyway). Two Rego mechanics are load-bearing and documented in-module, both meas
 | # | Issue | Status |
 |---|-------|--------|
 | 12 | Round 2's filter comment misdocumented the PE mechanism ("folds to constants — input.resource.type is known"): `input.resource` *is* the unknown, the clauses fold to negated type-eq guards, and safety on fired guards holds via the unsupported-residual → batch-recheck degradation, not constant folding. | **Fixed** — comment corrected ×3, naming the real mechanism |
-| 13 | The `expandWildcard` NPE fix (#7) shipped without a pinning test (the contract-suite `Map.of` fixtures cannot hold nulls). | **Fixed** — `presentNullWildcardValueResolvesWithoutExpandingOrThrowing` (HashMap fixtures through the public `resourceRole` seam) |
+| 13 | The `expandWildcard` NPE fix (#7) shipped without a pinning test (the contract-suite `Map.of` fixtures cannot hold nulls). | **Fixed** — evolved across rounds 5–6 into `presentNullWildcardGrantNarrowsButNullDenialRefusesToResolve` (multi-key HashMap fixture through the public `resourceRole` seam, pinning the OUTCOMES: grant projects to the empty target grant with siblings dropped; denial refuses to resolve) |
 | 3 | Java shadows of the wildcard lookup (`RoleDefinitionService.grantedTokensFor`, `TypeLevelRoleDefinitionSupplier.permissionsFor`/`deniedFor`) used `get() == null`, treating a present-null key as absent — diverging from the presence rule the policy now pins. (`expandWildcard` already used `containsKey`; its null-value bug is #7 above.) | **Fixed** — `containsKey` in all three lookups |
 | 4 | Mutation-prove round 1: mutant M4 (`denied_for` empty-clause guards) survived — no test covered a `false` denial without a `"*"` key. | **Fixed** — the round-2 denial suite kills it (`test_boolean_false_denial_without_wildcard_also_denies`) |
 | 5 | The Mulch record shipped with round 1 pinned the refuted denial semantics and under-scoped the sweep rule (function heads only). | **Fixed** — record `mx-c615a4` rewritten (axis asymmetry, the three measured traps, assigned-heads + Java-shadows sweep rule) |
 | 8 | Totality precision (round 2): `tokens_for`'s `[]` fallback and `resource_tag_values`' empty fallback never fired for a *wholly-absent* map — the guard over `object.keys(<absent ref>)` cannot succeed; the documented contract held only via comprehension absorption (decision-identical, but the header's totality claim was aspirational). | **Fixed** — `object.get` bindings in both (mirroring `denied_for` clause 3); decision-invisible by construction, so their mutants are *predicted equivalents* (measured: M14/M15 survive) |
-| 9 | The Java presence-semantics change shipped without a pinning test (the contract suite's `Map.of` fixtures cannot express null values). | **Fixed** — `presentNullTypeKeyDoesNotWidenDenialValidationIntoWildcard` (HashMap fixture; fails on the old nullness code, passes on presence) |
+| 9 | The Java presence-semantics change shipped without a pinning test (the contract suite's `Map.of` fixtures cannot express null values). | **Fixed, then superseded (round 4)** — the original presence pin was replaced by the upstream 422 rejection pair (`presentNullPermissionsValueRejected` / `presentNullDeniedActionsValueRejected`): with null values refused at the write path, the presence lookups are legacy-row belt with no reachable pinnable difference |
 
 ## Fail-closed verification
 
@@ -180,7 +180,7 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
 
 ## Test results
 
-- `opa test infra/opa/policies`: **418/418** · mirror bundle: **32/32** · `opa check --strict`:
+- `opa test infra/opa/policies`: **423/423** · mirror bundle: **33/33** · `opa check --strict`:
   clean on both
 - `./gradlew build` (all modules, Testcontainers ITs against the changed bundle): **green**
 - `.sonar-local/sonar-local.sh` (Java touched): **CLEAN — 0 open findings**
@@ -190,7 +190,7 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   `effective_actions` / `false` at `category.allow` / `false` at `role.assignable` (was 500 on
   `main`, was **allow** after round 1)
 - e2e (newman): not run this branch — the diff changes malformed-shape behavior only; well-formed
-  paths are covered by the 418 (+32 mirror) policy tests + the Testcontainers ITs. The standing pre-release
+  paths are covered by the 423 (+33 mirror) policy tests + the Testcontainers ITs. The standing pre-release
   fleet re-run (carried since the 08-20 handoff) covers the gateway path before the next cut.
 - Adversarial review: round 1 — 8 lenses, 8 confirmed (1 Critical), 2 refuted; round 2 — 11
   confirmed: 6 were the commit-the-working-tree process artifact (the lenses diff committed HEAD;
@@ -201,8 +201,9 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   degradation); round 4 — 5 confirmed (#14–#17 + one duplicate of #15's sibling scope), 2
   refuted (both re-raising the filter wildcard-denial shape, again cleared via the batch-recheck
   degradation); round 5 — 7 confirmed (the resolve-wire Critical ×2 lenses + 5 lower, all fixed
-  or reconciled — see the Round 5 section), 1 refuted; round 6 — terminal no-fix round (verdict
-  recorded below before push). The convergence followed the recorded strata pattern (mx-ab7cda):
+  or reconciled — see the Round 5 section), 1 refuted; round 6 — 9 confirmed, 0 refuted (see the
+  Round 6 section; two Mediums against this branch's own rounds-4/5 additions, both fixed);
+  round 7 — terminal no-fix round (verdict recorded below before push). The convergence followed the recorded strata pattern (mx-ab7cda):
   code edge → latent siblings → deeper policy edges → the last negated consumer → the pipeline
   seam (guard-vs-normalizer ordering) + doc tail.
 
@@ -227,6 +228,28 @@ catalog/product suites; this note's stale counts and Commits section reconciled;
 deferral (#17) sharpened: the pre-release e2e pass must **author** the negative cell (POST a
 role with a null map value → 422 + problem code), not merely re-run existing collections.
 
+## Round 6 — the two holes in this review's own additions
+
+- **`has_role_definition` collapsed to `!= null`** (Medium): a present object *without* a
+  `permissions` key — a role carrying only denials — satisfied neither round-4/5 presence
+  clause, so the create fallback opened and silently dropped the role's explicit denial
+  (wire-unreachable via the library serializer, in-scope by this branch's own standard). Any
+  present non-null document now blocks; explicit null stays honestly absent. Pinned
+  (denials-only role blocks create); category/product parity mutants remain documented
+  equivalents.
+- **`expandWildcard` null-star now projects to the empty target grant** (Medium): the round-5
+  pass-through retained sibling concrete keys, so `{"*": null, "category": [WRITE]}` resolved
+  *wider* than its well-formed twin `{"*": [], "category": [WRITE]}` (which collapses to
+  `{target: []}`). The corrupt row now gets the same twin collapse — siblings dropped — and
+  the multi-key shape is the pinned fixture.
+- Lows: the supervised tier's `root_attributes` truthiness guard gained a shape clause
+  (present non-object = unprovable tier = closed) in category+product + pins; legacy null map
+  values are normalized at the DTO mapper so documented GET responses match the schema; the
+  malformed-denial decision witness now covers all six `effective_actions` consumers
+  (team ×2 bundles + agent_tools added); this note's #9/#13 rows reconciled with the tree.
+- Carried (unchanged disposition): the newman 422-cell authorship in the tracked pre-release
+  e2e pass (#17).
+
 ## Commits
 
 - `682ce72` fix(policies): guard fallback clauses on key presence, not truthiness — round 1
@@ -236,5 +259,8 @@ role with a null map value → 422 + problem code), not merely re-run existing c
   scalar escape — round 3
 - `cfdafae` fix(policies): presence-key has_role_definition; empty-collection carve-out; reject
   null map values at the write path — round 4
-- round 5: the resolve-wire axis split (`requireListValues`), non-object `role_definition`,
-  `is_type_level_request` presence, pin mirrors, note reconciliation (this commit)
+- `dd8c869` fix(resolve): refuse to resolve null denial values; presence-key the last
+  truthiness readers — round 5
+- round 6: `has_role_definition` `!= null` collapse, twin-matching null-star projection,
+  supervised-tier shape clause, DTO normalization, witness parity, note reconciliation
+  (this commit)

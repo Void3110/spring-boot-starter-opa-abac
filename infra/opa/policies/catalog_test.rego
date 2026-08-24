@@ -778,3 +778,14 @@ test_malformed_denial_in_role_definition_denies_at_the_decision if {
 	catalog.allow with input as catalog_tag_input(regional_catalog_writer, {"region": "emea"})
 	not catalog.allow with input as catalog_tag_input(catalog_malformed_denial_writer, {"region": "emea"})
 }
+
+# Round-6 pin: a present OBJECT role_definition WITHOUT a permissions key (a role carrying
+# only denials) also blocks the create fallback — ANY present non-null document does; the
+# fallback path never consults denied_actions, so reading such a role as absent would
+# silently drop its explicit denial.
+test_fallback_closed_for_denials_only_role_definition if {
+	not catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": {"denied_actions": {"catalog": ["create"]}}},
+	)
+}

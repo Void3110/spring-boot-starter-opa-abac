@@ -148,17 +148,17 @@ inherited_grant if {
 # reopening the realm branch for exactly the shape the corpus pins as present-blocks-fallback.
 # Positive consumers (the filter guards) are unaffected: a malformed permissions value still
 # dies in the token chain. (Deep review 2026-08-24, round 4.)
-has_role_definition if {
-	"permissions" in object.keys(input.role_definition)
-}
-
-# A present but NON-OBJECT role_definition also counts as "has one" — present-but-malformed
-# must block the fallback, never widen (an explicit JSON null stays an honest ABSENT: the
-# app serializes a missing role as null, exactly like the null resource id).
-# (Deep review 2026-08-24, round 5.)
+# ANY present, non-null role_definition "has one" — presence of the DOCUMENT, not of any key
+# or shape: an object missing its permissions key (a role carrying only denials), a scalar,
+# `false` — all present-but-malformed, and the negated consumer (the create fallback) must
+# never read them as "no resolved role" (round 6: the two earlier presence clauses missed the
+# object-without-permissions shape, silently dropping such a role's explicit denials). An
+# explicit JSON null stays an honest ABSENT — the app serializes a missing role as null,
+# exactly like the null resource id. Positive consumers (the filter guards) are unaffected:
+# their token chain still requires a well-formed permissions map.
+# (Deep review 2026-08-24, rounds 4-6.)
 has_role_definition if {
 	input.role_definition != null
-	not is_object(input.role_definition)
 }
 
 # ---------------------------------------------------------------------------
@@ -230,6 +230,17 @@ denied_other if {
 denied_other if {
 	input.role_definition.attributes.provenance == "supervised"
 	not input.resource.root_attributes
+}
+
+# Tier UNPROVABLE — root_attributes is present but not an object, so no tier comparison can
+# be made against it: the same closed outcome as the unproven tier above. (The clause above is
+# a truthiness test, so any truthy garbage — a string, a number, an array — read as "present"
+# and fell through to the OPEN untagged tier.) Provenance-scoped like every clause here.
+# (Deep review 2026-08-24, round 6.)
+denied_other if {
+	input.role_definition.attributes.provenance == "supervised"
+	root := input.resource.root_attributes
+	not is_object(root)
 }
 
 # ADR 0030 Amendment 4 — THE SUPERVISED PATH IS HUMAN-ONLY. Supervision and elevation are human
