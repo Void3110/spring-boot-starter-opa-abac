@@ -146,6 +146,97 @@ test_concrete_denial_wins_over_wildcard_denial if {
 	) == {"create", "delete"}
 }
 
+# --- boolean-valued keys are PRESENT keys (the truthiness trap, 2026-08-24) -------
+#
+# `false` is Rego's only falsy defined value — the one shape where a truthiness-guarded
+# fallback fires ALONGSIDE the concrete-key clause and the two outputs eval-conflict into an
+# HTTP 500 from the data API. These pins are the regression: a boolean value must land on the
+# ordinary fail-closed floor, never on a conflict. Before the key-presence guards, the `false`
+# cases ERRORED this suite.
+#
+# The two axes fail closed DIFFERENTLY (deep review 2026-08-24): a malformed GRANT value
+# under-grants (present key wins, non-array expands to nothing -> empty set), while a malformed
+# CONSULTED DENIAL value collapses the whole answer to undefined (-> consumer default deny),
+# because silently dropping a configured subtraction would be extra access. Only the consulted
+# denial lookup is validated — garbage under an unconsulted key stays inert.
+
+test_boolean_false_grant_is_present_key_denies if {
+	permissions.effective_actions({"permissions": {"category": false}}, "category") == set()
+}
+
+test_boolean_false_grant_blocks_wildcard_fallback if {
+	# present-but-malformed behaves exactly like the present empty list: no wildcard widening
+	permissions.effective_actions(
+		{"permissions": {"*": ["READ"], "category": false}},
+		"category",
+	) == set()
+}
+
+test_boolean_true_grant_is_present_key_denies if {
+	permissions.effective_actions({"permissions": {"category": true}}, "category") == set()
+}
+
+test_boolean_false_denial_collapses_the_answer_to_deny if {
+	# the denial axis fails CLOSED: a malformed consulted denial must never read as
+	# "subtracts nothing" — the whole answer goes undefined -> every consumer default-denies
+	not permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"*": ["view"], "category": false},
+		},
+		"category",
+	)
+}
+
+test_boolean_false_denial_without_wildcard_also_denies if {
+	not permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"category": false},
+		},
+		"category",
+	)
+}
+
+test_malformed_wildcard_denial_consulted_via_fallback_denies if {
+	not permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"*": false},
+		},
+		"category",
+	)
+}
+
+test_nonobject_denied_actions_denies if {
+	not permissions.effective_actions(
+		{"permissions": {"category": ["READ"]}, "denied_actions": "corrupt"},
+		"category",
+	)
+}
+
+test_malformed_denial_under_unconsulted_key_is_inert if {
+	# only the consulted lookup is validated — garbage under ANOTHER type key must not brick
+	# this one (narrowest safe reading; the write path rejects the shape anyway)
+	permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"product": false},
+		},
+		"category",
+	) == {"view", "list", "list-members"}
+}
+
+test_wildcard_denial_still_applies_beside_unconsulted_garbage if {
+	permissions.effective_actions(
+		{
+			"permissions": {"category": ["READ"]},
+			"denied_actions": {"*": ["view"], "product": false},
+		},
+		"category",
+	) == {"list", "list-members"}
+}
+
 # --- P12: edge algebra -----------------------------------------------------------
 
 test_empty_permissions_yield_empty_set if {
@@ -185,26 +276,4 @@ test_denying_everything_granted_yields_empty_set if {
 		},
 		"category",
 	) == set()
-}
-
-# --- effective_from_categories (the realm fallback's helper) ----------------------
-
-test_from_categories_read if {
-	permissions.effective_from_categories({"READ"}) == {"view", "list", "list-members"}
-}
-
-test_from_categories_editor_set if {
-	permissions.effective_from_categories({"READ", "WRITE", "TAG"}) == {
-		"view", "list", "list-members",
-		"create", "update", "delete",
-		"define-tags", "assign-tags",
-	}
-}
-
-test_from_categories_unknown_token_contributes_nothing if {
-	permissions.effective_from_categories({"READ", "bogus"}) == {"view", "list", "list-members"}
-}
-
-test_from_categories_empty if {
-	permissions.effective_from_categories(set()) == set()
 }

@@ -57,7 +57,11 @@ allow if {
 # id. The app serializes that as an ABSENT key OR an explicit `null` (a Java `null` id) — both mean
 # "type-level", so this helper accepts either. (`not input.resource.id` alone is UNDEFINED — not true —
 # for an explicit `null`, which silently closed the coarse type-level gate; Slice B4 made it null-safe.)
-is_type_level_request if not input.resource.id
+# KEY PRESENCE on the first clause (round 5): `not input.resource.id` alone is a truthiness
+# test, so a present `id: false` read as type-level and flipped an instance decision onto the
+# wider type-level gate. A present malformed id is an INSTANCE request (which then fails
+# resolution -> deny); only an absent or explicitly-null id is type-level.
+is_type_level_request if not "id" in object.keys(input.resource)
 
 is_type_level_request if input.resource.id == null
 
@@ -141,8 +145,23 @@ inherited_grant if {
 	verb in permissions.effective_actions(input.role_definition, ancestor.type)
 }
 
+# KEY PRESENCE, not truthiness (the recorded single-value escape, closing its last consumer):
+# the bare reference left this rule undefined for `permissions: false`, and the NEGATED
+# consumer (catalog's B4 create fallback) then treated a PRESENT resolved role as absent —
+# reopening the realm branch for exactly the shape the corpus pins as present-blocks-fallback.
+# Positive consumers (the filter guards) are unaffected: a malformed permissions value still
+# dies in the token chain. (Deep review 2026-08-24, round 4.)
+# ANY present, non-null role_definition "has one" — presence of the DOCUMENT, not of any key
+# or shape: an object missing its permissions key (a role carrying only denials), a scalar,
+# `false` — all present-but-malformed, and the negated consumer (the create fallback) must
+# never read them as "no resolved role" (round 6: the two earlier presence clauses missed the
+# object-without-permissions shape, silently dropping such a role's explicit denials). An
+# explicit JSON null stays an honest ABSENT — the app serializes a missing role as null,
+# exactly like the null resource id. Positive consumers (the filter guards) are unaffected:
+# their token chain still requires a well-formed permissions map.
+# (Deep review 2026-08-24, rounds 4-6.)
 has_role_definition if {
-	input.role_definition.permissions
+	input.role_definition != null
 }
 
 # ---------------------------------------------------------------------------
@@ -214,6 +233,17 @@ denied_other if {
 denied_other if {
 	input.role_definition.attributes.provenance == "supervised"
 	not input.resource.root_attributes
+}
+
+# Tier UNPROVABLE — root_attributes is present but not an object, so no tier comparison can
+# be made against it: the same closed outcome as the unproven tier above. (The clause above is
+# a truthiness test, so any truthy garbage — a string, a number, an array — read as "present"
+# and fell through to the OPEN untagged tier.) Provenance-scoped like every clause here.
+# (Deep review 2026-08-24, round 6.)
+denied_other if {
+	input.role_definition.attributes.provenance == "supervised"
+	root := input.resource.root_attributes
+	not is_object(root)
 }
 
 # ADR 0030 Amendment 4 — THE SUPERVISED PATH IS HUMAN-ONLY. Supervision and elevation are human
@@ -375,8 +405,15 @@ resource_tag_values(key) := values if {
 	values := {value}
 }
 
+# Key PRESENCE, not truthiness: `false` is Rego's only falsy defined value, so a truthiness
+# guard here fires ALONGSIDE the singleton clause above (which happily binds `false`) — two
+# clauses, two outputs, and OPA answers eval_conflict_error (the data API's HTTP 500) instead
+# of deciding. Testing the key keeps a false-valued attribute on the singleton path, where
+# {false} intersects no acceptable tag set -> the ordinary no-match deny. An absent key still
+# yields the empty set. (External consumer review, 2026-08-23.)
 resource_tag_values(key) := set() if {
-	not input.resource.attributes[key]
+	attributes := object.get(input.resource, "attributes", {})
+	not key in object.keys(attributes)
 }
 
 # A single required key is satisfied when the resource's value(s) for it intersect the
@@ -408,8 +445,30 @@ tags_satisfied if {
 	not has_required_tags
 }
 
+# A present required_tags key COUNTS AS a requirement whatever its shape: the old count()>0
+# guard type-errored to undefined on a scalar (false, a number) and `not has_required_tags`
+# then passed vacuously — silently dropping the whole configured tag narrowing on the decision
+# AND the list residual (measured; deep review 2026-08-24, round 3 — the header always promised
+# malformed -> deny). Keyed on presence, with one deliberate carve-out: a present EMPTY
+# collection (object OR array) is "no requirement" — back-compat with the count()>0 reading,
+# which read both as requirement-free (round 4: [] + ALL_OF would otherwise vacuously ALLOW
+# through `every`, and [] + ANY_OF silently flipped to deny). Any other present non-object
+# shape is a requirement no match rule can satisfy -> tags_satisfied fails -> deny.
 has_required_tags if {
-	count(input.role_definition.required_tags) > 0
+	"required_tags" in object.keys(input.role_definition)
+	not empty_required_tags
+}
+
+empty_required_tags if {
+	required := input.role_definition.required_tags
+	is_object(required)
+	count(required) == 0
+}
+
+empty_required_tags if {
+	required := input.role_definition.required_tags
+	is_array(required)
+	count(required) == 0
 }
 
 # ---------------------------------------------------------------------------
@@ -458,6 +517,32 @@ filter if {
 # The role explicitly withholds "list" for this type (deny-overrides at the list boundary).
 filter_list_denied if {
 	"list" in input.role_definition.denied_actions[input.resource.type]
+}
+
+# A malformed consulted denial fails the LIST path closed too: `in` over a non-collection is
+# undefined, so without this clause the membership guard above silently DROPS the denial and
+# the residual is wider than the decision (the allow path collapses to deny on the same shape
+# via permissions.denied_for).
+#
+# PARTIAL-EVAL NOTE (corrected in round 3): input.resource — including .type — is the UNKNOWN
+# (the app compiles with unknowns=["input.resource"]), so these clauses do NOT fold to
+# constants; they fold to (negated) type-eq guards over the enumerated denied_actions keys, and
+# a fired guard makes the residual unsupported -> the client degrades to the batch
+# allow-recheck (fail-closed by the documented degradation path). Only a denial-free role's
+# residual keeps its unchanged shape. (Deep review 2026-08-24, rounds 2-3.)
+filter_list_denied if {
+	denied := input.role_definition.denied_actions[input.resource.type]
+	not is_array(denied)
+}
+
+# A NON-OBJECT denied_actions map is undefined under BOTH clauses above (indexing a non-object
+# is undefined), which would leave the residual WIDER than the decision — the allow side
+# collapses on the same shape via denied_for's object guards. The binding keeps a wholly-absent
+# map non-denying: an absent ref leaves `denied_actions` unbound and this clause never fires.
+# (Deep review 2026-08-24, round 3.)
+filter_list_denied if {
+	denied_actions := input.role_definition.denied_actions
+	not is_object(denied_actions)
 }
 
 # No required tags -> vacuously true (an unconditional residual -> ALLOW_ALL for this subject).

@@ -212,7 +212,7 @@ public class EffectiveRoleService {
                 role.getCode(),
                 withMembershipProvenance(role.getAttributes()),
                 expandWildcard(role.getPermissions(), targetType),
-                expandWildcard(role.getDeniedActions(), targetType),
+                expandWildcard(requireListValues(role.getDeniedActions()), targetType),
                 role.getRequiredTags(),
                 parseMatchMode(role.getMatchMode()));
     }
@@ -262,8 +262,44 @@ public class EffectiveRoleService {
     private static Map<String, List<String>> expandWildcard(
             Map<String, List<String>> map, String targetType) {
         if (map.containsKey("*") && !map.containsKey(targetType)) {
-            return Map.of(targetType, map.get("*"));
+            List<String> star = map.get("*");
+            // A present-null "*" GRANT value on a legacy row (storable before validateContract's
+            // null rejection) must not NPE (Map.of rejects null). It projects to an EMPTY grant
+            // for the target type — the SAME collapse the well-formed twin gets below — so the
+            // sibling concrete keys are dropped identically and a corrupt row can never resolve
+            // WIDER than its twin (a raw pass-through retained siblings: {"*": null,
+            // "category": [...]} out-granted {"*": [], "category": [...]}). The DENIAL map
+            // never reaches here with a null value — requireListValues refuses to resolve it
+            // (the core constructor would normalize the null into a well-formed
+            // "subtracts nothing"). (Deep review 2026-08-24, rounds 2+4+5+6.)
+            if (star == null) {
+                return Map.of(targetType, List.of());
+            }
+            return Map.of(targetType, star);
         }
         return map;
+    }
+
+    /**
+     * DENIAL-AXIS GUARD (deep review 2026-08-24, round 5). A null denied_actions value on a
+     * legacy row must FAIL the resolution loudly — the resolve endpoint 500s, the consuming
+     * supplier throws {@code RoleResolutionException}, and the ADR-0014 catch denies — because
+     * letting it flow onward is a widening: the core {@code RoleDefinition} constructor
+     * normalizes null values to empty lists, and an empty denial list is a well-formed
+     * "subtracts nothing". An ABSENT map stays an honest "no denials".
+     */
+    private static Map<String, List<String>> requireListValues(Map<String, List<String>> deniedActions) {
+        if (deniedActions == null) {
+            return Map.of();
+        }
+        for (var entry : deniedActions.entrySet()) {
+            if (entry.getValue() == null) {
+                throw new IllegalStateException(
+                        "denied_actions value for type '" + entry.getKey()
+                                + "' is null — corrupt role row; refusing to resolve (the null would"
+                                + " normalize to an empty list and silently subtract nothing)");
+            }
+        }
+        return deniedActions;
     }
 }

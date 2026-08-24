@@ -1382,3 +1382,180 @@ test_elevation_is_a_human_ceremony if {
 	category.elevated with input as elev_input(tiered_supervisor_role, production_root, fresh_aal2)
 		with time.now_ns as stepup_now_ns
 }
+
+# --- boolean-valued attributes are PRESENT keys (the truthiness trap, 2026-08-24) ----
+
+# A `false`-valued attribute for a required tag key must land on the ordinary no-match deny —
+# never on a resource_tag_values eval conflict (a truthiness-guarded fallback also fires on
+# `false`; two outputs = the data API's HTTP 500). The direct helper pin makes the
+# singleton-clause routing explicit; before the key-presence guard this test ERRORED, not failed.
+test_tag_boolean_false_attribute_denies_without_conflict if {
+	not category.allow with input as tag_input(regional_reader_any, {"region": false})
+	category.resource_tag_values("region") == {false}
+		with input as tag_input(regional_reader_any, {"region": false})
+}
+
+# The decision-level witness for the denial-axis shape guard (deep review 2026-08-24): the
+# same input that ALLOWS under a well-formed role_definition must DENY outright when the
+# consulted denial value is malformed — never widen by dropping the "*" subtraction.
+malformed_denial_reader := {
+	"code": "regional-reader",
+	"attributes": {"role_level": 15},
+	"permissions": {"category": ["READ"]},
+	"denied_actions": {"*": ["view"], "category": false},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+test_malformed_denial_in_role_definition_denies_at_the_decision if {
+	category.allow with input as tag_input(regional_reader_any, {"region": ["emea"]})
+	not category.allow with input as tag_input(malformed_denial_reader, {"region": ["emea"]})
+}
+
+# The LIST-path sibling of the denial shape guard (deep review 2026-08-24, round 2): a malformed
+# consulted denial value must fail the residual closed — `in` over a non-collection is undefined,
+# so without the second filter_list_denied clause the residual would be WIDER than the decision.
+test_filter_malformed_denial_fails_closed if {
+	well_formed := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"category": ["READ"]},
+	}
+	category.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:list",
+		"resource": {"type": "category"},
+		"role_definition": well_formed,
+		"environment": {},
+	}
+	not category.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:list",
+		"resource": {"type": "category"},
+		"role_definition": object.union(well_formed, {"denied_actions": {"category": false}}),
+		"environment": {},
+	}
+}
+
+# --- round-3 pins (deep review 2026-08-24): the remaining malformed-shape escapes ----
+
+# (a) A NON-OBJECT denied_actions map fails the LIST residual closed — the decision side
+# already collapses via denied_for's object guards; the residual must not be wider.
+test_filter_nonobject_denied_actions_fails_closed if {
+	not category.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:list",
+		"resource": {"type": "category"},
+		"role_definition": {
+			"code": "r",
+			"attributes": {"role_level": 15},
+			"permissions": {"category": ["READ"]},
+			"denied_actions": "corrupt",
+		},
+		"environment": {},
+	}
+}
+
+# (b) A present NON-COLLECTION required_tags is a requirement nothing satisfies: the configured
+# narrowing must never silently drop (count() type-errored to undefined and the vacuous clause
+# passed; has_required_tags is now presence-keyed). Decision AND list, with a positive baseline.
+test_malformed_required_tags_scalar_denies if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"category": ["READ", "WRITE"]},
+	}
+	full_input := {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:update",
+		"resource": {"type": "category", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	category.allow with input as object.union(full_input, {"role_definition": base})
+	not category.allow with input as object.union(
+		full_input,
+		{"role_definition": object.union(base, {"required_tags": false})},
+	)
+	not category.allow with input as object.union(
+		full_input,
+		{"role_definition": object.union(base, {"required_tags": 123})},
+	)
+	not category.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:list",
+		"resource": {"type": "category"},
+		"role_definition": object.union(base, {"required_tags": false}),
+		"environment": {},
+	}
+		with data.config as {}
+}
+
+# Round-4 pins: a present EMPTY collection (object or array) is "no requirement" in BOTH match
+# modes (back-compat with the count()>0 reading — [] + ALL_OF would otherwise pass only via a
+# vacuous `every`, and [] + ANY_OF silently flipped to deny); a present NON-EMPTY array is a
+# requirement nothing satisfies.
+test_empty_required_tags_collections_are_no_requirement if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"category": ["READ", "WRITE"]},
+	}
+	upd := {
+		"subject": {"id": "u", "roles": []},
+		"action": "category:update",
+		"resource": {"type": "category", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	category.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": {}, "match_mode": "ALL_OF"})},
+	)
+	category.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ALL_OF"})},
+	)
+	category.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ANY_OF"})},
+	)
+	not category.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ANY_OF"})},
+	)
+	not category.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
+	)
+}
+
+# Round-5 pin: the type-level discriminator is presence-keyed — a present malformed id
+# (false: the recorded single-value escape) is an INSTANCE request, never type-level;
+# absent and explicit-null stay type-level.
+test_type_level_request_is_presence_keyed if {
+	category.is_type_level_request with input as {"resource": {"type": "category"}}
+	category.is_type_level_request with input as {"resource": {"type": "category", "id": null}}
+	not category.is_type_level_request with input as {"resource": {"type": "category", "id": false}}
+	not category.is_type_level_request with input as {"resource": {"type": "category", "id": "x1"}}
+}
+
+# Round-6 pin: a present NON-OBJECT root_attributes on the supervised path is an UNPROVABLE
+# tier -> closed (the unproven-tier clause is a truthiness test, so truthy garbage read as
+# "present" and fell through to the OPEN untagged tier). Baseline: absent root_attributes
+# already lands on the unproven-tier deny.
+test_supervised_nonobject_root_attributes_stays_closed if {
+	base := {
+		"subject": {"id": "s", "roles": [], "attributes": {}},
+		"action": "category:view",
+		"resource": {"type": "category", "id": "x1", "attributes": {}},
+		"role_definition": {
+			"attributes": {"provenance": "supervised"},
+			"permissions": {"category": ["READ"]},
+		},
+		"environment": {},
+	}
+	category.denied_other with input as base
+	category.denied_other with input as object.union(
+		base,
+		{"resource": {"type": "category", "id": "x1", "attributes": {}, "root_attributes": "corrupt"}},
+	)
+}

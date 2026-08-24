@@ -237,3 +237,14 @@ test_bulk_empty if {
 	result := team.bulk with input as {"items": []}
 	result == []
 }
+
+# The malformed-denial decision witness on the control plane (deep review 2026-08-24, round 6;
+# sibling cell parity with the per-type suites): a malformed consulted denial collapses
+# effective_actions -> deny, never "subtracts nothing".
+test_malformed_denial_in_role_definition_denies_at_the_decision if {
+	team.allow with input as team_input("team:define-tags", owner_role_def)
+	not team.allow with input as team_input(
+		"team:define-tags",
+		object.union(owner_role_def, {"denied_actions": {"*": ["view"], "team": false}}),
+	)
+}

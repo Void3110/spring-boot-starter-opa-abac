@@ -207,11 +207,14 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
                 "type-level:" + resourceType, Map.of(), permissions, deniedActions, Map.of(), null);
     }
 
+    // Key PRESENCE, not nullness, decides the "*" fallback in both lookups — mirroring the
+    // policy side (permissions.rego), where a present key wins whatever its value. A present
+    // key with a null value narrows to nothing here rather than widening into the wildcard
+    // (deep review 2026-08-24).
     private static List<String> permissionsFor(RoleDefinition role, String resourceType) {
-        List<String> tokens = role.permissions().get(resourceType);
-        if (tokens == null) {
-            tokens = role.permissions().get("*");
-        }
+        Map<String, List<String>> permissions = role.permissions();
+        List<String> tokens =
+                permissions.containsKey(resourceType) ? permissions.get(resourceType) : permissions.get("*");
         return tokens == null ? List.of() : tokens;
     }
 
@@ -220,10 +223,7 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
         if (denied == null) {
             return List.of();
         }
-        List<String> actions = denied.get(resourceType);
-        if (actions == null) {
-            actions = denied.get("*");
-        }
+        List<String> actions = denied.containsKey(resourceType) ? denied.get(resourceType) : denied.get("*");
         return actions == null ? List.of() : actions;
     }
 

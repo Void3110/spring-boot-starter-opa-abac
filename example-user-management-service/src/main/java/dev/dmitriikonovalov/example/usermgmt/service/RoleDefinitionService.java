@@ -159,6 +159,10 @@ public class RoleDefinitionService {
         validateTagRequirement(requiredTags, matchMode);
         var ceiling = PermissionCategories.ceiling(roleLevel);
         for (var entry : permissions.entrySet()) {
+            if (entry.getValue() == null) {
+                throw new RoleDefinitionInvalidException(
+                        "permissions value for type '" + entry.getKey() + "' must be a list (was null)");
+            }
             for (String token : nullSafe(entry.getValue())) {
                 if (!PermissionCategories.AUTHORABLE_CATEGORIES.contains(token)) {
                     throw new RoleDefinitionInvalidException(
@@ -171,6 +175,10 @@ public class RoleDefinitionService {
             }
         }
         for (var entry : deniedActions.entrySet()) {
+            if (entry.getValue() == null) {
+                throw new RoleDefinitionInvalidException(
+                        "denied_actions value for type '" + entry.getKey() + "' must be a list (was null)");
+            }
             var granted = PermissionCategories.expand(grantedTokensFor(permissions, entry.getKey()));
             for (String action : nullSafe(entry.getValue())) {
                 if (!granted.contains(action)) {
@@ -249,12 +257,15 @@ public class RoleDefinitionService {
         }
     }
 
-    /** The granted tokens for a type — the concrete key wins, the {@code "*"} wildcard backs it up. */
+    /**
+     * The granted tokens for a type — the concrete key wins <em>whatever its value</em>; the
+     * {@code "*"} wildcard backs it up only when the type key is ABSENT. Key presence, not
+     * nullness: the policy side ({@code permissions.tokens_for}) keys its fallback on presence,
+     * so a present key with a null value must narrow to nothing here rather than widen into the
+     * wildcard — the two homes must not diverge on that shape (deep review 2026-08-24).
+     */
     private static List<String> grantedTokensFor(Map<String, List<String>> permissions, String type) {
-        List<String> tokens = permissions.get(type);
-        if (tokens == null) {
-            tokens = permissions.get("*");
-        }
+        List<String> tokens = permissions.containsKey(type) ? permissions.get(type) : permissions.get("*");
         return nullSafe(tokens);
     }
 

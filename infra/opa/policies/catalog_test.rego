@@ -612,3 +612,180 @@ test_agent_never_enters_the_filter_residual if {
 		{"action": "catalog:list", "resource": {"type": "catalog", "attributes": {}}},
 	)
 }
+
+# --- boolean-valued attributes are PRESENT keys (the truthiness trap, 2026-08-24) ----
+
+# A `false`-valued attribute for a required tag key must land on the ordinary no-match deny —
+# never on a resource_tag_values eval conflict (a truthiness-guarded fallback also fires on
+# `false`; two outputs = the data API's HTTP 500). The direct helper pin makes the
+# singleton-clause routing explicit; before the key-presence guard this test ERRORED, not failed.
+test_tag_boolean_false_attribute_denies_without_conflict if {
+	not catalog.allow with input as catalog_tag_input(regional_catalog_writer, {"region": false})
+	catalog.resource_tag_values("region") == {false}
+		with input as catalog_tag_input(regional_catalog_writer, {"region": false})
+}
+
+# The LIST-path sibling of the denial shape guard (deep review 2026-08-24, round 2): a malformed
+# consulted denial value must fail the residual closed — `in` over a non-collection is undefined,
+# so without the second filter_list_denied clause the residual would be WIDER than the decision.
+test_filter_malformed_denial_fails_closed if {
+	well_formed := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"catalog": ["READ"]},
+	}
+	catalog.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:list",
+		"resource": {"type": "catalog"},
+		"role_definition": well_formed,
+		"environment": {},
+	}
+	not catalog.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:list",
+		"resource": {"type": "catalog"},
+		"role_definition": object.union(well_formed, {"denied_actions": {"catalog": false}}),
+		"environment": {},
+	}
+}
+
+# --- round-3 pins (deep review 2026-08-24): the remaining malformed-shape escapes ----
+
+# (a) A NON-OBJECT denied_actions map fails the LIST residual closed — the decision side
+# already collapses via denied_for's object guards; the residual must not be wider.
+test_filter_nonobject_denied_actions_fails_closed if {
+	not catalog.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:list",
+		"resource": {"type": "catalog"},
+		"role_definition": {
+			"code": "r",
+			"attributes": {"role_level": 15},
+			"permissions": {"catalog": ["READ"]},
+			"denied_actions": "corrupt",
+		},
+		"environment": {},
+	}
+}
+
+# (b) A present NON-COLLECTION required_tags is a requirement nothing satisfies: the configured
+# narrowing must never silently drop (count() type-errored to undefined and the vacuous clause
+# passed; has_required_tags is now presence-keyed). Decision AND list, with a positive baseline.
+test_malformed_required_tags_scalar_denies if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"catalog": ["READ", "WRITE"]},
+	}
+	full_input := {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:update",
+		"resource": {"type": "catalog", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	catalog.allow with input as object.union(full_input, {"role_definition": base})
+	not catalog.allow with input as object.union(
+		full_input,
+		{"role_definition": object.union(base, {"required_tags": false})},
+	)
+	not catalog.allow with input as object.union(
+		full_input,
+		{"role_definition": object.union(base, {"required_tags": 123})},
+	)
+	not catalog.filter with input as {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:list",
+		"resource": {"type": "catalog"},
+		"role_definition": object.union(base, {"required_tags": false}),
+		"environment": {},
+	}
+		with data.config as {}
+}
+
+# Round-4 pin (deep review 2026-08-24): the create fallback opens ONLY for an ABSENT
+# role_definition — a PRESENT one with a malformed permissions value (false: the recorded
+# single-value escape) must not read as absent. has_role_definition is presence-keyed; the
+# old truthiness guard reopened the realm branch for exactly this shape.
+test_fallback_closed_for_present_malformed_role_definition if {
+	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:create")
+	not catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": {"permissions": false}},
+	)
+}
+
+# Round-4 pins: a present EMPTY collection (object or array) is "no requirement" in BOTH match
+# modes (back-compat with the count()>0 reading — [] + ALL_OF would otherwise pass only via a
+# vacuous `every`, and [] + ANY_OF silently flipped to deny); a present NON-EMPTY array is a
+# requirement nothing satisfies.
+test_empty_required_tags_collections_are_no_requirement if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"catalog": ["READ", "WRITE"]},
+	}
+	upd := {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:update",
+		"resource": {"type": "catalog", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": {}, "match_mode": "ALL_OF"})},
+	)
+	catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ALL_OF"})},
+	)
+	catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ANY_OF"})},
+	)
+	not catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ANY_OF"})},
+	)
+	not catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
+	)
+}
+
+# Round-5 pin: a present NON-OBJECT role_definition also blocks the create fallback
+# (present-but-malformed never reads as absent); an explicit null stays honestly absent.
+test_fallback_closed_for_nonobject_role_definition if {
+	not catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": "corrupt"},
+	)
+	catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": null},
+	)
+}
+
+# Round-5 mirror of category's decision-level malformed-denial witness (sibling cell parity):
+# the same input that allows under a well-formed role must deny outright when the consulted
+# denial value is malformed — never widen by dropping the "*" subtraction.
+catalog_malformed_denial_writer := object.union(
+	regional_catalog_writer,
+	{"denied_actions": {"*": ["delete"], "catalog": false}},
+)
+
+test_malformed_denial_in_role_definition_denies_at_the_decision if {
+	catalog.allow with input as catalog_tag_input(regional_catalog_writer, {"region": "emea"})
+	not catalog.allow with input as catalog_tag_input(catalog_malformed_denial_writer, {"region": "emea"})
+}
+
+# Round-6 pin: a present OBJECT role_definition WITHOUT a permissions key (a role carrying
+# only denials) also blocks the create fallback — ANY present non-null document does; the
+# fallback path never consults denied_actions, so reading such a role as absent would
+# silently drop its explicit denial.
+test_fallback_closed_for_denials_only_role_definition if {
+	not catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": {"denied_actions": {"catalog": ["create"]}}},
+	)
+}
