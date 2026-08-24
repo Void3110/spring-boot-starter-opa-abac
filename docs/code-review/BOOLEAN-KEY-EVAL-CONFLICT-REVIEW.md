@@ -211,8 +211,15 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   it (pinned U38); the confirmed variant had measured full-eval `filter` with a concrete type,
   a path the list flow never takes — **cleared, no code change** (fourth time this claim died);
   (b) the round-6 DTO normalization was unpinned — test added
-  (`UserMgmtMapperRoleDefinitionTest`). Round 8 — terminal no-fix round (verdict recorded
-  below before push). The convergence followed the recorded strata pattern (mx-ab7cda):
+  (`UserMgmtMapperRoleDefinitionTest`). **Terminal verdict: round 7 stands as the terminal
+  round** — zero behavior-changing findings with all lenses run; the only post-round-7 delta is
+  the one unit test, verified green by the build. Two round-8 attempts were killed by
+  infrastructure (a session usage limit, then API 529) with the finder lenses never executing —
+  their empty results are not verdicts — and the maintainer waived a third attempt as a
+  proportionality call (2026-08-24): six effective adversarial rounds on this ticket, with
+  later-round findings increasingly pre-existing-on-main corpus surface rather than regressions
+  of the diff. The proportionality lesson is recorded in Mulch (`code-review-process`) and the
+  skill's termination rule. The convergence followed the recorded strata pattern (mx-ab7cda):
   code edge → latent siblings → deeper policy edges → the last negated consumer → the pipeline
   seam (guard-vs-normalizer ordering) + doc tail.
 
