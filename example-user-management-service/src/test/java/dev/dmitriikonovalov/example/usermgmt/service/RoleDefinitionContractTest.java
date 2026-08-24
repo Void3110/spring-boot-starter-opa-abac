@@ -175,21 +175,29 @@ class RoleDefinitionContractTest {
                 .doesNotThrowAnyException();
     }
 
-    // --- presence, not nullness: the wildcard lookup (deep review 2026-08-24) -------
+    // --- null map values are rejected at the write path (deep review 2026-08-24, r4) ---
+    // Round 2 fixed the LOOKUPS to key-presence (a present-null grant no longer widened denial
+    // validation into the wildcard); round 4 moved the fix upstream — the write path rejects
+    // null values outright, so the storable-null class dies at validation and the presence
+    // lookups + expandWildcard null-guard remain as legacy-row defense.
 
     @Test
-    void presentNullTypeKeyDoesNotWidenDenialValidationIntoWildcard() {
-        // {"category": null, "*": [READ]} + a denial on category: under the old nullness
-        // semantics the denial validated against the wildcard's expansion; under key-presence
-        // (mirroring permissions.rego) a present-null grant expands to nothing, so the denial
-        // no longer subtracts from anything and must be rejected. Reachable: the write path
-        // nullSafe-iterates values, so a present-null entry validates clean and can be stored.
+    void presentNullPermissionsValueRejected() {
         Map<String, List<String>> permissions = new HashMap<>();
         permissions.put("category", null);
         permissions.put("*", List.of("READ"));
-        Map<String, List<String>> denials = Map.of("category", List.of("view"));
-        assertThatThrownBy(() -> RoleDefinitionService.validateContract(20, permissions, denials))
+        assertThatThrownBy(() -> RoleDefinitionService.validateContract(20, permissions, NO_DENIALS))
                 .isInstanceOf(RoleDefinitionInvalidException.class)
-                .hasMessageContaining("is not granted for type");
+                .hasMessageContaining("must be a list (was null)");
+    }
+
+    @Test
+    void presentNullDeniedActionsValueRejected() {
+        Map<String, List<String>> denials = new HashMap<>();
+        denials.put("*", null);
+        Map<String, List<String>> grants = Map.of("catalog", List.of("READ"));
+        assertThatThrownBy(() -> RoleDefinitionService.validateContract(20, grants, denials))
+                .isInstanceOf(RoleDefinitionInvalidException.class)
+                .hasMessageContaining("must be a list (was null)");
     }
 }

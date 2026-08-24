@@ -159,6 +159,10 @@ public class RoleDefinitionService {
         validateTagRequirement(requiredTags, matchMode);
         var ceiling = PermissionCategories.ceiling(roleLevel);
         for (var entry : permissions.entrySet()) {
+            if (entry.getValue() == null) {
+                throw new RoleDefinitionInvalidException(
+                        "permissions value for type '" + entry.getKey() + "' must be a list (was null)");
+            }
             for (String token : nullSafe(entry.getValue())) {
                 if (!PermissionCategories.AUTHORABLE_CATEGORIES.contains(token)) {
                     throw new RoleDefinitionInvalidException(
@@ -171,6 +175,10 @@ public class RoleDefinitionService {
             }
         }
         for (var entry : deniedActions.entrySet()) {
+            if (entry.getValue() == null) {
+                throw new RoleDefinitionInvalidException(
+                        "denied_actions value for type '" + entry.getKey() + "' must be a list (was null)");
+            }
             var granted = PermissionCategories.expand(grantedTokensFor(permissions, entry.getKey()));
             for (String action : nullSafe(entry.getValue())) {
                 if (!granted.contains(action)) {

@@ -71,6 +71,20 @@ anyway). Two Rego mechanics are load-bearing and documented in-module, both meas
 | 10 | **Residual-wider-than-decision asymmetry introduced by round 2**: a *non-object* `denied_actions` map left both `filter_list_denied` clauses undefined (indexing a non-object is undefined), so `filter` passed while the decision side newly denies via `denied_for`'s object guards — measured `allow=false, filter=true` in all three per-type policies. | **Fixed** — third `filter_list_denied` clause (`not is_object(denied_actions)`, bound so a wholly-absent map stays non-denying) ×3 + filter pins ×3 |
 | 11 | **Pre-existing member of the same class on `main`**: `required_tags: false` (or a number) type-errors `count()` → `has_required_tags` undefined → the vacuous `tags_satisfied` clause passes — the configured tag narrowing silently drops on decision AND list, violating the files' own "malformed → deny" header. Measured `allow=true` with `required_tags: false`/`123`. | **Fixed** — `has_required_tags` re-keyed on presence with an explicit empty-object carve-out (present non-object = a requirement nothing satisfies → deny) ×3 + decision/filter pins with positive baselines ×3 |
 
+## Medium Issues (round 4 — the last consumer of the class)
+
+| # | Issue | Status |
+|---|-------|--------|
+| 14 | **`has_role_definition` was itself a truthiness guard, consumed NEGATED** in catalog's B4 create fallback: `permissions: false` made a *present* resolved role read as absent and reopened the realm `catalog:create` branch (measured: `false` → allow, `{}` → deny). The mirror-image of the `is_agent_call` escape — a partial rule under `not` — which the assigned-heads sweep was structurally blind to. | **Fixed** — presence-keyed in all three files (siblings changed for parity; their positive-only filter consumers make the mutants documented equivalents) + the contrast pin (`fallback_input` + `permissions: false` vs absent) |
+
+## Low Issues (round 4)
+
+| # | Issue | Status |
+|---|-------|--------|
+| 15 | `required_tags: []` escaped the round-3 carve-out: `[]` + `ALL_OF` allowed via vacuous `every` (contradicting the new doctrine comment) while `[]` + `ANY_OF` silently flipped from `main`'s allow to deny — untested in both directions. | **Fixed** — `empty_required_tags` gains the empty-array clause (present empty collection = no requirement, back-compat both modes; non-empty arrays deny) + pins ×3 |
+| 16 | The `expandWildcard` fix comment claimed a null `"*"` "expands nothing, exactly like the policy side" — wrong on the denial axis, where a present-null `"*"` denial collapses `denied_for` → deny-all. And the storable-null class deserved dying at the source. | **Fixed** — `validateContract` now rejects null map values outright (422, both maps, pinned); the lookup/null-guard fixes are re-framed as legacy-row defense; comments corrected |
+| 17 | The gateway-reachable behavior change (null-value role writes) has no newman/e2e cell. | **Carried, not fixed** — with #16 the wire pin becomes "POST with a null value → 422"; folded into the standing pre-release e2e fleet re-run (tracked since the 2026-08-20 handoff) rather than editing collections in this branch |
+
 ## Low Issues
 
 | # | Issue | Status |
@@ -141,7 +155,11 @@ kept as stated intent). Round 3 (10 mutants): **8 killed** — including the thr
 as predicted**: M14/M15 are the totality bindings (#8), decision-invisible by construction and
 marked equivalent in-module before the round ran. Round 4 (the round-3 guards, 6 mutants —
 the non-object-map filter clause and the presence-keyed `has_required_tags`, per file): **all 6
-killed**, each by its own file's new pin.
+killed**, each by its own file's new pin. Round 5 (the round-4 guards): catalog's
+`has_role_definition` truthiness-revert **killed** by the fallback contrast pin;
+category/product's survive as **predicted equivalents** (positive-only consumers deny either
+way — recorded before the round ran); all three empty-array carve-out drops **killed** by the
+`[]`+`ANY_OF` pins.
 
 ## Autonomous-run check
 
@@ -162,7 +180,7 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
 
 ## Test results
 
-- `opa test infra/opa/policies`: **409/409** · mirror bundle: **32/32** · `opa check --strict`:
+- `opa test infra/opa/policies`: **413/413** · mirror bundle: **32/32** · `opa check --strict`:
   clean on both
 - `./gradlew build` (all modules, Testcontainers ITs against the changed bundle): **green**
 - `.sonar-local/sonar-local.sh` (Java touched): **CLEAN — 0 open findings**
@@ -180,9 +198,11 @@ measurement. That is the review layer doing exactly its job; recorded in Mulch.
   round 3 — 5 confirmed (#10–#13), 4 refuted (incl. the Java `deniedFor` present-null claims —
   re-derived independently: the supplier's maps are internally built via `List.copyOf`/`Map.of`,
   nulls unreachable — and the filter wildcard-denial claim, safe via the batch-recheck
-  degradation); round 4 — terminal no-fix round (verdict recorded below before push). The
+  degradation); round 4 — 5 confirmed (#14–#17 + one duplicate of #15's sibling scope), 2
+  refuted (both re-raising the filter wildcard-denial shape, again cleared via the batch-recheck
+  degradation); round 5 — terminal no-fix round (verdict recorded below before push). The
   convergence followed the recorded strata pattern (mx-ab7cda): code edge → latent siblings →
-  deeper policy edges + comment tail.
+  deeper policy edges → the last negated-consumer + doc tail.
 
 ## Commits
 

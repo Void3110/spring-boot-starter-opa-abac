@@ -702,3 +702,53 @@ test_malformed_required_tags_scalar_denies if {
 	}
 		with data.config as {}
 }
+
+# Round-4 pin (deep review 2026-08-24): the create fallback opens ONLY for an ABSENT
+# role_definition — a PRESENT one with a malformed permissions value (false: the recorded
+# single-value escape) must not read as absent. has_role_definition is presence-keyed; the
+# old truthiness guard reopened the realm branch for exactly this shape.
+test_fallback_closed_for_present_malformed_role_definition if {
+	catalog.allow with input as fallback_input(["catalog-editor"], "catalog:create")
+	not catalog.allow with input as object.union(
+		fallback_input(["catalog-editor"], "catalog:create"),
+		{"role_definition": {"permissions": false}},
+	)
+}
+
+# Round-4 pins: a present EMPTY collection (object or array) is "no requirement" in BOTH match
+# modes (back-compat with the count()>0 reading — [] + ALL_OF would otherwise pass only via a
+# vacuous `every`, and [] + ANY_OF silently flipped to deny); a present NON-EMPTY array is a
+# requirement nothing satisfies.
+test_empty_required_tags_collections_are_no_requirement if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"catalog": ["READ", "WRITE"]},
+	}
+	upd := {
+		"subject": {"id": "u", "roles": []},
+		"action": "catalog:update",
+		"resource": {"type": "catalog", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": {}, "match_mode": "ALL_OF"})},
+	)
+	catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ALL_OF"})},
+	)
+	catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ANY_OF"})},
+	)
+	not catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ANY_OF"})},
+	)
+	not catalog.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
+	)
+}

@@ -263,10 +263,13 @@ public class EffectiveRoleService {
             Map<String, List<String>> map, String targetType) {
         if (map.containsKey("*") && !map.containsKey(targetType)) {
             List<String> star = map.get("*");
-            // A present-null "*" value is storable (the write path nullSafe-iterates values, so it
-            // validates clean) and Map.of rejects null — without this guard the resolve wire 500s
-            // on such a row. Returning the map unchanged narrows: a null wildcard expands nothing,
-            // exactly like the policy side (deep review 2026-08-24).
+            // A present-null "*" value WAS storable (the write path nullSafe-iterated values
+            // until the explicit null rejection landed in validateContract) and Map.of rejects
+            // null — without this guard the resolve wire 500s on such a legacy row. Returning the
+            // map unchanged narrows on both axes policy-side: a null "*" GRANT expands to
+            // nothing, and a null "*" DENIAL leaves denied_for undefined so the whole answer
+            // collapses to deny-all. Legacy-row defense; the write path now answers 422.
+            // (Deep review 2026-08-24, rounds 2+4.)
             if (star == null) {
                 return map;
             }

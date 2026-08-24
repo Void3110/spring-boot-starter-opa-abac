@@ -1371,3 +1371,41 @@ test_malformed_required_tags_scalar_denies if {
 	}
 		with data.config as {}
 }
+
+# Round-4 pins: a present EMPTY collection (object or array) is "no requirement" in BOTH match
+# modes (back-compat with the count()>0 reading — [] + ALL_OF would otherwise pass only via a
+# vacuous `every`, and [] + ANY_OF silently flipped to deny); a present NON-EMPTY array is a
+# requirement nothing satisfies.
+test_empty_required_tags_collections_are_no_requirement if {
+	base := {
+		"code": "r",
+		"attributes": {"role_level": 15},
+		"permissions": {"product": ["READ", "WRITE"]},
+	}
+	upd := {
+		"subject": {"id": "u", "roles": []},
+		"action": "product:update",
+		"resource": {"type": "product", "id": "x1", "attributes": {}},
+		"environment": {},
+	}
+	product.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": {}, "match_mode": "ALL_OF"})},
+	)
+	product.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ALL_OF"})},
+	)
+	product.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": [], "match_mode": "ANY_OF"})},
+	)
+	not product.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ANY_OF"})},
+	)
+	not product.allow with input as object.union(
+		upd,
+		{"role_definition": object.union(base, {"required_tags": ["region"], "match_mode": "ALL_OF"})},
+	)
+}

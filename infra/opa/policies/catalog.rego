@@ -78,8 +78,14 @@ allow if {
 	not denied
 }
 
+# KEY PRESENCE, not truthiness (the recorded single-value escape, closing its last consumer):
+# the bare reference left this rule undefined for `permissions: false`, and the NEGATED
+# consumer (catalog's B4 create fallback) then treated a PRESENT resolved role as absent —
+# reopening the realm branch for exactly the shape the corpus pins as present-blocks-fallback.
+# Positive consumers (the filter guards) are unaffected: a malformed permissions value still
+# dies in the token chain. (Deep review 2026-08-24, round 4.)
 has_role_definition if {
-	input.role_definition.permissions
+	"permissions" in object.keys(input.role_definition)
 }
 
 # Deny-overrides (the final narrowing AND, ported from category.rego/product.rego): an explicit
@@ -196,9 +202,11 @@ tags_satisfied if {
 # guard type-errored to undefined on a scalar (false, a number) and `not has_required_tags`
 # then passed vacuously — silently dropping the whole configured tag narrowing on the decision
 # AND the list residual (measured; deep review 2026-08-24, round 3 — the header always promised
-# malformed -> deny). Keyed on presence, with one deliberate carve-out: a present EMPTY OBJECT
-# is "no requirement" (back-compat with the count()>0 reading). A present non-object is a
-# requirement no match rule can satisfy -> tags_satisfied fails -> deny.
+# malformed -> deny). Keyed on presence, with one deliberate carve-out: a present EMPTY
+# collection (object OR array) is "no requirement" — back-compat with the count()>0 reading,
+# which read both as requirement-free (round 4: [] + ALL_OF would otherwise vacuously ALLOW
+# through `every`, and [] + ANY_OF silently flipped to deny). Any other present non-object
+# shape is a requirement no match rule can satisfy -> tags_satisfied fails -> deny.
 has_required_tags if {
 	"required_tags" in object.keys(input.role_definition)
 	not empty_required_tags
@@ -207,6 +215,12 @@ has_required_tags if {
 empty_required_tags if {
 	required := input.role_definition.required_tags
 	is_object(required)
+	count(required) == 0
+}
+
+empty_required_tags if {
+	required := input.role_definition.required_tags
+	is_array(required)
 	count(required) == 0
 }
 

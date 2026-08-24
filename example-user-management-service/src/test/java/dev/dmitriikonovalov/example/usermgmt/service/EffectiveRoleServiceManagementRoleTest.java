@@ -78,9 +78,9 @@ class EffectiveRoleServiceManagementRoleTest {
         assertThat(service.managementRole(TEAM, USER)).isEmpty();
     }
 
-    @Test // deep review 2026-08-24: a present-null "*" value is storable (the write path
-    // nullSafe-iterates values, so it validates clean) — the resolve wire must narrow
-    // (expand nothing), never NPE (Map.of rejected the null before the guard).
+    @Test // deep review 2026-08-24: a present-null "*" value WAS storable before the write
+    // path's null rejection (round 4) — legacy rows may still hold it, and the resolve wire
+    // must narrow (expand nothing), never NPE (Map.of rejected the null before the guard).
     void presentNullWildcardValueResolvesWithoutExpandingOrThrowing() {
         UUID roleId = UUID.randomUUID();
         TeamMembership m = new TeamMembership(UUID.randomUUID(), TEAM, USER, roleId);
