@@ -3,7 +3,10 @@
 # 4.0.7 (latest 4.0.x patch at port time) — the single-line Boot 4 target (ADR 0026): Framework 7 /
 # Security 7 / Jakarta EE 11 / Hibernate 7 / Jackson 3, on the Java 25 toolchain and Gradle 9.x
 # wrapper. The resolved-dependency CVE scan is the 7.4 follow-up, run on this post-port tree.
-springBoot = "4.0.7"
+# 4.0.8 (2026-09-07): the patch that closes ENGINEERING-BACKLOG item 9 — Boot's managed
+# jackson-databind 2.21.x and log4j-api move past the four MODERATE advisories the 1.2.0 pre-publish
+# sweep deferred (they were BOM-managed versions, never overridden). Re-run the OSV sweep on every bump.
+springBoot = "4.0.8"
 springDependencyManagement = "1.1.7"
 openapiGenerator = "7.14.0"
 # Central-Portal-native publishing (ADR 0027). Applied only to the five library modules + the BOM
@@ -22,7 +25,7 @@ pitest = "1.25.9"
 pitestJunit5 = "1.2.3"
 
 # Library deps
-# Jackson 3 (tools.jackson) — aligned with Boot 4.0.7's managed version. Annotations stay on the
+# Jackson 3 (tools.jackson) — aligned with Boot 4.0.8's managed version (jackson-bom 3.1.5). Annotations stay on the
 # com.fasterxml 2.x artifact line (Jackson 3 reads them; databind brings them transitively).
 jackson = "3.1.5"
 slf4j = "2.0.16"
@@ -47,8 +50,8 @@ commonsIo = "2.19.0"
 # Spring AI — the MCP server starter behind example-mcp-server (Phase 9, AGENT-TOOL-AUTHZ). 2.0.0 is
 # the current GA line and brings MCP Java SDK 2.0.0 (MCP spec revision 2025-11-25) plus the
 # @McpTool annotation model (org.springframework.ai.mcp.annotation). NOTE: the starter's POM declares
-# spring-boot 4.1.0 while this repo is pinned to 4.0.7 — the dependency-management plugin's Boot BOM
-# wins for every spring-boot-* artifact, so the example builds and runs on the repo's 4.0.7 baseline.
+# spring-boot 4.1.0 while this repo is pinned to 4.0.x — the dependency-management plugin's Boot BOM
+# wins for every spring-boot-* artifact, so the example builds and runs on the repo's 4.0.x baseline.
 # See docs/to-do/.../AGENT-TOOL-AUTHZ/STATUS-01.md; a repo-wide 4.1.x bump is a separate slice.
 springAi = "2.0.0"
 

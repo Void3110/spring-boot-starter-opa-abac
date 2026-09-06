@@ -125,7 +125,8 @@ methods proxy the catalog service's REST API with the caller's own bearer, gated
 Two things about its build are non-obvious:
 
 - Spring AI 2.0.0's starter POM declares **Spring Boot 4.1.0**, but the dependency-management plugin
-  imports *this* repo's Boot BOM (4.0.7) first, so every `spring-boot-*` artifact resolves to 4.0.7. The
+  imports *this* repo's Boot BOM (4.0.x, pinned in `gradle/libs.versions.toml`) first, so every
+  `spring-boot-*` artifact resolves to that pin. The
   MCP auto-configuration starts cleanly on that baseline (verified, not assumed).
 - The module **excludes `opa-abac-spring-data`** from the starter: it owns no persistence, and the
   transitive `spring-boot-starter-data-jpa` would otherwise make Boot auto-configure a `DataSource` and

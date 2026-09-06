@@ -14,7 +14,8 @@ tags:
 >
 > Take from the top. Each item is self-contained: no item blocks another.
 >
-> **Status 2026-08-18: items 1–8 are SHIPPED.** Item 9 remains, blocked on an upstream release.
+> **Status 2026-09-07: items 1–9 are SHIPPED.** Item 10 remains — the same shape item 9 had (a
+> BOM-managed version, no reachable path), waiting on the next Boot patch line.
 > Each shipped item carries the correction its own estimate needed — read those before trusting a
 > future backlog entry's effort figure: five of the eight were wrong in a way that mattered.
 
@@ -195,7 +196,17 @@ slowing the existing suite.
 
 ---
 
-## 9. Three Boot-managed CVEs — waiting on Spring Boot 4.0.8
+## 9. Three Boot-managed CVEs — waiting on Spring Boot 4.0.8 — ✅ SHIPPED 2026-09-07
+
+**Closed by the bump, as predicted: `springBoot` 4.0.7 → 4.0.8** (Central 2026-08-20; manages
+`jackson-bom` 3.1.5 = this repo's own pin, and `log4j2` 2.25.5). Resolved after the bump:
+`com.fasterxml.jackson.core:jackson-databind:2.21.5`, `org.apache.logging.log4j:log4j-api:2.25.5` —
+all four advisories below are gone from OSV's affected ranges. `./gradlew build` green, **1110 tests /
+0 failures**, no `.java` touched (the Sonar gate does not apply). **The sweep is now a committed
+pair** so "re-run the sweep" is a command, not a note to reconstruct:
+`./gradlew -q -I scripts/checks/osv-resolved.init.gradle.kts printResolvedRuntime | python3 scripts/checks/osv-sweep.py`
+(192 distinct resolved coordinates, all projects). This item's estimate held — the bump is one
+line. What the re-run found *instead* is item 10.
 
 **Value: hygiene. Effort: one line, once upstream moves. BLOCKED on an external release.**
 
@@ -219,6 +230,36 @@ is never enabled. The one advisory on a version *this repo* pins was fixed in th
 `gradle/libs.versions.toml` and re-run the sweep (§CVE of the sweep note has the exact OSV method —
 query **resolved** coordinates via `dependencyInsight`, never the dependency tree). Override the BOM
 only if Boot stalls *and* a reachable path appears.
+
+---
+
+## 10. Three CRITICAL Tomcat advisories on the Boot-managed 11.0.24 — waiting on a Boot line that manages 11.0.25
+
+**Value: hygiene. Effort: one line, once upstream moves. BLOCKED on an external release.**
+
+Found **2026-09-07** by the item-9 re-sweep, on the version **Spring Boot 4.0.8 manages** (`tomcat.version`
+11.0.24 — and 4.1.1 still manages 11.0.24, so no Boot line closes it yet; Tomcat 11.0.25 shipped on
+Central 2026-08-12):
+
+| Advisory | Dep | Fixed in |
+|---|---|---|
+| GHSA-9xv2-5v5q-p794 / CVE-2026-65905 — DIGEST authenticator nonce-replay bypass | `org.apache.tomcat.embed:tomcat-embed-core:11.0.24` | 11.0.25 |
+| GHSA-gcx9-497g-6cp6 / CVE-2026-65182 — `<security-constraint>` ordering lets a longer path's constraint bypass a shorter sub-path's | same | 11.0.25 |
+| GHSA-h3x4-894j-xpx5 / CVE-2026-68525 — FORM authentication bypasses a POST-only constraint via GET | same | 11.0.25 |
+
+**Exposure here is nil, measured not assumed:** all three live in Tomcat's *container-managed*
+security — the DIGEST/FORM authenticators and `web.xml` security constraints. This repo does none of
+that: authentication and authorization are Spring Security + the starter's gate, and the grep over
+`security-constraint`, `login-config`, `auth-method`, `DigestAuthenticator`, `FormAuthenticator`,
+`BasicAuthenticator`, `web.xml`, `tomcat.*Realm`, `TomcatContextCustomizer`, `addConstraint`,
+`SecurityConstraint`, `authenticator` returns **0 files** for every pattern. The severity label is
+Tomcat's, for deployments that use those features.
+
+**Not fixed, deliberately — the item-9 rule again:** `tomcat.version` is a BOM-managed property, and
+overriding it is the thing the BOM exists to prevent, for advisories with no reachable path here.
+**The action is to re-check, not to patch:** when a Boot patch managing ≥ 11.0.25 lands, bump
+`springBoot` and re-run the committed sweep. Override the BOM only if Boot stalls *and* a reachable
+path appears (an adopter who turns on container-managed auth is the one who must not wait).
 
 ---
 
