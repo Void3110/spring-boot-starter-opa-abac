@@ -12,8 +12,9 @@ tasks.named("jar") { enabled = false }
 
 dependencies {
     // Spring AI's MCP server BOM + starter. The starter's POM declares spring-boot 4.1.0, but the
-    // dependency-management plugin imports THIS repo's Boot BOM (4.0.7) first, so every spring-boot-*
-    // artifact resolves to 4.0.7 — the module builds and runs on the repo's baseline (ADR 0026).
+    // dependency-management plugin imports THIS repo's Boot BOM (the 4.0.x pin in libs.versions.toml)
+    // first, so every spring-boot-* artifact resolves to it — the module builds and runs on the repo's
+    // baseline (ADR 0026).
     implementation(platform(libs.spring.ai.bom))
     implementation(libs.spring.ai.starter.mcp.server.webmvc)
 
