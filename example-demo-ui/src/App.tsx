@@ -390,9 +390,11 @@ export function Console({ user, restore }: { user: AuthUser; restore: StepUpStat
   )
 }
 
-function Card({ children }: { children: React.ReactNode }) {
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-sm">
+    <div
+      className={`rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-sm ${className}`}
+    >
       {children}
     </div>
   )
@@ -431,8 +433,10 @@ function CatalogGrid({
       <CreateCatalogPanel onCreated={reload} likelyDenied={!canCreate} />
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map((c) => (
-          <button key={c.id} onClick={() => onOpen(c)} className="text-left">
-            <Card>
+          // h-full on both the grid item and the card: a row's cards share the tallest card's height
+          // instead of each ending under its own caption (pre-Habr UI QA 2026-09-10, DEF-2).
+          <button key={c.id} onClick={() => onOpen(c)} className="h-full text-left">
+            <Card className="h-full">
               <div className="flex items-start justify-between gap-3">
                 {/* min-w-0 lets the badge row wrap inside the title block instead of squeezing the
                     "open →" affordance onto two lines; shrink-0 keeps that affordance intact. */}
