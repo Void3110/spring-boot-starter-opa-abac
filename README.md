@@ -292,6 +292,9 @@ seeded secret is deliberately not enrollable in a phone app). Every screen, what
 *why* it looks that way: **[`docs/guides/DEMO-CONSOLE-WALKTHROUGH.md`](docs/guides/DEMO-CONSOLE-WALKTHROUGH.md)**.
 The console bundle is built once on the host and needs Node/npm; `ENABLE_SPA=0 ./deploy.sh up` runs
 the rig without it. Add `ENABLE_MCP=1` for the agent tool surface as well.
+Have a coding agent? [`docs/prompts/RUN-THE-DEMO.md`](docs/prompts/RUN-THE-DEMO.md) makes it run this walk and
+report; [`docs/prompts/FROM-EXAMPLE-TO-YOUR-APP.md`](docs/prompts/FROM-EXAMPLE-TO-YOUR-APP.md) is the recipe for
+turning the example into your own application, with a prompt per step.
 
 ### Running the tests
 

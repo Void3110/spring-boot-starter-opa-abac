@@ -341,7 +341,14 @@ ENABLE_DIRECTORY=0 ./deploy.sh up   # no identity directory: the add-member sear
 ENABLE_MCP=1 ./deploy.sh up # add the agent tool surface — [[AGENT-TOOL-AUTHORIZATION]]
 ```
 
-## Part 6 — What the console deliberately does not show
+## Part 6 — Have an agent do it, or make it yours
+
+Two prompt files in [`docs/prompts/`](../prompts/README.md): [[RUN-THE-DEMO]] hands the whole walk
+above to a coding agent and has it report the cut it observed; [[FROM-EXAMPLE-TO-YOUR-APP]] is the
+recipe for reshaping the example into your own application — the shape, where every noun lives, the
+order of work, and a prompt per step.
+
+## Part 7 — What the console deliberately does not show
 
 The deterministic proofs live elsewhere: the newman matrices under `scripts/postman/`
 ([[E2E-TESTING]]) assert every cut above through the gateway; `opa test` covers the policies; the
