@@ -50,6 +50,7 @@ tags:
 
 | # | DO | EXPECT (the cut) | Result |
 |---|---|---|---|
+| A1 | Unauth load of `:9085` | Only the sign-in card, no catalog data | PASS — after every sign-out the card alone rendered (no data, `sessionStorage` empty); "Sign in with Keycloak" → the realm's PKCE form at the gateway origin, `client_id=catalog-spa` |
 | A2 ★ | Signed in as `editor` | Identity chip `editor`, realm roles `catalog-editor`/`catalog-viewer`; Demo catalog renders | PASS — chip `editor` + `catalog-editor` / `catalog-viewer`; Demo catalog renders |
 | A3 | Force a token refresh (set `expires_at` in the past inside the `oidc.user:…` sessionStorage entry, then click) | The refresh grant runs silently; the click succeeds, no 401 bounce | PASS — `expires_at` forced past → refresh grant `POST …/openid-connect/token` 200; click → categories 200, no 401 bounce; `auth_time` unchanged, `expires_at` +1800 s. **OBS-1:** one click fired **five** refresh grants (each concurrent fetch refreshed) — harmless here (no refresh-token rotation), a single-flight would be tidier |
 | A4 ★ | Switch identity | Session cleared; Keycloak re-prompts (no silent SSO) | session-clear half PASS — "Switch identity" → `signoutRedirect` round trip, `sessionStorage` OIDC entry gone, sign-in card back. **OBS-3 (unconfirmed):** the first click after a reload did nothing, the second signed out — could be pane click timing; re-check by hand. Re-prompt half: see the viewer login below |
@@ -100,5 +101,37 @@ Severity vocabulary: **DEF** = a defect in the app/rig · **DOC** = a reader-fac
 | DEF-1 | DEF | **A tag-requiring WRITE role can create resources it cannot read, in places it cannot read.** `alice-role` (WRITE on catalog/category/product, `required_tags` `region:[apac]` ∧ `sensitivity:[public]`) as `viewer`: `POST …/categories` (no tags) → **201**; `POST …/categories/{EMEA}/products` — EMEA is `region:emea`, a category this role is **denied** to `GET` → **201**; the creator's own untagged category → `GET` **403** (write-only spawn). Root `PUT` → 403 and every instance read/mutation stays tag-gated, so the gap is exactly the **type-level** verbs: `category.rego` / `product.rego` open `create` (and type-level `assign-tags`) through `is_type_level_request` + `list_inheritable_grant`, whose comment says it "only OPENS the gate" for a LIST whose rows SQL then cuts — but for `create` nothing cuts afterwards, and the clause carries **no `tags_satisfied`** conjunct. The create input also carries no parent tags to match against (`roleResourceType='catalog'`, `resourceType='category'`, attributes = the tag-on-create payload at most) | JS-forced calls with the viewer session, 2026-09-10; `data.category.inheritable` = `{catalog:true, category:true}`; probe rows deleted afterwards | **Not a Habr blocker** (the role must already hold WRITE; the created rows are invisible to the creator and ordinary for everyone else) but it contradicts the stated contract "everything below the root stays tag-gated" and ADR 0009's "a role may act on resources whose tags match". Fix on a follow-up branch: for a type-level `create`, require the **parent's** tags (the resolved `roleResource` / the category for a product) to satisfy the role's requirement, and require the tag-on-create payload to satisfy it too (a creator must be able to read what it creates); keep `list` on the coarse gate. Ratchet: an `opa test` per policy + a newman cell in the tag matrix (tag-gated writer: create under a mismatching parent → 403, matching → 201) |
 | DEF-2 | DEF (cosmetic) | **Catalog cards in the grid do not share a height**: with two supervised cards the Production card (two badges + a two-line caption) is taller and the Open card sits shorter beside it with a ragged bottom edge | maintainer's screenshot, `sup-demo` grid, 2026-09-10 | One-liner in `example-demo-ui`: make the card fill its grid cell (`h-full` on the card / `items-stretch` on the grid, or a `min-h`) so rows align; rebuild the packaged SPA. Not a Habr blocker |
 | OBS-1 | OBS | One click after token expiry fired **five** refresh grants (each concurrent fetch saw `expired` and refreshed) | A3: 5× `POST …/openid-connect/token` 200 in one interaction | Harmless on this realm (no refresh-token rotation); a single-flight refresh promise would be tidier and would survive a realm that revokes reused refresh tokens |
-| OBS-2 | OBS | The team tag key's **✕ (delete) control fired no request** in the pane; removed via `DELETE /teams/{id}/tag-definitions/{key}` (204) instead | F5: no DELETE in the network log after the click | Hand-check whether it is a `confirm()` the pane swallowed (then not a defect) or a dead control |
+| OBS-2 | OBS | The team tag key's ✕ fired no request in the pane; removed via `DELETE /teams/{id}/tag-definitions/{key}` (204) instead | F5; `example-demo-ui/src/tags.tsx:66` guards the delete with `window.confirm(…)` | **Explained — pane artifact**: the Browser pane swallows `confirm()` dialogs; the control is fine. Same for role delete and ownership transfer (`roles.tsx`, `teams.tsx`). No action |
 | OBS-3 | OBS | The Browser pane's **synthetic clicks sometimes did not reach the React handlers** on "Switch identity" and "Sign in with Keycloak" (first click no-op, second worked; later a DOM-dispatched `button.click()` always worked) | A4 + the outsider handoff; no end-session / auth request after the missed clicks | **Pane artifact, not an app defect** on this evidence — a human click never missed in the 07-12 / 07-15 passes; no action |
+
+## Verdict — 2026-09-10, 21:05
+
+**Executed:** 34 cells across five personas (`editor`, `viewer` twice — once as the tag-gated
+`alice-role`, once as the canonical `demo-viewer` —, `outsider`, `pm-demo`, `sup-demo`), the
+supervisor round trip included. **Every cell passed for the persona the plan names**, and every
+console error line is attributable (a forced probe, or an expected deny the UI renders honestly).
+No security regression on the 4.0.8 images. The maintainer performed the logins; the agent drove
+the authenticated console and every wire assertion.
+
+| Group | Result |
+|---|---|
+| **R** reader's seat | R1 R4 R5 R6 PASS · **R2 FAIL → DOC-1** · **R3 partial → DOC-2** · R-G1 (directory off by recipe) |
+| **A** auth/session | A1 A2 **A3** A4 PASS — A3 executed in a browser for the first time (refresh grant, no 401 bounce, `auth_time` kept) |
+| **B** tenant isolation | B1 B2 B3 B4 B5 PASS — 12 leftover foreign catalogs never listed, never openable |
+| **C** hierarchy + tags | C1 C4 PASS · **C2 executed for the first time**, both halves, on the wire and in the console |
+| **D** affordances | D1 D2 D4 PASS (D3 not walked — `demo` unchanged since 07-12) |
+| **E** predicted-deny | E1 E3 PASS for `demo-viewer` · **E3 for a tag-requiring WRITE role → DEF-1** |
+| **F** write/tag/dictionary | F1 (create) F2 F3 F5 PASS · F1's delete half not exercised in the UI (the sandbox row is left for the maintainer) |
+| **G** control plane | G1 PASS as configured (→ R-G1) · G3 PASS as honest deny |
+| **H** error contract | H1 H2 PASS |
+| **I** regression | I1 PASS across all personas · I2 (operator-only `abac_deny` refused) PASS |
+| **E10–E19** supervisor | E10 E11 E15 E19 PASS — prompt sequence recorded (password, then the code) |
+
+**Findings:** DEF-1 (policy: type-level `create` bypasses a role's tag requirement — Medium, not a
+Habr blocker, follow-up branch + ratchet), DEF-2 (cosmetic: ragged card heights), DOC-1 + DOC-2
+(the root README's missing route to the console and to `sup-demo`'s code — **worth fixing before
+the article**), R-G1 (the recipe should enable the directory), OBS-1 (refresh stampede, harmless).
+OBS-2/OBS-3 resolved as Browser-pane artifacts.
+
+**Not covered tonight, by design:** E12–E14, E16–E18 (drill/patch recipes — the committed STATUS-06
+pass stands), the newman matrices and `opa test` (the deterministic tier), the MCP surface.
