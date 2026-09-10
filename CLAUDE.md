@@ -112,8 +112,9 @@ user-service, activated by `opa.abac.directory.keycloak.enabled=true`. Without i
 starter wires the always-empty `NoOpUserDirectory` — fail-closed by default. On the local rig:
 
 ```bash
-ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2   # identity search on the user-service
-                                             # (force-enables ENABLE_OIDC + ENABLE_USER_SERVICE)
+./deploy.sh up --pods 2                      # ENABLE_DIRECTORY defaults to 1 since 2026-09-11 (identity search
+                                             # on the user-service; force-enables ENABLE_OIDC + ENABLE_USER_SERVICE);
+                                             # ENABLE_DIRECTORY=0 opts out. ENABLE_SPA defaults to 1 the same way.
 ```
 
 ### The MCP server module (Phase 9, AGENT-TOOL-AUTHZ)

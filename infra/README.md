@@ -89,7 +89,7 @@ The SPA itself does **Authorization Code + PKCE** directly against Keycloak usin
 client **`catalog-spa`** (`publicClient: true`, `pkce S256`, redirect URIs `http://localhost:3000/*`
 + `http://localhost:9085/*`), holds the access token, and sends it as a Bearer to the gateway.
 
-`ENABLE_SPA=1` is the **complete demo recipe in one flag** — it force-enables both `ENABLE_OIDC`
+`ENABLE_SPA` is the **complete demo recipe in one flag**, and it is **on by default** since 2026-09-11 (`ENABLE_SPA=0` opts out) — it force-enables both `ENABLE_OIDC`
 (the bearer validation) **and `ENABLE_USER_SERVICE`** (the http role source + Phase-6 `_actions`
 enrichment the SPA renders). It also proxies Keycloak through the gateway at `/realms/*` +
 `/resources/*` so the browser does its whole PKCE flow single-origin against `:9085` (no
@@ -108,7 +108,7 @@ edit-refresh loop.
 
 ```bash
 ./deploy.sh build                              # ensure the Phase-6 enrichment code is in the images
-ENABLE_SPA=1 ./deploy.sh up --pods 2          # brings up Keycloak + user-service + bearer gateway
+./deploy.sh up --pods 2                       # ENABLE_SPA defaults to 1: brings up Keycloak + user-service + bearer gateway
 
 # no token -> 401 (unauth_action: deny — NOT a redirect, unlike the default OIDC posture)
 curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        # 401
@@ -129,7 +129,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 > for the packaged demo it is same-origin (CORS moot); the `cors` plugin covers the Vite dev server
 > on `:3000` during development.
 
-`ENABLE_DIRECTORY=1` adds the **identity-directory search** to the user-service (the `UserDirectory`
+`ENABLE_DIRECTORY` (default `1` since 2026-09-11; `0` opts out) adds the **identity-directory search** to the user-service (the `UserDirectory`
 port, ADR 0020 — see the [[USER-DIRECTORY]] guide): the member picker can then offer **any realm
 account**, not just provisioned profiles. It force-enables `ENABLE_OIDC` + `ENABLE_USER_SERVICE` and
 wires the `catalog-directory` service account (`realm-management → view-users` **only**) into the
@@ -462,11 +462,11 @@ realm change here does — and the seed says so itself if it finds a realm that 
 ```bash
 ./deploy.sh down                                   # the realm changed — Keycloak must RE-IMPORT it
 ./profile.sh up                                    # `down` stops base Postgres; the next up needs it
-ENABLE_SPA=1 ENABLE_MCP=1 ./deploy.sh up --pods 2  # BOTH flags on the SAME up (see below)
+ENABLE_MCP=1 ./deploy.sh up --pods 2               # ENABLE_SPA defaults to 1; keep BOTH on the SAME up (see below)
 cd scripts/postman && ./seed-demo-data.sh
 ```
 
-**Both flags on one `up`.** `deploy.sh` tears the SPA stack down on any `up` without `ENABLE_SPA=1`,
+**Both flags on one `up`.** `deploy.sh` tears the SPA stack down on any `up` with `ENABLE_SPA=0`,
 and the MCP stack down without `ENABLE_MCP=1`. A session that drives the packaged console *and* runs
 `run-step-up-matrix.sh` (whose preflight hard-fails without the MCP server) must carry both, or the
 second command quietly removes what the first needed.
@@ -536,7 +536,7 @@ done | sort | uniq -c
 | `compose.keycloak.yaml` + `keycloak/realm-export.json` | Keycloak (opt-in); imports the `catalog-demo` realm/client/user on startup. |
 | `compose.usermgmt.yaml` + `../example-user-management-service/Dockerfile` | The user-management service + its own Postgres (opt-in via `ENABLE_USER_SERVICE=1`); the app-resolved role source for the catalog. |
 | `compose.resilience-stub.yaml` + `resilience-stub/resolve_stub.py` | A tiny **fault-injecting** stand-in for the resolve endpoint (opt-in via `ENABLE_RESILIENCE_STUB=1`), for the Slice B3 resilience e2e. Returns N transient `503`s then the role (`STUB_MODE=transient`) or always `503` (`STUB_MODE=down`); the catalog's `role-source=http` points at it instead of the real user-mgmt. See the B3 section below. |
-| `compose.spa.yaml` + `spa/default.conf` | The **packaged demo SPA** (opt-in via `ENABLE_SPA=1`): nginx serving the built `example-demo-ui/dist` bundle, fronted through the gateway by the public `spa-index`/`spa-assets` routes (no published host port). `deploy.sh` builds the bundle host-side first; torn down on a re-up without the flag. |
+| `compose.spa.yaml` + `spa/default.conf` | The **packaged demo SPA** (on by default; `ENABLE_SPA=0` opts out): nginx serving the built `example-demo-ui/dist` bundle, fronted through the gateway by the public `spa-index`/`spa-assets` routes (no published host port). `deploy.sh` builds the bundle host-side first; torn down on a re-up without the flag. |
 | `opa/policies/team.rego` | The team-management policy the user-service dogfoods (a copy of the service's source policy, mounted into the rig's OPA). |
 | `apisix/config.yaml` | APISIX static config (plugins: prometheus, proxy-rewrite, response-rewrite, opentelemetry, opa, openid-connect). |
 | `apisix/init-routes.sh` | Seed the `catalog-pool` upstream + `catalog-all` route (idempotent); adds openid-connect + opentelemetry + opa plugins (toggleable). |

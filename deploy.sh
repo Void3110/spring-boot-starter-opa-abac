@@ -14,6 +14,10 @@
 # Usage:
 #   ./deploy.sh up [--pods N]     Build (if needed) + start Postgres, APISIX, and N app pods,
 #                                 then point the APISIX upstream at all pods. Default N=2.
+#                                 Defaults (2026-09-11): tracing, OPA, the demo SPA and the identity
+#                                 directory ON (which implies OIDC + the user-service) — the plain
+#                                 `up` is the browser demo at http://localhost:9085; the MCP server
+#                                 and the resilience stub stay opt-in (ENABLE_MCP=1 / ENABLE_RESILIENCE_STUB=1).
 #   ./deploy.sh down [-v]         Stop the whole rig: app pods + APISIX + OPA + Keycloak +
 #                                 user-mgmt + Jaeger + base Postgres. -v also removes volumes.
 #   ./deploy.sh build             Rebuild the app image only.
@@ -43,8 +47,10 @@ IMAGE="opa-abac-catalog:local"
 USERMGMT_IMAGE="opa-abac-usermgmt:local"
 MCP_IMAGE="opa-abac-mcp:local"
 
-# Feature toggles. Tracing + OPA on by default (Phase B). OIDC off by default — opt in with
-# ENABLE_OIDC=1 ./deploy.sh up  (Phase 2 gateway auth; needs Keycloak, slower to start).
+# Feature toggles. Tracing + OPA on by default (Phase B). OIDC is opt-in as a VARIABLE — but since
+# 2026-09-11 ENABLE_SPA and ENABLE_DIRECTORY default to 1 and both force-enable OIDC + the
+# user-service, so the plain `up` runs the full browser demo. The bare Phase-B rig (no Keycloak, no
+# user-service) is ENABLE_SPA=0 ENABLE_DIRECTORY=0 ./deploy.sh up.
 ENABLE_TRACING="${ENABLE_TRACING:-1}"
 ENABLE_OPA="${ENABLE_OPA:-1}"
 ENABLE_OIDC="${ENABLE_OIDC:-0}"
@@ -79,19 +85,22 @@ RESILIENCE_STUB_COMPOSE="$SCRIPT_DIR/infra/compose.resilience-stub.yaml"
 #   - ENABLE_USER_SERVICE — the http role source + Phase-6 _actions enrichment (the affordance map
 #                           the SPA renders); without it the catalog uses the demo role source and
 #                           returns resources with no _actions.
-# Off by default — opt in with ENABLE_SPA=1 ./deploy.sh up. (Run ./deploy.sh build first if the
-# Phase-6 enrichment code isn't yet in the app images.)
+# ON by default since 2026-09-11 (pre-Habr UI QA, DOC-1: a reader following the root README never
+# reached the console). A plain `./deploy.sh up` IS the browser demo. Opt OUT with
+# ENABLE_SPA=0 ./deploy.sh up — that arm also tears the SPA stack down (see the teardown note below).
 # It also BUILDS the SPA bundle host-side (npm ci on first/stale install + npm run build — needs
 # npm on PATH, up fails otherwise) and starts the packaged `spa` nginx (infra/compose.spa.yaml),
 # which init-routes.sh fronts at the gateway origin http://localhost:9085.
-ENABLE_SPA="${ENABLE_SPA:-0}"
+ENABLE_SPA="${ENABLE_SPA:-1}"
 if [ "$ENABLE_SPA" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
 # USER-DIRECTORY-PORT (ADR 0020): the user-service's identity-directory search via the Keycloak admin
-# API (client catalog-directory, view-users only). Off by default — the default rig is unchanged (the
-# user-service keeps the NoOp directory: the search sub-path answers 200-empty). Opt in with
-# ENABLE_DIRECTORY=1 ./deploy.sh up. Needs Keycloak + the user-service, so (like ENABLE_SPA) it
-# force-enables its prerequisites. compose.usermgmt.yaml interpolates ${DIRECTORY_ENABLED} (true/false).
-ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}"
+# API (client catalog-directory, view-users only). ON by default since 2026-09-11 (pre-Habr UI QA,
+# R-G1: with it off, the console's add-member picker answers "No directory accounts match." to every
+# search and — by the no-oracle contract — cannot say why). Opt OUT with ENABLE_DIRECTORY=0
+# ./deploy.sh up: the user-service then keeps the NoOp directory (the search sub-path answers
+# 200-empty). Needs Keycloak + the user-service, so (like ENABLE_SPA) it force-enables its
+# prerequisites. compose.usermgmt.yaml interpolates ${DIRECTORY_ENABLED} (true/false).
+ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-1}"
 if [ "$ENABLE_DIRECTORY" = "1" ]; then ENABLE_OIDC=1; ENABLE_USER_SERVICE=1; fi
 DIRECTORY_ENABLED="false"; [ "$ENABLE_DIRECTORY" = "1" ] && DIRECTORY_ENABLED="true"
 export DIRECTORY_ENABLED

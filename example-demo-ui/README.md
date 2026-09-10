@@ -13,7 +13,7 @@ library's authorization decisions *visible* in a browser.
 
 The SPA is served two ways:
 
-- **Packaged demo** — `ENABLE_SPA=1 ./deploy.sh up --pods 2` builds the SPA and serves it
+- **Packaged demo** — `./deploy.sh up --pods 2` (the SPA is on by default since 2026-09-11; `ENABLE_SPA=0` opts out) builds the SPA and serves it
   through APISIX at the gateway origin (`http://localhost:9085`). Single-origin: APISIX
   proxies Keycloak's `/realms/*` and `/resources/*` in-network, and Keycloak rewrites all
   advertised URLs to that origin, so authority / issuer / redirect all agree — no

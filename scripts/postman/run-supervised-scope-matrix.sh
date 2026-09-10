@@ -326,7 +326,7 @@ restore_rig() {
     # with a non-exported `ENABLE_SPA=1 ...` and then runs this matrix gets that surface removed —
     # export the flavour flags to keep them across matrix re-ups.
     ( cd "$REPO_ROOT" && ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 \
-        ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}" ENABLE_SPA="${ENABLE_SPA:-0}" \
+        ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-1}" ENABLE_SPA="${ENABLE_SPA:-1}" \
         ENABLE_MCP="${ENABLE_MCP:-0}" ./deploy.sh up >/dev/null ) || true
     SUPERVISED_PASS_ACTIVE=0
   fi
@@ -337,7 +337,7 @@ echo "==> Recreating the catalog pods with ONLY the supervised edge repointed at
 SUPERVISED_PASS_ACTIVE=1
 ( cd "$REPO_ROOT" && CATALOG_USER_SERVICE_SUPERVISED_BASE_URL="$DEAD_URL" \
     ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 \
-    ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-0}" ENABLE_SPA="${ENABLE_SPA:-0}" \
+    ENABLE_DIRECTORY="${ENABLE_DIRECTORY:-1}" ENABLE_SPA="${ENABLE_SPA:-1}" \
     ENABLE_MCP="${ENABLE_MCP:-0}" ./deploy.sh up >/dev/null )
 for _ in $(seq 1 60); do
   curl -sf "$GATEWAY/api/v1/catalogs" -H "Authorization: Bearer $EVE_TOKEN" >/dev/null 2>&1 && break

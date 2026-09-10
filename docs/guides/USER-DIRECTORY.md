@@ -117,7 +117,8 @@ published at 1.0 is a seam maintained forever.
 ## The local rig
 
 ```bash
-ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2   # force-enables OIDC + user-service
+./deploy.sh up --pods 2                      # ENABLE_DIRECTORY defaults to 1 (since 2026-09-11); it force-enables OIDC + user-service
+ENABLE_DIRECTORY=0 ./deploy.sh up --pods 2   # the NoOp directory instead: the search answers 200-empty
 ```
 
 The flag wires the config above into the user-service pod (see `infra/compose.usermgmt.yaml`) against

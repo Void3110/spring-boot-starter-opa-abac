@@ -1,5 +1,5 @@
-# The packaged demo SPA (example-demo-ui) — an nginx serving the BUILT bundle, added to the rig when
-# ENABLE_SPA=1 ./deploy.sh up. deploy.sh builds the bundle first (`npm run build` -> dist/), so what
+# The packaged demo SPA (example-demo-ui) — an nginx serving the BUILT bundle, part of the default rig
+# since 2026-09-11 (ENABLE_SPA defaults to 1; ENABLE_SPA=0 ./deploy.sh up opts out). deploy.sh builds the bundle first (`npm run build` -> dist/), so what
 # nginx serves is always the current source.
 #
 # NO published host port, deliberately: the SPA is reachable only THROUGH the gateway

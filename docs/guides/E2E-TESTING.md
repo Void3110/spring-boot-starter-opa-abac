@@ -76,9 +76,10 @@ where no team model exists. Each runner detects the flavour by reading the catal
 
 > **EXPORT the optional flavour flags — do not pass them as a command prefix.** Several runners
 > recreate the catalog pods mid-run through `deploy.sh up` and forward the optional flags as
-> `"${ENABLE_SPA:-0}"` / `"${ENABLE_MCP:-0}"`; `deploy.sh`'s flag-off arms **tear those stacks down**.
-> A rig brought up with `ENABLE_SPA=1 ENABLE_MCP=1 ./deploy.sh up` (a prefix assignment, which the
-> shell does not export) therefore loses the packaged SPA and the MCP server the moment
+> `"${ENABLE_SPA:-1}"` / `"${ENABLE_MCP:-0}"`; `deploy.sh`'s flag-off arms **tear those stacks down**.
+> Since 2026-09-11 the SPA defaults to on, so it survives a runner's re-up; the MCP server does not. A
+> rig brought up with `ENABLE_MCP=1 ./deploy.sh up` (a prefix assignment, which the
+> shell does not export) therefore loses the MCP server the moment
 > `run-supervised-scope-matrix.sh` restores its pods — and the next runner fails on a missing
 > dependency it never touched. Use `export ENABLE_SPA=1 ENABLE_MCP=1` for any session that mixes the
 > demo console with the matrices; `run-demo-world-matrix.sh` exports them itself for exactly this reason.
