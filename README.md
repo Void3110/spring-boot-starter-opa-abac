@@ -261,15 +261,37 @@ To see ABAC enforced end-to-end — gateway OIDC, OPA decisions, the user-servic
 
 ```bash
 ./profile.sh up                                          # base Postgres
-ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2
+./deploy.sh up --pods 2                                  # gateway OIDC + OPA + user-service + the demo console (the defaults)
 # gateway at http://localhost:9085 ; then run an allow/deny matrix:
 cd scripts/postman && ./run-hierarchy-matrix.sh          # or run-tests.sh / run-filter-matrix.sh / ...
-ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh down
+./deploy.sh down                                         # the whole rig; add -v to wipe the volumes
 ```
 
 > The newman matrices under [`scripts/postman/`](scripts/postman/) are the through-the-gateway proofs
 > (role / team / tag / data-filtering / hierarchy). Mint tokens **in-network** (APISIX validates the
 > issuer as `keycloak:8888`) — the scripts handle this. See [`infra/README.md`](infra/README.md).
+
+### Try the demo console (the browser demo)
+
+The rig ships a small React console that shows the authorization cut **live** — the same policy
+decisions, rendered as buttons that appear, lock, or answer `403` honestly. It is on by default, so
+the block above already started it; what remains is the demo data and a browser:
+
+```bash
+scripts/postman/seed-demo-data.sh        # the demo team, roles, catalogs, categories, tags — once per fresh rig
+open http://localhost:9085               # the sign-in card lists every persona
+```
+
+Sign in as **`editor`** (the team owner — every control), **`demo`** (writes and tags, no management),
+**`viewer`** (read-only — mutations lock, a forced one answers `403`) or **`outsider`** (a member of no
+team — an empty list, and a deep link is `403`); password = username. For the supervisor story sign
+in as **`pm-demo`** (a *member*: production opens with no ceremony) and **`sup-demo`** (a *supervisor*:
+production contents ask for a fresh second factor — the code comes from
+`python3 scripts/postman/mint-code-flow-token.py --print-otp --otp-secret spachallengedemo1234`; the
+seeded secret is deliberately not enrollable in a phone app). Every screen, what to look for on it and
+*why* it looks that way: **[`docs/guides/DEMO-CONSOLE-WALKTHROUGH.md`](docs/guides/DEMO-CONSOLE-WALKTHROUGH.md)**.
+The console bundle is built once on the host and needs Node/npm; `ENABLE_SPA=0 ./deploy.sh up` runs
+the rig without it. Add `ENABLE_MCP=1` for the agent tool surface as well.
 
 ### Running the tests
 
@@ -515,6 +537,7 @@ empty list + a single-GET deep-link `403`), and `_actions` differ per identity o
 - Java 25+
 - Spring Boot 4.0+
 - A container runtime — Docker or podman (for the example infrastructure and the integration tests)
+- **Node.js 20+ / npm** — only to build the demo console bundle `deploy.sh` serves (skip with `ENABLE_SPA=0`)
 - **Open Policy Agent (OPA) 1.x** — the decision engine the library calls; the local rig runs it for you
 - **PostgreSQL** — the example uses Postgres-specific features (JSONB tags, `ltree` materialized paths)
 
@@ -532,6 +555,7 @@ the one-command rerun).
 
 The full architecture, decision records, and per-feature guides live in [`docs/`](docs/README.md):
 - **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
+- **Demo console walkthrough** — [`docs/guides/DEMO-CONSOLE-WALKTHROUGH.md`](docs/guides/DEMO-CONSOLE-WALKTHROUGH.md) — the browser demo screen by screen: what each persona sees, and which decision made it so
 - **Agent / MCP authorization** — [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) + [ADR 0028](docs/architecture/adr/0028-agent-tool-call-authorization.md) — the two-layer model, the tri-state capability seam, the roster-is-a-hint rule, and the fail-closed table
 - **Supervised read & step-up** — [`docs/guides/SUPERVISED-READ-AND-STEP-UP.md`](docs/guides/SUPERVISED-READ-AND-STEP-UP.md) + ADRs [0029](docs/architecture/adr/0029-supervised-read-scope.md)–[0033](docs/architecture/adr/0033-catalog-provenance-affordance.md) — the second, disjoint access path; the operator-managed environment tier; the RFC 9470 step-up challenge and its resource-server-side freshness control
 - **ReBAC vs ABAC positioning** — [`docs/architecture/REBAC-AND-ABAC.md`](docs/architecture/REBAC-AND-ABAC.md) — the relationship spine, the partial-evaluation-vs-`ListObjects` difference, what this library deliberately lacks, and when to pick SpiceDB/OpenFGA instead
