@@ -11,10 +11,10 @@
 # Idempotent-ish: re-running re-seeds the catalog row and re-bootstraps the team/roles/memberships
 # (the bootstrap endpoints upsert by natural key). Safe to run after every `ENABLE_SPA=1 ./deploy.sh up`.
 #
-# Run AFTER:  ENABLE_SPA=1 ENABLE_MCP=1 ./deploy.sh up --pods 2   (user-service + enrichment + the
-#             packaged SPA; deploy.sh tears DOWN whichever of the SPA/MCP stacks its flag is missing,
-#             so a session that also runs run-step-up-matrix.sh — whose preflight needs the MCP
-#             server — must carry BOTH flags on the SAME up)
+# Run AFTER:  ENABLE_MCP=1 ./deploy.sh up --pods 2   (user-service + enrichment + the packaged SPA —
+#             ENABLE_SPA defaults to 1 since 2026-09-11; deploy.sh tears DOWN whichever of the SPA/MCP
+#             stacks its flag is OFF, so a session that also runs run-step-up-matrix.sh — whose
+#             preflight needs the MCP server — must carry ENABLE_MCP=1 on the SAME up)
 # Then:       scripts/postman/seed-demo-data.sh
 #
 # The SUPERVISED half of the seed (sup-demo / pm-demo, the two Demo * catalogs) needs a realm that

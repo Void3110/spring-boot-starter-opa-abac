@@ -177,9 +177,10 @@ CONTROL-seat reach rule, the operator-managed `env` tier, the RFC 9470 elevation
 ## Run it end to end
 
 ```bash
-# Bring the full rig up with the identity directory (force-enables OIDC + the user-service);
-# the catalog pods resolve roles from it and the matrix's directory cells have their backend.
-ENABLE_DIRECTORY=1 ./deploy.sh up --pods 2
+# Bring the full rig up — the identity directory is on by default (since 2026-09-11) and force-enables
+# OIDC + the user-service; the catalog pods resolve roles from it and the matrix's directory cells
+# have their backend. (ENABLE_DIRECTORY=1 is explicit and harmless if you prefer it spelled out.)
+./deploy.sh up --pods 2
 
 # Run the team-based ABAC matrix (mints in-network tokens, bootstraps the team data, asserts):
 cd scripts/postman && ./run-team-matrix.sh
