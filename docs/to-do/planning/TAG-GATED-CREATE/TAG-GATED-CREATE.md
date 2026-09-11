@@ -38,7 +38,7 @@ tags:
 | `POST …/categories` `{name}` (no tags) | **201** | 403 |
 | `POST …/categories/{EMEA}/products` | **201** — inside a category the role is denied to read | 403 |
 | `GET` the category it just created (untagged) | 403 — a write-only spawn | — |
-| `POST …/categories` `{tags:{region:[apac], sensitivity:public}}` | 201 | **403** — placement: the root is untagged; a matching payload alone never suffices |
+| `POST …/categories` `{tags:{region:[apac], sensitivity:public}}` | 201 *(inferred, not measured — the payload never reached OPA and the clause opened on the grant alone; pinned by E5/E8)* | **403** — placement: the root is untagged; a matching payload alone never suffices |
 
 **The mechanism.** `category.rego` and `product.rego` decide every type-level request (no resource
 id — a list, or a create/assign-tags before the instance exists) through one verb-agnostic clause,

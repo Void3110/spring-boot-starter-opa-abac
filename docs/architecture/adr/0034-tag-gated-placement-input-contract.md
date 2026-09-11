@@ -125,7 +125,8 @@ allow if {
 
 `parent_tags_satisfied` and `tags_satisfied` share one parameterized helper (values as a set, key
 presence not truthiness, the `ANY_OF`/`ALL_OF` rules, the malformed-`required_tags` guard) so the
-two matches cannot drift. The type-level assign-tags decision stays a separate second decision (the
+two matches cannot drift; the existing `resource_tag_values(key)` entry point stays as a wrapper
+(shipped test pins call it). The type-level assign-tags decision stays a separate second decision (the
 only place the TAG verb is checked) and runs the same strict clause. `filter`, the instance clauses,
 `catalog.rego`: untouched.
 

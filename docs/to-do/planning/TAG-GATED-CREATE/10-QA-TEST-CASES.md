@@ -17,7 +17,7 @@ tags:
 > cells `7a`–`7g` plus one `[bind]` step; asserts the actual allow/deny and body, every `pm.test`
 > throws), **E8 through the packaged SPA in the Browser pane**. Fixtures throughout: a **gated writer** = `catalog: [READ,
 > WRITE, TAG]` with `required_tags {region: [emea]}`, `ANY_OF`, **stamped**
-> `attributes.provenance = "membership"` (the e2e persona's shape; the stamp is what lets the
+> `attributes.provenance = "membership"` (the e2e persona's shape minus its `category: [READ]`, which carries no create verb; the stamp is what lets the
 > ADR 0031-confined inheritable grant fire on the catalog ancestor); a **direct writer** = `category:
 > [READ, WRITE, TAG]` / `product: [READ, WRITE, TAG]` with the same requirement and no catalog
 > permission (the verb granted on the child type itself — the `alice-role` shape); a **plain editor**
@@ -77,7 +77,8 @@ tags:
 > Rig: `./deploy.sh build` (the catalog image carries T3) then `ENABLE_MCP=1 ./deploy.sh up --pods
 > 2` (SPA + directory default on; MCP on the same `up`) and `docker restart opa-abac-opa` (T1's
 > policies; the runner restarts it itself). Persona: the matrix's own `gated-writer`
-> (`catalog: [READ, WRITE, TAG]`, `region ANY_OF [emea]`) on the fixture catalog (untagged root) with
+> (`catalog: [READ, WRITE, TAG]` + `category: [READ]`, `region ANY_OF [emea]` — the create verb reaches
+> the child types only through the inheritable catalog grant) on the fixture catalog (untagged root) with
 > its three seeded categories `match` (emea), `mismatch` (apac), `both` (emea + internal). Every
 > cell asserts status **and** body; cleanup leaves the fixture world as found. Between `7d` and
 > `7e` a `[bind]` item rebinds the same realm user to `gated-direct` (`category`/`product`
@@ -89,7 +90,7 @@ tags:
 |---|---|---|---|
 | E1 | `7a` — the gated writer cannot place a category under the untagged root | `POST …/catalogs/{{catalog_id}}/categories` `{"name":"placed-under-root"}` as `gated-writer` → **403**, `application/problem+json`, `errorCode: ACCESS_DENIED`, `status: 403`; the follow-up owner list of root-level categories does not contain `placed-under-root` (positive assertion on the fixture names it **does** contain); the same persona's 6a (root read 200) and 6b (root PUT 403) unchanged in the same run | T4 |
 | E2 | `7b` — a matching payload under a mismatching parent | `POST …/categories/{{mismatch_category_id}}/products` `{"name":"emea-product-in-apac","tags":{"region":["emea"]}}` as `gated-writer` → **403** `ACCESS_DENIED`; the owner's product list of `mismatch` has `count: 0` for that name (asserted on the exact count of the fixture) | T4 |
-| E3 | `7c` — a matching placement succeeds | the same body under `{{match_category_id}}` → **201**, a `Location` header, body `tags.region` includes `emea`, `categoryId == match`; the owner deletes it afterwards (**204**) and the list is back to the fixture count | T4 |
+| E3 | `7c` — a matching placement succeeds | the same body under `{{match_category_id}}` → **201**, a `Location` header, body `tags.region` includes `emea`, `categoryId == match`; the owner deletes it by the captured `match_product_id` (**204**) and the list is back to the fixture count | T4 |
 | E4 | `7d` — moving a category under a mismatching parent is denied | as `gated-writer`: `POST …/categories` `{"name":"movable","parentId":"{{match_category_id}}","tags":{"region":["emea"]}}` → **201** (a matching placement, id captured); `PUT …/categories/{{movable_id}}` with `parentId: {{mismatch_category_id}}`, same name and tags → **403** `ACCESS_DENIED`; `GET …/categories/{{movable_id}}` as owner → `parentId == match` (the row did not move); cleanup: owner `DELETE` → 204 | T4 |
 | E5 | `7e` — the direct path cannot place a **matching** payload under the untagged root | after the `[bind]` to `gated-direct` (200 asserted): `POST …/catalogs/{{catalog_id}}/categories` `{"name":"direct-under-root","tags":{"region":["emea"]}}` → **403** `ACCESS_DENIED` — the index's reproduction row 7, the escape a payload-only rule would have left open; the owner's list does not contain it | T4 |
 | E6 | `7f` — the direct path, a matching payload under a mismatching parent | `POST …/categories/{{mismatch_category_id}}/products` `{"name":"direct-emea-in-apac","tags":{"region":["emea"]}}` → **403** `ACCESS_DENIED`; the owner's product list of `mismatch` unchanged (exact count) | T4 |

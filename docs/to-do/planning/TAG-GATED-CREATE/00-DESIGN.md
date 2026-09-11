@@ -208,8 +208,9 @@ neither widens nor narrows.
 
 `parent_tags_satisfied` mirrors `tags_satisfied` over `input.resource.parent_attributes`: the two
 share one parameterized helper (`attribute_values(attrs, key)` — array ⇒ elements, scalar ⇒ singleton,
-absent key ⇒ empty, key **presence** not truthiness), the `ANY_OF`/`ALL_OF` rules and the #122
-`has_required_tags` guard, so the match-mode and malformed-requirement semantics cannot drift between
+absent key ⇒ empty, key **presence** not truthiness; the existing `resource_tag_values(key)` stays as a
+one-line wrapper over it, because two shipped test pins call it directly), the `ANY_OF`/`ALL_OF` rules
+and the #122 `has_required_tags` guard, so the match-mode and malformed-requirement semantics cannot drift between
 the two. `parent_tags_satisfied` is vacuously true for a role without a requirement; for a role with
 one it is **undefined** when `parent_attributes` is absent or not an object, and false when the map
 matches nothing (`{}` included) — absent and empty both deny, and the tests pin them as separate
@@ -272,8 +273,8 @@ values: the decision's view equals the stored form for every payload that surviv
   stub decides by action name, so the IT pins what the gates declare — `parent_attributes`,
   `attributes`, the decision sequences, the 403-before-422 order, the unmoved row on a denied
   re-parent — never the tag semantics, which `opa test` owns); seven newman cells in
-  `run-tag-matrix.sh`: `7a`–`7d` on the matrix's existing `gated-writer` (catalog-only, + TAG — the
-  inheritable path) and `7e`–`7g` on the same realm user rebound to a `gated-direct` role naming
+  `run-tag-matrix.sh`: `7a`–`7d` on the matrix's existing `gated-writer` (`catalog: [READ, WRITE, TAG]` + `category: [READ]` — no create verb on the child
+  type, so the verb arrives only through the inheritable path) and `7e`–`7g` on the same realm user rebound to a `gated-direct` role naming
   `category`/`product` (the direct path), covering placement under the untagged root, a matching
   payload under a mismatching parent, a matching placement, and a denied re-parent; one row in the UI
   QA list: the console's create form under a tag-requiring role answers 403 honestly. The demo-world

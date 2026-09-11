@@ -8,7 +8,7 @@ tags:
   - area/catalog-service
 ---
 
-# STATUS — T5: the pane row (E5), the close-out records, the review sequence
+# STATUS — T5: the pane row (E8), the close-out records, the review sequence
 
 **Status:** 📋 TODO
 

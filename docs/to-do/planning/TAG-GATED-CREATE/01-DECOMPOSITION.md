@@ -58,8 +58,11 @@ anything future) passes only when the inheritable grant holds **and** the placem
   object and the role carries a requirement; vacuously true (`not has_required_tags`) for a role
   without one; otherwise the same `ANY_OF`/`ALL_OF` match as `tags_satisfied` over the parent's map.
   **No fallback to `root_attributes`** — the clause never reads it.
-- The helper refactor that makes the two matches one: `resource_tag_values(key)` becomes
-  `attribute_values(attrs, key)` (array ⇒ elements, scalar ⇒ singleton, absent key ⇒ empty, key
+- The helper refactor that makes the two matches one: `resource_tag_values(key)` is generalized to
+  `attribute_values(attrs, key)` — and **kept as a one-line wrapper**
+  (`resource_tag_values(key) := attribute_values(object.get(input.resource, "attributes", {}), key)`),
+  because the boolean-false pins `test_tag_boolean_false_attribute_denies_without_conflict` in **both**
+  test files call it directly and must stay byte-unchanged (`opa check` fails without it) — (array ⇒ elements, scalar ⇒ singleton, absent key ⇒ empty, key
   **presence** not truthiness — the 2026-08-23 `false`-value guard preserved), `key_satisfied(attrs,
   key, acceptable)`, and `tags_match(attrs)` carrying the mode rules; `tags_satisfied :=
   tags_match(object.get(input.resource, "attributes", {}))`, `parent_tags_satisfied` reads
@@ -229,7 +232,7 @@ gate for a no-requirement role); the update/assign-tags delta dispatch and its o
 `guardGateSnapshot`; `TagAssignmentService`; the OpenAPI spec (no contract change — a 403 where a 201
 was). No SPA change.
 
-## T4 — the e2e ratchet: four tag-matrix cells on the gated writer, the persona's TAG, the registry row
+## T4 — the e2e ratchet: seven tag-matrix cells on both grant paths, the persona's TAG, the matrix row
 
 **Goal.** The tag matrix proves ADR 0034 through the gateway on both grant paths: the persona that
 already proves ADR 0022 (the catalog-only `gated-writer`, the inheritable path) cannot place under the
@@ -246,8 +249,8 @@ rebound to a role naming the child types directly (the direct path) is closed th
   `region ANY_OF [emea]`, **no catalog permission**) exercises the direct path; the collection rebinds
   the same realm user (`bob`, the `gated_token`) to it between `7d` and `7e` with a `[bind]` item —
   `POST {{user_service}}/internal/bootstrap/memberships` `{teamId, userId, roleCode}` → 200, the
-  `permission-categories-matrix` precedent (one role per user per team; the runner exports the
-  user's id as a collection variable). The header comment's cell list gains 7a–7g. The runner **does
+  `permission-categories-matrix` precedent (one role per user per team; the runner passes its `$GATED_UID` as a newman `--env-var`, the
+  `run-permission-categories-matrix.sh` `ladder_uid` precedent). The header comment's cell list gains 7a–7g. The runner **does
   not restart OPA today — add the restart + real-decision poll block** from
   `run-supervised-scope-matrix.sh` (T1 edited both policies; a stale bundle would decide the new
   cells for the wrong reason). `scripts/checks/check-shell-guards.py` green.
@@ -263,8 +266,9 @@ rebound to a role naming the child types directly (the direct path) is closed th
     `{"name":"…","tags":{"region":["emea"]}}` → **403** (a matching payload under a mismatching
     parent — the sharper case);
   - **7c** gated-writer `POST …/categories/{{match_category_id}}/products` with the same payload →
-    **201**, the body's `tags.region` contains `emea`; the runner deletes the product afterwards
-    (owner token) so the fixture world is left as found;
+    **201**, the body's `tags.region` contains `emea`; a follow-up owner `DELETE` on the captured
+    `match_product_id` → **204** leaves the fixture world as found (teardown's catalog cascade would
+    clean it regardless);
   - **7d** gated-writer `POST …/categories` `{"name":"movable","parentId":"{{match_category_id}}",
     "tags":{"region":["emea"]}}` → **201** (a matching placement), then `PUT` the new category with
     `parentId: {{mismatch_category_id}}` (same name/tags) → **403** (the placement call on the new
@@ -274,7 +278,7 @@ rebound to a role naming the child types directly (the direct path) is closed th
     **matching** payload under the untagged root — the escape the first draft left open, and the
     index's reproduction row 7); **7f** `POST …/categories/{{mismatch_category_id}}/products` with a
     matching payload → **403**; **7g** the same under `{{match_category_id}}` → **201** + cleanup.
-  - `movable_id` and `direct_product_id` declared in the collection's `variable` list and captured at
+  - `match_product_id`, `movable_id` and `direct_product_id` declared in the collection's `variable` list and captured at
     runtime with `pm.collectionVariables.set` (the `catalog-abac-matrix` precedent).
   - `scripts/checks/check-collection-conformance.py` green (no waiver needed).
 - `scripts/postman/README.md`: the `run-tag-matrix.sh` **matrix row** gains the seven cells and the

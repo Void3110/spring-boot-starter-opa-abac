@@ -8,7 +8,7 @@ tags:
   - area/catalog-service
 ---
 
-# STATUS — T4: the tag matrix's 7a–7d on gated-writer, the registry row (E1–E4)
+# STATUS — T4: the tag matrix's 7a–7g on gated-writer (+TAG) and the gated-direct rebind, the matrix row (E1–E7)
 
 **Status:** 📋 TODO
 
