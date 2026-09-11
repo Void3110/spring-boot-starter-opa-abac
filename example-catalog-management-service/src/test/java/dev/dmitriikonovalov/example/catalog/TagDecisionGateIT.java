@@ -87,6 +87,7 @@ class TagDecisionGateIT {
     void resetStub() {
         ActionAwareOpaClient.rule = action -> false; // fail-closed default; each case sets its rule
         ActionAwareOpaClient.askedActions.clear();
+        ActionAwareOpaClient.askedContexts.clear();
     }
 
     private static Predicate<String> allowOnly(String... actions) {
@@ -568,14 +569,20 @@ class TagDecisionGateIT {
         }
     }
 
-    /** Decides per fine ACTION and records the asked sequence — the dispatch made observable. */
+    /**
+     * Decides per fine ACTION and records the asked sequence — the dispatch made observable. Since
+     * ADR 0034 it also records the decided contexts, so {@code TagGatedCreateIT} can assert the wire
+     * ({@code parent_attributes}, {@code attributes}) the gates declare.
+     */
     static final class ActionAwareOpaClient implements OpaClient {
         static volatile Predicate<String> rule = action -> false;
         static final List<String> askedActions = new CopyOnWriteArrayList<>();
+        static final List<AbacContext> askedContexts = new CopyOnWriteArrayList<>();
 
         @Override
         public boolean allow(AbacContext context) {
             askedActions.add(context.action());
+            askedContexts.add(context);
             return rule.test(context.action());
         }
 

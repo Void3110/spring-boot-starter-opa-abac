@@ -42,22 +42,88 @@ default allow := false
 
 # final decision: a grant (direct or inherited via the resolved role) that is NOT denied. Slice B4
 # removed the subject-roles fallback (membership is the sole access path).
+# TAG-GATED-CREATE (ADR 0034): this clause no longer applies to a STRICT type-level request (a type-level
+# verb other than list). `granted` is not id-scoped — without the conjunct a role naming this type
+# directly would reach a type-level create through `direct_grant` on the payload alone, with no
+# placement check. Instance decisions and a type-level LIST via the direct path are byte-identical.
 allow if {
 	granted
 	not denied
+	not strict_type_level
 }
 
-# COARSE TYPE-LEVEL GATE (Slice B4): a type-level `@OpaPreAuthorize(product:create|list)` asks `allow` with
-# only a resource TYPE (the new product has no id; a list has no instance). The gate resolves the caller's
-# role on the parent catalog (the governing root, via the @OpaPreAuthorize roleResource override), so a
-# subject whose role carries the verb on a declared inheritable ANCESTOR (catalog) passes. Verb-agnostic
-# (create/list/assign-tags alike), scoped to a type-level request so single-resource decisions are
-# unchanged; a non-member resolves no role and is denied. Product had no such gate before B4 (it is a leaf
-# that is always listed under a category) — added here for the create/list type-level paths.
+# COARSE LIST GATE (Slice B4): a type-level `@OpaPreAuthorize(product:list)` asks `allow` with only a
+# resource TYPE (a list has no instance). The gate resolves the caller's role on the parent catalog (the
+# governing root, via the @OpaPreAuthorize roleResource override), so a subject whose role carries the
+# verb on a declared inheritable ANCESTOR (catalog) passes; the which-rows cut happens in SQL. Since
+# TAG-GATED-CREATE (ADR 0034) it is scoped to the LIST verb; create and assign-tags-for-create go
+# through the PLACEMENT GATE below. A non-member resolves no role and is denied. Product had no such
+# gate before B4 (it is a leaf that is always listed under a category).
 allow if {
 	is_type_level_request
+	verb == "list"
 	not denied
 	list_inheritable_grant
+}
+
+# PLACEMENT GATE (TAG-GATED-CREATE, ADR 0034): every type-level verb OTHER than list — create,
+# assign-tags-for-create, and anything future — is strict, whichever way the verb is granted (directly on
+# this type, or on an inheritable ancestor). Nothing cuts after a create the way SQL cuts a list, so the
+# tag requirement is decided HERE, twice: the placement parent's tags (input.resource.parent_attributes —
+# the product's category; manager-enriched, three-state like root_attributes:
+# absent = unproven ⇒ deny, {} = untagged ⇒ deny, for a tag-requiring role) AND the payload's tags
+# (input.resource.attributes — the tag-on-create map, {} when the request carries none). A role without
+# a requirement passes both vacuously. The root-read exemption (ADR 0022) never reaches this clause: a
+# create under the root is a mutation of its subtree, denied in both flag states. There is NO fallback
+# from an absent parent map to root_attributes — that ambiguity is the defect this gate closes.
+allow if {
+	strict_type_level
+	not denied
+	type_level_verb_grant
+	parent_tags_satisfied
+	tags_satisfied
+}
+
+# A strict type-level request: type-level, and the verb is not the one coarse (list) verb. A malformed
+# action leaves `verb` undefined, so this is undefined too and the request falls to the instance clause,
+# where `direct_grant` needs the same `verb` and fails closed.
+strict_type_level if {
+	is_type_level_request
+	verb != "list"
+}
+
+# The verb is granted on the decided type directly (a role naming `product` itself) …
+type_level_verb_grant if {
+	verb in permissions.effective_actions(input.role_definition, input.resource.type)
+}
+
+# … or on a declared inheritable ancestor (membership-derived roles only, ADR 0031).
+type_level_verb_grant if {
+	list_inheritable_grant
+}
+
+# The grant the REQUEST actually rides (ADR 0034): the instance clauses for an instance decision or a
+# type-level LIST via the direct path, the coarse ancestor grant for a type-level LIST, and the
+# placement gate's conjuncts for a strict type-level request. `deny_reason` keys on THIS, never on
+# `granted` alone — otherwise a strict type-level request the placement gate closes (a mismatching
+# parent, an untagged payload) would be told a fresh second factor opens it, and the client would loop
+# on a challenge that can never clear (ADR 0030 §7).
+request_granted if {
+	granted
+	not strict_type_level
+}
+
+request_granted if {
+	is_type_level_request
+	verb == "list"
+	list_inheritable_grant
+}
+
+request_granted if {
+	strict_type_level
+	type_level_verb_grant
+	parent_tags_satisfied
+	tags_satisfied
 }
 
 # Type-level request: id ABSENT or explicit `null` (the app serializes a Java null id as null) — both
@@ -70,6 +136,10 @@ is_type_level_request if not "id" in object.keys(input.resource)
 
 is_type_level_request if input.resource.id == null
 
+# The inheritable type-level grant: the caller's role — resolved on the inheritable ANCESTOR (the parent
+# catalog, via the @OpaPreAuthorize roleResource override, Slice B4) — carries the verb on that ancestor
+# type. It is the whole coarse LIST gate above and one of the two verb paths of the placement gate; a
+# non-member resolves no role and is denied. The "list" in the name is historical.
 list_inheritable_grant if {
 	membership_derived
 	some ancestor_type, _ in data.product.inheritable[input.resource.type]
@@ -183,7 +253,9 @@ denied if {
 	stepup_denied
 }
 
-# An explicit leaf deny wins over any grant.
+# An explicit leaf deny wins over any grant. On a type-level decision the attribute map is the caller's
+# tag-on-create payload (ADR 0034): a payload carrying `abac_deny: true` denies itself — the closed
+# direction only, and the only key of a payload any clause reads besides the tag match.
 denied_other if {
 	input.resource.attributes.abac_deny == true
 }
@@ -345,7 +417,7 @@ deny_reason := {
 	"max_age": data.step_up.max_age,
 } if {
 	stepup_denied
-	granted
+	request_granted
 	not denied_other
 
 	# The challenge is only minted when answering it would actually elevate: `required_acr` must map
@@ -388,16 +460,21 @@ root_env_values := {value} if {
 # Tag-based grant (the Phase-4.5 match, ported from category.rego in Phase 5.97).
 # ---------------------------------------------------------------------------
 
-# The resource's value(s) for a tag key as a set: a scalar tag -> {scalar}; an array tag ->
-# the set of its elements; an absent key -> the empty set.
-resource_tag_values(key) := values if {
-	value := input.resource.attributes[key]
+# TAG-GATED-CREATE (ADR 0034): the match is parameterized over the attribute map, so the decided
+# resource's own tags (`input.resource.attributes` — an instance's tag map, or the tag-on-create payload on
+# a type-level create) and the placement parent's tags (`input.resource.parent_attributes`) are matched by
+# ONE set of rules that cannot drift. `resource_tag_values(key)` stays as the attributes-bound entry point.
+
+# A map's value(s) for a key as a set: an array -> the set of its elements; a scalar -> the singleton;
+# an absent key -> the empty set.
+attribute_values(attrs, key) := values if {
+	value := attrs[key]
 	is_array(value)
 	values := {v | some v in value}
 }
 
-resource_tag_values(key) := values if {
-	value := input.resource.attributes[key]
+attribute_values(attrs, key) := values if {
+	value := attrs[key]
 	not is_array(value)
 	values := {value}
 }
@@ -408,37 +485,59 @@ resource_tag_values(key) := values if {
 # of deciding. Testing the key keeps a false-valued attribute on the singleton path, where
 # {false} intersects no acceptable tag set -> the ordinary no-match deny. An absent key still
 # yields the empty set. (External consumer review, 2026-08-23.)
-resource_tag_values(key) := set() if {
-	attributes := object.get(input.resource, "attributes", {})
-	not key in object.keys(attributes)
+attribute_values(attrs, key) := set() if {
+	not key in object.keys(attrs)
 }
 
-# A single required key is satisfied when the resource's value(s) for it intersect the
+# The decided resource's own values for a key (the pre-ADR-0034 entry point, kept for its callers).
+resource_tag_values(key) := attribute_values(object.get(input.resource, "attributes", {}), key)
+
+# A single required key is satisfied when the map's value(s) for it intersect the
 # acceptable set (existential `some ... in`).
-key_satisfied(key, acceptable) if {
-	some v in resource_tag_values(key)
+key_satisfied(attrs, key, acceptable) if {
+	some v in attribute_values(attrs, key)
 	v in acceptable
 }
 
 # ANY_OF: at least one required key is satisfied (existential).
-tags_satisfied if {
+tags_match(attrs) if {
 	input.role_definition.match_mode == "ANY_OF"
 	some key, acceptable in input.role_definition.required_tags
-	key_satisfied(key, acceptable)
+	key_satisfied(attrs, key, acceptable)
 }
 
 # ALL_OF: every required key is satisfied (universal).
-tags_satisfied if {
+tags_match(attrs) if {
 	input.role_definition.match_mode == "ALL_OF"
 	every key, acceptable in input.role_definition.required_tags {
-		key_satisfied(key, acceptable)
+		key_satisfied(attrs, key, acceptable)
 	}
+}
+
+# The decided resource's own tags satisfy the requirement.
+tags_satisfied if {
+	tags_match(object.get(input.resource, "attributes", {}))
 }
 
 # Vacuous truth: a role with no tag requirement is unaffected (back-compat). This is the ONLY
 # path that passes when required_tags is absent/empty; a present-but-malformed required_tags
 # with an unknown/missing match_mode matches none of the rules above -> tags_satisfied fails -> deny.
 tags_satisfied if {
+	not has_required_tags
+}
+
+# The placement parent's tags satisfy the requirement (ADR 0034). UNDEFINED — so the placement gate
+# denies — when the map is absent or not an object and the role carries a requirement: three states
+# exactly as root_attributes (ADR 0032) — absent = unproven, {} = untagged (matches nothing), a map =
+# matched as an instance's own tags would be. `input.resource.parent_attributes` is read WITHOUT a
+# default on purpose: absence must stay undefined, never an empty map. No fallback to root_attributes.
+parent_tags_satisfied if {
+	parent := input.resource.parent_attributes
+	is_object(parent)
+	tags_match(parent)
+}
+
+parent_tags_satisfied if {
 	not has_required_tags
 }
 

@@ -9,7 +9,10 @@ tags:
 
 # ADR 0022 — Root-read tag exemption (and taggable catalogs)
 
-**Status:** Accepted (shipped 2026-07-09, on the 7.1 feedback branch)
+**Status:** Accepted (shipped 2026-07-09, on the 7.1 feedback branch) — **amended by
+[[0034-tag-gated-placement-input-contract|ADR 0034]] (2026-09-11):** decision 1's "everything below the
+root stays fully tag-gated" now holds for **creation and re-parenting** too — a placement under the root by a
+tag-requiring role is denied in **both** flag states (the exemption widens reads, never mutations)
 **Date:** 2026-07-09
 **Context tags:** `required_tags`, governing root, team-target, navigation lockout, `data.config` flag, fail-closed, taggable catalogs
 

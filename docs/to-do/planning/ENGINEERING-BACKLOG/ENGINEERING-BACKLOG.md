@@ -263,6 +263,29 @@ path appears (an adopter who turns on container-managed auth is the one who must
 
 ---
 
+## 11. A self/descendant re-parent answers 500 — map `AncestorResolutionException` (found 2026-09-11)
+
+**Found by** the TAG-GATED-CREATE security review (pre-existing, outside that slice's diff — on the
+path the slice gates). `PUT /api/v1/catalogs/{c}/categories/{id}` with `parentId` = the category
+itself (or one of its descendants) by any WRITE holder: the update gate passes, the placement gate
+passes, the same-catalog check passes, and `CatalogHierarchyService.reparentCategory` →
+`HierarchicalPathMaintainer.computeNewSelfPath` throws `AncestorResolutionException("… under its own
+descendant")`, which no `@ExceptionHandler` maps — Spring's default **500** (the transaction rolls
+back; no cycle is committed). **Fix:** map it in `ApiExceptionHandler` to a `409`/`422` problem
+body with a vocabulary code, or pre-check self/descendant before `reparentCategory`; pin with an IT.
+
+## 12. No request-body bound at the gateway or the app (noted 2026-09-11)
+
+**Noted by** the same review: APISIX answers 401 for a 5 GB `Content-Length`, and neither the
+routes nor Spring set a body limit, so an authenticated caller can post a very large body; since
+ADR 0034 the raw tag map reaches OPA before dictionary validation (a 20k-key / 200-deep map evaluated
+without error — no 5xx, one heavier OPA round-trip). Pre-existing surface. **Fix shape:** a
+`client_max_body_size` on the catalog route (APISIX `client-control`/nginx config) and
+`spring.servlet.multipart`/`server.max-http-request-header-size`-style bounds where they apply; pin
+with a gateway cell (413).
+
+---
+
 ## Related
 
 - [[SPA-CHALLENGE-UX]] — the slice these came out of

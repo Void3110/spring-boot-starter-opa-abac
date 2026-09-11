@@ -25,6 +25,9 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 @RestController
 public class CategoryController implements CategoryApi {
 
+    /** The governing root's resource type — the team target, the dictionary owner, the top-level placement parent. */
+    private static final String CATALOG_TYPE = "catalog";
+
     private final CategoryRepository categories;
     private final CatalogRepository catalogs;
     private final TagAssignmentService tagAssignment;
@@ -66,14 +69,24 @@ public class CategoryController implements CategoryApi {
     }
 
     @Override
+    // TAG-GATED-CREATE (ADR 0034): the gate declares the PLACEMENT PARENT (the parent category when the
+    // request nests, else the catalog) and the RAW payload, so the policy can decide whether a
+    // tag-requiring role may place a category with these tags there. Authorization runs on the raw map;
+    // dictionary validation (422) runs after allow — a 403 never leaks whether a key exists.
     @OpaPreAuthorize(action = "category:create", resourceType = "'category'",
-            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId",
+            parentResourceType = "#request.parentId != null ? 'category' : 'catalog'",
+            parentResourceId = "#request.parentId != null ? #request.parentId : #catalogId",
+            attributes = "#request.tags")
     public ResponseEntity<Category> createCategory(UUID catalogId, CategoryRequest request) {
         requireCatalog(catalogId);
         // Tag-on-create (Phase 6.5): a request that CARRIES tags needs the TYPE-LEVEL assign-tags
-        // decision on top of the static create gate above (no instance exists yet to resolve).
+        // decision on top of the static create gate above (no instance exists yet to resolve) — with
+        // the same placement parent and payload declared (ADR 0034).
         if (request.getTags() != null && !request.getTags().isEmpty()) {
-            tagDecisionGate.requireCategoryAssignTagsForCreate(catalogId);
+            tagDecisionGate.requireCategoryAssignTagsForCreate(
+                    catalogId, placementParentType(request), placementParentId(catalogId, request),
+                    request.getTags());
         }
         if (request.getParentId() != null) {
             // Parent must exist within the same catalog.
@@ -95,7 +108,7 @@ public class CategoryController implements CategoryApi {
         // target matcher is exact, so only the root resolves the team whose custom keys apply — the
         // same caller-resolves-the-root rule the effective-role fetch follows.
         entity.setTags(tagAssignment.validateAndBuild(
-                "catalog", catalogId.toString(), request.getTags()));
+                CATALOG_TYPE, catalogId.toString(), request.getTags()));
         // Path derivation + INSERT in one transaction, parent row locked — a concurrent re-parent of
         // the parent cannot leave this child under a branch that no longer exists.
         var saved = hierarchy.createWithPath(entity, categories::save);
@@ -149,6 +162,15 @@ public class CategoryController implements CategoryApi {
         if (tagsDelta) {
             tagDecisionGate.requireCategoryAssignTags(categoryId);
         }
+        // Re-parent is a PLACEMENT (ADR 0034): an update that moves the category asks the same
+        // create-shaped question on the NEW parent — its tags and the request's full tag map must both
+        // satisfy a tag-requiring role — so create-then-move cannot bypass the placement gate. Asked
+        // after the update/assign-tags dispatch and before any write; an unchanged parent asks nothing.
+        if (!Objects.equals(entity.getParentId(), request.getParentId())) {
+            tagDecisionGate.requireCategoryPlacement(
+                    catalogId, placementParentType(request), placementParentId(catalogId, request),
+                    request.getTags());
+        }
         // Version binding (Phase 5.97): the freshly loaded row must still be the version the gate
         // authorized — drift means a parallel writer won the window, and the answer is 409 (retry
         // re-runs the gate on the new state), never a silent overwrite. Before any write.
@@ -158,7 +180,7 @@ public class CategoryController implements CategoryApi {
         // unauthorized caller learns nothing from the 422 vocabulary). Addressed by the governing
         // root (see createCategory) so the team's custom keys resolve.
         var tags = tagAssignment.validateAndBuild(
-                "catalog", catalogId.toString(), request.getTags(), entity.getTags().asMap());
+                CATALOG_TYPE, catalogId.toString(), request.getTags(), entity.getTags().asMap());
         if (!Objects.equals(entity.getParentId(), request.getParentId())) {
             if (request.getParentId() != null) {
                 // New parent must exist within the same catalog.
@@ -187,6 +209,16 @@ public class CategoryController implements CategoryApi {
         guardGateSnapshot(entity);
         categories.delete(entity);
         return ResponseEntity.noContent().build();
+    }
+
+    /** The placement parent's type (ADR 0034): the parent category when the request nests, else the catalog. */
+    private static String placementParentType(CategoryRequest request) {
+        return request.getParentId() != null ? "category" : CATALOG_TYPE;
+    }
+
+    /** The placement parent's id (ADR 0034), paired with {@link #placementParentType}. */
+    private static UUID placementParentId(UUID catalogId, CategoryRequest request) {
+        return request.getParentId() != null ? request.getParentId() : catalogId;
     }
 
     private void requireCatalog(UUID catalogId) {

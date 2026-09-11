@@ -12,7 +12,7 @@ tags:
 > **Status: 📋 researched, not yet designed.** Opened 2026-09-07 from a maintainer question — *"is
 > an audience check something anyone using the example app as a starting point would miss?"* — and
 > answered by measurement: **yes, because the example itself has none.** Two decisions are already
-> taken (below); the grill-me, `00-DESIGN`, **ADR 0034** and the decomposition are the next steps.
+> taken (below); the grill-me, `00-DESIGN`, **ADR 0035** (0034 was taken by TAG-GATED-CREATE on 2026-09-11) and the decomposition are the next steps.
 > **Build: collaborative** (the [[SPA-CHALLENGE-UX]] shape — mini package, no autonomous prompt).
 > Slice-shaped, not backlog-shaped: it changes the rig's security contract, the gateway version, the
 > realm, the e2e suite and three guides at once.
@@ -46,7 +46,7 @@ tags:
    **`claim_validator.issuer.valid_issuers`**, which **retires the Lua issuer guard** entirely. The
    guard's contract (three rig authorities, case-insensitive scheme match, the E9 pins in
    `run-step-up-matrix.sh`) becomes plugin configuration.
-2. **A mini-slice with a short ADR (0034, "audience-bound gateway tokens")**, built collaboratively
+2. **A mini-slice with a short ADR (0035, "audience-bound gateway tokens")**, built collaboratively
    on its own branch. Not a backlog item, not a direct change.
 
 ## What the bump drags in (from the 3.11.0 → 3.18.0 changelog — verify each at the source)
@@ -97,7 +97,7 @@ Route plugins in use: `proxy-rewrite`, `response-rewrite`, `opentelemetry` (per-
 ## Next steps
 
 1. Prime `opa-abac-rig-deploy-ops` + `opa-abac-e2e-suite` (`--budget 8000`), then `/grill-me` on
-   the four forks. 2. Write `00-DESIGN.md` + ADR 0034. 3. `/decompose` (collaborative package).
+   the four forks. 2. Write `00-DESIGN.md` + ADR 0035. 3. `/decompose` (collaborative package).
 4. Build on `feature/void3110/gateway-audience-binding`; the first whole-delivery review is one
    multi-lens `/deep-review` pass, follow-ups a Fable+Opus pair (the repo's routing since 2026-09-05).
 

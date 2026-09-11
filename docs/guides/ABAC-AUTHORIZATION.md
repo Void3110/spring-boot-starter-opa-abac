@@ -299,6 +299,38 @@ independently** (after a successful resolve, before the OPA call), so a cache en
 snapshot and is no longer necessarily an *authorized* one. The decided leaf is still always resolved
 fresh, so no decision can read its own cached answer.
 
+### Placement-parent enrichment — `input.resource.parent_attributes` (ADR 0034)
+
+A **type-level** decision — a create, or the assign-tags-for-create that rides with it — has no
+instance to match, so until [[0034-tag-gated-placement-input-contract|ADR 0034]] its input carried an
+empty attribute map and nothing about *where* the new resource would land. A tag-requiring role could
+therefore create what it was denied to read. Two inputs close that, both declared on the annotation of
+the type-level gate:
+
+| `@OpaPreAuthorize` attribute | SpEL → | Serialized as |
+|---|---|---|
+| `parentResourceType` / `parentResourceId` | the **placement parent** — the resource the new one hangs from (`'catalog'` for a top-level category, the parent category when the request nests, `'category'` for a product) | `input.resource.parent_attributes` — the parent's tag map, resolved through the app's `AbacResourceResolver`, read-through-memoized like the root |
+| `attributes` | the raw tag-on-create payload (`#request.tags`) | `input.resource.attributes` — an empty map when none |
+
+`parent_attributes` has the **same three states as `root_attributes`**, for the same reason — absent =
+the parent was declared but could not be proven; `{}` = fetched and untagged; a map = the parent's
+tags — and the same `NON_NULL` serialization. A parent is **proven only under the governing target** the
+role was resolved on (it is that target, or its ancestor chain's root is); a parent anywhere else —
+another tenant's resource named by id — is unproven, so a status code never reveals a foreign resource's
+tags. It is populated from its **own** declaration and never
+derived from `root_attributes`: on a top-level category create both carry the catalog's map (the memo
+makes the second resolve free), and a policy must read `parent_attributes` for placement, never fall
+back from one to the other. The shipped placement gate ([[TAG-BASED-AUTHORIZATION]] §Layer 3) treats
+absent and `{}` alike for a tag-requiring role: **deny**.
+
+**The edges are split the way resource resolution's are.** A *declaration* the manager cannot honor —
+half a parent pair, a parent expression resolving to null/blank, an `attributes` expression that is not
+a string-keyed map or carries a `null` value, `attributes` declared on an instance form (`resourceId` /
+`resource()`) — **denies before OPA is asked**, never a silent "no parent" or "no payload". A parent
+that fails to *resolve* — empty, throws, no resolution support — leaves the field **absent**, never an
+exception, and the policy decides what absence means. Authorization runs on the **raw** submitted
+payload; dictionary validation (422) runs after allow, so a 403 never leaks whether a key exists.
+
 ## Per-type policies
 
 One rego document per resource type (`infra/opa/policies/{catalog,category,product}.rego`),

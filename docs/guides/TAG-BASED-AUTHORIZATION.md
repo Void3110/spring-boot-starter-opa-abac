@@ -225,31 +225,42 @@ persists the two fields and the resolve API (`/internal/effective-role`) returns
 
 ### The match in Rego (`some in` / `every`)
 
-`category.rego`'s `allow` requires **both** the permission check **and** `tags_satisfied`:
+`category.rego`'s `allow` requires **both** the permission check **and** `tags_satisfied`. Since
+[[0034-tag-gated-placement-input-contract|ADR 0034]] the match is **parameterized over the attribute
+map**, so the decided resource's own tags and — on a type-level create — the placement parent's tags
+are matched by one set of rules:
 
 ```rego
-# resource value(s) for a key as a set: array -> elements; scalar -> singleton; absent -> empty
-resource_tag_values(key) := { ... }
+# a map's value(s) for a key as a set: array -> elements; scalar -> singleton; absent -> empty
+attribute_values(attrs, key) := { ... }
 
-key_satisfied(key, acceptable) if {
-    some v in resource_tag_values(key)   # existential intersection
+key_satisfied(attrs, key, acceptable) if {
+    some v in attribute_values(attrs, key)   # existential intersection
     v in acceptable
 }
 
-tags_satisfied if {                      # ANY_OF — at least one required key
+tags_match(attrs) if {                       # ANY_OF — at least one required key
     input.role_definition.match_mode == "ANY_OF"
     some key, acceptable in input.role_definition.required_tags
-    key_satisfied(key, acceptable)
+    key_satisfied(attrs, key, acceptable)
 }
 
-tags_satisfied if {                      # ALL_OF — every required key
+tags_match(attrs) if {                       # ALL_OF — every required key
     input.role_definition.match_mode == "ALL_OF"
     every key, acceptable in input.role_definition.required_tags {
-        key_satisfied(key, acceptable)
+        key_satisfied(attrs, key, acceptable)
     }
 }
 
-tags_satisfied if { not has_required_tags }   # vacuous — back-compat for untagged roles
+tags_satisfied if { tags_match(object.get(input.resource, "attributes", {})) }   # the resource's own tags
+tags_satisfied if { not has_required_tags }                                      # vacuous — untagged roles
+
+parent_tags_satisfied if {                   # the placement parent (type-level create / assign-tags)
+    parent := input.resource.parent_attributes   # read WITHOUT a default: absent must stay undefined
+    is_object(parent)
+    tags_match(parent)
+}
+parent_tags_satisfied if { not has_required_tags }
 ```
 
 - **ANY_OF** ≡ `some … in` (existential; AWS `ForAnyValue:`); **ALL_OF** ≡ `every` (universal; AWS
@@ -258,6 +269,35 @@ tags_satisfied if { not has_required_tags }   # vacuous — back-compat for unta
 - **Vacuous truth:** a role with no `required_tags` is unaffected (untagged roles behave exactly as Phase
   4). A *malformed* requirement (unknown/missing `match_mode`) matches none of the rules → `tags_satisfied`
   fails → **deny** (fail-closed). `default allow := false` is preserved.
+
+#### Placement — creating (and moving) under the requirement (ADR 0034)
+
+A **type-level** decision (a create, or the assign-tags-for-create that rides with it) has no instance
+to match, and until ADR 0034 it had nothing to match either: the coarse type-level clause checked only
+that the verb was granted on an inheritable ancestor, and a tag-requiring writer could create
+categories and products it was denied to read (the pre-Habr QA's DEF-1). Now **LIST is the only coarse
+type-level verb** (its rows are cut afterwards in SQL); every other type-level verb is decided by the
+**placement gate**, whichever way the verb is granted — directly on the type or through an ancestor:
+
+```rego
+allow if {
+    strict_type_level          # type-level, and the verb is not list
+    not denied
+    type_level_verb_grant      # the verb on this type directly, OR the inheritable ancestor grant
+    parent_tags_satisfied      # the placement parent's tags — input.resource.parent_attributes
+    tags_satisfied             # the payload's tags — input.resource.attributes ({} when none)
+}
+```
+
+The rule in one sentence: **a creator can read what it creates, where it creates.** Two consequences
+worth knowing: the **root is included** — creating under an untagged catalog by a tag-requiring role
+is denied in *both* states of the root-read exemption, because the exemption widens reads and a create
+is a mutation of the root's subtree (the same class as the root `PUT` that already answers 403); and
+**re-parenting is a placement** — an update that changes a category's `parentId` asks the same
+create-shaped question on the new parent before it moves anything. `parent_attributes` is three-state
+like `root_attributes` (absent = unproven, `{}` = untagged, a map = the parent's tags); the first two
+both deny a tag-requiring role, and there is deliberately **no fallback** from an absent parent map to
+`root_attributes`. A role without a requirement passes both conjuncts vacuously, as before.
 
 ### Getting the tags to OPA — resolved at the gate (Phase 5.97)
 
@@ -269,6 +309,27 @@ grants and tag-keyed denies are **decided declaratively at `@OpaPreAuthorize`**,
 earlier post-load layer-3 check this guide used to describe (`CategoryAuthorizer`) existed only
 because the gate was attribute-blind and was deleted with the flip; the library's
 `HierarchicalAuthorizer` remains the programmatic alternative for non-annotation flows.
+
+A **type-level create** has no instance to resolve, so since ADR 0034 the gate *declares* what the
+policy needs to place it: the placement parent and the raw payload —
+
+```java
+@OpaPreAuthorize(action = "category:create", resourceType = "'category'",
+        roleResourceType = "'catalog'", roleResourceId = "#catalogId",           // the role, on the root
+        parentResourceType = "#request.parentId != null ? 'category' : 'catalog'", // the placement parent …
+        parentResourceId = "#request.parentId != null ? #request.parentId : #catalogId",
+        attributes = "#request.tags")                                           // … and the payload
+```
+
+The manager resolves the parent through the same resolver and threads its tag map in as
+`parent_attributes`; the payload rides as the decided resource's `attributes`. A product create
+declares `'category'` / `#categoryId`; the assign-tags-for-create decision carries the same pair. Two
+rules of the catalog service worth copying: **re-parenting is a placement** — an update that changes
+`parentId` asks the same create-shaped decision on the *new* parent (the `TagDecisionGate`'s
+placement method) before it moves anything, while the instance update decision stays as it is; and
+**authorization runs on the raw submitted tags, dictionary validation after allow** — so a 403 never
+leaks whether a tag key exists (validation only rejects, it never rewrites a value, which is what
+makes deciding on the raw map safe).
 
 ## Who manages what
 

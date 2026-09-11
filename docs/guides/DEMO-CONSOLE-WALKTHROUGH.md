@@ -248,10 +248,11 @@ match. The direct `GET` of EMEA ran the same `tags_satisfied` and denied.
 **Why:** fail-closed by construction — a role that narrows by attribute can only *lose* rows when a
 requirement is added, never gain them ([[TAG-BASED-AUTHORIZATION]] layer 3, ADRs 0009 and 0022).
 
-> **Known gap (DEF-1, planned):** the same tag-requiring role can still *create* categories and
-> products it would not be allowed to read, because the type-level `create` gate checks the verb but
-> not the tags. Tracked in `docs/to-do/planning/TAG-GATED-CREATE/`; not an escalation beyond the
-> role's own WRITE.
+> **Creating under the requirement (ADR 0034):** the same tag-requiring role cannot *create* what it
+> could not read, or *where* it could not read — a category or product create answers **403** under the
+> untagged root and under any parent whose tags do not match the role, and a create whose own tags
+> would not match is refused too; moving a category under such a parent is refused the same way.
+> The placement gate decides it: [[TAG-BASED-AUTHORIZATION]] §Layer 3 → *Placement*.
 
 ### 3.5 The supervisor — `sup-demo`, with `pm-demo` as the control
 
