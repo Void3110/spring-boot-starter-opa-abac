@@ -24,6 +24,15 @@ tags:
 > **Review routing for this slice (maintainer, 2026-09-11):** `/deep-review` with the lenses on Opus 5
 > → one single-agent review pass on Fable → `/security-review delta` on the annotation and context
 > change; the fallback if the pool is short is the single-agent pass + the security review alone.
+> **Validated:** 2026-09-11 — mechanical gate green; the adversarial pass ran as **one Fable agent over
+> the four angles** (the maintainer's cost decision — not the four-audit fan-out; ~0.29M tokens) and
+> returned 2 run-stoppers (the direct-grant path bypassing placement; the missing ADR 0031 stamp on the
+> unit fixtures) + 5 contradictions + 8 nits, all folded; then **3 delta checks after 3 amendments**
+> (~0.19M / ~0.17M / ~0.10M), each still finding wording-level defects (3+4 → 1+2 → 2 nits) · STOPPED
+> BY COST DECISION, not by a clean round — residual risks: the two last wording fixes (a citation, an
+> `opa fmt` gate phrase) are unverified by a further check; no independent skeptic attacked the single
+> agent's findings. Not residual: the amended policy shape was proven on a patched corpus (423/423,
+> both policies, every U-cell probed) in the first two delta checks.
 
 ## Why this slice exists (the reproduction, measured 2026-09-10, `viewer` holding `alice-role`)
 

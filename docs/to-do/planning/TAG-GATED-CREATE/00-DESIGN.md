@@ -263,7 +263,7 @@ values: the decision's view equals the stored form for every payload that surviv
   matching payload allows; the **no-requirement** role is unchanged on every cell (vacuous truth);
   `root_read_tag_exemption` on and off give the **same** create outcome (pin the invariant, not the
   boolean); the assign-tags decision runs the same table; the placement call for re-parent is its own
-  cell; a malformed `required_tags` still denies. `opa fmt`/`opa check` clean.
+  cell; a malformed `required_tags` still denies. `opa check` clean; `opa fmt --list` names neither policy file.
 - **Starter unit tests** (`opa-abac-spring-security`): the three states of `parent_attributes` on the
   wire (absent / `{}` / map); the memo hit (one resolver call for a top-level category create); a
   declared parent that resolves to null ⇒ deny; a resolver throw ⇒ absent, never an exception; a null

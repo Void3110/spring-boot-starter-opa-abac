@@ -82,8 +82,9 @@ anything future) passes only when the inheritable grant holds **and** the placem
   non-object and is pinned as its own deny). Every cell runs with `data.<type>.inheritable` set as the
   existing type-level cells do. `opa fmt --write` on the **two policy files**, `opa check`, `opa test
   infra/opa/policies -v` green (the shipped **test** files carry pre-existing `opa fmt` drift under
-  1.10.1 — a `with`-continuation line-join — deliberately left untouched, as SUPERVISED-SCOPE's
-  STATUS-03 recorded; `opa fmt --diff` exits 0 either way, so the gate is `opa fmt --list`); the existing cells (category: `test_create_inheritable_grant_opens_gate`,
+  1.10.1 — a `with`-continuation line-join that arrived with the #122 pins, 2026-08-24 — deliberately
+  left untouched, the practice SUPERVISED-SCOPE's STATUS-03 set for drift outside a ticket's boundary;
+  `opa fmt --diff` exits 0 either way, so the gate is `opa fmt --list`); the existing cells (category: `test_create_inheritable_grant_opens_gate`,
   `test_create_null_id_inheritable_grant_opens_gate`, `test_assign_tags_for_create_inheritable_opens`;
   product: `test_product_create_inheritable_opens`, `test_product_create_null_id_inheritable_opens`,
   `test_assign_tags_type_level_inheritable_opens` — all on `editor_role_def`, which names the type
