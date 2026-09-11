@@ -11,7 +11,10 @@ tags:
 
 **Status:** Accepted — refined by [[0022-root-read-tag-exemption|ADR 0022]] (2026-07-09): READ-level
 verbs on the **governing root** are exempt from the requirement by default (a `data.config` flag);
-this ADR's subject-side model is otherwise unchanged.
+this ADR's subject-side model is otherwise unchanged. **Amended by
+[[0034-tag-gated-placement-input-contract|ADR 0034]] (2026-09-11):** a type-level create/assign-tags and a
+re-parent are *placements* — the placement parent's tags **and** the payload's tags must both satisfy the
+requirement (root included, LIST unchanged); until then the type-level create gate skipped the match.
 **Date:** 2026-06
 **Context tags:** ABAC, OPA, tags, fail-closed, partial-eval row filtering, AWS-IAM vs Keycloak
 

@@ -1,21 +1,31 @@
 ---
 tags:
   - status/planned
-  - type/project
+  - type/index
   - area/abac
   - area/opa
+  - area/spring
+  - area/catalog-service
 ---
 
 # TAG-GATED-CREATE — a tag-requiring role must not create what it cannot read
 
-> **Status: 📋 researched, not yet designed.** Opened 2026-09-11 from **DEF-1** of
+> **Status: 📐 DESIGNED + DECOMPOSED 2026-09-11 — mini package, collaborative build.**
+> Design settled 2026-09-11 (grill-me: eight forks; [[00-DESIGN]] §Considered-and-rejected); the
+> contract is [[0034-tag-gated-placement-input-contract|ADR 0034]]. Opened from **DEF-1** of
 > [[PRE-HABR-UI-QA-2026-09-10]]. Severity **Medium**: no escalation beyond the role's own WRITE, but
 > it contradicts the published contract — "mutations + everything below the root stay tag-gated"
 > ([[0022-root-read-tag-exemption|ADR 0022]]) and "a role may act on resources whose tags match"
-> ([[0009-tag-requirement-subject-side|ADR 0009]]). Small slice: one input-contract change, two
-> policies, tests on three tiers, a doc line. **Build: collaborative** (the [[SPA-CHALLENGE-UX]] shape).
+> ([[0009-tag-requirement-subject-side|ADR 0009]]).
+> **Build: collaborative**
+> **Not an autonomous run**: no implementation prompt, no orchestrator. `verify-package.sh` reads the
+> declaration above and skips its two prompt arms ([1] the prompt file, [5] prompt invariants); every
+> other gate must pass. Branch `feature/void3110/tag-gated-create`.
+> **Review routing for this slice (maintainer, 2026-09-11):** `/deep-review` with the lenses on Opus 5
+> → one single-agent review pass on Fable → `/security-review delta` on the annotation and context
+> change; the fallback if the pool is short is the single-agent pass + the security review alone.
 
-## The reproduction (measured 2026-09-10, `viewer` holding `alice-role`)
+## Why this slice exists (the reproduction, measured 2026-09-10, `viewer` holding `alice-role`)
 
 `alice-role`: permissions `{catalog, category, product: [READ, WRITE, TAG]}`, `required_tags`
 `{region:[apac], sensitivity:[public]}`, `match_mode ALL_OF`. On the untagged Demo catalog:
@@ -28,72 +38,81 @@ tags:
 | `POST …/categories` `{name}` (no tags) | **201** | 403 |
 | `POST …/categories/{EMEA}/products` | **201** — inside a category the role is denied to read | 403 |
 | `GET` the category it just created (untagged) | 403 — a write-only spawn | — |
-| `POST …/categories` `{tags:{region:[apac], sensitivity:public}}` | 201 | 201 |
+| `POST …/categories` `{tags:{region:[apac], sensitivity:public}}` | 201 | **403** — placement: the root is untagged; a matching payload alone never suffices |
 
-## The mechanism
+**The mechanism.** `category.rego` and `product.rego` decide every type-level request (no resource
+id — a list, or a create/assign-tags before the instance exists) through one verb-agnostic clause,
+`is_type_level_request; not denied; list_inheritable_grant`, which checks only that the verb is in
+the role's effective actions on an inheritable ancestor type. True for **LIST**, whose rows the SQL
+residual then cuts with the same tag match; false for **CREATE**, where nothing cuts afterwards and
+`tags_satisfied` is never consulted — and could not be: the create input carries the **catalog's**
+tags as `root_attributes` (ADR 0032) but nothing about the placement parent of a nested category or
+a product, and its attribute map is **empty** (the payload never reaches OPA). Two widenings found at
+design time: a category create may carry `parentId` (the parent is a category, not the catalog), and
+a category update may **change** `parentId` with only an existence check (create-then-move bypasses
+any create-only fix).
 
-`category.rego` and `product.rego` decide **type-level** requests (no resource id — a list, or a
-create/assign-tags before the instance exists) through
+## The pins (settled 2026-09-11; full rationale in [[00-DESIGN]])
 
-```
-allow if { is_type_level_request; not denied; list_inheritable_grant }
-```
+- **Placement by tags.** A type-level create/assign-tags by a tag-requiring role passes only when the
+  placement parent's tags **and** the payload's tags satisfy the requirement; the root is included
+  (denied under an untagged root in **both** flag states — the exemption widens reads, not
+  mutations); a role without a requirement is unchanged; the rule never demands READ; it applies
+  **whichever way the verb is granted** — directly on the child type or through an inheritable
+  ancestor (the instance clause `granted` stops applying to strict type-level requests).
+- **Re-parent is a placement** — a second create-shaped decision on the new parent; the instance
+  update decision is untouched.
+- **`parent_attributes`** — a sixth additive component on `AbacContext.Resource`, the `root_attributes`
+  pattern (three states, `NON_NULL`, manager-side, memoized), populated from three new optional
+  `@OpaPreAuthorize` SpEL attributes (`parentResourceType`, `parentResourceId`, `attributes`);
+  **no fallback** to `root_attributes`; declared-but-unresolvable ⇒ deny, resolver failure ⇒ absent.
+- **LIST is the only coarse type-level verb**; every other type-level verb is strict (fail-closed for
+  future verbs). The TAG verb keeps its separate type-level decision.
+- **Authorization on the raw payload precedes dictionary validation** — a 403 never leaks a key.
 
-`list_inheritable_grant` only checks that the verb is in the role's effective actions on an
-**inheritable ancestor type** (`data.category.inheritable = {catalog, category}`; the role is
-resolved on the parent catalog via `@OpaPreAuthorize(roleResourceType='catalog')`). Its own comment
-says it "only OPENS the gate, never widens the rows" — true for **LIST**, whose rows the SQL residual
-then cuts with the same tag match; false for **CREATE**, where nothing cuts afterwards and
-`tags_satisfied` is never consulted. The create input carries no parent tags to match against
-either: `resourceType='category'`, attributes = the tag-on-create payload at most.
+## Tickets
 
-## The shape on the table
+| Ticket | Scope | Status |
+|---|---|---|
+| T1 | the placement gate in `category.rego` + `product.rego`, the shared match helper, U1–U12, the guide's Rego section | ☐ |
+| T2 | `parent_attributes` on `AbacContext.Resource`, the three annotation attributes, manager population, U13–U22, the guides | ☐ |
+| T3 | the example gates' declarations, `requireCategoryPlacement` on re-parent, `TagGatedCreateIT` (I1–I6), the guide's gate section | ☐ |
+| T4 | the tag matrix's `7a`–`7g` — `gated-writer` (+TAG, the inheritable path) and the `gated-direct` rebind (the direct path), the OPA restart, the README matrix row, conformance (E1–E7) | ☐ |
+| T5 | the pane row (E8), the close-out records, the review sequence, the ship commit | ☐ |
 
-Two conjuncts on a type-level **create** (and the type-level **assign-tags**), LIST unchanged:
+## Files
 
-1. **The parent must satisfy the role's requirement.** For a category create, the resolved
-   `roleResource` (the catalog); for a product create, the category. The parent's tag map has to
-   reach the input — the `root_attributes` pattern of ADR 0032 (manager-side, memoized) is the
-   precedent: a `resource.parent_attributes` (or reuse of `ancestors`) populated by the
-   authorization manager, absent ⇒ deny for a tag-requiring role.
-2. **The tag-on-create payload must satisfy it too** — a creator must be able to read what it
-   creates. An untagged payload under a tag-requiring role ⇒ deny; a role without a requirement ⇒
-   unchanged (vacuous truth stays).
+| File | Role |
+|---|---|
+| [[00-DESIGN]] | the design — the rule, the input contract, the policy split, the example gates, the three-tier ratchet, the grill's rejected forks |
+| [[01-DECOMPOSITION]] | the ordered tickets T1–T5 (Goal / Deliverables / Acceptance / What-NOT-to-touch), the critical path, the cross-cutting acceptance |
+| [[10-QA-TEST-CASES]] | U1–U22 · I1–I6 · E1–E8 — every ticket's acceptance cites these |
+| `STATUS-01` … `STATUS-05` | one record per ticket, filled at its checkpoint |
+| [[0034-tag-gated-placement-input-contract\|ADR 0034]] | the decision, written up front |
 
-Fail-closed edges to pin: absent parent attributes ≠ empty parent tags (three states, as ADR 0032);
-the root-read exemption never applies to create; a malformed `required_tags` keeps denying
-(the #122 presence guards).
+## Critical path
 
-## Forks for the grill-me
+T1 (policy) ∥ T2 (starter) → T3 (example gates + IT) → T4 (e2e cells) → T5 (pane row + close-out).
+T1 and T2 are each independently landable: T1 alone denies every tag-requiring create on the rig
+(the fail-closed interim; demo personas unaffected), T2 alone changes nothing observable.
 
-1. **Where the parent's tags enter the input** — a new additive component vs the existing
-   `ancestors`/`root_attributes` (which today serve inheritance and the production tier, not the tag
-   match); who pays the fetch (manager-side memo vs the app's resolver).
-2. **Is the parent conjunct ADR 0022-shaped?** Root reads are exempt; should a category create under
-   an untagged root by a tag-requiring role be denied (consistent with "root mutations are
-   tag-gated") or allowed when the *payload* matches? Recommendation: deny — the root's tags are
-   the placement decision the role was scoped by.
-3. **Type-level `assign-tags`** — the same clause; does any caller use it before an instance exists?
-4. **ADR** — amend ADR 0009 (a "creation" section) vs a short new ADR; the contract sentence in
-   ADR 0022 and [[TAG-BASED-AUTHORIZATION]] §"Layer 3" needs the create case either way.
+## What this slice does not do
 
-## Ratchet
+Catalog create (no parent, no tag-on-create); product moves (impossible by route shape); a
+denial reason distinguishing "parent unproven" from "parent mismatch" (both deny; the states stay
+pinned in tests); any change to `filter`, the SQL residual or the list gates; the SPA; the Central
+cut (1.3.0-SNAPSHOT stays open).
 
-- `opa test` per policy: tag-gated writer + mismatching parent → deny; matching parent + matching
-  payload → allow; untagged payload → deny; no-requirement role → unchanged; absent parent
-  attributes → deny.
-- A newman cell pair in the tag matrix (`run-tag-matrix.sh`): the regional-reader-with-WRITE persona
-  creates under `mismatch` → 403, under `match` with a matching payload → 201.
-- A UI QA row: the console's create form under a tag-requiring role answers 403 honestly.
+## Conventions
 
-## Next steps
-
-1. `ml prime rego-policy opa-abac-authz-model --budget 8000`, then `/grill-me` on the four forks.
-2. `00-DESIGN.md` + the ADR decision. 3. `/decompose` (collaborative). 4. Build on
-   `feature/void3110/tag-gated-create`; layer 3 = one multi-lens `/deep-review` pass.
+Clean-room (neutral names, nothing proprietary); commit identity `Void3110 <void31102025@gmail.com>`
+(repo-local); Obsidian wikilinks; the rig: OPA never watches its mount (`docker restart opa-abac-opa`
+after T1), `./deploy.sh build` after T3 (an `up` reuses an existing image), `ENABLE_MCP=1` on the
+same `up` as everything else; Gradle from the Bash tool needs `-Dorg.gradle.jvmargs=-Xmx2g`.
 
 ## Related
 
-- [[PRE-HABR-UI-QA-2026-09-10]] — DEF-1, the evidence
-- Mulch `rego-policy` failure record (2026-09-10): the class and the diagnostic tell
-- [[TAG-BASED-AUTHORIZATION]] · [[0009-tag-requirement-subject-side|ADR 0009]] · [[0022-root-read-tag-exemption|ADR 0022]] · [[0032-root-attribute-enrichment-input-contract|ADR 0032]]
+- [[00-DESIGN]] · [[01-DECOMPOSITION]] · [[10-QA-TEST-CASES]]
+- [[0034-tag-gated-placement-input-contract|ADR 0034]] · [[0032-root-attribute-enrichment-input-contract|ADR 0032]] · [[0022-root-read-tag-exemption|ADR 0022]] · [[0009-tag-requirement-subject-side|ADR 0009]]
+- [[PRE-HABR-UI-QA-2026-09-10]] — DEF-1, the evidence · Mulch `rego-policy` failure record (2026-09-10): the class and the diagnostic tell
+- [[TAG-BASED-AUTHORIZATION]] · [[POC-ROADMAP]]

@@ -74,6 +74,11 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   match my grant and am denied on one whose tags don't — decided **at the gate**, declaratively; and my
   realm role no longer leaks write access my team role doesn't grant. — **Phase 5.97**
   ([[RESOURCE-RESOLUTION]], ADR [[0013-attribute-rich-pre-authorization|0013]]) ✅
+- **C5** *As a member with a tag-gated role that grants write*, I can **create** a category or product only
+  where my tags match — the placement parent's tags **and** the tags I put on the new resource must both
+  satisfy my grant (under the untagged root: denied, in both flag states) — and I cannot **move** a category
+  under a parent I may not see; a creator can read what it creates, where it creates. — **TAG-GATED-CREATE**
+  ([[TAG-GATED-CREATE]], ADR [[0034-tag-gated-placement-input-contract|0034]]) 📋
 
 ### Epic D — "Lists show me only what I may see" (data filtering)
 
