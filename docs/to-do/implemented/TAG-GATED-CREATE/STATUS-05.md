@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/project
   - area/abac
   - area/opa
@@ -37,7 +37,14 @@ tags:
 
 ## Tests
 
-Every T1–T4 acceptance re-run on the final branch is recorded in the ship commit below; the pane cell is the only new measurement in this ticket.
+**The final branch, re-proven after the review fold-in (2026-09-11):** `./gradlew build` — **1,275 tests
+across the eight modules, 0 failures** (core 130 · spring-security 227 · spring-data 141 ·
+keycloak-directory 8 · starter 80 · catalog service 290 · user-management 260 · mcp 139); `opa test
+infra/opa/policies` **451/451**; the catalog + MCP images rebuilt on the final tree and the pods
+recreated on them (`ENABLE_MCP=1 ./deploy.sh up --pods 2`); `run-tag-matrix.sh` **25 requests / 46
+assertions / 0 failed**; `run-demo-world-matrix.sh --skip-matrices` green; local Sonar **CLEAN**;
+`check-collection-conformance.py` 18 clean; `check-shell-guards.py` 27 clean; `verify-package.sh`
+PACKAGE OK before the folder move.
 
 ## Architecture review + refactor
 
@@ -90,3 +97,9 @@ E8 above (the packaged SPA through the gateway, `viewer` and `editor` logins by 
 ## Decisions
 
 ## Commit
+
+The ship commit (`docs(tag-gated-create): ship — …`): the package folder moved to `implemented/`, the
+index and STATUS frontmatter flipped to `status/done`, the ADR index row to "implemented". The slice's
+commits on the branch: `58bff42` design + ADR 0034 + package · `e306b7c` / `e4c0706` / `b867abe` the
+three delta-check fold-ins · `4f0493c` T1 · `cfa6395` T2 · `a7b37c4` T3 · `61c3c11` T4 · `45043f9` T5
+records · `43d3a94` the review fold-in · plus the Mulch syncs. Push, PR and merge are the maintainer's.
