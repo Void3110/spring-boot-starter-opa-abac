@@ -273,7 +273,7 @@ values: the decision's view equals the stored form for every payload that surviv
   stub decides by action name, so the IT pins what the gates declare — `parent_attributes`,
   `attributes`, the decision sequences, the 403-before-422 order, the unmoved row on a denied
   re-parent — never the tag semantics, which `opa test` owns); seven newman cells in
-  `run-tag-matrix.sh`: `7a`–`7d` on the matrix's existing `gated-writer` (`catalog: [READ, WRITE, TAG]` + `category: [READ]` — no create verb on the child
+  `run-tag-matrix.sh`: `7a`–`7d` on the matrix's existing `gated-writer` (`catalog: [READ, WRITE]` + `category: [READ]` today, gaining TAG — no create verb on the child
   type, so the verb arrives only through the inheritable path) and `7e`–`7g` on the same realm user rebound to a `gated-direct` role naming
   `category`/`product` (the direct path), covering placement under the untagged root, a matching
   payload under a mismatching parent, a matching placement, and a denied re-parent; one row in the UI

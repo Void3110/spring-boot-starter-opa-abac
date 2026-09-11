@@ -62,7 +62,7 @@ anything future) passes only when the inheritable grant holds **and** the placem
   `attribute_values(attrs, key)` — and **kept as a one-line wrapper**
   (`resource_tag_values(key) := attribute_values(object.get(input.resource, "attributes", {}), key)`),
   because the boolean-false pins `test_tag_boolean_false_attribute_denies_without_conflict` in **both**
-  test files call it directly and must stay byte-unchanged (`opa check` fails without it) — (array ⇒ elements, scalar ⇒ singleton, absent key ⇒ empty, key
+  test files call it directly and must keep passing unmodified (`opa check` fails without it) — (array ⇒ elements, scalar ⇒ singleton, absent key ⇒ empty, key
   **presence** not truthiness — the 2026-08-23 `false`-value guard preserved), `key_satisfied(attrs,
   key, acceptable)`, and `tags_match(attrs)` carrying the mode rules; `tags_satisfied :=
   tags_match(object.get(input.resource, "attributes", {}))`, `parent_tags_satisfied` reads
@@ -80,8 +80,10 @@ anything future) passes only when the inheritable grant holds **and** the placem
   `{"type": <t>, "id": null, "attributes": attrs, "parent_attributes": parent}` and a variant that
   **omits** the `parent_attributes` key (absent ≠ null: `"parent_attributes": null` is a present
   non-object and is pinned as its own deny). Every cell runs with `data.<type>.inheritable` set as the
-  existing type-level cells do. `opa fmt --write`, `opa check`, `opa test infra/opa/policies -v`
-  green; the existing cells (category: `test_create_inheritable_grant_opens_gate`,
+  existing type-level cells do. `opa fmt --write` on the **two policy files**, `opa check`, `opa test
+  infra/opa/policies -v` green (the shipped **test** files carry pre-existing `opa fmt` drift under
+  1.10.1 — a `with`-continuation line-join — deliberately left untouched, as SUPERVISED-SCOPE's
+  STATUS-03 recorded; `opa fmt --diff` exits 0 either way, so the gate is `opa fmt --list`); the existing cells (category: `test_create_inheritable_grant_opens_gate`,
   `test_create_null_id_inheritable_grant_opens_gate`, `test_assign_tags_for_create_inheritable_opens`;
   product: `test_product_create_inheritable_opens`, `test_product_create_null_id_inheritable_opens`,
   `test_assign_tags_type_level_inheritable_opens` — all on `editor_role_def`, which names the type
@@ -95,7 +97,8 @@ anything future) passes only when the inheritable grant holds **and** the placem
   PATH — verified); `data.config.root_read_tag_exemption` read from `config.json`.
 
 **Acceptance.** **U1–U12** (each cell in both `category_test.rego` and `product_test.rego`). `opa
-test infra/opa/policies` green, `opa fmt --diff` empty, `opa check` clean. No diff under
+test infra/opa/policies` green, `opa fmt --list infra/opa/policies` names neither policy file, `opa
+check` clean. No diff under
 `catalog.rego`, `team.rego`, `role.rego`, `agent_tools.rego`, `permissions.rego`.
 
 **What NOT to touch.** `filter` and `filter_tags_satisfied` (the SQL residual is byte-identical — LIST
@@ -235,7 +238,7 @@ was). No SPA change.
 ## T4 — the e2e ratchet: seven tag-matrix cells on both grant paths, the persona's TAG, the matrix row
 
 **Goal.** The tag matrix proves ADR 0034 through the gateway on both grant paths: the persona that
-already proves ADR 0022 (the catalog-only `gated-writer`, the inheritable path) cannot place under the
+already proves ADR 0022 (`gated-writer` — catalog READ+WRITE+TAG, category READ — the inheritable path) cannot place under the
 untagged root, cannot place under a mismatching category, can place a matching product under a
 matching category, and cannot move a category under a mismatching parent; and the same realm user
 rebound to a role naming the child types directly (the direct path) is closed the same way.
@@ -331,7 +334,7 @@ surface T1–T4 owns; anything larger is a recorded follow-up. The `GATEWAY-AUDI
 ## Cross-cutting acceptance (every ticket, the final branch)
 
 - `./gradlew build` green (all modules, the Testcontainers ITs); `opa test infra/opa/policies` green;
-  `opa fmt --diff` empty; the local Sonar gate CLEAN on every changed `.java`.
+  `opa fmt --list` names neither policy file; the local Sonar gate CLEAN on every changed `.java`.
 - **LIST byte-identical end to end**: no diff in `filter`/`filter_tags_satisfied`, the list gates, the
   list authorizers; `run-hierarchy-list-matrix.sh` and `run-filter-matrix.sh` green if run.
 - **The wire for existing callers byte-identical** (U13): every context without a declared parent
