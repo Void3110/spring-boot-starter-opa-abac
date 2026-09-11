@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.catalog.config;
 
 import dev.dmitriikonovalov.opaabac.security.OpaPreAuthorize;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -57,11 +58,29 @@ public class TagDecisionGate {
     /**
      * The TYPE-LEVEL tag decision for create — no instance exists yet. Slice B4: the role is resolved on
      * the parent {@code catalog} (the governing root) so a member with {@code assign-tags} (TAG) on the
-     * catalog passes; a non-member resolves no role and is denied.
+     * catalog passes; a non-member resolves no role and is denied. ADR 0034: the placement parent and
+     * the raw payload are declared, exactly as on the create gate, so the policy's placement conjuncts
+     * decide this second question on the same inputs.
      */
     @OpaPreAuthorize(action = "category:assign-tags", resourceType = "'category'",
-            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
-    public void requireCategoryAssignTagsForCreate(UUID catalogId) {
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId",
+            parentResourceType = "#parentType", parentResourceId = "#parentId", attributes = "#tags")
+    public void requireCategoryAssignTagsForCreate(
+            UUID catalogId, String parentType, UUID parentId, Map<String, Object> tags) {
+        // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
+    }
+
+    /**
+     * The PLACEMENT decision for a re-parent (ADR 0034): the same type-level {@code create} question the
+     * create gate asks, on the <b>new</b> parent, with the request's full tag map — so an update that
+     * moves a category is gated exactly as creating it there would be, and create-then-move cannot
+     * bypass the placement gate. The instance {@code update} decision is asked separately, before this.
+     */
+    @OpaPreAuthorize(action = "category:create", resourceType = "'category'",
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId",
+            parentResourceType = "#parentType", parentResourceId = "#parentId", attributes = "#tags")
+    public void requireCategoryPlacement(
+            UUID catalogId, String parentType, UUID parentId, Map<String, Object> tags) {
         // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
     }
 
@@ -79,11 +98,13 @@ public class TagDecisionGate {
 
     /**
      * The TYPE-LEVEL tag decision for product create — the category shape exactly: the role resolves
-     * on the governing {@code catalog} root; the decided resource stays {@code product}.
+     * on the governing {@code catalog} root; the decided resource stays {@code product}; the placement
+     * parent is the category and the raw payload is declared (ADR 0034).
      */
     @OpaPreAuthorize(action = "product:assign-tags", resourceType = "'product'",
-            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
-    public void requireProductAssignTagsForCreate(UUID catalogId) {
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId",
+            parentResourceType = "'category'", parentResourceId = "#categoryId", attributes = "#tags")
+    public void requireProductAssignTagsForCreate(UUID catalogId, UUID categoryId, Map<String, Object> tags) {
         // The decision IS the method — the @OpaPreAuthorize interceptor throws on deny.
     }
 }

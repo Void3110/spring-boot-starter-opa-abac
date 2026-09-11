@@ -69,14 +69,20 @@ public class ProductController implements ProductApi {
     }
 
     @Override
+    // TAG-GATED-CREATE (ADR 0034): the placement parent of a product is its category (never the
+    // catalog — the role is resolved there, the placement is decided here), and the raw payload rides
+    // as the decided resource's attributes. Authorization first, dictionary validation (422) after.
     @OpaPreAuthorize(action = "product:create", resourceType = "'product'",
-            roleResourceType = "'catalog'", roleResourceId = "#catalogId")
+            roleResourceType = "'catalog'", roleResourceId = "#catalogId",
+            parentResourceType = "'category'", parentResourceId = "#categoryId",
+            attributes = "#request.tags")
     public ResponseEntity<Product> createProduct(UUID catalogId, UUID categoryId, ProductRequest request) {
         requireCategory(catalogId, categoryId);
         // Tag-on-create (Phase 6.5): a request that CARRIES tags needs the TYPE-LEVEL assign-tags
-        // decision on top of the static create gate above (no instance exists yet to resolve).
+        // decision on top of the static create gate above (no instance exists yet to resolve) — with
+        // the same placement parent and payload declared (ADR 0034).
         if (request.getTags() != null && !request.getTags().isEmpty()) {
-            tagDecisionGate.requireProductAssignTagsForCreate(catalogId);
+            tagDecisionGate.requireProductAssignTagsForCreate(catalogId, categoryId, request.getTags());
         }
         var entity = new ProductEntity(
                 UUID.randomUUID(),

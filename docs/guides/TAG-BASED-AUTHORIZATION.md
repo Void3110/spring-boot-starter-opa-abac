@@ -310,6 +310,27 @@ earlier post-load layer-3 check this guide used to describe (`CategoryAuthorizer
 because the gate was attribute-blind and was deleted with the flip; the library's
 `HierarchicalAuthorizer` remains the programmatic alternative for non-annotation flows.
 
+A **type-level create** has no instance to resolve, so since ADR 0034 the gate *declares* what the
+policy needs to place it: the placement parent and the raw payload —
+
+```java
+@OpaPreAuthorize(action = "category:create", resourceType = "'category'",
+        roleResourceType = "'catalog'", roleResourceId = "#catalogId",           // the role, on the root
+        parentResourceType = "#request.parentId != null ? 'category' : 'catalog'", // the placement parent …
+        parentResourceId = "#request.parentId != null ? #request.parentId : #catalogId",
+        attributes = "#request.tags")                                           // … and the payload
+```
+
+The manager resolves the parent through the same resolver and threads its tag map in as
+`parent_attributes`; the payload rides as the decided resource's `attributes`. A product create
+declares `'category'` / `#categoryId`; the assign-tags-for-create decision carries the same pair. Two
+rules of the catalog service worth copying: **re-parenting is a placement** — an update that changes
+`parentId` asks the same create-shaped decision on the *new* parent (the `TagDecisionGate`'s
+placement method) before it moves anything, while the instance update decision stays as it is; and
+**authorization runs on the raw submitted tags, dictionary validation after allow** — so a 403 never
+leaks whether a tag key exists (validation only rejects, it never rewrites a value, which is what
+makes deciding on the raw map safe).
+
 ## Who manages what
 
 | Operation | Capability | Mechanism |
