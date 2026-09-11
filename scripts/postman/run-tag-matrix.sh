@@ -24,6 +24,16 @@
 #        both     -> region=[emea],sensitivity=internal  (strict allowed)
 #   5. run newman with the captured ids + tokens.
 #
+# TAG-GATED-CREATE (ADR 0034) cells 7a-7g — a tag-requiring role cannot CREATE what it could not read,
+# nor WHERE it could not read: the placement parent's tags AND the payload's tags must both satisfy the
+# role, whichever way the verb is granted. 7a-7d ride the 'gated-writer' (catalog READ+WRITE+TAG — the
+# inheritable path): a category under the UNTAGGED root -> 403; a matching product under the apac
+# category -> 403; the same under the emea category -> 201; a nested category created under emea and
+# then MOVED under apac -> 403, the row unmoved. Then the same realm user is REBOUND to 'gated-direct'
+# (category/product READ+WRITE+TAG, no catalog permission — the direct path) for 7e-7g: a MATCHING
+# payload under the untagged root -> 403, under apac -> 403, under emea -> 201. The runner restarts OPA
+# first (the placement clauses must be live; --watch is not reliable).
+#
 # Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps the
 # runtime-captured ids in the collection variable scope (mx-ecc3ef).
 
@@ -42,6 +52,8 @@ CLIENT_SECRET="${CLIENT_SECRET:-catalog-gateway-secret}"
 USER_SERVICE="${USER_SERVICE:-http://localhost:28090}"
 PG_CONTAINER="${PG_CONTAINER:-opa-abac-postgres}"
 GATEWAY="${GATEWAY:-http://localhost:9085}"
+OPA_CONTAINER="${OPA_CONTAINER:-opa-abac-opa}"
+OPA_URL="${OPA_URL:-http://localhost:28181}"
 REPORT_DIR="${REPORT_DIR:-build/reports/postman}"
 RUN_ID="${E2E_RUN_ID:-tag-$$}"
 
@@ -95,6 +107,22 @@ create_category() {
     | json_field id
 }
 
+# --- reload the policies (ADR 0034's placement clauses are what 7a-7g assert) ----------
+echo "==> Restarting OPA so the placement clauses are live (--watch is not reliable) ..."
+"$RUNTIME" restart "$OPA_CONTAINER" >/dev/null
+# Poll a REAL DECISION, not /health: OPA answers /health as soon as the server is listening, which is
+# before the policy bundle is loaded — and a decision asked in that window returns undefined, which the
+# fail-closed client reads as DENY. That window is long enough to 403 the fixture creation below.
+OPA_READY=0
+for _ in $(seq 1 60); do
+  if curl -sf -X POST "$OPA_URL/v1/data/catalog/allow" \
+       -H 'Content-Type: application/json' -d '{"input":{}}' 2>/dev/null | grep -q '"result"'; then
+    OPA_READY=1; break
+  fi
+  sleep 1
+done
+[ "$OPA_READY" = "1" ] || { echo "ERROR: OPA did not load its policies within 60s." >&2; exit 1; }
+
 # --- mint tokens -------------------------------------------------------------
 echo "==> Minting owner/reader/strict tokens in-network ($NETWORK) ..."
 OWNER_TOKEN="$(mint_token "$OWNER_USER" "$OWNER_PASS")"
@@ -143,15 +171,22 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 # ADR 0022: a 'gated-writer' — catalog READ+WRITE with the same region requirement. Its READ of the
 # untagged root rides the root-read exemption (200); its WRITE is denied by the tag conjunct (403) —
 # WRITE permission present, so the contrast isolates the exemption boundary, never the permission check.
+# ADR 0034 adds TAG on the catalog so a matching tag-on-create (7c) is decided by the placement rule,
+# not refused on a missing verb; 6a/6b are unaffected (6b sends a name only — a catalog:update).
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
-  "{\"teamId\":\"$TEAM_ID\",\"code\":\"gated-writer\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"gated-writer\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
+# ADR 0034: a 'gated-direct' — the verbs granted on the CHILD types themselves, NO catalog permission,
+# the same region requirement: the direct grant path, which the placement gate must close exactly as
+# it closes the inheritable one. The collection rebinds the gated user to it between 7d and 7e.
+post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"gated-direct\",\"roleLevel\":20,\"permissions\":{\"category\":[\"READ\",\"WRITE\",\"TAG\"],\"product\":[\"READ\",\"WRITE\",\"TAG\"]},\"requiredTags\":{\"region\":[\"emea\"]},\"matchMode\":\"ANY_OF\"}" >/dev/null
 
 # Bind: owner -> owner (full write, to create Categories); reader -> regional-reader; strict -> strict-reader.
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$OWNER_UID\",\"roleCode\":\"owner\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_UID\",\"roleCode\":\"regional-reader\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$STRICT_UID\",\"roleCode\":\"strict-reader\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$GATED_UID\",\"roleCode\":\"gated-writer\"}" >/dev/null
-echo "  team $TEAM_ID governs catalog $DEMO_CATALOG_ID (owner + regional-reader + strict-reader bound)."
+echo "  team $TEAM_ID governs catalog $DEMO_CATALOG_ID (owner + regional-reader + strict-reader + gated-writer bound; gated-direct defined)."
 
 # --- create three differently-tagged Categories via the gateway (owner) ------
 echo "==> Creating tagged Categories through the gateway ..."
@@ -181,6 +216,7 @@ newman run "$COLLECTION" \
   --env-var "reader_token=$READER_TOKEN" \
   --env-var "strict_token=$STRICT_TOKEN" \
   --env-var "gated_token=$GATED_TOKEN" \
+  --env-var "gated_uid=$GATED_UID" \
   --env-var "editor_token=$OWNER_TOKEN" \
   --reporters cli,json \
   --reporter-json-export "$REPORT_DIR/$RUN_ID/tag-abac-matrix-report.json"

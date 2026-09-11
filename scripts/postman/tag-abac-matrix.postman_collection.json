@@ -1,7 +1,7 @@
 {
  "info": {
   "name": "Tag-based ABAC matrix (the dynamic tag dictionary, Phase 4.5)",
-  "description": "Proves tag-based grants end to end through the gateway. The decisive case: the SAME member with the SAME tag-gated role reads two Categories that differ ONLY in their tags — the matching one is allowed (200), the non-matching one is denied (403). Plus ANY_OF vs ALL_OF, the dictionary define dogfood (owner 200 / member 403), and an illegal assignment (422). Run via run-tag-matrix.sh, which seeds the dictionary key, the tag-gated role, and the two tagged Categories at run time.",
+  "description": "Proves tag-based grants end to end through the gateway. The decisive case: the SAME member with the SAME tag-gated role reads two Categories that differ ONLY in their tags — the matching one is allowed (200), the non-matching one is denied (403). Plus ANY_OF vs ALL_OF, the dictionary define dogfood (owner 200 / member 403), and an illegal assignment (422). Run via run-tag-matrix.sh, which seeds the dictionary key, the tag-gated role, and the two tagged Categories at run time. TAG-GATED-CREATE (ADR 0034) cells 7a-7g: a tag-requiring role cannot create what it could not read, nor where it could not read — the placement parent's tags and the payload's tags must both satisfy the role, whichever way the verb is granted (7a-7d the inheritable path on gated-writer, 7e-7g the direct path after a [bind] to gated-direct); a re-parent is a placement (7d).",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
  },
  "item": [
@@ -421,6 +421,780 @@
      }
     }
    ]
+  },
+  {
+   "name": "7a. ADR 0034 — gated-writer CREATES a category under the UNTAGGED root -> 403 (placement: the root's tags decide, in both flag states)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"placed-under-root\"}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// The placement parent is the root and it is untagged: a create is a mutation of the root's",
+       "// subtree, so the ADR 0022 exemption (reads only) never applies — the same class as 6b. The role",
+       "// HOLDS WRITE (via the catalog), so this 403 is the placement conjunct, never the permission check.",
+       "pm.test('a tag-requiring writer cannot place a category under the untagged root', function () { pm.response.to.have.status(403); });",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7a-ii. … and the root still holds only the three fixture Categories (owner list)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('owner lists the categories', function () { pm.response.to.have.status(200); });",
+       "pm.test('the owner still lists exactly the three fixture Categories', () => {",
+       "  const names = pm.response.json().items.map(i => i.name);",
+       "  pm.expect(names).to.include.members(['EMEA only', 'APAC only', 'EMEA internal']);",
+       "  pm.expect(pm.response.json().count).to.eql(3);",
+       "});",
+       "pm.test('nothing was placed under the root', () => {",
+       "  pm.expect(pm.response.json().items.map(i => i.name)).to.not.include('placed-under-root');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7b. ADR 0034 — gated-writer CREATES a MATCHING product under the apac category -> 403 (the parent's tags, not the payload's, decide)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{mismatch_category_id}}/products",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{mismatch_category_id}}",
+      "products"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"emea-product-in-apac\",\"priceCents\":100,\"currency\":\"USD\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// The sharper case: the payload matches the role, the PARENT does not. A creator can read what",
+       "// it creates only where it could read — placement is decided on the parent's tags.",
+       "pm.test('a matching payload under a mismatching parent is denied', function () { pm.response.to.have.status(403); });",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7b-ii. … and the apac category holds no product (owner list, exact count)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{mismatch_category_id}}/products",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{mismatch_category_id}}",
+      "products"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('owner lists the products', function () { pm.response.to.have.status(200); });",
+       "pm.test('the denied create persisted nothing', () => { pm.expect(pm.response.json().count).to.eql(0); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7c. ADR 0034 — gated-writer CREATES a MATCHING product under the emea category -> 201 (a matching placement)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}/products",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{match_category_id}}",
+      "products"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"emea-product-in-emea\",\"priceCents\":100,\"currency\":\"USD\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('a matching payload under a matching parent is allowed', function () { pm.response.to.have.status(201); });",
+       "pm.test('201 carries a Location header and the echoed tags', () => {",
+       "  pm.expect(pm.response.headers.get('Location') || '').to.match(/\\/api\\/v1\\//);",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.tags.region).to.include('emea');",
+       "  pm.expect(b.categoryId).to.eql(pm.variables.get('match_category_id'));",
+       "  pm.collectionVariables.set('match_product_id', b.id);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7c-ii. … cleanup: the owner deletes the product 7c created -> 204",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}/products/{{match_product_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{match_category_id}}",
+      "products",
+      "{{match_product_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('the owner removes the placed product', function () { pm.response.to.have.status(204); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7d-i. ADR 0034 — gated-writer CREATES a nested category under the emea category -> 201 (a matching placement, to be moved)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"movable\",\"parentId\":\"{{match_category_id}}\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('a matching nested placement is allowed', function () { pm.response.to.have.status(201); });",
+       "pm.test('the new category sits under the emea category', () => {",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.parentId).to.eql(pm.variables.get('match_category_id'));",
+       "  pm.expect(b.tags.region).to.include('emea');",
+       "  pm.collectionVariables.set('movable_id', b.id);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7d-ii. ADR 0034 — the SAME gated-writer MOVES it under the apac category -> 403 (re-parent is a placement)",
+   "request": {
+    "method": "PUT",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{movable_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{movable_id}}"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"movable\",\"parentId\":\"{{mismatch_category_id}}\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// The update decision itself passes (the category's own tags match); the placement question on",
+       "// the NEW parent is what denies — create-then-move cannot bypass the placement gate.",
+       "pm.test('moving under a mismatching parent is denied', function () { pm.response.to.have.status(403); });",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7d-iii. … and the row did not move (owner GET: still under the emea category)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{movable_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{movable_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('owner reads the category', function () { pm.response.to.have.status(200); });",
+       "pm.test('the parent is unchanged after the denied move', () => {",
+       "  pm.expect(pm.response.json().parentId).to.eql(pm.variables.get('match_category_id'));",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7d-iv. … cleanup: the owner deletes the nested category -> 204",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{movable_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{movable_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('the owner removes the nested category', function () { pm.response.to.have.status(204); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "[bind] the gated user -> gated-direct (the direct grant path: verbs on the child types, no catalog permission)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{user_service}}/internal/bootstrap/memberships",
+     "host": [
+      "{{user_service}}"
+     ],
+     "path": [
+      "internal",
+      "bootstrap",
+      "memberships"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"teamId\":\"{{team_id}}\",\"userId\":\"{{gated_uid}}\",\"roleCode\":\"gated-direct\"}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// One role per user per team: the bootstrap endpoint updates the existing membership in place.",
+       "pm.test('rebound to gated-direct', function () { pm.response.to.have.status(200); });"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7e. ADR 0034 — gated-direct CREATES a MATCHING-payload category under the UNTAGGED root -> 403 (the direct path is closed the same way)",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"direct-under-root\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "// A role naming the child type directly reaches a type-level create through the direct grant;",
+       "// with the payload on the wire it would pass on the payload alone unless the placement gate owns",
+       "// every non-list type-level verb — which it does. The root is untagged: denied.",
+       "pm.test('the direct path cannot place a matching payload under the untagged root', function () { pm.response.to.have.status(403); });",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7e-ii. … and the root still holds only the three fixture Categories (owner list)",
+   "request": {
+    "method": "GET",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('owner lists the categories', function () { pm.response.to.have.status(200); });",
+       "pm.test('the owner still lists exactly the three fixture Categories', () => {",
+       "  const names = pm.response.json().items.map(i => i.name);",
+       "  pm.expect(names).to.include.members(['EMEA only', 'APAC only', 'EMEA internal']);",
+       "  pm.expect(pm.response.json().count).to.eql(3);",
+       "});",
+       "pm.test('nothing was placed under the root', () => {",
+       "  pm.expect(pm.response.json().items.map(i => i.name)).to.not.include('direct-under-root');",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7f. ADR 0034 — gated-direct CREATES a MATCHING product under the apac category -> 403",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{mismatch_category_id}}/products",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{mismatch_category_id}}",
+      "products"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"direct-emea-in-apac\",\"priceCents\":100,\"currency\":\"USD\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('the direct path: a matching payload under a mismatching parent is denied', function () { pm.response.to.have.status(403); });",
+       "pm.test('403 body is RFC-7807 problem+json with ACCESS_DENIED', () => {",
+       "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/problem+json');",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.errorCode).to.eql('ACCESS_DENIED');",
+       "  pm.expect(b.status).to.eql(403);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7g. ADR 0034 — gated-direct CREATES a MATCHING product under the emea category -> 201",
+   "request": {
+    "method": "POST",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{gated_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}/products",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{match_category_id}}",
+      "products"
+     ]
+    },
+    "body": {
+     "mode": "raw",
+     "raw": "{\"name\":\"direct-emea-in-emea\",\"priceCents\":100,\"currency\":\"USD\",\"tags\":{\"region\":[\"emea\"]}}"
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('the direct path: a matching placement is allowed', function () { pm.response.to.have.status(201); });",
+       "pm.test('201 carries a Location header and the echoed tags', () => {",
+       "  pm.expect(pm.response.headers.get('Location') || '').to.match(/\\/api\\/v1\\//);",
+       "  const b = pm.response.json();",
+       "  pm.expect(b.tags.region).to.include('emea');",
+       "  pm.expect(b.categoryId).to.eql(pm.variables.get('match_category_id'));",
+       "  pm.collectionVariables.set('direct_product_id', b.id);",
+       "});"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "7g-ii. … cleanup: the owner deletes the product 7g created -> 204",
+   "request": {
+    "method": "DELETE",
+    "header": [
+     {
+      "key": "Authorization",
+      "value": "Bearer {{owner_token}}"
+     },
+     {
+      "key": "Content-Type",
+      "value": "application/json"
+     }
+    ],
+    "url": {
+     "raw": "{{gateway}}/api/v1/catalogs/{{catalog_id}}/categories/{{match_category_id}}/products/{{direct_product_id}}",
+     "host": [
+      "{{gateway}}"
+     ],
+     "path": [
+      "api",
+      "v1",
+      "catalogs",
+      "{{catalog_id}}",
+      "categories",
+      "{{match_category_id}}",
+      "products",
+      "{{direct_product_id}}"
+     ]
+    }
+   },
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('the owner removes the placed product', function () { pm.response.to.have.status(204); });"
+      ]
+     }
+    }
+   ]
   }
  ],
  "variable": [
@@ -458,6 +1232,22 @@
   },
   {
    "key": "gated_token",
+   "value": ""
+  },
+  {
+   "key": "gated_uid",
+   "value": ""
+  },
+  {
+   "key": "match_product_id",
+   "value": ""
+  },
+  {
+   "key": "movable_id",
+   "value": ""
+  },
+  {
+   "key": "direct_product_id",
    "value": ""
   }
  ]

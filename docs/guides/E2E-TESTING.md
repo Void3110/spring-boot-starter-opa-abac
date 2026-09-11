@@ -268,7 +268,9 @@ matched against a role's `requiredTags`, in Rego. It needs the full rig **with t
 (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2`). At run time it mints in-network tokens,
 seeds a demo catalog as a team-target, bootstraps two tag-gated roles (a `regional-reader` requiring
 `region` ANY_OF `[emea]`, a `strict-reader` requiring `region:[emea]` **and** `sensitivity:[public,
-internal]` ALL_OF), and creates three differently-tagged Categories through the gateway. Then 9 requests:
+internal]` ALL_OF), and creates three differently-tagged Categories through the gateway. It restarts
+OPA first (the ADR 0034 placement clauses must be live — `--watch` is not reliable). Then 16 requests
+plus one rebind step:
 
 | # | Case | Expected |
 |---|------|----------|
@@ -277,11 +279,19 @@ internal]` ALL_OF), and creates three differently-tagged Categories through the 
 | 3a / 3b | ALL_OF role: both keys satisfied / only one | **200** / **403** |
 | 4a / 4b | owner defines a team tag key / a member tries | **201** / **403** |
 | 5 | assigning a value outside the dictionary | **422** (never stored) |
+| 6a / 6b | the gated writer READS the untagged root / MUTATES it | **200** / **403** — ADR [[0022-root-read-tag-exemption\|0022]] |
+| 7a | the gated writer CREATES a category under the **untagged root** | **403** — placement: the root's tags decide, in both flag states (ADR [[0034-tag-gated-placement-input-contract\|0034]]) |
+| 7b / 7c | a **matching** product under the apac category / under the emea category | **403** / **201** — the parent's tags, not the payload's, decide |
+| 7d | a nested category created under emea, then **moved** under apac | **201**, then **403** — re-parent is a placement; the row did not move |
+| `[bind]` | the same realm user rebound to `gated-direct` (verbs on the child types, no catalog permission) | **200** |
+| 7e | the direct path: a **matching** payload under the untagged root | **403** — the direct grant is closed the same way |
+| 7f / 7g | the direct path: a matching product under apac / under emea | **403** / **201** |
 
-Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision (rows 6a/6b
-are the ADR [[0022-root-read-tag-exemption|0022]] pair — the gated writer READS the untagged root
-catalog `200`, mutating it stays `403`). A team key defined at runtime governs assignment + decisions
-immediately — no redeploy. All 9 green; stable across reruns. Guide: [[TAG-BASED-AUTHORIZATION]].
+Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision; 6a/6b pin
+both sides of the root-read exemption; 7a–7g pin the placement gate on both grant paths (each allow
+cell is followed by an owner cleanup so the fixture world is left as found). A team key defined at
+runtime governs assignment + decisions immediately — no redeploy. All 16 green; stable across reruns.
+Guide: [[TAG-BASED-AUTHORIZATION]].
 
 ### Data-filtering matrix (Phase 5)
 
