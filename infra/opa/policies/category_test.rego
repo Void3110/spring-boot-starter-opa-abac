@@ -1559,3 +1559,231 @@ test_supervised_nonobject_root_attributes_stays_closed if {
 		{"resource": {"type": "category", "id": "x1", "attributes": {}, "root_attributes": "corrupt"}},
 	)
 }
+
+# --- TAG-GATED-CREATE (ADR 0034): the placement gate on type-level create / assign-tags -------------
+#
+# A tag-requiring role must not create what it cannot read, where it cannot read: on every type-level
+# verb but list, the placement parent's tags (input.resource.parent_attributes) AND the payload's tags
+# (input.resource.attributes) must both satisfy the requirement — whichever way the verb is granted.
+# Three fixtures: a STAMPED catalog-only writer (the inheritable path — ADR 0031 confines it to
+# membership-derived roles, so the stamp is load-bearing), a DIRECT writer naming the type itself, and
+# the plain editor (no requirement). Every allow/deny cell runs on BOTH tag-requiring fixtures.
+
+gated_writer_any := {
+	"code": "gated-writer",
+	"attributes": {"provenance": "membership", "role_level": 20},
+	"permissions": {"catalog": ["READ", "WRITE", "TAG"]},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+gated_writer_no_tag := {
+	"code": "gated-writer-no-tag",
+	"attributes": {"provenance": "membership", "role_level": 20},
+	"permissions": {"catalog": ["READ", "WRITE"]},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+gated_writer_direct := {
+	"code": "gated-direct",
+	"attributes": {"role_level": 20},
+	"permissions": {"category": ["READ", "WRITE", "TAG"]},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+gated_direct_no_tag := {
+	"code": "gated-direct-no-tag",
+	"attributes": {"role_level": 20},
+	"permissions": {"category": ["READ", "WRITE"]},
+	"required_tags": {"region": ["emea"]},
+	"match_mode": "ANY_OF",
+}
+
+placement_inheritable := {"category": {"catalog": true}}
+
+tag_emea := {"region": ["emea"]}
+
+tag_apac := {"region": ["apac"]}
+
+# The real wire shape of a type-level decision after ADR 0034: explicit null id, the payload as
+# attributes, the placement parent as parent_attributes.
+placement_input(action, role_def, parent, attrs) := {
+	"subject": {"id": "u", "roles": []},
+	"action": action,
+	"resource": {"type": "category", "id": null, "attributes": attrs, "parent_attributes": parent},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# The same with the parent_attributes key OMITTED — absent is a distinct state from a present null.
+placement_input_no_parent(action, role_def, attrs) := {
+	"subject": {"id": "u", "roles": []},
+	"action": action,
+	"resource": {"type": "category", "id": null, "attributes": attrs},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# The same with the attributes key OMITTED (an adopter that declares no payload).
+placement_input_no_attrs(action, role_def, parent) := {
+	"subject": {"id": "u", "roles": []},
+	"action": action,
+	"resource": {"type": "category", "id": null, "parent_attributes": parent},
+	"role_definition": role_def,
+	"environment": {},
+}
+
+# U1 — LIST is untouched: the stamped writer lists through the coarse ancestor clause; the DIRECT writer
+# is denied exactly as before ADR 0034 (the direct list path matches the empty attribute map — a
+# pre-existing shape, neither widened nor narrowed); no-requirement roles as before; no role def denied.
+test_placement_u1_list_untouched if {
+	category.allow with input as placement_input_no_parent("category:list", gated_writer_any, {})
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input_no_parent("category:list", gated_writer_direct, {})
+		with data.category.inheritable as placement_inheritable
+	category.allow with input as placement_input_no_parent("category:list", editor_role_def, {})
+		with data.category.inheritable as placement_inheritable
+	category.allow with input as placement_input_no_parent("category:list", viewer_role_def, {})
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as object.remove(placement_input_no_parent("category:list", gated_writer_any, {}), ["role_definition"])
+		with data.category.inheritable as placement_inheritable
+
+	# the omitted-id wire shape lists the same way
+	category.allow with input as category_create_input(editor_role_def) with input.action as "category:list"
+		with data.category.inheritable as placement_inheritable
+}
+
+# U2 — matching parent + matching payload -> allow, on both grant paths; extra parent keys are fine.
+test_placement_u2_matching_parent_and_payload_allows if {
+	category.allow with input as placement_input("category:create", gated_writer_any, tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	category.allow with input as placement_input("category:create", gated_writer_direct, tag_emea, tag_emea)
+	category.allow with input as placement_input("category:create", gated_writer_any, {"region": ["emea"], "sensitivity": "internal"}, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	category.allow with input as placement_input("category:create", gated_writer_direct, {"region": ["emea"], "sensitivity": "internal"}, tag_emea)
+}
+
+# U3 — a MATCHING payload under a MISMATCHING parent -> deny (the case the QA never measured).
+test_placement_u3_matching_payload_under_mismatching_parent_denies if {
+	not category.allow with input as placement_input("category:create", gated_writer_any, tag_apac, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_direct, tag_apac, tag_emea)
+}
+
+# U4 — an UNTAGGED payload under a matching parent -> deny (a creator must be able to read what it creates).
+test_placement_u4_untagged_payload_denies if {
+	not category.allow with input as placement_input("category:create", gated_writer_any, tag_emea, {})
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_direct, tag_emea, {})
+	not category.allow with input as placement_input_no_attrs("category:create", gated_writer_any, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input_no_attrs("category:create", gated_writer_direct, tag_emea)
+}
+
+# U5 — a MISMATCHING payload under a matching parent -> deny; a present-but-false value matches nothing.
+test_placement_u5_mismatching_payload_denies if {
+	not category.allow with input as placement_input("category:create", gated_writer_any, tag_emea, tag_apac)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_direct, tag_emea, tag_apac)
+	not category.allow with input as placement_input("category:create", gated_writer_any, tag_emea, {"region": false})
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_direct, tag_emea, {"region": false})
+}
+
+# U6 — an ABSENT parent map -> deny (undefined, never an allow), including the pre-ADR-0034 wire shapes.
+test_placement_u6_absent_parent_denies if {
+	not category.allow with input as placement_input_no_parent("category:create", gated_writer_any, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input_no_parent("category:create", gated_writer_direct, tag_emea)
+	not category.allow with input as category_create_input(gated_writer_any)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as category_create_input(gated_writer_direct)
+}
+
+# U7 — an EMPTY parent map (an untagged root/parent, fetched) -> deny; a separate cell from U6 on purpose.
+test_placement_u7_empty_parent_denies if {
+	not category.allow with input as placement_input("category:create", gated_writer_any, {}, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_direct, {}, tag_emea)
+}
+
+# U8 — a non-object parent (a present null, a string, an array, a number) -> deny, never a type error.
+test_placement_u8_non_object_parent_denies if {
+	not category.allow with input as placement_input("category:create", gated_writer_any, null, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_any, "x", tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_any, [], tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_any, 42, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", gated_writer_direct, null, tag_emea)
+}
+
+# U9 — a role WITHOUT a requirement is unchanged: absent parent, any payload -> allow; a read-only role
+# has no create verb -> deny; no role definition -> deny.
+test_placement_u9_no_requirement_role_unchanged if {
+	category.allow with input as placement_input_no_parent("category:create", editor_role_def, {})
+	category.allow with input as placement_input_no_parent("category:create", editor_role_def, tag_apac)
+	category.allow with input as placement_input("category:create", editor_role_def, {}, {})
+	not category.allow with input as placement_input_no_parent("category:create", viewer_role_def, {})
+	not category.allow with input as object.remove(placement_input("category:create", editor_role_def, tag_emea, tag_emea), ["role_definition"])
+}
+
+# U10 — the root-read exemption flag never reaches a create: the same outcomes with the flag on and off.
+test_placement_u10_root_read_flag_is_irrelevant if {
+	not category.allow with input as placement_input("category:create", gated_writer_any, {}, tag_emea)
+		with data.category.inheritable as placement_inheritable
+		with data.config.root_read_tag_exemption as true
+	not category.allow with input as placement_input("category:create", gated_writer_any, {}, tag_emea)
+		with data.category.inheritable as placement_inheritable
+		with data.config.root_read_tag_exemption as false
+	category.allow with input as placement_input("category:create", gated_writer_any, tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+		with data.config.root_read_tag_exemption as true
+	category.allow with input as placement_input("category:create", gated_writer_any, tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+		with data.config.root_read_tag_exemption as false
+}
+
+# U11 — the type-level assign-tags decision runs the same table; a WRITE-without-TAG role is refused on
+# the verb, a non-member on the missing role.
+test_placement_u11_assign_tags_runs_the_same_table if {
+	category.allow with input as placement_input("category:assign-tags", gated_writer_any, tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	category.allow with input as placement_input("category:assign-tags", gated_writer_direct, tag_emea, tag_emea)
+	not category.allow with input as placement_input("category:assign-tags", gated_writer_any, tag_apac, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:assign-tags", gated_writer_direct, tag_apac, tag_emea)
+	not category.allow with input as placement_input("category:assign-tags", gated_writer_any, tag_emea, {})
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:assign-tags", gated_writer_any, {}, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:assign-tags", gated_writer_no_tag, tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:assign-tags", gated_direct_no_tag, tag_emea, tag_emea)
+	not category.allow with input as object.remove(placement_input("category:assign-tags", gated_writer_any, tag_emea, tag_emea), ["role_definition"])
+		with data.category.inheritable as placement_inheritable
+}
+
+# U12 — the malformed and the unknown stay closed: a scalar required_tags, a missing match_mode, and a
+# FUTURE type-level verb (granted for real through the expansion table) with an absent parent all deny;
+# the future verb with a matching placement is the control that proves it landed on the strict path.
+test_placement_u12_malformed_and_unknown_stay_closed if {
+	not category.allow with input as placement_input("category:create", object.union(gated_writer_any, {"required_tags": "emea"}), tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", object.union(gated_writer_direct, {"required_tags": "emea"}), tag_emea, tag_emea)
+	not category.allow with input as placement_input("category:create", object.remove(gated_writer_any, ["match_mode"]), tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as placement_input("category:create", object.remove(gated_writer_direct, ["match_mode"]), tag_emea, tag_emea)
+	not category.allow with input as placement_input_no_parent("category:frobnicate", object.union(gated_writer_any, {"permissions": {"catalog": ["FROB"]}}), tag_emea)
+		with data.category.inheritable as placement_inheritable
+		with data.permission_categories as object.union(data.permission_categories, {"FROB": ["frobnicate"]})
+	not category.allow with input as placement_input_no_parent("category:frobnicate", object.union(gated_writer_direct, {"permissions": {"category": ["FROB"]}}), tag_emea)
+		with data.permission_categories as object.union(data.permission_categories, {"FROB": ["frobnicate"]})
+	category.allow with input as placement_input("category:frobnicate", object.union(gated_writer_any, {"permissions": {"catalog": ["FROB"]}}), tag_emea, tag_emea)
+		with data.category.inheritable as placement_inheritable
+		with data.permission_categories as object.union(data.permission_categories, {"FROB": ["frobnicate"]})
+}
