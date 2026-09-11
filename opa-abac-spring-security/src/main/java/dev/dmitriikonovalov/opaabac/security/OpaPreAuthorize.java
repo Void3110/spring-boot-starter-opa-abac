@@ -83,6 +83,11 @@ public @interface OpaPreAuthorize {
      * never a silent "no parent" (the {@link #roleResourceId()} posture); a parent that fails to resolve
      * (empty, throws, no resolution support) leaves the field <em>absent</em>, and the policy decides what
      * absence means (the shipped placement gate treats it as unproven, i.e. closed, for a tag-requiring role).
+     * <strong>Confinement:</strong> the parent is proven only under the governing target the role is resolved on
+     * ({@link #roleResourceType()} / {@link #roleResourceId()}) — it is that target, or its ancestor chain's
+     * root is that target; a parent anywhere else (another tenant's resource named by id) is <em>unproven</em>,
+     * so a status code never reveals a foreign resource's tags. The pair may also be declared on an instance
+     * form; the field is then populated the same way and the shipped policies ignore it there.
      */
     String parentResourceType() default "";
 

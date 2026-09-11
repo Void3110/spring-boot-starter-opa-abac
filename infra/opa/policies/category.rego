@@ -96,6 +96,30 @@ type_level_verb_grant if {
 	list_inheritable_grant
 }
 
+# The grant the REQUEST actually rides (ADR 0034): the instance clauses for an instance decision or a
+# type-level LIST via the direct path, the coarse ancestor grant for a type-level LIST, and the
+# placement gate's conjuncts for a strict type-level request. `deny_reason` keys on THIS, never on
+# `granted` alone — otherwise a strict type-level request the placement gate closes (a mismatching
+# parent, an untagged payload) would be told a fresh second factor opens it, and the client would loop
+# on a challenge that can never clear (ADR 0030 §7).
+request_granted if {
+	granted
+	not strict_type_level
+}
+
+request_granted if {
+	is_type_level_request
+	verb == "list"
+	list_inheritable_grant
+}
+
+request_granted if {
+	strict_type_level
+	type_level_verb_grant
+	parent_tags_satisfied
+	tags_satisfied
+}
+
 # A type-level request (a list, or a create/assign-tags before the instance exists) carries NO resource
 # id. The app serializes that as an ABSENT key OR an explicit `null` (a Java `null` id) — both mean
 # "type-level", so this helper accepts either. (`not input.resource.id` alone is UNDEFINED — not true —
@@ -229,7 +253,9 @@ denied if {
 	stepup_denied
 }
 
-# An explicit leaf deny wins over any grant.
+# An explicit leaf deny wins over any grant. On a type-level decision the attribute map is the caller's
+# tag-on-create payload (ADR 0034): a payload carrying `abac_deny: true` denies itself — the closed
+# direction only, and the only key of a payload any clause reads besides the tag match.
 denied_other if {
 	input.resource.attributes.abac_deny == true
 }
@@ -391,7 +417,7 @@ deny_reason := {
 	"max_age": data.step_up.max_age,
 } if {
 	stepup_denied
-	granted
+	request_granted
 	not denied_other
 
 	# The challenge is only minted when answering it would actually elevate: `required_acr` must map

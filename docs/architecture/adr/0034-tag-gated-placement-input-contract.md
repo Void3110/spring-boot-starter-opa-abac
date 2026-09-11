@@ -91,7 +91,7 @@ and stay distinguishable for a future denial reason; the policy tests pin them a
 | Attribute | Meaning | Fail-closed edges |
 |---|---|---|
 | `parentResourceType` / `parentResourceId` | the placement parent | declared but resolving to null/blank ⇒ **deny** at the manager (the `resourceId` posture: silently degrading would widen); only **one** of the pair declared ⇒ deny (the `roleResource` pair's precedent); resolver failure ⇒ **absent** field (the policy decides) |
-| `attributes` | the decided resource's attribute map for a **type-level** check — the raw request tags | `null` ⇒ `{}`; a non-`Map` ⇒ deny; a map carrying a `null` value ⇒ deny (the record's `Map.copyOf` rejects it inside the manager's fail-closed catch, as it already does for every attribute map); declared together with an instance form (`resourceId`/`resource()`) ⇒ a declaration conflict ⇒ deny |
+| `attributes` | the decided resource's attribute map for a **type-level** check — the raw request tags | `null` ⇒ `{}`; a non-`Map`, a non-string key, or a map carrying a `null` value ⇒ deny (the manager rejects it explicitly before any context is built); declared together with an instance form (`resourceId`/`resource()`) ⇒ a declaration conflict ⇒ deny |
 
 **Population is manager-side**, after the role-resource override, through the same
 read-through-memoized resolve that serves `root_attributes` (generalized to `(type, id)`), via the
@@ -99,6 +99,17 @@ application's existing `AbacResourceResolver` SPI. For a top-level category crea
 the role-resource target: the memo makes the second resolve free and the two fields carry the same
 map by design. **The policy reads only `parent_attributes` for placement; there is no fallback to
 `root_attributes`** — a fallback is the fail-open ambiguity this decision closes.
+
+**Confinement** *(added at review, 2026-09-11)*. A declared parent is **proven only under the governing
+target** the role was resolved on: it *is* that target, or its ancestor chain's root is that target. A
+parent anywhere else — another tenant's category chosen by id in the request body, a root that is not
+the role's — is **unproven** and the field stays absent, so a tag-requiring role answers exactly as it
+would for a mismatching parent and a status code never reveals a foreign resource's tags (the review
+found the unconfined draft was a cross-tenant tag-match oracle: 403 for a mismatching foreign parent,
+404 from the body's same-catalog check for a matching one). Without a governing target (no
+role-resource override) or without an ancestor chain supplier, only the target itself can be proven;
+a chain walk that throws is unproven, never an exception. The pair may also be declared on an instance
+form; it is populated the same way and the shipped policies ignore it there.
 
 ### 3. The policy shape (reference)
 
@@ -137,8 +148,9 @@ so a 403 never leaks whether a key exists. Safe because validation rejects but n
 
 ## Consequences
 
-**Good.** The published contract is now true at every mutation: a tag-requiring role can read what
-it creates and could read where it creates; the create outcome no longer depends on the root-read
+**Good.** The published contract is now true at placement time: a tag-requiring role can read what
+it creates and could read where it creates (instance updates keep deciding on the stored map, as
+before); the create outcome no longer depends on the root-read
 flag; a future type-level verb is closed by default. The wire for every existing caller is
 byte-identical until an annotation opts in; the library still fetches only through the app's resolver
 SPI, one memoized call per request.
@@ -149,12 +161,15 @@ annotation grows three attributes (`ATTRIBUTE-RICH-PRE-AUTHORIZATION`). **Adopte
 plainly:** an adopter who copies the new example policies without declaring the parent and the
 attributes on their create gates sees every tag-requiring create denied — the fail-closed direction,
 documented in the release notes, not softened. A create now costs one extra resolver call (memoized)
-per request; a re-parent costs one extra decision. Two inherited shapes, stated rather than hidden: a
-declared parent is resolved by `(type, id)` through the app's resolver, so a `parentId` from a
-**foreign** catalog gets its tags matched before the body's same-catalog existence check answers 404 —
-a 403-vs-404 oracle on a foreign category's tag match, identical to the one the instance `GET` already
-has; and a payload carrying a `null` tag value denies at the manager (never 422), which a request that
-could never validate does not deserve a gentler path for.
+per request, plus one ancestor-chain walk when the parent is not the governing target itself; a
+re-parent costs one extra decision. Two shapes stated rather than hidden: a **foreign** or nonexistent
+parent is unproven, so a tag-requiring role gets the same 403 as for a mismatching one while a
+no-requirement role keeps the body's 404 — the same information the same-catalog existence check gives
+today, and nothing about a foreign resource's tags; and a payload carrying a `null` tag value denies at
+the manager (never 422), which a request that could never validate does not deserve a gentler path for.
+The step-up challenge (`deny_reason`, ADR 0030 §7) keys on the grant the request actually rides
+(`request_granted`): a strict type-level request the placement gate closes is never told a fresh second
+factor would open it.
 
 **Rejected.** A "readable parent" rule (diverges at the root through the exemption and adds a hidden
 READ requirement); the catalog as the parent always (wrong for nested categories and products);

@@ -89,6 +89,7 @@ on the **leaf** id. Three consequences:
 | A placement-parent **declaration** the manager cannot honor — half a pair, an expression resolving to null/blank (ADR 0034) | **DENY**, no OPA call | a silent "no parent" would let a tag-requiring role place anywhere — the widening the placement gate closes |
 | A declared `attributes` that is not a string-keyed map, carries a `null` value, or sits on an instance form | **DENY**, no OPA call | a resolved instance's attributes are never overridden; a payload that could never validate gets no gentler path |
 | The declared parent fails to **resolve** (empty / throws / no resolution support) | `parent_attributes` **absent**, decision proceeds | the ADR 0032 posture: absence is the policy's to interpret — the shipped gate reads it as unproven, i.e. closed |
+| The declared parent is **not under the governing target** (another tenant's resource by id, a foreign root, no chain supplier, a chain walk that throws) | `parent_attributes` **absent**, decision proceeds | confinement: a tag-requiring role answers as for a mismatching parent; a status code never reveals a foreign resource's tags |
 
 ## Adoption recipe
 

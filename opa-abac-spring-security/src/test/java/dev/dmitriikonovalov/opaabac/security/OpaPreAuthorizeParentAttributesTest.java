@@ -201,9 +201,16 @@ class OpaPreAuthorizeParentAttributesTest {
                 .thenReturn(Optional.of(new SampleResource("catalog", CATALOG_ID.toString(), tags)));
     }
 
+    /** A category under THE catalog: resolvable, and its ancestor chain roots at CATALOG_ID. */
     private void givenCategoryTagged(UUID id, Map<String, Object> tags) {
+        givenCategoryTagged(id, tags, CATALOG_ID);
+    }
+
+    private void givenCategoryTagged(UUID id, Map<String, Object> tags, UUID underCatalog) {
         when(resolver.resolve("category", id.toString()))
                 .thenReturn(Optional.of(new SampleResource("category", id.toString(), tags)));
+        when(chainSupplier.ancestorsOf("category", id.toString()))
+                .thenReturn(List.of(new dev.dmitriikonovalov.opaabac.core.ParentRef("catalog", underCatalog.toString())));
     }
 
     private MethodInvocation createCategory(SampleRequest request) throws Exception {
@@ -352,6 +359,68 @@ class OpaPreAuthorizeParentAttributesTest {
         assertThat(resource.parentAttributes()).containsExactlyEntriesOf(CATEGORY_TAGS);
         assertThat(resource.rootAttributes()).containsExactlyEntriesOf(CATALOG_TAGS);
         assertThat(resource.attributes()).containsExactlyEntriesOf(PAYLOAD);
+    }
+
+    // --- U19b: confinement — a parent outside the governing target is unproven ---
+
+    @Test
+    void aParentUnderAnotherCatalogIsUnprovenNotItsTags() throws Exception {
+        UUID otherCatalog = UUID.fromString("55555555-5555-5555-5555-555555555555");
+        givenCatalogTagged(CATALOG_TAGS);
+        givenCategoryTagged(CATEGORY_ID, CATEGORY_TAGS, otherCatalog); // resolvable by id, rooted elsewhere
+
+        AuthorizationDecision decision =
+                manager().authorize(noopAuthSupplier, createProduct(new SampleRequest(null, PAYLOAD)));
+
+        // The foreign category's tags never reach the input: absent (unproven), so a tag-requiring role
+        // answers exactly as for a mismatching parent and the status code leaks nothing about it.
+        assertThat(decision.isGranted()).isTrue(); // the mock policy; the field is what matters
+        assertThat(capturedContext().resource().parentAttributes()).isNull();
+    }
+
+    @Test
+    void aParentThatIsItsOwnRootAndNotTheTargetIsUnproven() throws Exception {
+        givenCatalogTagged(CATALOG_TAGS);
+        when(resolver.resolve("category", CATEGORY_ID.toString()))
+                .thenReturn(Optional.of(new SampleResource("category", CATEGORY_ID.toString(), CATEGORY_TAGS)));
+        when(chainSupplier.ancestorsOf("category", CATEGORY_ID.toString())).thenReturn(List.of());
+
+        manager().authorize(noopAuthSupplier, createProduct(new SampleRequest(null, PAYLOAD)));
+
+        assertThat(capturedContext().resource().parentAttributes()).isNull();
+    }
+
+    @Test
+    void anAncestorWalkThatThrowsLeavesTheParentUnproven() throws Exception {
+        givenCatalogTagged(CATALOG_TAGS);
+        when(resolver.resolve("category", CATEGORY_ID.toString()))
+                .thenReturn(Optional.of(new SampleResource("category", CATEGORY_ID.toString(), CATEGORY_TAGS)));
+        when(chainSupplier.ancestorsOf("category", CATEGORY_ID.toString()))
+                .thenThrow(new IllegalStateException("chain on fire"));
+
+        AuthorizationDecision decision =
+                manager().authorize(noopAuthSupplier, createProduct(new SampleRequest(null, PAYLOAD)));
+
+        assertThat(decision).isNotNull();
+        assertThat(capturedContext().resource().parentAttributes()).isNull();
+    }
+
+    @Test
+    void withoutAChainSupplierOnlyTheTargetItselfIsAProvenParent() throws Exception {
+        givenCatalogTagged(CATALOG_TAGS);
+        when(resolver.resolve("category", CATEGORY_ID.toString()))
+                .thenReturn(Optional.of(new SampleResource("category", CATEGORY_ID.toString(), CATEGORY_TAGS)));
+        OpaPreAuthorizeAuthorizationManager flat = new OpaPreAuthorizeAuthorizationManager(
+                opaClient, roleDefinitionSupplier, new ResourceResolutionSupport(resolver, null, cache));
+
+        flat.authorize(noopAuthSupplier, createProduct(new SampleRequest(null, PAYLOAD)));   // parent = a category
+        flat.authorize(noopAuthSupplier, createCategory(new SampleRequest(null, PAYLOAD)));  // parent = the catalog
+
+        ArgumentCaptor<AbacContext> captor = ArgumentCaptor.forClass(AbacContext.class);
+        verify(opaClient, times(2)).decide(captor.capture());
+        assertThat(captor.getAllValues().get(0).resource().parentAttributes()).isNull();        // unprovable
+        assertThat(captor.getAllValues().get(1).resource().parentAttributes())
+                .containsExactlyEntriesOf(CATALOG_TAGS);                                            // the target itself
     }
 
     // --- U20: a declaration that cannot be honored denies ------------------------

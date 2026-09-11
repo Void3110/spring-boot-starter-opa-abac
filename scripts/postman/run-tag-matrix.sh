@@ -32,7 +32,8 @@
 # then MOVED under apac -> 403, the row unmoved. Then the same realm user is REBOUND to 'gated-direct'
 # (category/product READ+WRITE+TAG, no catalog permission — the direct path) for 7e-7g: a MATCHING
 # payload under the untagged root -> 403, under apac -> 403, under emea -> 201. The runner restarts OPA
-# first (the placement clauses must be live; --watch is not reliable).
+# first (the placement clauses must be live; --watch is not reliable) — which also resets a live
+# ROOT_READ_TAG_EXEMPTION override to the file default; re-apply it after the run if you had one.
 #
 # Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps the
 # runtime-captured ids in the collection variable scope (mx-ecc3ef).

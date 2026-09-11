@@ -97,7 +97,7 @@ anything future) passes only when the inheritable grant holds **and** the placem
 - Seam verification: rego paths checked with `opa test` against `infra/opa/policies/` (OPA 1.10.1 on
   PATH — verified); `data.config.root_read_tag_exemption` read from `config.json`.
 
-**Acceptance.** **U1–U12** (each cell in both `category_test.rego` and `product_test.rego`). `opa
+**Acceptance.** **U1–U12**, **U23** (each cell in both `category_test.rego` and `product_test.rego`). `opa
 test infra/opa/policies` green, `opa fmt --list infra/opa/policies` names neither policy file, `opa
 check` clean. No diff under
 `catalog.rego`, `team.rego`, `role.rego`, `agent_tools.rego`, `permissions.rego`.
@@ -171,7 +171,7 @@ edge pinned in the fail-closed direction.
   commit — the Sonar rig must be up first (`docker compose -f .sonar-local/docker-compose.yml up -d`;
   it is down since the 2026-09-10 Docker restart).
 
-**Acceptance.** **U13–U22**. `./gradlew :opa-abac-core:test :opa-abac-spring-security:test
+**Acceptance.** **U13–U22**, **U19b**. `./gradlew :opa-abac-core:test :opa-abac-spring-security:test
 -Dorg.gradle.jvmargs=-Xmx2g` green (the `-D` is the Bash-sandbox trust-store workaround; a
 terminal needs no flag); `./gradlew build` green across modules (the compat-constructor claim);
 Sonar CLEAN.
@@ -227,7 +227,7 @@ a category, and keeps authorization ahead of dictionary validation.
 - Rig: `./deploy.sh build` (the catalog image) + `docker restart opa-abac-opa` (T1's policies) before
   any live check; the local Sonar gate CLEAN on the changed files.
 
-**Acceptance.** **I1–I6**. `./gradlew :example-catalog-management-service:test
+**Acceptance.** **I1–I6**, **I6b**. `./gradlew :example-catalog-management-service:test
 -Dorg.gradle.jvmargs=-Xmx2g` green; `./gradlew build` green; Sonar CLEAN.
 
 **What NOT to touch.** The two list gates and both list authorizers; `CatalogController` (no

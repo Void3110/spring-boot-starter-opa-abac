@@ -269,8 +269,9 @@ matched against a role's `requiredTags`, in Rego. It needs the full rig **with t
 seeds a demo catalog as a team-target, bootstraps two tag-gated roles (a `regional-reader` requiring
 `region` ANY_OF `[emea]`, a `strict-reader` requiring `region:[emea]` **and** `sensitivity:[public,
 internal]` ALL_OF), and creates three differently-tagged Categories through the gateway. It restarts
-OPA first (the ADR 0034 placement clauses must be live — `--watch` is not reliable). Then 16 requests
-plus one rebind step:
+OPA first (the ADR 0034 placement clauses must be live — `--watch` is not reliable; note that the
+restart also resets a live `ROOT_READ_TAG_EXEMPTION` override to the file default). Then 25 requests —
+the nine below plus the 7a–7g cells, their owner list/cleanup companions and the rebind step:
 
 | # | Case | Expected |
 |---|------|----------|
@@ -290,7 +291,7 @@ plus one rebind step:
 Request 2 is the decisive proof that **tags** (not just `permissions`) drive the decision; 6a/6b pin
 both sides of the root-read exemption; 7a–7g pin the placement gate on both grant paths (each allow
 cell is followed by an owner cleanup so the fixture world is left as found). A team key defined at
-runtime governs assignment + decisions immediately — no redeploy. All 16 green; stable across reruns.
+runtime governs assignment + decisions immediately — no redeploy. All 25 green; stable across reruns.
 Guide: [[TAG-BASED-AUTHORIZATION]].
 
 ### Data-filtering matrix (Phase 5)

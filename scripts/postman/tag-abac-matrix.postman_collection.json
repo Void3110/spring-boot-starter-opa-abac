@@ -423,7 +423,7 @@
    ]
   },
   {
-   "name": "7a. ADR 0034 — gated-writer CREATES a category under the UNTAGGED root -> 403 (placement: the root's tags decide, in both flag states)",
+   "name": "7a. ADR 0034 — gated-writer CREATES a category under the UNTAGGED root -> 403 (placement: the root's tags decide)",
    "request": {
     "method": "POST",
     "header": [

@@ -464,7 +464,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             log.debug("OPA pre-authorize denied: role-resource override declared but unresolvable");
             return null;
         }
-        return new ResolvedCheck(base.resource(), roleType, roleId, base.instance());
+        return new ResolvedCheck(
+                base.resource(), roleType, roleId, base.instance(), base.parentType(), base.parentId());
     }
 
     /**
@@ -519,13 +520,27 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      * the memo makes the second resolve a cache hit, but each field is populated from its own
      * declaration so a policy can never mistake one for the other.
      *
-     * <p>The field stays <b>absent</b> when nothing proved it: no declaration, no resolution support, or
-     * <b>any</b> failure resolving the parent. Absence is never a deny by itself and never an exception
-     * out of the manager — the policy decides what absence means (the shipped placement gate treats
-     * it as unproven, i.e. closed, for a tag-requiring role).
+     * <p><b>Confinement.</b> A declared parent is proven only when it lies under the governing target the
+     * role was resolved on: it <em>is</em> that target, or its ancestor chain's root is that target. A
+     * parent anywhere else — another tenant's category chosen by id, a root that is not the role's — is
+     * <b>unproven</b> and the field stays absent, so a tag-requiring role answers exactly as it would for
+     * a mismatching parent and nothing about a foreign resource's tags leaks through the status code.
+     * Without a governing target (no role-resource override) or without an ancestor chain supplier,
+     * only the target itself can be proven.
+     *
+     * <p>The field stays <b>absent</b> when nothing proved it: no declaration, no resolution support, a
+     * parent outside the governing target's subtree, or <b>any</b> failure resolving the parent. Absence
+     * is never a deny by itself and never an exception out of the manager — the policy decides what
+     * absence means (the shipped placement gate treats it as unproven, i.e. closed, for a tag-requiring
+     * role).
      */
     private ResolvedCheck enrichWithParentAttributes(ResolvedCheck check) {
         if (check == null || check.parentType() == null || resolutionSupport == null) {
+            return check;
+        }
+        if (!parentGovernedByRoleTarget(check)) {
+            log.debug("placement-parent enrichment: '{}/{}' is not under the governing target — left unproven",
+                    check.parentType(), check.parentId());
             return check;
         }
         Map<String, Object> parentAttributes = resolveAttributesOf(check.parentType(), check.parentId());
@@ -546,6 +561,38 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 check.instance(),
                 check.parentType(),
                 check.parentId());
+    }
+
+    /**
+     * Is the declared placement parent under the governing target — the target itself, or a resource
+     * whose ancestor chain's root is the target? Any failure to walk the chain answers {@code false}
+     * (unproven), never an exception out of the manager.
+     */
+    private boolean parentGovernedByRoleTarget(ResolvedCheck check) {
+        String rootType = check.roleType();
+        String rootId = check.roleId();
+        if (rootType == null || rootId == null) {
+            return false; // no governing target to confine to → nothing can be proven
+        }
+        if (rootType.equals(check.parentType()) && rootId.equals(check.parentId())) {
+            return true; // the parent IS the governing target (a top-level child create)
+        }
+        AncestorChainSupplier chain = resolutionSupport.ancestorChainSupplier();
+        if (chain == null) {
+            return false; // flat resources: only the target itself can be a proven parent
+        }
+        try {
+            List<ParentRef> ancestors = chain.ancestorsOf(check.parentType(), check.parentId());
+            if (ancestors == null || ancestors.isEmpty()) {
+                return false; // a root of its own, and not the governing target
+            }
+            ParentRef root = ancestors.get(0);
+            return rootType.equals(root.type()) && rootId.equals(root.id());
+        } catch (RuntimeException e) {
+            log.debug("placement-parent enrichment: ancestor walk for '{}/{}' failed ({}) — left unproven",
+                    check.parentType(), check.parentId(), e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     /**

@@ -314,7 +314,10 @@ the type-level gate:
 
 `parent_attributes` has the **same three states as `root_attributes`**, for the same reason — absent =
 the parent was declared but could not be proven; `{}` = fetched and untagged; a map = the parent's
-tags — and the same `NON_NULL` serialization. It is populated from its **own** declaration and never
+tags — and the same `NON_NULL` serialization. A parent is **proven only under the governing target** the
+role was resolved on (it is that target, or its ancestor chain's root is); a parent anywhere else —
+another tenant's resource named by id — is unproven, so a status code never reveals a foreign resource's
+tags. It is populated from its **own** declaration and never
 derived from `root_attributes`: on a top-level category create both carry the catalog's map (the memo
 makes the second resolve free), and a policy must read `parent_attributes` for placement, never fall
 back from one to the other. The shipped placement gate ([[TAG-BASED-AUTHORIZATION]] §Layer 3) treats

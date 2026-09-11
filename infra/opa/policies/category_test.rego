@@ -1787,3 +1787,37 @@ test_placement_u12_malformed_and_unknown_stay_closed if {
 		with data.category.inheritable as placement_inheritable
 		with data.permission_categories as object.union(data.permission_categories, {"FROB": ["frobnicate"]})
 }
+
+# U6b — NO fallback from an absent parent map to root_attributes (ADR 0034): a matching ROOT map with the
+# parent absent still denies. Pinned separately because the mutant `object.get(…, "parent_attributes",
+# object.get(…, "root_attributes", {}))` survives every other placement cell.
+test_placement_no_fallback_to_root_attributes if {
+	not category.allow with input as object.union(placement_input_no_parent("category:create", gated_writer_any, tag_emea), {"resource": {"root_attributes": tag_emea}})
+		with data.category.inheritable as placement_inheritable
+	not category.allow with input as object.union(placement_input_no_parent("category:create", gated_writer_direct, tag_emea), {"resource": {"root_attributes": tag_emea}})
+}
+
+# U23 — `deny_reason` keys on the grant the request rides (ADR 0034 × ADR 0030 §7): a SUPERVISED role
+# holding WRITE+TAG on this type with a tag requirement, a strict type-level create on a PRODUCTION root
+# with a MISMATCHING parent, not elevated -> NO challenge is minted (a second factor could never clear
+# the placement deny — a challenge here is the re-auth loop); elevated, the same request still denies.
+supervised_writer_apac := {
+	"code": "supervisor-writer",
+	"attributes": {"provenance": "supervised"},
+	"permissions": {"category": ["READ", "WRITE", "TAG"]},
+	"required_tags": {"region": ["apac"]},
+	"match_mode": "ANY_OF",
+}
+
+test_placement_u23_deny_reason_not_minted_when_placement_is_the_blocker if {
+	base := object.union(
+		placement_input("category:create", supervised_writer_apac, {}, tag_apac),
+		{"resource": {"root_attributes": {"env": "production"}}},
+	)
+	not category.deny_reason with input as base
+		with time.now_ns as stepup_now_ns
+	not category.allow with input as base
+		with time.now_ns as stepup_now_ns
+	not category.allow with input as object.union(base, {"subject": {"id": "u", "roles": [], "attributes": fresh_aal2}})
+		with time.now_ns as stepup_now_ns
+}

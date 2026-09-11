@@ -312,6 +312,25 @@ class TagGatedCreateIT {
         assertThat(asked("category:create").resource().parentAttributes()).isNull();
     }
 
+    @Test
+    void aParentInAnotherCatalogIsUnprovenOnTheWireAndA404FromTheBody() throws Exception {
+        var catalogA = seedCatalog(EMEA);
+        var catalogB = seedCatalog(EMEA);
+        var foreign = seedCategory(catalogB.getId(), null, "foreign-tagged", EMEA); // its tags would match
+        ActionAwareOpaClient.rule = allowOnly("category:create");
+
+        mockMvc.perform(post("/api/v1/catalogs/{c}/categories", catalogA.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"cross\",\"parentId\":\"" + foreign.getId() + "\"}"))
+                .andExpect(status().isNotFound());
+
+        // Confinement (ADR 0034): the parent resolves by id, but its chain roots at catalog B, not at the
+        // governing catalog A — so the field is ABSENT and the foreign tags never reach the decision. A
+        // tag-requiring role gets the same 403 as for a mismatching parent; nothing leaks by status code.
+        assertThat(asked("category:create").resource().parentAttributes()).isNull();
+        assertThat(asked("category:create").resource().rootAttributes()).containsAllEntriesOf(EMEA);
+    }
+
     // --- seeding ----------------------------------------------------------------
 
     private CatalogEntity seedCatalog(Map<String, Object> tags) {
