@@ -74,6 +74,17 @@ public record AbacContext(
      * <p>Policy-author trap worth repeating (ADR 0032): testing the field with a bare
      * {@code not root_attributes.env == "production"} reads naturally and is <b>wrong</b> — an absent
      * value passes a negated comparison in Rego. The absent state needs its own clause.
+     *
+     * <p>The {@code parentAttributes} component (serialized {@code input.resource.parent_attributes},
+     * ADR 0034) carries the <b>placement parent's</b> full tag map on a <em>type-level</em> decision —
+     * the resource a create hangs the new one from (the catalog for a top-level category, the parent
+     * category otherwise, the category for a product) — so a policy can decide whether a tag-requiring
+     * role may place a resource <em>there</em>. It has the same three states as {@code rootAttributes},
+     * for the same reason: absent ({@code null}) = the parent was declared but could not be proven,
+     * {@code &#123;&#125;} = fetched and untagged, populated = the parent's tags. It is never derived
+     * from {@code rootAttributes} (a policy must not fall back from one to the other — on a top-level
+     * category create both carry the catalog's map, by design), and it is {@code NON_NULL}, never
+     * {@code NON_EMPTY}, with a null-preserving defensive copy, exactly as its sibling.
      */
     public record Resource(
             String type,
@@ -81,13 +92,16 @@ public record AbacContext(
             Map<String, Object> attributes,
             @JsonInclude(JsonInclude.Include.NON_EMPTY) List<ParentRef> ancestors,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("root_attributes")
-            Map<String, Object> rootAttributes) {
+            Map<String, Object> rootAttributes,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("parent_attributes")
+            Map<String, Object> parentAttributes) {
 
         public Resource {
             attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
             ancestors = ancestors == null ? List.of() : List.copyOf(ancestors);
             // Null-PRESERVING on purpose: null means "unproven", an empty map means "fetched, untagged".
             rootAttributes = rootAttributes == null ? null : Map.copyOf(rootAttributes);
+            parentAttributes = parentAttributes == null ? null : Map.copyOf(parentAttributes);
         }
 
         /**
@@ -95,7 +109,7 @@ public record AbacContext(
          * every existing caller compiling unchanged and serializing byte-for-byte as before.
          */
         public Resource(String type, String id, Map<String, Object> attributes) {
-            this(type, id, attributes, List.of(), null);
+            this(type, id, attributes, List.of(), null, null);
         }
 
         /**
@@ -104,7 +118,20 @@ public record AbacContext(
          */
         public Resource(
                 String type, String id, Map<String, Object> attributes, List<ParentRef> ancestors) {
-            this(type, id, attributes, ancestors, null);
+            this(type, id, attributes, ancestors, null, null);
+        }
+
+        /**
+         * Convenience constructor for a root-enriched resource with <b>no placement parent</b> — the shape
+         * before ADR 0034. Serializes byte-for-byte as before: the field is absent, not empty.
+         */
+        public Resource(
+                String type,
+                String id,
+                Map<String, Object> attributes,
+                List<ParentRef> ancestors,
+                Map<String, Object> rootAttributes) {
+            this(type, id, attributes, ancestors, rootAttributes, null);
         }
     }
 }

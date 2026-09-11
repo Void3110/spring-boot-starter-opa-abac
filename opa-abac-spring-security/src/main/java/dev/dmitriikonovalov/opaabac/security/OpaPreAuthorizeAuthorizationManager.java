@@ -11,9 +11,11 @@ import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.lang.reflect.Method;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.aopalliance.intercept.MethodInvocation;
 import org.slf4j.Logger;
@@ -65,6 +67,18 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * necessarily an <b>authorized</b> one, and a cache hit must never be read as proof that anything was
  * allowed. The older "the gate never reads the cache" note still holds where it matters — for the
  * <em>decided leaf</em>, which is always resolved fresh; the memo covers only the governing root.
+ *
+ * <h2>Placement-parent enrichment (ADR 0034)</h2>
+ * A type-level gate may declare the <em>placement parent</em> of what it is about to create
+ * ({@link OpaPreAuthorize#parentResourceType()} / {@link OpaPreAuthorize#parentResourceId()}) and the
+ * raw payload as the decided resource's attributes ({@link OpaPreAuthorize#attributes()}). The parent
+ * is resolved through the same read-through memo as the governing root and threaded in as
+ * {@code resource.parent_attributes} — three states, exactly as {@code root_attributes}, never derived
+ * from it. The edges are split the way the resource-resolution edges are: a <b>declaration</b> that
+ * cannot be honored (half a parent pair, a parent expression resolving to null/blank, a non-map or
+ * null-valued attributes expression, attributes declared on an instance form) <b>denies</b> before
+ * OPA is asked; a parent that fails to <b>resolve</b> (empty, throws, no resolution support) leaves the
+ * field <b>absent</b> and the policy decides what absence means.
  *
  * <h2>Fail-closed</h2>
  * Unauthenticated, an unresolvable resource, a declared {@code resourceId} expression that resolves to
@@ -148,7 +162,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                 return DENY;
             }
 
-            ResolvedCheck resolved = enrichWithRootAttributes(resolveCheck(annotation, invocation));
+            ResolvedCheck resolved =
+                    enrichWithParentAttributes(enrichWithRootAttributes(resolveCheck(annotation, invocation)));
             if (resolved == null) {
                 log.debug("OPA pre-authorize denied: resource could not be resolved for action '{}'",
                         annotation.action());
@@ -271,16 +286,39 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      * up on (the governing root under resolution; the resource's own coordinates otherwise), and the
      * loaded instance to cache on allow ({@code null} when there is none).
      */
-    private record ResolvedCheck(AbacContext.Resource resource, String roleType, String roleId, Object instance) {}
+    private record ResolvedCheck(
+            AbacContext.Resource resource,
+            String roleType,
+            String roleId,
+            Object instance,
+            String parentType,
+            String parentId) {
+
+        /** A check with no placement parent declared (every path before ADR 0034). */
+        ResolvedCheck(AbacContext.Resource resource, String roleType, String roleId, Object instance) {
+            this(resource, roleType, roleId, instance, null, null);
+        }
+    }
 
     private ResolvedCheck resolveCheck(OpaPreAuthorize annotation, MethodInvocation invocation) {
         // Bind the invocation's arguments once; reuse for every SpEL expression on this annotation.
         StandardEvaluationContext spelContext = new StandardEvaluationContext();
         bindArguments(spelContext, invocation);
+        return withParentDeclaration(annotation, spelContext, resolveTarget(annotation, spelContext));
+    }
 
+    /** The decided resource and its role coordinates — everything but the placement parent (ADR 0034). */
+    private ResolvedCheck resolveTarget(OpaPreAuthorize annotation, StandardEvaluationContext spelContext) {
+        boolean attributesDeclared = !annotation.attributes().isBlank();
         // 1) An AbacResource named by resource() wins (the caller holds the instance). Decision
         //    inputs are unchanged by resolution support; the instance is cached on allow.
         if (!annotation.resource().isBlank()) {
+            if (attributesDeclared) {
+                // A resolved instance's real attributes are never overridden: declaring a payload on an
+                // instance form is a contradiction in the annotation, and a contradiction denies.
+                log.debug("OPA pre-authorize denied: attributes declared together with resource()");
+                return null;
+            }
             Object value = evaluate(annotation.resource(), spelContext);
             if (value instanceof AbacResource dataObject) {
                 AbacContext.Resource resource = new AbacContext.Resource(
@@ -300,8 +338,17 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             // Type-level check, by declaration — never engages the resolver, caches nothing. The role is
             // looked up on (type, null) UNLESS a roleResource override moves it to a governing parent
             // (the child create/list case: no leaf instance to walk up from, so name the parent explicitly).
+            // The declared attributes (ADR 0034) are the tag-on-create payload — an empty map when none.
+            Optional<Map<String, Object>> attributes = declaredAttributes(annotation, spelContext);
+            if (attributes.isEmpty()) {
+                return null; // declared but not an attribute map → deny
+            }
             return withRoleResourceOverride(annotation, spelContext,
-                    new ResolvedCheck(new AbacContext.Resource(type, null, Map.of()), type, null, null));
+                    new ResolvedCheck(new AbacContext.Resource(type, null, attributes.get()), type, null, null));
+        }
+        if (attributesDeclared) {
+            log.debug("OPA pre-authorize denied: attributes declared together with resourceId");
+            return null; // the instance form: its resolved attributes are never overridden
         }
         String id = asText(evaluate(annotation.resourceId(), spelContext));
         if (id == null || id.isBlank()) {
@@ -317,6 +364,75 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                     new ResolvedCheck(new AbacContext.Resource(type, id, Map.of()), type, id, null));
         }
         return withRoleResourceOverride(annotation, spelContext, resolveInstance(type, id));
+    }
+
+    /**
+     * The declared payload of a type-level check ({@link OpaPreAuthorize#attributes()}, ADR 0034).
+     *
+     * @return the attribute map — an empty map when nothing is declared or the expression resolves to
+     *     {@code null} (an untagged create); {@link Optional#empty()} (deny) when the expression
+     *     resolves to something that is not a string-keyed map, or to a map carrying a {@code null}
+     *     value — a payload that could never validate does not deserve a gentler path, and a
+     *     fail-closed edge must never be a silent empty map
+     */
+    private Optional<Map<String, Object>> declaredAttributes(
+            OpaPreAuthorize annotation, StandardEvaluationContext spelContext) {
+        if (annotation.attributes().isBlank()) {
+            return Optional.of(Map.of());
+        }
+        Object value = evaluate(annotation.attributes(), spelContext);
+        if (value == null) {
+            return Optional.of(Map.of());
+        }
+        if (!(value instanceof Map<?, ?> declared)) {
+            log.debug("OPA pre-authorize denied: attributes resolved to {}, not a map",
+                    value.getClass().getSimpleName());
+            return Optional.empty();
+        }
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : declared.entrySet()) {
+            if (!(entry.getKey() instanceof String key) || entry.getValue() == null) {
+                log.debug("OPA pre-authorize denied: attributes carry a non-string key or a null value");
+                return Optional.empty();
+            }
+            attributes.put(key, entry.getValue());
+        }
+        return Optional.of(attributes);
+    }
+
+    /**
+     * Record the declared placement parent ({@link OpaPreAuthorize#parentResourceType()} /
+     * {@link OpaPreAuthorize#parentResourceId()}, ADR 0034) on the check, for
+     * {@link #enrichWithParentAttributes} to resolve after the root enrichment. The declaration edges
+     * deny, exactly like the role-resource override's: half a pair, or an expression resolving to
+     * null/blank, must never degrade to "no parent" — that is the silent widening the placement gate
+     * exists to close.
+     *
+     * @return the check carrying the parent coordinates; the original check when none is declared; or
+     *     {@code null} (deny) when the declaration cannot be honored / the base check is null
+     */
+    private ResolvedCheck withParentDeclaration(
+            OpaPreAuthorize annotation, StandardEvaluationContext spelContext, ResolvedCheck base) {
+        if (base == null) {
+            return null;
+        }
+        boolean typeDeclared = !annotation.parentResourceType().isBlank();
+        boolean idDeclared = !annotation.parentResourceId().isBlank();
+        if (!typeDeclared && !idDeclared) {
+            return base; // no placement parent → the field stays absent
+        }
+        if (typeDeclared != idDeclared) {
+            log.debug("OPA pre-authorize denied: only one of parentResourceType/parentResourceId is declared");
+            return null;
+        }
+        String parentType = asText(evaluate(annotation.parentResourceType(), spelContext));
+        String parentId = asText(evaluate(annotation.parentResourceId(), spelContext));
+        if (parentType == null || parentType.isBlank() || parentId == null || parentId.isBlank()) {
+            log.debug("OPA pre-authorize denied: placement parent declared but unresolvable");
+            return null;
+        }
+        return new ResolvedCheck(
+                base.resource(), base.roleType(), base.roleId(), base.instance(), parentType, parentId);
     }
 
     /**
@@ -382,7 +498,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
         if (rootType.equals(leaf.type()) && rootId.equals(leaf.id())) {
             return check; // the leaf IS the root — its own attributes already carry its tags
         }
-        Map<String, Object> rootAttributes = resolveRootAttributes(rootType, rootId);
+        Map<String, Object> rootAttributes = resolveAttributesOf(rootType, rootId);
         if (rootAttributes == null) {
             return check; // unproven — the absent state, state one of ADR 0032's three
         }
@@ -391,12 +507,51 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                         leaf.type(), leaf.id(), leaf.attributes(), leaf.ancestors(), rootAttributes),
                 rootType,
                 rootId,
-                check.instance());
+                check.instance(),
+                check.parentType(),
+                check.parentId());
     }
 
     /**
-     * Resolve the governing target's attributes, <b>read-through-memoized</b> in the request cache so a
-     * request pays at most one extra resolver call across its gate and instance checks.
+     * Placement-parent enrichment (ADR 0034): resolve the parent the annotation declared and thread its
+     * tag map into the decided resource as {@code parent_attributes}. Runs <b>after</b> the root
+     * enrichment, and never reads it: on a top-level category create the two name the same catalog and
+     * the memo makes the second resolve a cache hit, but each field is populated from its own
+     * declaration so a policy can never mistake one for the other.
+     *
+     * <p>The field stays <b>absent</b> when nothing proved it: no declaration, no resolution support, or
+     * <b>any</b> failure resolving the parent. Absence is never a deny by itself and never an exception
+     * out of the manager — the policy decides what absence means (the shipped placement gate treats
+     * it as unproven, i.e. closed, for a tag-requiring role).
+     */
+    private ResolvedCheck enrichWithParentAttributes(ResolvedCheck check) {
+        if (check == null || check.parentType() == null || resolutionSupport == null) {
+            return check;
+        }
+        Map<String, Object> parentAttributes = resolveAttributesOf(check.parentType(), check.parentId());
+        if (parentAttributes == null) {
+            return check; // unproven — absent
+        }
+        AbacContext.Resource leaf = check.resource();
+        return new ResolvedCheck(
+                new AbacContext.Resource(
+                        leaf.type(),
+                        leaf.id(),
+                        leaf.attributes(),
+                        leaf.ancestors(),
+                        leaf.rootAttributes(),
+                        parentAttributes),
+                check.roleType(),
+                check.roleId(),
+                check.instance(),
+                check.parentType(),
+                check.parentId());
+    }
+
+    /**
+     * Resolve a governing target's — or, since ADR 0034, a placement parent's — attributes,
+     * <b>read-through-memoized</b> in the request cache so a request pays at most one extra resolver call
+     * per distinct target across its gate and instance checks.
      *
      * <p><b>Adopter caveat about that memo.</b> The read-through takes whatever the request cache holds
      * for {@code (rootType, rootId)}, and the allow-write-through above stores the resolved instance —
@@ -414,7 +569,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      *     <b>absent</b> (unproven, closed), never on an empty map (untagged, open) — when in doubt about
      *     what the root says, the honest answer is that we do not know.
      */
-    private Map<String, Object> resolveRootAttributes(String rootType, String rootId) {
+    private Map<String, Object> resolveAttributesOf(String rootType, String rootId) {
         try {
             AbacResource cached =
                     resolutionSupport.cache().get(rootType, rootId, AbacResource.class).orElse(null);
@@ -424,7 +579,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
 
             AbacResource root = resolutionSupport.resolver().resolve(rootType, rootId).orElse(null);
             if (root == null) {
-                log.debug("root-attribute enrichment: '{}/{}' did not resolve — tier left unproven",
+                log.debug("attribute enrichment: '{}/{}' did not resolve — left unproven",
                         rootType, rootId);
                 return null;
             }
@@ -433,7 +588,7 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             resolutionSupport.cache().put(rootType, rootId, root);
             return root.abacAttributes();
         } catch (RuntimeException e) {
-            log.debug("root-attribute enrichment for '{}/{}' failed ({}) — tier left unproven",
+            log.debug("attribute enrichment for '{}/{}' failed ({}) — left unproven",
                     rootType, rootId, e.getClass().getSimpleName());
             return null;
         }

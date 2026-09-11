@@ -69,4 +69,38 @@ public @interface OpaPreAuthorize {
      * type-level lookup.
      */
     String roleResourceId() default "";
+
+    /**
+     * SpEL → the type of the <strong>placement parent</strong> of a <em>type-level</em> decision (ADR 0034): the
+     * resource a create hangs the new one from — e.g. {@code "'catalog'"} for a top-level category,
+     * {@code "#request.parentId != null ? 'category' : 'catalog'"} when the request may nest, {@code "'category'"}
+     * for a product. Paired with {@link #parentResourceId()}. When both are declared and resolve, the manager
+     * resolves that parent through the application's {@link dev.dmitriikonovalov.opaabac.core.AbacResourceResolver}
+     * (read-through-memoized in the request cache) and threads its tag map into the context as
+     * {@code resource.parent_attributes}, so a policy can decide whether a tag-requiring role may place a
+     * resource <em>there</em>. Blank (the default) → no parent, the field absent. <strong>Fail-closed edges:</strong>
+     * declaring only one of the pair, or a declared expression that resolves to null/blank, <em>denies</em> —
+     * never a silent "no parent" (the {@link #roleResourceId()} posture); a parent that fails to resolve
+     * (empty, throws, no resolution support) leaves the field <em>absent</em>, and the policy decides what
+     * absence means (the shipped placement gate treats it as unproven, i.e. closed, for a tag-requiring role).
+     */
+    String parentResourceType() default "";
+
+    /**
+     * SpEL → the id of the placement parent, paired with {@link #parentResourceType()} (e.g. {@code "#catalogId"},
+     * {@code "#request.parentId != null ? #request.parentId : #catalogId"}, {@code "#categoryId"}). Blank → no
+     * parent. The same fail-closed edges as {@link #parentResourceType()}.
+     */
+    String parentResourceId() default "";
+
+    /**
+     * SpEL → the decided resource's attribute map for a <em>type-level</em> decision (ADR 0034): the raw
+     * tag-on-create payload (e.g. {@code "#request.tags"}), so a policy can decide whether a tag-requiring role
+     * may create a resource carrying <em>these</em> tags. Blank (the default) → an empty map, as before. A
+     * declared expression that resolves to {@code null} → an empty map (an untagged create). <strong>Fail-closed
+     * edges:</strong> a value that is not a {@link java.util.Map}, or a map carrying a {@code null} value, denies;
+     * declaring this together with an <em>instance</em> form ({@link #resourceId()} or {@link #resource()}) is a
+     * declaration conflict and denies — a resolved instance's real attributes are never overridden.
+     */
+    String attributes() default "";
 }

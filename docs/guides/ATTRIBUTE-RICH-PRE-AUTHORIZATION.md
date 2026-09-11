@@ -42,8 +42,13 @@ on the **leaf** id. Three consequences:
         ▼
   root_attributes = governing root's tags (read-through-memoized; ABSENT when unproven — ADR 0032)
         │
+        ▼  (type-level gates only, when declared — ADR 0034)
+  parent_attributes = the placement parent's tags (parentResourceType/Id; the same memo; ABSENT when unproven)
+  attributes        = the declared payload (attributes = "#request.tags"; {} when none)
+        │
         ▼
-  AbacContext { resource.attributes, resource.ancestors = chain, resource.root_attributes } ──► OPA
+  AbacContext { resource.attributes, resource.ancestors = chain, resource.root_attributes,
+                resource.parent_attributes } ──► OPA
         │
         ▼ on ALLOW
   AbacResourceCache.put(type, id, instance)     — the handler reuses the authorized snapshot
@@ -59,6 +64,12 @@ on the **leaf** id. Three consequences:
   never read back — every leaf evaluation resolves fresh; since
   [[0032-root-attribute-enrichment-input-contract|ADR 0032]] the governing **root** is
   read-through-memoized into the decision input (absent-when-unproven, fail-closed).
+- **The placement parent + the payload** (type-level gates, [[0034-tag-gated-placement-input-contract|ADR 0034]]):
+  `@OpaPreAuthorize(parentResourceType = …, parentResourceId = …, attributes = "#request.tags")` on
+  a create declares *where* the new resource lands and *what tags it carries*; the manager resolves the
+  parent through the same resolver and memo and threads its tag map in as `parent_attributes`
+  (three-state, never derived from `root_attributes`), and the raw payload as the decided resource's
+  `attributes`. Both are optional and blank by default — an undeclared gate serializes exactly as before.
 - **Version binding**: read handlers return the snapshot (the response is the state the decision
   saw); mutating handlers load fresh in-transaction and call
   `VersionGuard.requireUnchanged(snapshot, fresh)` **before any write** — drift throws
@@ -75,6 +86,9 @@ on the **leaf** id. Three consequences:
 | Instance resolution returns empty / throws | **DENY**, no OPA call | an attribute-less context could skip attribute-keyed deny rules — that would *widen* |
 | Ancestor resolution throws / no supplier | chain = `[]`, decision proceeds **direct-only** | the 5.5 posture: never strips a direct grant, never a partial chain, never widens |
 | No resolver bean / kill-switch off | the pre-5.97 reference-based context, **byte-identical** | opt-in and additive; proven by serialization equality |
+| A placement-parent **declaration** the manager cannot honor — half a pair, an expression resolving to null/blank (ADR 0034) | **DENY**, no OPA call | a silent "no parent" would let a tag-requiring role place anywhere — the widening the placement gate closes |
+| A declared `attributes` that is not a string-keyed map, carries a `null` value, or sits on an instance form | **DENY**, no OPA call | a resolved instance's attributes are never overridden; a payload that could never validate gets no gentler path |
+| The declared parent fails to **resolve** (empty / throws / no resolution support) | `parent_attributes` **absent**, decision proceeds | the ADR 0032 posture: absence is the policy's to interpret — the shipped gate reads it as unproven, i.e. closed |
 
 ## Adoption recipe
 
