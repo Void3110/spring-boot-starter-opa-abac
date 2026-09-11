@@ -199,6 +199,12 @@ Project expertise lives in `.mulch/`. Before a non-trivial task: `ml prime <doma
 > `git restore --staged .`** so the sync commit touches `.mulch/` only — otherwise it sweeps unrelated
 > staged code into the "mulch: update expertise" commit.
 
+> **`main` is protected (ruleset, 2026-09-11): every change lands through a PR with the five CI checks
+> green, linear history, no force-pushes, no deletion — no bypass, the maintainer included.** So
+> `ml sync` never runs on `main`: record and sync on the slice branch before its PR (the sync
+> commit rides along), and a standalone sync gets its own one-commit branch + PR. A direct push
+> to `main` is declined with `GH013`.
+
 > **The prime-budget trap.** `ml prime` applies a **4000-token budget per domain** and silently
 > truncates what doesn't fit (no warning). Domains near ~50 records overflow it —
 > `spring-security-integration` measurably truncates today. Prime large rows with
