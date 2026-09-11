@@ -10,7 +10,7 @@ tags:
 
 # TAG-GATED-CREATE — a tag-requiring role must not create what it cannot read
 
-> **Status: 📐 DESIGNED + DECOMPOSED 2026-09-11 — mini package, collaborative build.**
+> **Status: ✅ BUILT 2026-09-11 — T1–T5 on `feature/void3110/tag-gated-create`; the review sequence + PR pending.**
 > Design settled 2026-09-11 (grill-me: eight forks; [[00-DESIGN]] §Considered-and-rejected); the
 > contract is [[0034-tag-gated-placement-input-contract|ADR 0034]]. Opened from **DEF-1** of
 > [[PRE-HABR-UI-QA-2026-09-10]]. Severity **Medium**: no escalation beyond the role's own WRITE, but
@@ -83,11 +83,11 @@ any create-only fix).
 
 | Ticket | Scope | Status |
 |---|---|---|
-| T1 | the placement gate in `category.rego` + `product.rego`, the shared match helper, U1–U12, the guide's Rego section | ☐ |
-| T2 | `parent_attributes` on `AbacContext.Resource`, the three annotation attributes, manager population, U13–U22, the guides | ☐ |
-| T3 | the example gates' declarations, `requireCategoryPlacement` on re-parent, `TagGatedCreateIT` (I1–I6), the guide's gate section | ☐ |
-| T4 | the tag matrix's `7a`–`7g` — `gated-writer` (+TAG, the inheritable path) and the `gated-direct` rebind (the direct path), the OPA restart, the README matrix row, conformance (E1–E7) | ☐ |
-| T5 | the pane row (E8), the close-out records, the review sequence, the ship commit | ☐ |
+| T1 | the placement gate in `category.rego` + `product.rego`, the shared match helper, U1–U12, the guide's Rego section | ✅ |
+| T2 | `parent_attributes` on `AbacContext.Resource`, the three annotation attributes, manager population, U13–U22, the guides | ✅ |
+| T3 | the example gates' declarations, `requireCategoryPlacement` on re-parent, `TagGatedCreateIT` (I1–I6), the guide's gate section | ✅ |
+| T4 | the tag matrix's `7a`–`7g` — `gated-writer` (+TAG, the inheritable path) and the `gated-direct` rebind (the direct path), the OPA restart, the README matrix row, conformance (E1–E7) | ✅ |
+| T5 | the pane row (E8), the close-out records, the review sequence, the ship commit | ✅ (E8 + records; reviews recorded in STATUS-05) |
 
 ## Files
 

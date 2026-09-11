@@ -9,7 +9,7 @@ tags:
 
 # ADR 0034 — Tag-gated placement: `parent_attributes` and declared `attributes` on type-level decisions
 
-**Status:** Accepted — planning; implemented by slice **TAG-GATED-CREATE**
+**Status:** Accepted — implemented 2026-09-11 by slice **TAG-GATED-CREATE** (T1 policy, T2 starter, T3 example gates, T4 e2e, T5 console cell; PR pending)
 **Date:** 2026-09-11
 **Context tags:** tag requirement, type-level create, placement parent, input contract, fail-closed three-state, `@OpaPreAuthorize` surface
 

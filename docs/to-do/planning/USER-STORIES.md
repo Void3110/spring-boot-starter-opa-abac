@@ -78,7 +78,7 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   where my tags match — the placement parent's tags **and** the tags I put on the new resource must both
   satisfy my grant (under the untagged root: denied, in both flag states) — and I cannot **move** a category
   under a parent I may not see; a creator can read what it creates, where it creates. — **TAG-GATED-CREATE**
-  ([[TAG-GATED-CREATE]], ADR [[0034-tag-gated-placement-input-contract|0034]]) 📋
+  ([[TAG-GATED-CREATE]], ADR [[0034-tag-gated-placement-input-contract|0034]]) ✅
 
 ### Epic D — "Lists show me only what I may see" (data filtering)
 
