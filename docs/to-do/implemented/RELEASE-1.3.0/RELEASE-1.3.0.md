@@ -109,6 +109,26 @@ in ADR 0034's consequences and in [[TAG-BASED-AUTHORIZATION]] §Layer 3.
    19-runner gateway matrix; the browser-gate section gains the pre-Habr pass + the E8 re-measurement;
    the Documentation list gains the tag guide + ADR 0034.
 
+## 7. The publish log (2026-09-11) — what actually happened
+
+- **Attempt 1**, `publishAndReleaseToMavenCentral` from the agent's shell over the corp VPN uplink
+  (`utun6`): the six coordinates uploaded task by task, then the build service failed to stop with an
+  empty `Upload failed:` after **27 min**. Measured afterwards: the uplink carried ~60–100 KB/s on every
+  path (a 20 MB probe to third-party echo services stalled the same way), downloads ran at ~2 MB/s, and
+  the Portal answered small requests in a second — not rate limiting, not the sandbox (the same probe
+  unsandboxed was identical): the pipe.
+- **Attempt 2**, the same command over the personal tunnel (`utun7`): `Connection reset` in 3 s.
+- **Attempt 3**, the plugin's own bundle (`build/publish/dev.dmitriikonovalov-1.3.0-*.zip`, 21.7 MB,
+  108 files, 27 signatures) uploaded with `curl --http1.1` and retries: the Portal sent `100 Continue`,
+  took the whole body at ~33 KB/s over 11 min, then **reset the connection instead of answering** — a
+  server-side timeout on a slow request, twice.
+- **Attempt 4**, the maintainer ran the same curl from a terminal on a different ISP, tunnel-free:
+  `201` with deployment `26023c7c-9edf-43d0-8404-30ff371828c9` in seconds; `VALIDATING` → `PUBLISHING`
+  → **`PUBLISHED` at 13:34 MSK**; `published: true` on every coordinate. The manual-upload fallback is
+  now in [`RELEASING.md`](../../../../RELEASING.md) §4a.
+- Nothing was ever half-released: every failed attempt left no deployment behind (`published: false`
+  throughout), which is why the retries were safe.
+
 ## Not in this release
 
 - Backlog item 10 (Tomcat, waits on Boot), item 11 (a self/descendant re-parent answers 500 — found by

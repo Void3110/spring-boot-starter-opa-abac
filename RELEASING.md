@@ -192,6 +192,38 @@ releases nothing (safe to retry).
 Within ~10–30&nbsp;min the coordinates appear on `https://central.sonatype.com`; searchability on
 `https://search.maven.org` / `mvnrepository.com` can take a few hours longer.
 
+### 4a. If the plugin's upload cannot get through (a slow uplink)
+
+The plugin uploads one ~20 MB bundle in a single request. On a slow uplink (measured 2026-09-11: a VPN
+path at 30–100 KB/s) the Portal accepts the body and then **resets the connection instead of
+answering** — a server-side timeout on a slow request, reported by the plugin as an empty
+`Upload failed:` or `Connection reset` after long retries. Nothing is half-released: a failed upload
+leaves no deployment (`published` stays `false`), so retrying is safe. The fix is the network, not the
+build: the bundle the plugin already built and signed sits in `build/publish/<group>-<version>-<ts>.zip`
+and can be uploaded from any machine with a real uplink using the Portal's publisher API — the same
+call the plugin makes:
+
+```bash
+# the token, from ~/.gradle/gradle.properties — never pasted, never echoed
+B=$(printf '%s:%s' "$(grep '^mavenCentralUsername=' ~/.gradle/gradle.properties | cut -d= -f2-)" \
+                   "$(grep '^mavenCentralPassword=' ~/.gradle/gradle.properties | cut -d= -f2-)" | base64 | tr -d '\n')
+
+# upload the signed bundle; the body of a 201 is the deployment id; AUTOMATIC = validate + release
+curl --http1.1 -sS -w '\nhttp=%{http_code}\n' -H "Authorization: Bearer $B" \
+  -F "bundle=@build/publish/<group>-<version>-<ts>.zip" \
+  "https://central.sonatype.com/api/v1/publisher/upload?name=<group>-<version>&publishingType=AUTOMATIC"
+
+# poll until deploymentState is PUBLISHED (VALIDATING → PUBLISHING → PUBLISHED; FAILED carries `errors`)
+curl -s -X POST -H "Authorization: Bearer $B" "https://central.sonatype.com/api/v1/publisher/status?id=<deployment-id>"
+
+# the per-coordinate flag
+curl -s -H "Authorization: Bearer $B" \
+  "https://central.sonatype.com/api/v1/publisher/published?namespace=<group>&name=<artifact>&version=<version>"
+```
+
+A quick way to tell the pipe from the Portal: a multi-megabyte `POST` to any public echo endpoint that
+crawls or resets is the uplink; the Portal answers small authenticated requests in a second regardless.
+
 ---
 
 ## 5. Post-release: bump the snapshot + tag

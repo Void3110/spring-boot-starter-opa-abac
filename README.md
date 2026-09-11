@@ -21,8 +21,8 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 > **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
 > engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
 > `plan → decompose → autonomous-implement → review` — where each pass leaves artifacts (in **Mulch**
-> and this vault) that make the next one sharper. **28 feature slices, 33 ADRs, 1225 unit/IT tests +
-> 63 browser-free SPA unit tests + `opa test` 389/389 + a 19-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
+> and this vault) that make the next one sharper. **30 feature slices, 34 ADRs, 1275 unit/IT tests +
+> 69 browser-free SPA unit tests + `opa test` 451/451 + a 19-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
 > security review** — all delivered this way, with the prompts and per-slice retrospectives kept
 > verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
 
@@ -47,14 +47,14 @@ zookie/consistency story, no reverse index) and honest prior art in the Spring/O
 
 ## Status
 
-✅ **1.2.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
+✅ **1.3.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
 (unit + Testcontainers ITs + `opa test` + a newman gateway matrix + a static-analysis quality gate + a
 browser-driven UI QA of the demo SPA), the codebase targets **Spring Boot 4.0 on Java 25**, and the
 library is resolvable under `dev.dmitriikonovalov`.
 
 ```kotlin
 // build.gradle.kts — pull in the whole line via the BOM, then reference modules version-free
-implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.2.0"))
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.3.0"))
 implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
 ```
 
@@ -74,7 +74,9 @@ spring-boot-starter}` + the `opa-abac-bom` platform. The three `example-*` servi
   expand to fine actions (deny-overridable), bounded by a five-tier `role_level` ceiling and a senior-tier
   subset rule; a categorized control plane for the `team:*` verbs. See [`docs/guides/PERMISSION-MODEL.md`](docs/guides/PERMISSION-MODEL.md).
 - **Dynamic tag dictionary** — runtime-editable tag keys + tag-based grants matched in Rego (`some in` /
-  `every`, ANY_OF / ALL_OF); tags are first-class on catalogs, categories, **and** products.
+  `every`, ANY_OF / ALL_OF); tags are first-class on catalogs, categories, **and** products; and the
+  **placement gate** — a tag-requiring role cannot create what it could not read, nor where it could not
+  read, and moving a resource is a placement too (ADR 0034).
 - **Partial-evaluation data filtering** — OPA's Compile API → a JPA `Specification` over JSONB, so a list
   endpoint returns only the rows a subject may see (filtered in SQL, fail-closed to an empty page).
 - **N-level hierarchical authorization** — a grant on a Catalog governs a Category/Product nested under it,
@@ -84,7 +86,8 @@ spring-boot-starter}` + the `opa-abac-bom` platform. The three `example-*` servi
   (`scope AND (tagResidual OR subtreeSpec) AND notDenied`), composed so the widening can never escape the
   caller's scope and a leaf deny still overrides it.
 - **Attribute-rich pre-authorization** — an opt-in resolver + request-scoped cache decides the gate on a
-  resource's *real* attributes and ancestors, with version-guarded mutations (`409` on drift).
+  resource's *real* attributes and ancestors, with version-guarded mutations (`409` on drift); type-level
+  gates declare the placement parent and the payload, the parent confined to the governing root.
 - **Multi-tenant isolation + self-service** — team membership is the sole access path to the hierarchy,
   with a real cross-service ownership check so team-create can't squat another user's catalog.
 - **Action-affordance metadata** — a response advice attaches an `_actions` map (which actions the caller
@@ -122,6 +125,19 @@ delivered as its own reviewed slice. The technical plan lives in
 [`docs/to-do/planning/POC-ROADMAP/`](docs/to-do/planning/POC-ROADMAP/POC-ROADMAP.md); the release runbook
 is [`RELEASING.md`](RELEASING.md); the full picture (architecture, ADRs, guides) is in
 [`docs/`](docs/README.md).
+
+**1.3.0 (2026-09-11):** the **placement gate**. A tag-requiring role can no longer create what it could not
+read, nor *where* it could not read: a type-level create (and its tag-on-create) is decided on the placement
+parent's tags **and** the payload's tags, whichever way the verb is granted, and moving a category under a
+new parent is a placement too (ADR 0034). The library's part is additive — `input.resource.parent_attributes`
+(the `root_attributes` pattern: three distinguishable states) and three `@OpaPreAuthorize` attributes
+(`parentResourceType`, `parentResourceId`, `attributes`) — with the parent **confined** to the governing
+target the role was resolved on, so a client-named id can never turn a status code into a cross-tenant
+tag oracle. The defect was found by the browser gate the day before the Habr launch (DEF-1), designed and
+built in one collaborative session, reviewed by two independent passes (which found the oracle), and
+re-measured in the same console. The baseline moves to Spring Boot **4.0.8**. See
+[`TAG-BASED-AUTHORIZATION.md`](docs/guides/TAG-BASED-AUTHORIZATION.md) §Layer 3 and
+[ADR 0034](docs/architecture/adr/0034-tag-gated-placement-input-contract.md).
 
 **1.2.0 (2026-08-18):** two capability phases. **Agent tool-call authorization** — an MCP tool surface
 (`example-mcp-server`, Spring AI) behind the same OPA gate, with two-layer enforcement: the tool-gate can
@@ -461,9 +477,9 @@ verified — nothing is hidden behind "the AI did it."
 
 | | |
 |---|---|
-| **24** feature slices | each planned → decomposed → autonomously implemented → reviewed |
-| **31** ADRs | every structural fork pinned as an immutable decision record |
-| **1069** unit/IT tests · `opa test` **276/276** · **15**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
+| **30** feature slices | each planned → decomposed → implemented (autonomously or collaboratively) → reviewed |
+| **34** ADRs | every structural fork pinned as an immutable decision record |
+| **1275** unit/IT tests · `opa test` **451/451** · **19**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
 | **+0.79 ms** ABAC gate at p50 | measured on the real rig, statistically flat at the tail ([PERFORMANCE.md](PERFORMANCE.md)) |
 | **0 Critical** security review | pre-publish 8-angle review + secret scan + CVE sweep, findings fixed |
 
@@ -535,6 +551,14 @@ empty list + a single-GET deep-link `403`), and `_actions` differ per identity o
 **all PASS, zero defects**, confirming the fix is transparent to the observable cut. Record:
 [`docs/code-review/PRE-PUBLISH-UI-QA-2026-07-15.md`](docs/code-review/PRE-PUBLISH-UI-QA-2026-07-15.md).
 
+For **1.3.0** the gate ran the day before the Habr launch as a **34-cell, five-persona** pass
+([`docs/code-review/PRE-HABR-UI-QA-2026-09-10.md`](docs/code-review/PRE-HABR-UI-QA-2026-09-10.md)) — all
+PASS for the named personas, and **one defect found exactly the way this gate is meant to find them**: a
+forced create by a tag-requiring WRITE role answered `201` where the contract said `403` (DEF-1). It became
+the 1.3.0 slice, and the fix was re-measured in the same console — the create form answers `403` for that
+role and `201` for the editor control
+([`TAG-GATED-CREATE/STATUS-05.md`](docs/to-do/implemented/TAG-GATED-CREATE/STATUS-05.md)).
+
 ## Requirements
 
 - Java 25+
@@ -560,6 +584,7 @@ The full architecture, decision records, and per-feature guides live in [`docs/`
 - **Guides** — [`docs/guides/`](docs/guides/) (ABAC spine, team/tag/data-filtering/hierarchical authz, e2e)
 - **Demo console walkthrough** — [`docs/guides/DEMO-CONSOLE-WALKTHROUGH.md`](docs/guides/DEMO-CONSOLE-WALKTHROUGH.md) — the browser demo screen by screen: what each persona sees, and which decision made it so
 - **Agent / MCP authorization** — [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) + [ADR 0028](docs/architecture/adr/0028-agent-tool-call-authorization.md) — the two-layer model, the tri-state capability seam, the roster-is-a-hint rule, and the fail-closed table
+- **Tag-based authorization & the placement gate** — [`docs/guides/TAG-BASED-AUTHORIZATION.md`](docs/guides/TAG-BASED-AUTHORIZATION.md) + [ADR 0034](docs/architecture/adr/0034-tag-gated-placement-input-contract.md) — the dynamic dictionary, the Rego match, and why a tag-requiring role cannot create what it could not read
 - **Supervised read & step-up** — [`docs/guides/SUPERVISED-READ-AND-STEP-UP.md`](docs/guides/SUPERVISED-READ-AND-STEP-UP.md) + ADRs [0029](docs/architecture/adr/0029-supervised-read-scope.md)–[0033](docs/architecture/adr/0033-catalog-provenance-affordance.md) — the second, disjoint access path; the operator-managed environment tier; the RFC 9470 step-up challenge and its resource-server-side freshness control
 - **ReBAC vs ABAC positioning** — [`docs/architecture/REBAC-AND-ABAC.md`](docs/architecture/REBAC-AND-ABAC.md) — the relationship spine, the partial-evaluation-vs-`ListObjects` difference, what this library deliberately lacks, and when to pick SpiceDB/OpenFGA instead
 - **Architecture & ADRs** — [`docs/architecture/`](docs/architecture/)
