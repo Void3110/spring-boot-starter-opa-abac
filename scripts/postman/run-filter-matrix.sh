@@ -5,8 +5,9 @@
 # Proves OPA partial-evaluation LIST filtering end to end: two tag-gated readers hit the SAME list
 # endpoint (GET /catalogs/{id}/categories) and get DIFFERENT row sets — filtered in SQL by the residual
 # the Compile API returns — while an allow-all owner sees every row and a stranger with NO role definition
-# sees NONE (the `filter` rule has no subject-roles fallback, so a missing role fails CLOSED to an empty
-# list, never the whole table). The decisive contrast is the row SET, not a single 200/403.
+# is denied at the coarse <type>:list gate (403 since Slice B4; at the `filter` level a missing role fails
+# CLOSED to an empty list, never the whole table — pinned by `opa test`). The decisive contrast is the
+# row SET, not a single 200/403.
 #
 # Taggable products (ADR 0025): the SAME four-way contrast also runs against the product list
 # (GET .../categories/{id}/products) — three region-tagged products under an untagged holder
