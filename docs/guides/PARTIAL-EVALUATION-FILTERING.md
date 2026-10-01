@@ -63,13 +63,16 @@ Three outcomes collapse the residual:
 > satisfiable, condition-free residual. An absent/ambiguous compile output therefore denies — by
 > construction. (This corrects an inverted reading that would be a fail-open whole-table leak.)
 
-### B. Batch evaluation → post-fetch allowlist (the residue)
+### B. Batch evaluation → exact re-check (the residue)
 
 Some conditions don't reduce to a SQL predicate (a shape the translator deliberately doesn't support — the
-operator set is small and closed on purpose). For those, after the SQL pre-filter narrows the candidate
-set, one **batch** call — `allowAll(List<AbacContext>)` over the `bulk` rule — drops the rows that come back
-`false`. One round-trip, not N. `allowAll` is a **reusable primitive** (action enrichment, Phase 6, consumes
-the same method).
+operator set is small and closed on purpose). For those — with `allowlist-fallback` on, the default — the
+list fetches the **scoped candidates only** (the path scope, e.g. `catalogId`: an unsupported residual
+carries no clauses, so nothing pre-narrows the fetch), and one **batch** call — `allowAll(List<AbacContext>)`
+over the `bulk` rule — decides every candidate exactly and drops the rows that come back `false`. One
+round-trip, not N — but the fetch is O(rows in scope), so this path is a **scope-bounded post-filter**:
+exact, not cheap. Keeping the pure-SQL path the common one is why the multi-type fold below matters.
+`allowAll` is a **reusable primitive** (action enrichment, Phase 6, consumes the same method).
 
 ## The `OpaClient` additions (core, Spring-free)
 
@@ -88,13 +91,14 @@ carries no OPA or Spring types.
 ## The JSONB translation (`opa-abac-spring-data`)
 
 `ResidualSpecificationFactory` maps each `Condition` over the `tags` JSONB column (Postgres dialect, JPA
-Criteria `function(...)`, bound literals — no SQL strings):
+Criteria `function(...)` — no hand-built SQL strings; comparison values travel as bind parameters, the tag
+key and the `CONTAINS` value render as SQL literals):
 
 | `Condition` | SQL |
 |-------------|-----|
 | `tags.region EQ "emea"` | `jsonb_extract_path_text(tags,'region') = 'emea'` |
 | `tags.region IN [...]` | `jsonb_extract_path_text(...) IN (...)` |
-| `tags.region CONTAINS "emea"` | `jsonb_exists(tags->'region','emea')` (the `?` op) |
+| `tags.region CONTAINS "emea"` | `jsonb_exists(jsonb_extract_path(tags,'region'),'emea')` (the `?` op's function form) |
 | a non-`tags` path (`categoryId`) | `root.get("categoryId")` (intrinsic column) |
 
 **Scalar-vs-array consistency.** The Postgres `?` operator matches a JSONB *string* scalar (string
@@ -126,6 +130,28 @@ normalizes a scalar to a singleton set). The list and a single-GET decide the **
 > shipped. A type-vocabulary drift between the app's resource types and the policy's would produce the
 > same all-foreign shape; routing it to the batch keeps it self-healing (per-row decisions on the rows'
 > own types) instead of a silent, definitive empty list.
+
+### Indexing — what the emitted SQL can use (measured 2026-10-01)
+
+All three tables carry a GIN index on `tags` (`idx_{catalog,category,product}_tags`, default `jsonb_ops`) —
+but **the predicates in the table above cannot use it.** A GIN index serves its *operators* (`@>`, `?`,
+`?|`, `?&`, …) applied to the indexed column itself; the translator emits *function calls* on a sub-path
+(`jsonb_extract_path_text(tags,…) = …`, `jsonb_exists(jsonb_extract_path(tags,…),…)`). Measured on a
+throwaway Postgres 16 (200k rows, mixed scalar/array `region` tags, `SET enable_seqscan = off`): both
+emitted forms still plan as a `Seq Scan` with a `Filter` — no index path exists for them — while the
+containment pair `tags @> '{"region":"mena"}' OR tags @> '{"region":["mena"]}'` plans as a `BitmapOr` over
+two `Bitmap Index Scan`s on `idx_category_tags`.
+
+What that means today:
+
+- **The scope does the narrowing.** At volume the B-tree on the path column (`idx_category_catalog`,
+  `idx_product_category`; catalog lists scope by governed ids on the primary key) bounds the scan, and the
+  residual is evaluated as a row filter inside that scope — O(rows in scope), not O(table).
+- **Index-served tag predicates are open work, not shipped.** They need the translator to emit containment
+  (`@>`, rendered as an operator rather than a function) — an expression index per tag key does not fit a
+  dynamic tag dictionary. On the spike's seed the containment pair matched exactly the same rows as the
+  emitted pair; its equivalence on every value shape (non-string scalars, objects) is **not** established,
+  and a mistranslated predicate is a silent leak — so this stays a measured candidate until it is proven.
 
 ## The rego `filter` rule (the fail-closed boundary)
 
@@ -218,13 +244,16 @@ narrow-but-correct beats wide-but-wrong.
 
 ## Proven by
 
-- **`opa test`** (60/60): the `filter`/`bulk` cases, the no-role-definition → empty guard, and
-  filter-agrees-with-allow for scalar **and** array tags.
+- **`opa test`** (per resource type, in CI): the `filter`/`bulk` cases, the no-role-definition → empty
+  guard, and filter-agrees-with-allow for scalar **and** array tags (`test_filter_agrees_with_allow_scalar`
+  / `_array` in `category_test.rego` and `product_test.rego`).
 - **Testcontainers ITs** (real Postgres + JSONB): the `ResidualSpecificationFactory` over each operator, and
   `AbacQueryService` returning **different row sets** for two subjects + the AND-with-scope no-leak proof.
 - **The e2e filter matrix** ([[E2E-TESTING]]): two tag-gated readers hit the same list endpoint through the
-  gateway and get different row sets; an allow-all owner sees all; a stranger with no role definition sees
-  none. Run with `scripts/postman/run-filter-matrix.sh`. The matrix's reader roles are **multi-type**
+  gateway and get different row sets; an allow-all owner sees all; a stranger with no role definition is
+  denied at the coarse `<type>:list` gate (403 — since Slice B4 `allow` has no subject-roles fallback
+  either), and the filter-level guarantee behind it — no role definition → `DENY_ALL` → an empty list, never
+  the whole table — is pinned by `opa test`. Run with `scripts/postman/run-filter-matrix.sh`. The matrix's reader roles are **multi-type**
   (catalog+category+product READ), so since the foreign-type fold (2026-08-06) this matrix exercises the
   **pure-SQL** residual path — verified against the live rig via the Postgres statement log: the readers'
   category *and* product lists carry the `jsonb` residual in `WHERE`, and no scope-only candidate fetch
@@ -305,7 +334,8 @@ set, and `Page.getTotalElements()` is the **exact, subject-relative authorized t
 ## What this slice does NOT do
 
 Action enrichment (Phase 6) · coarse permission categories (Phase 6.5) · ReBAC-in-Rego / mid-tree per-node
-grants (Phase 8) · a non-Postgres `JsonPathDialect` · partial-eval result caching.
+grants (Phase 8) · a non-Postgres `JsonPathDialect` · partial-eval result caching · index-served tag
+predicates (see §Indexing above).
 
 > **Coverage note (updated for taggable products, ADR [[adr/0025-taggable-products|0025]]).** As of the
 > Product-Tags slice, the **product list has adopted this partial-eval path** — it is no longer a plain

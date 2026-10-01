@@ -37,9 +37,11 @@ Use OPA's **Compile API** (`POST /v1/compile`) to **partially evaluate** the pol
 known and the *resource* declared **unknown** (`unknowns: ["input.resource"]`). OPA returns the
 **residual** — the conditions, in disjunctive normal form, the row must satisfy. The library translates
 that residual into a Spring Data JPA **`Specification<T>`** over the existing `tags` JSONB column
-(GIN-indexed since ADR's domain-model slice) and pushes it into the SQL `WHERE` clause. A **batch**
-decision call (`allowAll`) finishes any residue that does not reduce to SQL, on the (now small)
-candidate set, in one round-trip.
+(GIN-indexed since the domain-model slice — **corrected 2026-10-01:** the function-form predicates
+below cannot use that index; see the amendment) and pushes it into the SQL `WHERE` clause. A **batch**
+decision call (`allowAll`) finishes any residue that does not reduce to SQL, on the scoped candidate
+set (**corrected 2026-10-01:** the residue does not pre-narrow it — see the fail-closed paragraph), in
+one round-trip.
 
 Concretely:
 
@@ -57,7 +59,7 @@ Concretely:
    non-empty conditions → `CONDITIONAL`.
 3. **`ResidualSpecificationFactory` in `opa-abac-spring-data`** translates the residual to a
    `Specification`: `EQ`/`IN` over `jsonb_extract_path_text(tags,'k')`; `CONTAINS` (array tag) via the
-   `?` existence op (`jsonb_exists(tags->'k','v')`) — the same scalar-vs-array normalize as the ADR-0004
+   `?` existence op (`jsonb_exists(jsonb_extract_path(tags,'k'),'v')`) — the same scalar-vs-array normalize as the ADR-0004
    Rego match; an intrinsic column (e.g. `categoryId`) via `root.get(...)`. `ALLOW_ALL` → no predicate;
    `DENY_ALL` → `cb.disjunction()` (always-false).
 
@@ -79,6 +81,15 @@ a mistranslated predicate is a silent data leak, so narrow-but-correct beats wid
 > reported **not fully supported** (→ the batch re-check), because an all-foreign `filter` residual
 > cannot speak for policy-side inheritance. See [[PARTIAL-EVALUATION-FILTERING]] §"Multi-type roles
 > fold".
+
+> **Amendment (2026-10-01, indexing).** The `tags` GIN index (`jsonb_ops`) serves operators on the
+> column itself; the translator emits **function calls** on a sub-path (`jsonb_extract_path_text`,
+> `jsonb_exists(jsonb_extract_path(...))`), which no index path covers — measured: both forms plan as a
+> `Seq Scan` even with `enable_seqscan = off`, while a containment pair (`tags @> '{"k":"v"}' OR
+> tags @> '{"k":["v"]}'`) plans as a GIN `BitmapOr`. At volume the **scope** B-tree bounds the scan and
+> the residual filters inside it. Index-served tag predicates (emitting containment) are open work: the
+> pair's equivalence on every value shape is not yet established. See [[PARTIAL-EVALUATION-FILTERING]]
+> §"Indexing".
 
 ## Considered options
 
