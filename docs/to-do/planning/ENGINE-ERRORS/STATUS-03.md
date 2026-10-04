@@ -62,4 +62,5 @@ source now answers 503 through the base advice (T2) instead of 403 / an empty 20
 
 ## Commit
 
-_Recorded with the next ticket._
+`f29bb64` — feat(data): list queries, the hierarchical check and the subtree widening propagate "could not
+decide" (ENGINE-ERRORS T3).
