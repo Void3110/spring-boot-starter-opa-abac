@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.opaabac.data.filter;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -45,9 +46,13 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
  *   <li><strong>AND, never replace.</strong> The authorization specification is always
  *       {@code scope.and(...)} — the caller's own path scoping (e.g. {@code categoryId = ?}) is preserved,
  *       so no cross-scope row can leak (and the {@code subtreeSpec} widening cannot escape it).</li>
- *   <li><strong>Never fail-open.</strong> A <em>failed</em> compile call ({@code fromError}) empties the
- *       whole list — including the {@code subtreeSpec} widening, which must never outlive the policy engine
- *       whose inherited-grant clause it mirrors. A <em>policy-derived</em> residual flagged not-fully-SQL
+ *   <li><strong>Never fail-open, and never a lie.</strong> When the policy engine could not decide — the
+ *       compile call, the kill-switch {@code allow} or the allowlist batch throws a
+ *       {@link DecisionIndeterminateException} (ADR 0037) — the exception <strong>propagates</strong>: no rows,
+ *       no count, and no empty page dressed up as "you may see nothing". The {@code subtreeSpec} widening
+ *       never outlives the engine whose inherited-grant clause it mirrors. A residual with no policy answer
+ *       behind it ({@code fromError} — the client refused to ask, or a custom client returned it for a
+ *       failure) still empties the whole list, widening included. A <em>policy-derived</em> residual flagged not-fully-SQL
  *       yields empty <em>or</em> — with the allowlist on — an exact batch re-check over the survivors, never
  *       a wider set. A failed/empty {@code subtreeSpec} falls back to the narrower tag-only result. The
  *       {@code partialEval.enabled=false} kill-switch degrades to the coarse pre-Phase-5 path (scope + one
@@ -178,10 +183,13 @@ public class AbacQueryService {
             return cacheSurvivors(repo.findAll(scopeOnly(scope).and(notDenied())));
         }
 
+        // A FAILED compile call throws (ADR 0037) and propagates from here — the list never claims to be
+        // empty because the engine was down.
         PartialResult residual = opaClient.compile(queryContext);
 
         if (residual.fromError()) {
-            // The Compile call failed — there is no policy answer at all. The entire list fails closed,
+            // No policy answer at all (the client refused to ask, or a custom client's failure value).
+            // The entire list fails closed,
             // including the subtreeSpec widening: the Java-side subtree gate mirrors the policy's
             // inherited-grant clause and must never outlive the policy engine it mirrors. (A policy-derived
             // DENY_ALL — an unsatisfiable tag branch — is different: the widening below may still apply.)
@@ -217,8 +225,10 @@ public class AbacQueryService {
      *       pagination adds nothing to it; the in-memory slice is what keeps the count exact.</li>
      *   <li><strong>Kill-switch</strong> ({@code partialEval.enabled=false}): a coarse {@code allow}
      *       check, then {@code scope.and(notDenied)} paged — the deny-override stays AND-ed even degraded.</li>
-     *   <li><strong>Failed compile</strong> ({@code fromError}): an empty page with total {@code 0} and
+     *   <li><strong>No policy answer</strong> ({@code fromError}): an empty page with total {@code 0} and
      *       <em>no repository call</em> — the fail-closed cut includes the count.</li>
+     *   <li><strong>The engine could not decide</strong>: the {@link DecisionIndeterminateException}
+     *       propagates before any repository call — neither rows nor a count.</li>
      * </ul>
      *
      * <p><strong>The {@code Pageable} must carry a sort.</strong> Paginating without a total order is a
@@ -259,8 +269,8 @@ public class AbacQueryService {
         PartialResult residual = opaClient.compile(queryContext);
 
         if (residual.fromError()) {
-            // No policy answer at all → no rows AND no count: a failed compile must not leak how many
-            // rows the subject could otherwise see.
+            // No policy answer at all → no rows AND no count: an unanswered residual must not leak how
+            // many rows the subject could otherwise see. (A failed call throws before reaching here.)
             return Page.empty(pageable);
         }
 
@@ -366,8 +376,9 @@ public class AbacQueryService {
         for (T candidate : candidates) {
             perRow.add(withResource(queryContext, candidate));
         }
+        // A failed batch throws (ADR 0037) and propagates out of findAuthorized — never an empty page.
         List<Boolean> decisions = opaClient.allowAll(perRow);
-        // Fail-closed: a mismatched/short decision list (the client returns all-false on error) drops rows.
+        // Fail-closed: a mismatched/short decision list (a custom client's contract violation) drops rows.
         List<T> allowed = new ArrayList<>();
         for (int i = 0; i < candidates.size(); i++) {
             if (i < decisions.size() && Boolean.TRUE.equals(decisions.get(i))) {

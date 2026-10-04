@@ -74,4 +74,5 @@ the base advice in both example services.
 
 ## Commit
 
-_Recorded with the next ticket._
+`8364947` — feat(security): the gates throw AuthorizationIndeterminateException; the base advice answers 503
+(ENGINE-ERRORS T2).

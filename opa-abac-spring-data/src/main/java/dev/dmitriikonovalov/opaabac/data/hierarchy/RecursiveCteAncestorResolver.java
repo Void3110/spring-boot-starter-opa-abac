@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -80,6 +81,8 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
             Optional<ParentRef> parent;
             try {
                 parent = parentSource.parentOf(currentType, currentId);
+            } catch (DecisionIndeterminateException e) {
+                throw e; // a parent-link source that opted its outage in (ADR 0037 §7)
             } catch (RuntimeException e) {
                 throw new AncestorResolutionException(
                         "parent-link lookup failed for " + currentType + ":" + currentId, e);
@@ -189,6 +192,8 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
                 List<ParentRef> children;
                 try {
                     children = descendantSource.childrenOf(node.type(), node.id());
+                } catch (DecisionIndeterminateException e) {
+                    throw e; // a child-link source that opted its outage in (ADR 0037 §7)
                 } catch (RuntimeException e) {
                     throw new AncestorResolutionException(
                             "child-link lookup failed for " + node.type() + ":" + node.id(), e);

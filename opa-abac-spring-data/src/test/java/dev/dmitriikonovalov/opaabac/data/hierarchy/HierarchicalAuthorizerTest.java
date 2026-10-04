@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -11,8 +12,10 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -153,18 +156,28 @@ class HierarchicalAuthorizerTest {
         assertThat(ctx.getValue().resource().ancestors()).isEmpty();
     }
 
-    @Test // B2 U5 — the role-source throws RoleResolutionException (outage) → deny, OPA never called.
-    // No fallback in this seam (outage and no-role both deny here); a separate axis from a chain collapse.
-    void roleSourceOutageDenies_neverCallsOpa() {
+    @Test // B2 U5 → ENGINE-ERRORS U27 — a role-source outage PROPAGATES ("could not decide", ADR 0037), OPA is
+    // never called, and no realm fallback; a separate axis from a chain collapse.
+    void roleSourceOutage_isIndeterminate_neverCallsOpa() {
         AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF, CATEGORY_REF));
-        when(supplier.lookup("user-1", "catalog", CATALOG))
-                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(supplier.lookup("user-1", "catalog", CATALOG)).thenThrow(outage);
 
-        assertThat(authorizer(resolver).isAllowed(subject(), "read", product())).isFalse();
+        assertThatThrownBy(() -> authorizer(resolver).isAllowed(subject(), "read", product())).isSameAs(outage);
         verify(opaClient, never()).allow(any());
     }
 
-    @Test // an OPA-side error denies (fail-closed)
+    @Test // ENGINE-ERRORS U27 — the policy engine could not decide → propagates, never a false that looks like no
+    void engineFailure_isIndeterminate() {
+        AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF));
+        when(supplier.lookup(any(), any(), any())).thenReturn(Optional.of(catalogViewer()));
+        PolicyEngineException failure = PolicyEngineException.timeout("decide for path 'product'", null);
+        when(opaClient.allow(any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> authorizer(resolver).isAllowed(subject(), "read", product())).isSameAs(failure);
+    }
+
+    @Test // an OPA-side error OUTSIDE the family still denies (fail-closed, unchanged)
     void opaErrorDenies() {
         AncestorResolver resolver = TestAncestorResolvers.ancestors(List.of(CATALOG_REF));
         when(supplier.lookup(any(), any(), any())).thenReturn(Optional.of(catalogViewer()));

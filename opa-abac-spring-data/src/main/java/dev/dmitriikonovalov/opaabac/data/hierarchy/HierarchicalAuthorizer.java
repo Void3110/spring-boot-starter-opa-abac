@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
@@ -36,6 +37,11 @@ import org.slf4j.LoggerFactory;
  * decision, never wider, never stripping a direct grant. An unresolved role / no subject → deny. The role
  * is resolved <strong>once on the root</strong>, never per-ancestor (per-node grants are Phase 8 / ReBAC).
  *
+ * <p><strong>"Could not decide" is not a deny (ADR 0037).</strong> A role-source outage or a policy-engine
+ * failure throws a {@link DecisionIndeterminateException} out of {@link #isAllowed} instead of answering
+ * {@code false}, so the caller can answer "not now" rather than "no". It is still fail-closed — the call
+ * never proceeds — and an ancestor resolver's own outage subtype passes through the chain-collapse catch.
+ *
  * <h2>Tier-unaware (ADR 0032)</h2>
  * This seam never populates {@code input.resource.root_attributes} — root-attribute enrichment is pinned
  * to the annotation gate's authorization manager (ADR 0032 §Population), and this class has no resolver
@@ -69,7 +75,10 @@ public class HierarchicalAuthorizer {
      * @param subject the requesting subject (its id resolves the role); a {@code null} subject denies
      * @param verb    the action verb (e.g. {@code "read"}); combined with the leaf type into the action
      * @param leaf    the loaded resource being accessed (supplies type, id, tags, and its parent hop)
-     * @return {@code true} iff the policy allows; never throws for an authorization concern
+     * @return {@code true} iff the policy allows; {@code false} for a deny
+     * @throws DecisionIndeterminateException when no decision could be made — the role source was down
+     *     ({@link RoleResolutionException}) or the policy engine failed (ADR 0037). Fail-closed all the same:
+     *     a throw is never an allow. A caller renders it as "not now" (503), never as a 403.
      */
     public boolean isAllowed(AbacContext.Subject subject, String verb, AbacResource leaf) {
         Objects.requireNonNull(verb, "verb");
@@ -91,21 +100,15 @@ public class HierarchicalAuthorizer {
         }
 
         // 2) Resolve the role ONCE on the governing root: the chain's first element, or the leaf itself when
-        //    there is no inheritable lineage.
+        //    there is no inheritable lineage. A role-source outage (RoleResolutionException) PROPAGATES: the
+        //    role is unknown, so no decision is possible — not a deny (ADR 0037). A separate failure axis from
+        //    AncestorResolutionException above (chain-collapse), and never the realm fallback (ADR 0014).
         ParentRef governingRoot = ancestors.isEmpty()
                 ? new ParentRef(leafType, leafId)
                 : ancestors.get(0);
-        RoleDefinition roleDefinition;
-        try {
-            roleDefinition = roleDefinitionSupplier
-                    .lookup(subject.id(), governingRoot.type(), governingRoot.id())
-                    .orElse(null);
-        } catch (RoleResolutionException e) {
-            // B2: role-source outage → deny (no fallback in this seam; outage and no-role both deny here).
-            // A separate failure axis from AncestorResolutionException above (chain-collapse).
-            log.debug("hierarchical authorize denied: role-source outage ({})", e.getClass().getSimpleName());
-            return false;
-        }
+        RoleDefinition roleDefinition = roleDefinitionSupplier
+                .lookup(subject.id(), governingRoot.type(), governingRoot.id())
+                .orElse(null);
         if (roleDefinition == null) {
             return false; // fail-closed: unresolved role
         }
@@ -118,8 +121,11 @@ public class HierarchicalAuthorizer {
 
         try {
             return opaClient.allow(context);
+        } catch (DecisionIndeterminateException e) {
+            log.debug("hierarchical authorize indeterminate: {}", e.getClass().getSimpleName());
+            throw e; // the policy engine could not decide (ADR 0037) — no decision, not a deny
         } catch (RuntimeException _) {
-            return false; // fail-closed: any OPA-side error denies
+            return false; // fail-closed: any other OPA-side error denies
         }
     }
 }

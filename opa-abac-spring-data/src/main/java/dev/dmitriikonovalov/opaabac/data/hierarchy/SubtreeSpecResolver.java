@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -44,11 +45,12 @@ import org.springframework.data.jpa.domain.Specification;
  * back to the <strong>narrower</strong> tag-only filter, never wider. ({@link AncestorResolver#subtreeOf}
  * itself is fail-closed to an empty predicate, so even a non-empty {@code Optional} never over-widens.)
  *
- * <p>A role-source <strong>outage</strong> ({@link RoleResolutionException}, B2) is one such resolution
- * exception: the role lookup sits inside the {@code catch (RuntimeException)} below, so an outage collapses
- * to <strong>no widening</strong> (the narrower tag-only filter) — the same fail-closed posture, by the
- * same catch. No code change was needed for B2; this is pinned by a test so a refactor cannot silently
- * widen it.
+ * <p>A role-source <strong>outage</strong> ({@link RoleResolutionException}, B2) is <em>not</em> such an
+ * exception any more (ADR 0037): it — and any other {@link DecisionIndeterminateException}, e.g. an ancestor
+ * source's own outage subtype — <strong>propagates</strong>. Collapsing it to "no widening" would answer the
+ * list with a silently <em>partial</em> page during the outage; propagating it lets the caller answer "not
+ * now" instead. Still fail-closed: a throw widens nothing. Every other resolution failure keeps collapsing
+ * to no widening, pinned by a test.
  */
 public class SubtreeSpecResolver {
 
@@ -89,6 +91,8 @@ public class SubtreeSpecResolver {
      * @param <T>           the queried entity type
      * @return {@code Optional.of(subtreeSpec)} when the inheritable gate passes; {@link Optional#empty()}
      *     otherwise (fail-closed) — never {@code null}
+     * @throws DecisionIndeterminateException when the role (or the subtree) could not be resolved because
+     *     its source was down — no widening decision is possible (ADR 0037)
      */
     public <T extends AbacResource> Optional<Specification<T>> subtreeSpec(
             AbacContext.Subject subject, String childType, ParentRef governingRoot, String verb) {
@@ -121,10 +125,13 @@ public class SubtreeSpecResolver {
 
             // Granted → widen by the whole governing-root subtree. (subtreeOf is itself fail-closed.)
             return Optional.of(ancestorResolver.subtreeOf(governingRoot.type(), governingRoot.id()));
+        } catch (DecisionIndeterminateException e) {
+            // ADR 0037: a role-source outage (or a source's own outage subtype) is "could not decide", not a
+            // resolution failure — propagate it rather than answer a silently partial list.
+            throw e;
         } catch (RuntimeException _) {
-            // Any resolution failure → no widening (never wider). subtreeOf already swallows; this guards the
-            // role lookup / inheritance read. B2: a role-source outage (RoleResolutionException) is one such
-            // failure and collapses here to no widening — fail-closed, by this same catch (pinned by a test).
+            // Any other resolution failure → no widening (never wider). subtreeOf already swallows; this
+            // guards the role lookup / inheritance read.
             return Optional.empty();
         }
     }
