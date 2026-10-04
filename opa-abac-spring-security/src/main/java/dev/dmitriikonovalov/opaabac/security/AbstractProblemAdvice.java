@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.DenyReason;
 import dev.dmitriikonovalov.opaabac.core.VersionConflictException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,7 +27,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
  *       {@code @OpaPreAuthorize} / {@code OpaAuthorizationManager} would be rendered by Spring Security's
  *       default error handling, <em>not</em> as {@code application/problem+json} — so denied calls would
  *       miss the contract. Putting it in the shared base makes the deny a first-class problem body that
- *       both services inherit.</li>
+ *       both services inherit; and</li>
+ *   <li>the "could not decide" mapping (ADR 0037): {@link AuthorizationIndeterminateException} and the
+ *       core {@link DecisionIndeterminateException} → {@code 503}
+ *       {@link LibraryErrorCode#DEPENDENCY_UNAVAILABLE} — refused, but as "not now", not as "no".</li>
  * </ul>
  *
  * <p><strong>This renders a deny; it does not authorize.</strong> Reaching this handler means the
@@ -90,6 +94,24 @@ public abstract class AbstractProblemAdvice {
             }
         }
         return problem(LibraryErrorCode.ACCESS_DENIED, "Access denied", request);
+    }
+
+    /**
+     * Render a {@code 503 application/problem+json} ({@link LibraryErrorCode#DEPENDENCY_UNAVAILABLE}) when
+     * the authorization layer <em>could not decide</em> (ADR 0037 §8): the policy engine failed or the role
+     * source was down. The request was refused — nothing ran — but "not now" is the honest answer, and a
+     * client may retry it, which it must never do with a {@code 403}.
+     *
+     * <p>{@link AuthorizationIndeterminateException} is an {@link AccessDeniedException}; within this one
+     * advice the most specific handler wins, so it reaches here, not {@link #handleAccessDenied}. The core
+     * {@link DecisionIndeterminateException} arrives raw from a path with no gate in front of it — a list
+     * query, a hierarchical check. No {@code Retry-After}: there is no truthful value to put in it.
+     */
+    @ExceptionHandler({AuthorizationIndeterminateException.class, DecisionIndeterminateException.class})
+    public ResponseEntity<ProblemDetail> handleIndeterminate(
+            RuntimeException ex, HttpServletRequest request) {
+        log.debug("Authorization indeterminate → 503: {}", ex.getClass().getSimpleName());
+        return problem(LibraryErrorCode.DEPENDENCY_UNAVAILABLE, "Authorization is temporarily unavailable", request);
     }
 
     /**

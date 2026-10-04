@@ -4,6 +4,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
@@ -66,7 +67,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  * <ul>
  *   <li>no authenticated subject (all rows);</li>
  *   <li>a cache miss (that row) or an ancestor-resolution failure (that row);</li>
- *   <li>the batch role resolution throwing {@link RoleResolutionException} — a <em>whole-batch</em>
+ *   <li>the batch role resolution throwing {@link RoleResolutionException} (or any other
+ *       {@link DecisionIndeterminateException}, ADR 0037) — a <em>whole-batch</em>
  *       outage by contract (ADR 0024 §2): every root's answer is unknown, so the <strong>whole
  *       group</strong> is omitted while the response body stays intact (affordance never blocks).
  *       Pre-7.3 a role outage omitted the row that hit it; the batch form makes the same outage
@@ -198,9 +200,11 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
         Map<ResolveTarget, Optional<RoleDefinition>> roles;
         try {
             roles = roleDefinitionSupplier.lookupAll(subject.id(), roots);
-        } catch (RoleResolutionException _) {
-            // Whole-batch outage (B2's tri-state, batched): every root's answer is unknown → omit the
-            // whole group, response body intact (never fall back, never widen, never block).
+        } catch (DecisionIndeterminateException _) {
+            // Whole-batch outage (B2's tri-state, batched; any member of the ADR 0037 family, so a custom
+            // supplier's own outage subtype cannot escape and block the body): every root's answer is
+            // unknown → omit the whole group, response body intact (never fall back, never widen, never
+            // block). An affordance decorates an already-authorized response; it never becomes its error.
             log.warn("Action enrichment omitted for the group: role resolution outage (batch of {})",
                     roots.size());
             return;
@@ -239,7 +243,8 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
         try {
             verdicts = opaClient.allowAll(contexts);
         } catch (RuntimeException ex) {
-            // A custom OpaClient may throw; the production HttpOpaClient does not. Either way → omit all.
+            // The policy engine could not decide (a PolicyEngineException, ADR 0037), or a custom OpaClient
+            // threw something else. Either way → omit all; the already-authorized body is never blocked.
             log.warn("Action enrichment omitted: allowAll failed ({})", ex.getClass().getSimpleName());
             return;
         }

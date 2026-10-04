@@ -41,8 +41,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>A subject carrying realm {@code catalog-editor} performs an {@code @OpaPreAuthorize}-gated catalog
  * write. With a {@link RoleDefinitionSupplier} test bean that <strong>throws</strong>
- * {@link RoleResolutionException} (a simulated user-management outage), the gate must answer
- * <strong>{@code 403 ACCESS_DENIED}</strong> and <strong>never call OPA</strong> — so the policy's realm
+ * {@link RoleResolutionException} (a simulated user-management outage), the gate must refuse —
+ * <strong>{@code 503 DEPENDENCY_UNAVAILABLE}</strong> since ADR 0037 (it was {@code 403 ACCESS_DENIED}:
+ * an outage is "could not decide", not "no") — and <strong>never call OPA</strong> — so the policy's realm
  * fallback is never fed the outage and can never widen the grant; the handler never runs (the row is
  * byte-identical). The <strong>contrast</strong> cell proves the designed path is unbroken: the same
  * subject with a supplier that returns {@code Optional.empty()} (an authoritative no-role) still reaches
@@ -89,19 +90,21 @@ class SupplierOutageGateIT {
         ProgrammableOpaClient.calls = 0;
     }
 
-    @Test // I1 — THE CUT: a realm catalog-editor, supplier OUTAGE → 403, OPA never called, row unchanged
-    void roleSourceOutage_denies403_neverReachesFallback() throws Exception {
+    @Test // I1 — THE CUT: a realm catalog-editor, supplier OUTAGE → refused, OPA never called, row unchanged.
+    // ENGINE-ERRORS I3: refused as "could not decide" — 503 DEPENDENCY_UNAVAILABLE (was 403 ACCESS_DENIED)
+    void roleSourceOutage_refused503_neverReachesFallback() throws Exception {
         CatalogEntity catalog = seedCatalog();
         Integer versionBefore = catalogs.findById(catalog.getId()).orElseThrow().getVersion();
         ToggleableRoleSupplier.outage = true;
-        // Even an allow-all policy must not be reached — the outage denies BEFORE any OPA call.
+        // Even an allow-all policy must not be reached — the outage refuses BEFORE any OPA call.
         ProgrammableOpaClient.rule = ctx -> true;
 
         mockMvc.perform(put("/api/v1/catalogs/{id}", catalog.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"hacked-via-outage\"}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.errorCode").value("ACCESS_DENIED"));
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.errorCode").value("DEPENDENCY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.detail").value("Authorization is temporarily unavailable"));
 
         CatalogEntity row = catalogs.findById(catalog.getId()).orElseThrow();
         assertThat(row.getName()).isEqualTo("outage-it-catalog"); // byte-identical — the handler never ran

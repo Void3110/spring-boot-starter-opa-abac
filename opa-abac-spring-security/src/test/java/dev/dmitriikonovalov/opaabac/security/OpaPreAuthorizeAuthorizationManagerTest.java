@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -12,8 +13,10 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaDecision;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +28,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.AuthorizationServiceException;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -232,10 +238,58 @@ class OpaPreAuthorizeAuthorizationManagerTest {
 
     @Test // B2 U2 — supplier throws RoleResolutionException (outage) → deny, OpaClient NEVER invoked
     // (no empty-role context is built, so the policy's realm fallback is never fed an outage input).
-    void roleSourceOutage_failClosedDeny_neverCallsOpa() throws Exception {
+    // ENGINE-ERRORS U18: an outage is no longer a returned deny — it is thrown as "could not decide"
+    // (ADR 0037 §5); OPA is still never asked on a role outage (ADR 0014's rule, unchanged).
+    void roleSourceOutage_isIndeterminate_neverCallsOpa() throws Exception {
         UUID productId = UUID.randomUUID();
-        when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString()))
-                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString())).thenThrow(outage);
+
+        assertThatThrownBy(() -> manager.authorize(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId})))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(outage);
+        verify(opaClient, never()).decide(any());
+    }
+
+    @Test // ENGINE-ERRORS U18 — the policy engine could not decide → thrown, with the engine failure as cause
+    void engineFailure_isIndeterminate() throws Exception {
+        UUID productId = UUID.randomUUID();
+        when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
+        PolicyEngineException failure = PolicyEngineException.timeout("decide for path 'product'", null);
+        when(opaClient.decide(any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> manager.authorize(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId})))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(failure);
+    }
+
+    @Test // ENGINE-ERRORS U20 — still an AccessDeniedException (every existing handler still denies), but
+    // NOT an AuthorizationDeniedException (masking denied-handlers never see an outage)
+    void theIndeterminateType_isAnAccessDeniedException_butNotADenial() throws Exception {
+        UUID productId = UUID.randomUUID();
+        when(roleDefinitionSupplier.lookup(any(), any(), any()))
+                .thenThrow(new RoleResolutionException("source unavailable"));
+
+        Throwable caught = null;
+        try {
+            manager.authorize(noopAuthSupplier,
+                    invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));
+        } catch (AccessDeniedException e) { // the shape of every pre-1.4.0 handler
+            caught = e;
+        }
+
+        assertThat(caught)
+                .isInstanceOf(AuthorizationServiceException.class)
+                .isNotInstanceOf(AuthorizationDeniedException.class);
+    }
+
+    @Test // ENGINE-ERRORS U21 — a failure OUTSIDE the family keeps its 1.3.0 outcome: a plain DENY, not a throw
+    void aNonFamilyFailure_staysADeny() throws Exception {
+        UUID productId = UUID.randomUUID();
+        when(roleDefinitionSupplier.lookup(any(), any(), any()))
+                .thenThrow(new IllegalStateException("a bug, not an outage"));
 
         AuthorizationDecision decision = manager.authorize(noopAuthSupplier,
                 invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {productId}));

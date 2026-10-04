@@ -79,4 +79,5 @@ catch-all still turns the throw into 403.
 
 ## Commit
 
-_Recorded with the commit._
+`ff83088` — feat(core): an OPA engine failure throws PolicyEngineException; resilience retries faults, never
+decisions (ENGINE-ERRORS T1). The maintainer confirmed the `error()` call at the checkpoint ("keep error()").

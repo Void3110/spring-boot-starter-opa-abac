@@ -5,12 +5,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.OffsetDateTime;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.web.method.annotation.ExceptionHandlerMethodResolver;
 
 /**
  * Unit tests for the library error-contract vocabulary and carrier — QA cases U1–U6.
@@ -109,6 +113,42 @@ class ProblemDetailContractTest {
                 new AuthorizationDeniedException("denied", new AuthorizationDecisionStub()), null);
         assertThat(fromAuthorizationDenied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(fromAuthorizationDenied.getBody().errorCode()).isEqualTo("ACCESS_DENIED");
+    }
+
+    // ENGINE-ERRORS I2 — "could not decide" renders 503 DEPENDENCY_UNAVAILABLE, from both the gate's Spring
+    // type and the raw core family (a list path with no gate in front of it); no Retry-After is invented.
+    @Test
+    void indeterminateResolvesToDependencyUnavailableAt503() {
+        TestAdvice advice = new TestAdvice();
+        AuthorizationIndeterminateException fromGate = new AuthorizationIndeterminateException(
+                "pre-authorize decision indeterminate", new RoleResolutionException("role source down"));
+        PolicyEngineException fromList = PolicyEngineException.timeout("compile for path 'category'", null);
+
+        for (RuntimeException failure : java.util.List.of(fromGate, fromList)) {
+            ResponseEntity<ProblemDetail> response = advice.handleIndeterminate(failure, null);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(response.getBody().errorCode()).isEqualTo("DEPENDENCY_UNAVAILABLE");
+            assertThat(response.getBody().detail()).isEqualTo("Authorization is temporarily unavailable");
+            assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
+            assertThat(response.getHeaders().containsHeader(HttpHeaders.RETRY_AFTER)).isFalse();
+        }
+    }
+
+    // ENGINE-ERRORS I2 — the dispatch Spring MVC itself performs inside ONE advice: the most specific handler
+    // wins, so the gate's type (an AccessDeniedException) reaches the 503 handler, never the 403 one.
+    @Test
+    void mvcPicksThe503HandlerForTheFamily_andThe403HandlerForADenial() {
+        ExceptionHandlerMethodResolver resolver = new ExceptionHandlerMethodResolver(TestAdvice.class);
+
+        assertThat(resolver.resolveMethod(new AuthorizationIndeterminateException(
+                "x", new RoleResolutionException("down"))).getName()).isEqualTo("handleIndeterminate");
+        assertThat(resolver.resolveMethod(PolicyEngineException.undefinedDecision("x")).getName())
+                .isEqualTo("handleIndeterminate");
+        assertThat(resolver.resolveMethod(new RoleResolutionException("down")).getName())
+                .isEqualTo("handleIndeterminate");
+        assertThat(resolver.resolveMethod(new AccessDeniedException("no")).getName())
+                .isEqualTo("handleAccessDenied");
     }
 
     // U6 — a foreign app enum implementing ApiErrorCode plugs into the helper unchanged.

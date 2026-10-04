@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -403,6 +404,22 @@ class OpaPreAuthorizeParentAttributesTest {
 
         assertThat(decision).isNotNull();
         assertThat(capturedContext().resource().parentAttributes()).isNull();
+    }
+
+    @Test // ENGINE-ERRORS U23 — the rethrow invariant on the placement-parent walk: an opted-in outage is not
+    // an unproven parent, it is no decision
+    void anAncestorWalkThatThrowsAFamilyMemberIsIndeterminate() throws Exception {
+        givenCatalogTagged(CATALOG_TAGS);
+        when(resolver.resolve("category", CATEGORY_ID.toString()))
+                .thenReturn(Optional.of(new SampleResource("category", CATEGORY_ID.toString(), CATEGORY_TAGS)));
+        SpiOutage outage = new SpiOutage("lineage store down");
+        when(chainSupplier.ancestorsOf("category", CATEGORY_ID.toString())).thenThrow(outage);
+
+        assertThatThrownBy(() -> manager().authorize(noopAuthSupplier,
+                createProduct(new SampleRequest(null, PAYLOAD))))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(outage);
+        verify(opaClient, never()).decide(any());
     }
 
     @Test

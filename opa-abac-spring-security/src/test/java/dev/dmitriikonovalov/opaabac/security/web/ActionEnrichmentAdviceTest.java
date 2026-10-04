@@ -10,6 +10,8 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.util.ArrayList;
@@ -184,6 +186,35 @@ class ActionEnrichmentAdviceTest {
         assertThat(opa.calls).as("no batch issued when every row failed preparation").isZero();
     }
 
+    @Test // ENGINE-ERRORS U24 — the policy engine could not decide (a PolicyEngineException) → omit, body intact
+    void bulkIndeterminate_omits() {
+        StubCategory cat = cached("a");
+        opa.respondWith(PolicyEngineException.timeout("bulk for path 'category'", null));
+        invoke(cat);
+        assertThat(cat.getActions()).isNull();
+    }
+
+    @Test // ENGINE-ERRORS U24 — a custom supplier's OWN family subtype from the role batch is omitted too —
+    // it must never escape beforeBodyWrite and turn an affordance into the response's error
+    void customIndeterminateFromTheRoleBatch_omits() {
+        RoleDefinitionSupplier outage = (u, t, i) -> {
+            throw new CustomOutage();
+        };
+        advice = new ActionEnrichmentAdvice(opa, cache, outage, null);
+        StubCategory cat = cached("a");
+        opa.respond(ctx -> List.of(true, true, true, true));
+        invoke(cat);
+        assertThat(cat.getActions()).isNull();
+        assertThat(opa.calls).as("no OPA call once the roles are unknown").isZero();
+    }
+
+    /** An adopter's own outage signal, opted into the family (ADR 0037 §2). */
+    private static final class CustomOutage extends DecisionIndeterminateException {
+        CustomOutage() {
+            super("membership store down");
+        }
+    }
+
     @Test // U8 — a RoleResolutionException (role-source outage) → omit that row
     void roleResolutionOutage_omits() {
         RoleDefinitionSupplier outage = (u, t, i) -> {
@@ -300,6 +331,7 @@ class ActionEnrichmentAdviceTest {
         List<AbacContext> lastContexts = List.of();
         private Function<List<AbacContext>, List<Boolean>> responder = ctx -> List.of();
         private boolean throwing;
+        private RuntimeException failure;
 
         void respond(Function<List<AbacContext>, List<Boolean>> responder) {
             this.responder = responder;
@@ -307,6 +339,10 @@ class ActionEnrichmentAdviceTest {
 
         void respondThrowing() {
             this.throwing = true;
+        }
+
+        void respondWith(RuntimeException failure) {
+            this.failure = failure;
         }
 
         @Override
@@ -325,6 +361,9 @@ class ActionEnrichmentAdviceTest {
             lastContexts = new ArrayList<>(contexts);
             if (throwing) {
                 throw new IllegalStateException("bulk transport failure");
+            }
+            if (failure != null) {
+                throw failure;
             }
             return responder.apply(contexts);
         }

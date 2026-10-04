@@ -25,7 +25,10 @@ public enum LibraryErrorCode implements ApiErrorCode {
      */
     STEP_UP_REQUIRED(HttpStatus.UNAUTHORIZED, "Step-up authentication required"),
 
-    /** A required dependency (e.g. the tag dictionary) was unavailable; the request was rejected, not served degraded. */
+    /**
+     * A required dependency was unavailable; the request was rejected, not served degraded — the tag
+     * dictionary, or the authorization decision itself (the policy engine or the role source, ADR 0037).
+     */
     DEPENDENCY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Dependency unavailable"),
 
     /** The request body or parameters failed validation. */

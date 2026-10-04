@@ -4,12 +4,12 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -209,15 +209,16 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
                         resolved.roleId());
             }
             return DENY;
-        } catch (RoleResolutionException e) {
-            // B2: role-source outage → deny, never the realm fallback (ADR 0014). An outage makes the
-            // role UNKNOWN; building an empty-role context would let the policy's realm fallback decide,
-            // widening access. Deny here so OPA is never asked. (The broad catch below would also catch
-            // this, but the explicit catch makes the fail-closed decision legible and tested.)
-            log.debug("OPA pre-authorize denied: role-source outage ({})", e.getClass().getSimpleName());
-            return DENY;
+        } catch (DecisionIndeterminateException e) {
+            // No decision could be made (ADR 0037): the policy engine failed, or the role source is down
+            // (ADR 0014 — an outage makes the role UNKNOWN, so OPA is never asked and the realm fallback
+            // never decides). Not a deny: the throw still refuses the call — it is an AccessDeniedException —
+            // but tells the caller "not now" instead of "no". Logged where it was classified; DEBUG here.
+            log.debug("OPA pre-authorize indeterminate: {}", e.getClass().getSimpleName());
+            throw new AuthorizationIndeterminateException("pre-authorize decision indeterminate", e);
         } catch (Exception e) {
-            // Fail-closed: any failure building the context or calling OPA denies.
+            // Fail-closed: any other failure building the context or calling OPA denies (ADR 0037 §6 —
+            // a programming error or a hostile input keeps answering no, never "retry later").
             log.warn("OPA pre-authorize denied (fail-closed): {}", e.getClass().getSimpleName());
             return DENY;
         }
@@ -588,6 +589,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             }
             ParentRef root = ancestors.get(0);
             return rootType.equals(root.type()) && rootId.equals(root.id());
+        } catch (DecisionIndeterminateException e) {
+            throw e; // an SPI that opted its outage in: no decision, not an unproven parent (ADR 0037 §7)
         } catch (RuntimeException e) {
             log.debug("placement-parent enrichment: ancestor walk for '{}/{}' failed ({}) — left unproven",
                     check.parentType(), check.parentId(), e.getClass().getSimpleName());
@@ -612,9 +615,10 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
      *
      * @return the target's attributes, or {@code null} on <em>any</em> failure — resolver empty, resolver
      *     throw, or a target that reports null attributes. A tag lookup must never become a member-facing
-     *     outage, so nothing here propagates. Note the direction of the null-attributes case: it lands on
-     *     <b>absent</b> (unproven, closed), never on an empty map (untagged, open) — when in doubt about
-     *     what the root says, the honest answer is that we do not know.
+     *     outage, so nothing here propagates — except a {@code DecisionIndeterminateException} the resolver
+     *     threw on purpose to opt its outage in (ADR 0037 §7). Note the direction of the null-attributes
+     *     case: it lands on <b>absent</b> (unproven, closed), never on an empty map (untagged, open) — when
+     *     in doubt about what the root says, the honest answer is that we do not know.
      */
     private Map<String, Object> resolveAttributesOf(String rootType, String rootId) {
         try {
@@ -634,6 +638,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             // as resolved, not as authorized.
             resolutionSupport.cache().put(rootType, rootId, root);
             return root.abacAttributes();
+        } catch (DecisionIndeterminateException e) {
+            throw e; // an SPI that opted its outage in: no decision, not "unproven" (ADR 0037 §7)
         } catch (RuntimeException e) {
             log.debug("attribute enrichment for '{}/{}' failed ({}) — left unproven",
                     rootType, rootId, e.getClass().getSimpleName());
@@ -644,7 +650,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
     /**
      * The full per-instance resolution for a declared {@code resourceId}: instance → ancestors →
      * governing root. The two failure semantics are split — instance empty returns {@code null} (deny;
-     * a resolver throw propagates to the fail-closed catch, also deny), an ancestor failure only
+     * a resolver throw propagates to the fail-closed catch, also deny — or, if it is a
+     * {@code DecisionIndeterminateException}, an indeterminate decision), an ancestor failure only
      * collapses the chain — and must never be confused in either direction.
      */
     private ResolvedCheck resolveInstance(String type, String id) {
@@ -659,6 +666,8 @@ public final class OpaPreAuthorizeAuthorizationManager implements AuthorizationM
             try {
                 List<ParentRef> chain = chainSupplier.ancestorsOf(type, id);
                 ancestors = chain == null ? List.<ParentRef>of() : chain;
+            } catch (DecisionIndeterminateException e) {
+                throw e; // an SPI that opted its outage in: no decision, not an empty chain (ADR 0037 §7)
             } catch (RuntimeException e) {
                 // Ancestor failure collapses to the empty chain — direct-grant-only, never a partial
                 // chain, never a deny by itself (that would strip direct grants).
