@@ -22,9 +22,13 @@ package dev.dmitriikonovalov.opaabac.core;
  * chain-collapse fail-closed signal), which is a <strong>separate failure axis</strong> and must not be
  * conflated with this one. The wrapped {@code cause} is for logs only and is never surfaced to a client.
  *
+ * <p>A member of the {@link DecisionIndeterminateException} family (ADR 0037): the decision that needed this
+ * role could not be made. Consumers that only care that no decision was possible catch the family; the
+ * no-fallback rule above is unchanged.
+ *
  * @see RoleDefinitionSupplier
  */
-public class RoleResolutionException extends RuntimeException {
+public class RoleResolutionException extends DecisionIndeterminateException {
 
     public RoleResolutionException(String message) {
         super(message);

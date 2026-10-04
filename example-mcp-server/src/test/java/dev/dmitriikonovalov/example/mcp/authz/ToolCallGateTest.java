@@ -278,14 +278,16 @@ class ToolCallGateTest {
         assertThat(catalogCalls).hasValue(0);
     }
 
-    @Test // I10 — every OPA transport failure denies, and none reaches the catalog
+    @Test // I10 — every OPA transport failure denies, and none reaches the catalog. ENGINE-ERRORS U30: the
+    // denial says "the policy engine could not decide", not "the policy said no"
     void deniesOnEveryOpaFailureMode() throws IOException {
         String catalog = startCatalog();
         authenticate(Map.of("act_chain", List.of("agent-a")));
 
         String serverError = startOpa(exchange -> respond(exchange, 500, "boom"));
-        assertThat(invoke(gateWith(serverError, catalog, READ_CAPABILITY, CEILING_SUPPLIER)).isError())
-                .isTrue();
+        CallToolResult failed = invoke(gateWith(serverError, catalog, READ_CAPABILITY, CEILING_SUPPLIER));
+        assertThat(failed.isError()).isTrue();
+        assertThat(codeOf(failed)).isEqualTo(ToolCallAuthorizer.CODE_POLICY_UNAVAILABLE);
         opaStub.stop(0);
 
         // Connection refused — nothing listening.
@@ -293,23 +295,27 @@ class ToolCallGateTest {
                 invoke(gateWith("http://127.0.0.1:1", catalog, READ_CAPABILITY, CEILING_SUPPLIER));
         assertThat(refused.isError()).isTrue();
         assertThat(layerOf(refused)).isEqualTo("tool-gate");
+        assertThat(codeOf(refused)).isEqualTo(ToolCallAuthorizer.CODE_POLICY_UNAVAILABLE);
 
         assertThat(catalogCalls).hasValue(0);
     }
 
-    @Test // I11 — a malformed body, and a body with no allow binding, both deny
+    @Test // I11 — a malformed body, and a body with no allow binding, both deny — but only the malformed one
+    // is "could not decide" (ENGINE-ERRORS U30): a loaded package whose allow is undefined is a policy deny
     void deniesOnAMalformedOrUnboundOpaResponse() throws IOException {
         String catalog = startCatalog();
         authenticate(Map.of("act_chain", List.of("agent-a")));
 
         String malformed = startOpa(exchange -> respond(exchange, 200, "not json {{{"));
-        assertThat(invoke(gateWith(malformed, catalog, READ_CAPABILITY, CEILING_SUPPLIER)).isError())
-                .isTrue();
+        CallToolResult unreadable = invoke(gateWith(malformed, catalog, READ_CAPABILITY, CEILING_SUPPLIER));
+        assertThat(unreadable.isError()).isTrue();
+        assertThat(codeOf(unreadable)).isEqualTo(ToolCallAuthorizer.CODE_POLICY_UNAVAILABLE);
         opaStub.stop(0);
 
         String unbound = startOpa(exchange -> respond(exchange, 200, "{\"result\":{}}"));
-        assertThat(invoke(gateWith(unbound, catalog, READ_CAPABILITY, CEILING_SUPPLIER)).isError())
-                .isTrue();
+        CallToolResult undefined = invoke(gateWith(unbound, catalog, READ_CAPABILITY, CEILING_SUPPLIER));
+        assertThat(undefined.isError()).isTrue();
+        assertThat(codeOf(undefined)).isEqualTo(ToolCallAuthorizer.CODE_POLICY_DENIED);
 
         assertThat(catalogCalls).hasValue(0);
     }

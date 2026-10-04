@@ -40,15 +40,20 @@ import java.util.List;
  * whose disjuncts <em>all</em> fold away is reported {@code false} (batch-recheckable) even though no
  * single expression was unrepresentable.
  *
- * <h2>The "from error" flag (an outage is not a policy answer)</h2>
+ * <h2>The "from error" flag (no policy answer was obtained)</h2>
  * A {@link Decision#DENY_ALL} can mean two very different things: the policy is <em>unsatisfiable</em>
- * for this subject (a real answer), or the Compile call <em>failed</em> (transport error, non-200,
- * unparseable body — no answer at all). Both deny, but a caller composing the residual with other
- * predicates (e.g. a hierarchy widening OR-ed alongside it) must distinguish them: a widening may
- * legitimately accompany "the tag branch is unsatisfiable", but nothing may widen during an OPA outage.
- * {@link #fromError()} is {@code true} only for the failure case ({@link #error()}); every
- * policy-derived residual — including {@link #denyAll()} and {@link #unsupported()} — has it
- * {@code false}.
+ * for this subject (a real answer), or there is <em>no policy answer at all</em>. Both deny, but a caller
+ * composing the residual with other predicates (e.g. a hierarchy widening OR-ed alongside it) must
+ * distinguish them: a widening may legitimately accompany "the tag branch is unsatisfiable", but nothing
+ * may widen when the policy was never asked. {@link #fromError()} is {@code true} only for that case
+ * ({@link #error()}); every policy-derived residual — including {@link #denyAll()} and
+ * {@link #unsupported()} — has it {@code false}.
+ *
+ * <p>Since 1.4.0 (ADR 0037) a <em>failed</em> Compile call no longer produces this value: the shipped
+ * client throws {@link PolicyEngineException} instead, so an outage is not reported as an empty list. The
+ * shipped client still returns {@link #error()} when it <em>refuses to ask</em> — a request it will not
+ * send, such as an unsafe policy path — and a custom {@link OpaClient} may still return it for a failure;
+ * both keep the 1.3.0 meaning: deny everything, widen nothing.
  *
  * @param decision       which of the three outcomes this residual is
  * @param clauses        the DNF disjuncts (each a conjunction of conditions); meaningful only for
@@ -56,7 +61,7 @@ import java.util.List;
  * @param fullySupported {@code false} when a batch finish may be needed: a surviving disjunct carried an
  *                       expression the translator could not represent, or every disjunct was folded away
  *                       as foreign-type (see the class doc); {@code true} otherwise
- * @param fromError      {@code true} iff this residual reports a failed Compile call rather than a policy
+ * @param fromError      {@code true} iff no policy answer was obtained (see above) rather than a policy
  *                       answer; callers must not let any widening or fallback outlive a {@code true} here
  */
 public record PartialResult(
@@ -101,10 +106,11 @@ public record PartialResult(
     }
 
     /**
-     * The "match nothing" residual for a <em>failed</em> Compile call (transport error, non-200,
-     * unparseable body). Denies like {@link #denyAll()}, but {@code fromError() == true} so a caller
-     * knows there is no policy answer at all — no widening (e.g. a hierarchy subtree branch) and no
-     * batch fallback may proceed on top of it.
+     * The "match nothing" residual when <em>no policy answer was obtained</em>: the shipped client refused
+     * to send the request (an unsafe policy path), or a custom client chose a value over throwing
+     * {@link PolicyEngineException} for a failed call. Denies like {@link #denyAll()}, but
+     * {@code fromError() == true} so a caller knows there is no policy answer at all — no widening (e.g. a
+     * hierarchy subtree branch) and no batch fallback may proceed on top of it.
      */
     public static PartialResult error() {
         return new PartialResult(Decision.DENY_ALL, List.of(), true, true);

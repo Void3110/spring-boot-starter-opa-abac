@@ -68,7 +68,7 @@ costs exactly one OPA call and can never open the breaker.
 
 | # | Title | Status |
 |---|---|---|
-| T1 | Core throws; resilience retries faults, never decisions; the MCP adapters catch the family | 📋 TODO |
+| T1 | Core throws; resilience retries faults, never decisions; the MCP adapters catch the family | ✅ DONE |
 | T2 | The gates throw `AuthorizationIndeterminateException`; the base advice answers 503 | 📋 TODO |
 | T3 | The data layer propagates the family | 📋 TODO |
 | T4 | The starter's fallback advice | 📋 TODO |

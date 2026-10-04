@@ -6,9 +6,11 @@ package dev.dmitriikonovalov.opaabac.security.resilience;
  * Resilience4j's {@code CallNotPermittedException}, so swapping the resilience backend never changes a
  * caller's catch clause.
  *
- * <p>A caller maps this to its own fail-closed value exactly as it maps an exhausted retry — the OPA
- * decorator to {@code false} / {@code PartialResult.error()} / all-false, the resolve wrapper to
- * {@code RoleResolutionException}, the tag wrapper to {@code TagDefinitionFetchException}. An open breaker
+ * <p>A caller maps this to its own fail-closed signal exactly as it maps an exhausted retry — the OPA
+ * decorator to {@code PolicyEngineException} ({@code CIRCUIT_OPEN}, ADR 0037), the resolve wrapper to
+ * {@code RoleResolutionException}, the tag wrapper to {@code TagDefinitionFetchException}. The guard also
+ * throws this when its retry backoff is interrupted, with the {@link InterruptedException} as the cause;
+ * a caller that distinguishes the two checks the cause. An open breaker
  * is therefore strictly <em>more</em> fail-closed, never less (ADR 0017 §5): it changes <em>when</em> and
  * <em>how fast</em> the call fails closed, never <em>whether</em> the answer is fail-closed.
  */

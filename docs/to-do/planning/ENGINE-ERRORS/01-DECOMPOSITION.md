@@ -48,7 +48,8 @@ answers 500** (no handler yet) until T2's advice handler makes it 503.
 - Core: new `DecisionIndeterminateException` (abstract, protected constructors) and `PolicyEngineException`
   (nested `Kind`, `kind()`, `httpStatus()`, one factory per kind); `RoleResolutionException` re-parented;
   `HttpOpaClient` throws per ADR 0037 §3 with the input defects moved out of the throwing region; the
-  `OpaClient` javadoc contract; `PartialResult.error()` / `fromError()` deprecated.
+  `OpaClient` javadoc contract; `PartialResult.error()` / `fromError()` re-documented as "the client refused
+  to ask" (not deprecated — see STATUS-01).
 - Resilience: `RetryableClassification` classifies a `PolicyEngineException` by kind only;
   `ResilientOpaClient` drops every result predicate and maps `CallNotPermittedException` to `CIRCUIT_OPEN`
   (or `INTERRUPTED` for the backoff interrupt); its javadoc rewritten.

@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security.resilience;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import tools.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -10,23 +11,26 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaClientConfig;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.core.PerTypePolicyPathResolver;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * U3/U4/U5 — the {@link ResilientOpaClient} fail-closed contract (ADR 0017 §2). The decorator's value on a
- * sustained failure (exhausted retry) and on a forced-open breaker must be <strong>identical</strong> to the
- * plain {@link HttpOpaClient}'s — {@code allow}→{@code false}, {@code compile}→{@link PartialResult#error()}
- * ({@code fromError==true}), {@code allowAll}→n×{@code false} — and {@code compile} is <em>never</em>
- * {@code denyAll()}/{@code allowAll()} (the 5.5-B hierarchy-widening landmine). The delegate is a real
- * {@code HttpOpaClient} against an in-process {@code HttpServer} stub (no WireMock); all timing is virtual.
+ * The {@link ResilientOpaClient} contract after ADR 0037 §4 (ENGINE-ERRORS U13–U17, U34, U35; amends the
+ * B3 U3/U4/U5 identity): the decorator retries <strong>thrown transient faults only</strong> and never a
+ * returned decision; an exhausted retry rethrows the delegate's own {@link PolicyEngineException}; an open
+ * breaker throws kind {@code CIRCUIT_OPEN} without touching the delegate. The identity cells run a real
+ * {@code HttpOpaClient} against an in-process {@code HttpServer} stub (no WireMock); all timing is virtual
+ * except the one cell that needs the production sleeper.
  */
 class ResilientOpaClientTest {
 
@@ -34,6 +38,7 @@ class ResilientOpaClientTest {
     private int port;
     private final AtomicInteger requestCount = new AtomicInteger();
     private volatile int statusToReturn = 503; // a transient failure by default
+    private volatile String bodyToReturn = "{}";
 
     private final MutableClock clock = MutableClock.startingAtEpoch();
     private final java.util.function.LongConsumer advancingSleeper = clock::advanceMillis;
@@ -43,7 +48,7 @@ class ResilientOpaClientTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             requestCount.incrementAndGet();
-            byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+            byte[] body = bodyToReturn.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statusToReturn, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -73,6 +78,12 @@ class ResilientOpaClientTest {
                 3, Duration.ofSeconds(5), 1);
     }
 
+    /** No retry, breaker opens after 3 failures and stays open for the test. */
+    private static ResilienceConfig breakerAfterThree() {
+        return new ResilienceConfig(true, 0, Duration.ofMillis(50), Duration.ofSeconds(3),
+                3, Duration.ofSeconds(30), 1);
+    }
+
     private static AbacContext ctx() {
         return new AbacContext(
                 new AbacContext.Subject("u", List.of(), java.util.Map.of()),
@@ -81,50 +92,37 @@ class ResilientOpaClientTest {
                 java.util.Map.of());
     }
 
-    // --- U3: fail-closed identity (exhausted retry == plain delegate) -------------------
-
-    @Test // allow: decorator exhausted == plain client failure == false
-    void allow_failClosedIdentity() {
-        OpaClient plain = plainClient();
-        ResilientOpaClient decorated = new ResilientOpaClient(plainClient(), guard(opaBudget()));
-
-        boolean plainValue = plain.allow(ctx());
-        boolean decoratedValue = decorated.allow(ctx());
-
-        assertThat(plainValue).isFalse();
-        assertThat(decoratedValue).isEqualTo(plainValue).isFalse();
+    private static PolicyEngineException thrownBy(ThrowingCallable call) {
+        Throwable thrown = catchThrowable(call);
+        assertThat(thrown).isInstanceOf(PolicyEngineException.class);
+        return (PolicyEngineException) thrown;
     }
 
-    @Test // compile: decorator exhausted == plain client failure == error() with fromError=true
-    void compile_failClosedIdentity_isErrorNotDenyAll() {
-        OpaClient plain = plainClient();
-        ResilientOpaClient decorated = new ResilientOpaClient(plainClient(), guard(opaBudget()));
+    // --- Identity: an exhausted retry rethrows what the plain client throws (U15) -----------
 
-        PartialResult plainValue = plain.compile(ctx());
-        PartialResult decoratedValue = decorated.compile(ctx());
+    @Test // all four methods: a sustained 503 → the same HTTP_STATUS 503 from the plain client and the
+    // decorator, which tried exactly twice (1 retry) before giving up. A fresh decorator per method: two
+    // exhausted calls on one guard record four faults and open its breaker (threshold 3).
+    void sustainedTransientFault_exhaustsTheRetry_andRethrowsTheSameKind() {
+        List<java.util.function.Function<OpaClient, ThrowingCallable>> methods = List.of(
+                c -> () -> c.allow(ctx()),
+                c -> () -> c.decide(ctx()),
+                c -> () -> c.compile(ctx()),
+                c -> () -> c.allowAll(List.of(ctx(), ctx())));
 
-        // both are error() — DENY_ALL with fromError=true
-        assertThat(plainValue.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(plainValue.fromError()).isTrue();
-        assertThat(decoratedValue.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(decoratedValue.fromError()).as("U5: fromError MUST be true on the failure path").isTrue();
-        assertThat(decoratedValue).isEqualTo(plainValue);
+        for (int i = 0; i < methods.size(); i++) {
+            PolicyEngineException fromPlain = thrownBy(methods.get(i).apply(plainClient()));
+            requestCount.set(0);
+            ResilientOpaClient decorated = new ResilientOpaClient(plainClient(), guard(opaBudget()));
+            PolicyEngineException fromDecorated = thrownBy(methods.get(i).apply(decorated));
+
+            assertThat(fromDecorated.kind()).isEqualTo(fromPlain.kind()).isEqualTo(PolicyEngineException.Kind.HTTP_STATUS);
+            assertThat(fromDecorated.httpStatus()).hasValue(503);
+            assertThat(requestCount.get()).as("call %d: one attempt + one retry", i).isEqualTo(2);
+        }
     }
 
-    @Test // allowAll: decorator exhausted == plain client failure == n × false
-    void allowAll_failClosedIdentity() {
-        OpaClient plain = plainClient();
-        ResilientOpaClient decorated = new ResilientOpaClient(plainClient(), guard(opaBudget()));
-        List<AbacContext> batch = List.of(ctx(), ctx(), ctx());
-
-        List<Boolean> plainValue = plain.allowAll(batch);
-        List<Boolean> decoratedValue = decorated.allowAll(batch);
-
-        assertThat(plainValue).containsExactly(false, false, false);
-        assertThat(decoratedValue).isEqualTo(plainValue).containsExactly(false, false, false);
-    }
-
-    @Test // a transient blip recovering within budget → the decorator returns the REAL policy answer
+    @Test // U14 — a transient blip recovering within budget → the decorator returns the REAL policy answer
     void allow_recoversWithinBudget() {
         // First request 503 (transient), the stub then flips to a 200 allow=true.
         server.removeContext("/");
@@ -143,161 +141,174 @@ class ResilientOpaClientTest {
         assertThat(n.get()).isEqualTo(2);
     }
 
-    // --- U4 + U5: breaker OPEN synthesizes the fail-closed value WITHOUT the delegate ----
+    @Test // U15 — a non-transient kind is rethrown at once: a 4xx, and a policy that is not loaded
+    void nonTransientFaults_areNotRetried() {
+        ResilientOpaClient decorated = new ResilientOpaClient(plainClient(), guard(opaBudget()));
 
-    @Test // force the breaker open (via a thrown FAULT, the only thing that may), then assert all three
-    // methods fail closed without calling the delegate
-    void breakerOpen_synthesizesFailClosed_withoutDelegate() {
-        // a counting delegate so we can prove it is NOT invoked while the breaker is open
-        CountingOpaClient counting = new CountingOpaClient();
-        CallGuard sharedGuard = guard(new ResilienceConfig(true, 0, Duration.ofMillis(50),
-                Duration.ofSeconds(3), 3, Duration.ofSeconds(30), 1));
-        ResilientOpaClient decorated = new ResilientOpaClient(counting, sharedGuard);
+        statusToReturn = 400;
+        assertThat(thrownBy(() -> decorated.allow(ctx())).httpStatus()).hasValue(400);
+        assertThat(requestCount.get()).isEqualTo(1);
 
-        // 3 thrown faults open the breaker. A returned deny sentinel would NOT (a decision must never feed
-        // the breaker — ADR 0017 §5); only an unambiguous thrown fault does. In production the OPA delegate
-        // swallows faults to the sentinel and never throws, so the OPA breaker is effectively a no-op — this
-        // test drives it through the guard directly to prove the breaker-OPEN fail-closed synthesis still holds.
-        counting.throwFault = true;
-        for (int i = 0; i < 3; i++) {
-            try {
-                decorated.allow(ctx());
-            } catch (RuntimeException _) {
-                // the guard re-throws the exhausted fault (maxRetries=0) — ResilientOpaClient.allow does not
-                // catch a generic RuntimeException, only CallNotPermittedException, so it propagates here
-            }
-        }
-        counting.throwFault = false; // the breaker is now open; from here the delegate must not be touched
-        int allowCallsBeforeOpen = counting.allowCalls;
-
-        // now the breaker is open: every method fails closed WITHOUT touching the delegate
-        boolean allow = decorated.allow(ctx());
-        PartialResult compile = decorated.compile(ctx());
-        List<Boolean> allowAll = decorated.allowAll(List.of(ctx(), ctx()));
-
-        assertThat(allow).isFalse();
-        assertThat(compile.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(compile.fromError()).as("U5: breaker-open compile is error() (fromError), never denyAll()")
-                .isTrue();
-        assertThat(compile).isEqualTo(PartialResult.error());
-        assertThat(compile).isNotEqualTo(PartialResult.denyAll()); // the landmine
-        assertThat(compile).isNotEqualTo(PartialResult.allowAll()); // the catastrophe value
-        assertThat(allowAll).containsExactly(false, false);
-
-        // the delegate was NOT invoked for any of the three breaker-open calls
-        assertThat(counting.allowCalls).isEqualTo(allowCallsBeforeOpen);
-        assertThat(counting.compileCalls).isZero();
-        assertThat(counting.allowAllCalls).isZero();
+        requestCount.set(0);
+        statusToReturn = 200;
+        bodyToReturn = "{}";
+        assertThat(thrownBy(() -> decorated.allow(ctx())).kind()).isEqualTo(PolicyEngineException.Kind.UNDEFINED_DECISION);
+        assertThat(requestCount.get()).isEqualTo(1);
     }
 
-    @Test // P5 — the DECISION path: a stream of GENUINE policy denies (delegate returns a real false, not a
-    // fault) must NOT open the OPA breaker. The breaker is never a decision input (ADR 0017 §5).
-    void genuineDenials_doNotOpenTheBreaker() {
-        CountingOpaClient counting = new CountingOpaClient();
-        counting.failClosed = true; // every allow returns a genuine policy DENY (false)
-        Resilience4jCallGuard guard = new Resilience4jCallGuard("opa",
-                new ResilienceConfig(true, 1, Duration.ofMillis(50), Duration.ofSeconds(3),
-                        3, Duration.ofSeconds(30), 1),
-                clock, advancingSleeper);
-        ResilientOpaClient decorated = new ResilientOpaClient(counting, guard);
+    // --- U13: a returned decision is never retried -------------------------------------------
 
-        // far more consecutive denials than failureThreshold(=3), each at 2 attempts (maxRetries=1)
+    @Test // every kind of deny — and a mixed page — is the delegate's ONE answer, returned unchanged
+    void decisions_areCalledExactlyOnce() {
+        ScriptedOpaClient denying = new ScriptedOpaClient();
+        ResilientOpaClient decorated = new ResilientOpaClient(denying, guard(opaBudget()));
+
+        assertThat(decorated.allow(ctx())).isFalse();
+        assertThat(decorated.compile(ctx())).isEqualTo(PartialResult.denyAll());
+        assertThat(decorated.allowAll(List.of(ctx(), ctx()))).containsExactly(false, false);
+        denying.bulkAnswer = List.of(true, false, true);
+        assertThat(decorated.allowAll(List.of(ctx(), ctx(), ctx()))).containsExactly(true, false, true);
+
+        assertThat(denying.allowCalls).isEqualTo(1);
+        assertThat(denying.compileCalls).isEqualTo(1);
+        assertThat(denying.allowAllCalls).as("the all-false page and the mixed page, once each").isEqualTo(2);
+    }
+
+    // --- U16: breaker open → CIRCUIT_OPEN, the delegate untouched ----------------------------
+
+    @Test
+    void breakerOpen_throwsCircuitOpen_withoutCallingTheDelegate() {
+        ScriptedOpaClient delegate = new ScriptedOpaClient();
+        ResilientOpaClient decorated = new ResilientOpaClient(delegate, guard(breakerAfterThree()));
+
+        delegate.fault = PolicyEngineException.transport("opa down", new IOException("refused"));
+        for (int i = 0; i < 3; i++) {
+            assertThat(thrownBy(() -> decorated.allow(ctx())).kind()).isEqualTo(PolicyEngineException.Kind.TRANSPORT);
+        }
+        delegate.fault = null; // the breaker is now open; from here the delegate must not be touched
+        int allowCallsBeforeOpen = delegate.allowCalls;
+
+        List<ThrowingCallable> calls = List.of(
+                () -> decorated.allow(ctx()), () -> decorated.decide(ctx()),
+                () -> decorated.compile(ctx()), () -> decorated.allowAll(List.of(ctx(), ctx())));
+        for (ThrowingCallable call : calls) {
+            PolicyEngineException e = thrownBy(call);
+            assertThat(e.kind()).isEqualTo(PolicyEngineException.Kind.CIRCUIT_OPEN);
+            assertThat(e).hasCauseInstanceOf(CallNotPermittedException.class);
+        }
+
+        assertThat(delegate.allowCalls).isEqualTo(allowCallsBeforeOpen);
+        assertThat(delegate.decideCalls).isZero();
+        assertThat(delegate.compileCalls).isZero();
+        assertThat(delegate.allowAllCalls).isZero();
+    }
+
+    // --- U17 / U34: what the breaker counts ------------------------------------------------
+
+    @Test // U17 — a stream of GENUINE policy denies must NOT open the breaker: never a decision input
+    void genuineDenials_doNotOpenTheBreaker() {
+        ScriptedOpaClient denying = new ScriptedOpaClient();
+        Resilience4jCallGuard guard = new Resilience4jCallGuard("opa", opaBudget(), clock, advancingSleeper);
+        ResilientOpaClient decorated = new ResilientOpaClient(denying, guard);
+
         for (int i = 0; i < 20; i++) {
             assertThat(decorated.allow(ctx())).isFalse();
         }
 
-        // the breaker stayed CLOSED — denials are decisions, not breaker faults; the delegate was reached
-        // on every call (no short-circuit)
         assertThat(guard.breaker().getState())
                 .as("genuine denials must not open the breaker (never a decision input)")
-                .isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED);
-        assertThat(counting.allowCalls).as("every call reached the delegate (breaker never short-circuited)")
-                .isGreaterThanOrEqualTo(20);
+                .isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(denying.allowCalls).as("one call per deny — no retry, no short-circuit").isEqualTo(20);
     }
 
-    // --- 7.3: the allowAll retry sentinel is ALL-false, never a mixed block ----------------
+    @Test // U34 — the accepted consequence (ADR 0037 §4): the guard records EVERY thrown fault, so a
+    // sustained deterministic fault (a policy that never loaded) opens the breaker like an outage does
+    void sustainedUndefinedDecision_opensTheBreaker() {
+        ScriptedOpaClient delegate = new ScriptedOpaClient();
+        Resilience4jCallGuard guard = new Resilience4jCallGuard("opa", breakerAfterThree(), clock, advancingSleeper);
+        ResilientOpaClient decorated = new ResilientOpaClient(delegate, guard);
 
-    @Test // a MIXED block is a real 200 answer — returned after EXACTLY ONE delegate call
-    void allowAll_mixedBlockIsNeverRetried() {
-        MixedThenAllTrueOpaClient mixed = new MixedThenAllTrueOpaClient(List.of(true, false, true));
-        ResilientOpaClient decorated = new ResilientOpaClient(mixed, guard(opaBudget()));
+        delegate.fault = PolicyEngineException.undefinedDecision("no policy at this path");
+        for (int i = 0; i < 3; i++) {
+            assertThat(thrownBy(() -> decorated.allow(ctx())).kind())
+                    .isEqualTo(PolicyEngineException.Kind.UNDEFINED_DECISION);
+        }
 
-        List<Boolean> verdicts = decorated.allowAll(List.of(ctx(), ctx(), ctx()));
-
-        assertThat(verdicts).containsExactly(true, false, true);
-        assertThat(mixed.calls).as("an honest denied verb must not tax the page with a retry").isEqualTo(1);
+        assertThat(guard.breaker().getState()).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(thrownBy(() -> decorated.allow(ctx())).kind()).isEqualTo(PolicyEngineException.Kind.CIRCUIT_OPEN);
+        assertThat(delegate.allowCalls).isEqualTo(3);
     }
 
-    @Test // an ALL-false block IS the transport sentinel — retried, and a recovery returns the real answer
-    void allowAll_allFalseBlockRetriesAndRecovers() {
-        MixedThenAllTrueOpaClient sentinel = new MixedThenAllTrueOpaClient(List.of(false, false));
-        ResilientOpaClient decorated = new ResilientOpaClient(sentinel, guard(opaBudget()));
+    // --- U35: an interrupt during the backoff is INTERRUPTED, not CIRCUIT_OPEN --------------
 
-        List<Boolean> verdicts = decorated.allowAll(List.of(ctx(), ctx()));
+    @Test // the production sleeper: the delegate's transient fault arrives with the thread interrupted, so the
+    // guard's backoff Thread.sleep throws at once
+    void interruptDuringBackoff_isInterrupted_notCircuitOpen() {
+        ScriptedOpaClient delegate = new ScriptedOpaClient();
+        delegate.fault = PolicyEngineException.transport("opa down", new IOException("reset"));
+        delegate.interruptOnFault = true;
+        ResilientOpaClient decorated =
+                new ResilientOpaClient(delegate, new Resilience4jCallGuard("opa", opaBudget()));
 
-        assertThat(verdicts).as("the retry recovered the real answer").containsExactly(true, true);
-        assertThat(sentinel.calls).isEqualTo(2);
-    }
+        try {
+            PolicyEngineException e = thrownBy(() -> decorated.allow(ctx()));
 
-    /** First call answers the scripted block; every later call answers all-true (a recovery). */
-    private static final class MixedThenAllTrueOpaClient implements OpaClient {
-        private final List<Boolean> firstAnswer;
-        int calls = 0;
-
-        MixedThenAllTrueOpaClient(List<Boolean> firstAnswer) {
-            this.firstAnswer = firstAnswer;
-        }
-
-        @Override
-        public boolean allow(AbacContext context) {
-            return true;
-        }
-
-        @Override
-        public PartialResult compile(AbacContext context) {
-            return PartialResult.allowAll();
-        }
-
-        @Override
-        public List<Boolean> allowAll(List<AbacContext> contexts) {
-            calls++;
-            return calls == 1 ? firstAnswer : java.util.Collections.nCopies(contexts.size(), true);
+            assertThat(e.kind()).isEqualTo(PolicyEngineException.Kind.INTERRUPTED);
+            assertThat(Thread.currentThread().isInterrupted()).as("the flag survives").isTrue();
+            assertThat(delegate.allowCalls).as("no retry after the interrupted backoff").isEqualTo(1);
+        } finally {
+            Thread.interrupted(); // never leave the test thread interrupted
         }
     }
 
-    /** A delegate that counts invocations and can return the fail-closed sentinel OR throw a fault. */
-    private static final class CountingOpaClient implements OpaClient {
-        volatile boolean failClosed = false;
-        volatile boolean throwFault = false;
-        int allowCalls = 0;
-        int compileCalls = 0;
-        int allowAllCalls = 0;
+    /**
+     * A delegate that answers a genuine deny on every method (all-false / {@code denyAll()} for the filtering
+     * pair) unless a {@link #fault} is set, which it then throws; counts every invocation.
+     */
+    private static final class ScriptedOpaClient implements OpaClient {
+        volatile RuntimeException fault;
+        volatile boolean interruptOnFault;
+        volatile List<Boolean> bulkAnswer;
+        int allowCalls;
+        int decideCalls;
+        int compileCalls;
+        int allowAllCalls;
 
         @Override
         public boolean allow(AbacContext context) {
             allowCalls++;
-            if (throwFault) {
-                throw new java.io.UncheckedIOException(new java.io.IOException("opa down"));
-            }
-            return !failClosed;
+            throwIfFaulted();
+            return false;
+        }
+
+        @Override
+        public dev.dmitriikonovalov.opaabac.core.OpaDecision decide(AbacContext context) {
+            decideCalls++;
+            throwIfFaulted();
+            return dev.dmitriikonovalov.opaabac.core.OpaDecision.deny();
         }
 
         @Override
         public PartialResult compile(AbacContext context) {
             compileCalls++;
-            if (throwFault) {
-                throw new java.io.UncheckedIOException(new java.io.IOException("opa down"));
-            }
-            return failClosed ? PartialResult.error() : PartialResult.allowAll();
+            throwIfFaulted();
+            return PartialResult.denyAll();
         }
 
         @Override
         public List<Boolean> allowAll(List<AbacContext> contexts) {
             allowAllCalls++;
-            if (throwFault) {
-                throw new java.io.UncheckedIOException(new java.io.IOException("opa down"));
+            throwIfFaulted();
+            return bulkAnswer != null ? bulkAnswer : java.util.Collections.nCopies(contexts.size(), false);
+        }
+
+        private void throwIfFaulted() {
+            if (fault != null) {
+                if (interruptOnFault) {
+                    Thread.currentThread().interrupt();
+                }
+                throw fault;
             }
-            return java.util.Collections.nCopies(contexts.size(), !failClosed);
         }
     }
 }

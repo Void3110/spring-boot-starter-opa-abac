@@ -45,7 +45,7 @@ RoleDefinitionSupplier ──throws RoleResolutionException──┐        │
 | `RoleResolutionException` | re-parented to `extends DecisionIndeterminateException`; javadoc names the family |
 | `HttpOpaClient` | `evaluate` / `readDecision` / `compile` / `allowAll` / `readBulkDecisions` throw per ADR 0037 §3 (`HttpTimeoutException`, incl. the connect variant → `TIMEOUT`; other `IOException` → `TRANSPORT`; a missing `result` key → `UNDEFINED_DECISION`, an explicit `null` → `MALFORMED_RESPONSE`); the unsafe path, the mixed-type batch, request serialization and a non-family `PolicyPathResolver` throw stay **deny** and are moved out of the throwing region so the catch cannot turn them into an engine error; WARN per attempt per §9 |
 | `OpaClient` | javadoc contract per method: "throws `PolicyEngineException` when no decision could be obtained; never returns a fabricated deny for a failure"; the `decide` default is unchanged |
-| `PartialResult` | `error()` and the `fromError()` accessor (declared explicitly so it can be annotated) `@Deprecated(since = "1.4.0")`, javadoc says why; callers inside the repo keep compiling with a deprecation warning |
+| `PartialResult` | `error()` / `fromError()` **re-documented, not deprecated** (T1 finding): a failed call throws now, but the client's refusal to send a compile request still answers `error()` — a plain `denyAll()` there would let a subtree widening survive beside it |
 
 `CompileResponseParser` is **unchanged**: `{}` and no-queries stay `DENY_ALL` (blind spot, ADR §3a).
 
@@ -107,7 +107,7 @@ RoleDefinitionSupplier ──throws RoleResolutionException──┐        │
 | 4 | `{}` / result-without-`allow` / non-boolean | **split**: `{}` and non-boolean indeterminate; result-without-`allow` deny | §3 |
 | 5 | What else in the gate is indeterminate | **narrow and typed**: only the family; SPIs opt in by subclassing | §6 |
 | 6 | What the engine exception carries | a **`Kind`** enum; fault-only retry; breaker-open throws `CIRCUIT_OPEN` | §4 |
-| 7 | List path | **propagate**, no property, one mode; `PartialResult.error()` deprecated | §4, §7 |
+| 7 | List path | **propagate**, no property, one mode; `PartialResult.error()` narrowed to "refused to ask" (deprecation dropped at T1) | §4, §7 |
 | 8 | Degraded-input paths | **keep** the degradations; **no decision-path catch swallows the family** | §7 |
 | 9 | Decorating/hinting consumers | enrichment and `_provenance` omit; MCP tool call `tool-gate-policy-unavailable`; MCP roster — see 2.2 | §7 |
 | 10 | HTTP rendering | base advice **+** standalone fallback; reuse 503 `DEPENDENCY_UNAVAILABLE`; no `Retry-After`; request-level gate 403 by default | §8 |

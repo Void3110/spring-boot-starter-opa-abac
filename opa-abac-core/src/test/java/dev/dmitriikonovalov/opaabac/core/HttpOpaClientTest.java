@@ -1,6 +1,8 @@
 package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -79,21 +81,33 @@ class HttpOpaClientTest {
         assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
     }
 
-    @Test // U3
-    void failClosed_onHttp500() throws IOException {
-        String base = startServer(ex -> respond(ex, 500, "boom"));
-        assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
+    // ENGINE-ERRORS (ADR 0037): when no decision could be obtained the client THROWS — never a fabricated
+    // deny. Every cell asserts both entry points, allow and decide, which share one evaluation path.
+
+    @Test // ENGINE-ERRORS U3
+    void indeterminate_onNon200_carriesTheStatus() throws IOException {
+        for (int status : new int[] {500, 503, 400}) {
+            String base = startServer(ex -> respond(ex, status, "boom"));
+            HttpOpaClient client = clientFor(base, "catalog");
+
+            assertThat(assertIndeterminate(client, PolicyEngineException.Kind.HTTP_STATUS).httpStatus())
+                    .hasValue(status);
+            server.stop(0);
+        }
     }
 
-    @Test // U4
-    void failClosed_onConnectionRefused() {
+    @Test // ENGINE-ERRORS U1
+    void indeterminate_onConnectionRefused_isTransport() {
         // Nothing listening on this port → connection refused, no server started.
         HttpOpaClient client = clientFor("http://127.0.0.1:1", "catalog");
-        assertThat(client.allow(sampleContext())).isFalse();
+
+        PolicyEngineException e = assertIndeterminate(client, PolicyEngineException.Kind.TRANSPORT);
+        assertThat(e).hasCauseInstanceOf(IOException.class);
+        assertThat(e.httpStatus()).isEmpty();
     }
 
-    @Test // U5
-    void failClosed_onTimeout() throws IOException {
+    @Test // ENGINE-ERRORS U2
+    void indeterminate_onTimeout() throws IOException {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000); // longer than the 500ms request timeout
@@ -102,31 +116,116 @@ class HttpOpaClientTest {
             }
             respond(ex, 200, "{\"result\":{\"allow\":true}}");
         });
-        assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
+
+        assertIndeterminate(clientFor(base, "catalog"), PolicyEngineException.Kind.TIMEOUT);
     }
 
-    @Test // U6a
-    void failClosed_onMalformedBody() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "not-json"));
-        assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
+    @Test // ENGINE-ERRORS U4 — interrupt-correct: the flag survives the throw
+    void indeterminate_onInterrupt_restoresTheFlag() throws IOException {
+        String base = startServer(ex -> {
+            try {
+                Thread.sleep(300); // the call is still in flight when the caller notices the interrupt
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+        HttpOpaClient client = clientFor(base, "catalog");
+
+        for (java.util.function.Consumer<AbacContext> call :
+                List.<java.util.function.Consumer<AbacContext>>of(client::allow, client::decide)) {
+            Thread.currentThread().interrupt();
+            try {
+                assertThatThrownBy(() -> call.accept(sampleContext()))
+                        .isInstanceOfSatisfying(PolicyEngineException.class,
+                                e -> assertThat(e.kind()).isEqualTo(PolicyEngineException.Kind.INTERRUPTED));
+                assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            } finally {
+                Thread.interrupted(); // never leave the test thread interrupted
+            }
+        }
     }
 
-    @Test // U6b
-    void failClosed_onMissingDecisionField() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "{\"result\":{\"other\":true}}"));
-        assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
+    @Test // ENGINE-ERRORS U5
+    void indeterminate_onMalformedBody() throws IOException {
+        for (String body : List.of(
+                "not-json",                          // unparseable
+                "{\"result\":{\"allow\":\"yes\"}}", // a non-boolean decision
+                "{\"result\":{\"allow\":null}}",    // a null decision is not a boolean either
+                "{\"result\":null}",                 // an explicit null result is not "no result"
+                "{\"result\":true}",                 // a result that is not a document
+                "[]")) {                             // a body that is not an object
+            String base = startServer(ex -> respond(ex, 200, body));
+
+            assertIndeterminate(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
+            server.stop(0);
+        }
     }
 
-    @Test // U6c
-    void failClosed_onNonBooleanDecision() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "{\"result\":{\"allow\":\"yes\"}}"));
-        assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
-    }
-
-    @Test // U6d
-    void failClosed_onEmptyResult() throws IOException {
+    @Test // ENGINE-ERRORS U6 — no result at all: the policy is not loaded at this path
+    void indeterminate_onNoResult_isUndefinedDecision() throws IOException {
         String base = startServer(ex -> respond(ex, 200, "{}"));
-        assertThat(clientFor(base, "catalog").allow(sampleContext())).isFalse();
+
+        assertIndeterminate(clientFor(base, "catalog"), PolicyEngineException.Kind.UNDEFINED_DECISION);
+    }
+
+    @Test // ENGINE-ERRORS U6 — the package is loaded, `allow` is undefined for this input: a real deny
+    void deny_onLoadedPackageWithoutTheDecisionField() throws IOException {
+        for (String body : List.of("{\"result\":{\"other\":true}}", "{\"result\":{}}")) {
+            String base = startServer(ex -> respond(ex, 200, body));
+            HttpOpaClient client = clientFor(base, "catalog");
+
+            assertThat(client.allow(sampleContext())).isFalse();
+            assertThat(client.decide(sampleContext())).isEqualTo(OpaDecision.deny());
+            server.stop(0);
+        }
+    }
+
+    @Test // ENGINE-ERRORS U8 — a path resolver failure is a refusal (deny), never an engine error
+    void deny_whenThePathResolverThrows_andNothingIsSent() throws IOException {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        String base = startServer(ex -> {
+            hits.incrementAndGet();
+            respond(ex, 200, "{\"result\":{\"allow\":true}}");
+        });
+        OpaClientConfig config = new OpaClientConfig(base, Duration.ofMillis(500), "allow");
+        HttpOpaClient client = new HttpOpaClient(MAPPER, context -> {
+            throw new IllegalStateException("resolver bug");
+        }, config);
+
+        assertThat(client.allow(sampleContext())).isFalse();
+        assertThat(client.decide(sampleContext())).isEqualTo(OpaDecision.deny());
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test // ENGINE-ERRORS U8 — the opt-in: a resolver that throws a family member is not a refusal
+    void indeterminate_whenThePathResolverOptsIn_propagates() throws IOException {
+        String base = startServer(ex -> respond(ex, 200, "{\"result\":{\"allow\":true}}"));
+        OpaClientConfig config = new OpaClientConfig(base, Duration.ofMillis(500), "allow");
+        HttpOpaClient client = new HttpOpaClient(MAPPER, context -> {
+            throw new ResolverOutage();
+        }, config);
+
+        assertThatThrownBy(() -> client.allow(sampleContext())).isInstanceOf(ResolverOutage.class);
+        assertThatThrownBy(() -> client.decide(sampleContext())).isInstanceOf(ResolverOutage.class);
+    }
+
+    /** An adopter's own outage signal, opted into the family by subclassing (ADR 0037 §2). */
+    private static final class ResolverOutage extends DecisionIndeterminateException {
+        ResolverOutage() {
+            super("the policy-path source is down");
+        }
+    }
+
+    /** Both single-decision entry points throw the same kind; returns the {@code decide} one. */
+    private PolicyEngineException assertIndeterminate(HttpOpaClient client, PolicyEngineException.Kind kind) {
+        assertThatThrownBy(() -> client.allow(sampleContext()))
+                .isInstanceOfSatisfying(PolicyEngineException.class, e -> assertThat(e.kind()).isEqualTo(kind));
+        Throwable thrown = catchThrowable(() -> client.decide(sampleContext()));
+        assertThat(thrown).isInstanceOf(PolicyEngineException.class);
+        PolicyEngineException e = (PolicyEngineException) thrown;
+        assertThat(e.kind()).isEqualTo(kind);
+        return e;
     }
 
     @Test // U7 — request body shape, incl. role_definition

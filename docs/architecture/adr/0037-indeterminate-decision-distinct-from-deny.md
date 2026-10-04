@@ -123,9 +123,12 @@ guesses (§6). `opa-abac-core` stays free of Spring.
 - **The §2 identity holds in its new form:** in every config/breaker state the decorator and the plain
   delegate both *throw the family* for a failure and *return the same value* for a decision; the contract
   test pins that, not "identical deny values".
-- `PartialResult.error()` / `fromError()` are **deprecated**: the shipped client and decorator no longer
-  produce them. `AbacQueryService` keeps today's empty-list handling for a custom client that still returns
-  `error()` — that client chose values over the throw.
+- `PartialResult.error()` / `fromError()` keep a **narrower meaning**, not deprecated (amended at T1): a
+  *failed* compile call no longer produces them — it throws — but "no policy answer was obtained, so nothing
+  may widen" is still needed when the shipped client **refuses to send** a compile request (an unsafe path,
+  §3): a plain `denyAll()` there would let a Java-side subtree widening survive beside it. A custom client
+  that still returns `error()` for a failure keeps today's empty-list handling in `AbacQueryService` — that
+  client chose values over the throw.
 
 ### 5. The Spring gates throw `AuthorizationIndeterminateException extends AuthorizationServiceException`
 
@@ -276,7 +279,8 @@ Behaviour changes for adopters (the 1.4.0 upgrade notes):
 5. An OPA answer of `{}` is now a 503, not a 403 — on a single decision the policy package is not loaded;
    on a bulk call, the package may also simply define no `bulk` rule. Check the policy path configuration,
    and give every type whose lists use the allowlist fallback a `bulk` rule.
-6. `PartialResult.error()` / `fromError()` are deprecated.
+6. `PartialResult.error()` / `fromError()` now mean "the client refused to ask" (or a custom client's own
+   failure value); the shipped client no longer returns them for a failed call.
 
 Positive: an outage is visible to users, operators and retrying clients as what it is; the breaker
 measures real faults; denies get cheaper. Negative: adopters with custom handling of a 403-on-outage must

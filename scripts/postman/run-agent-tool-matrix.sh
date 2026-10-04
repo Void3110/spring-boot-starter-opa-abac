@@ -18,9 +18,10 @@
 #   E5      the headline — the same agent + tool + target replayed for a LOW-PRIVILEGE principal is
 #           denied, and the deliberately over-wide `agent-overreach` capability still gets exactly the
 #           human's cut. Capability narrows; it never grants
-#   E6      mid-run PDP kill: every call denies and the roster goes EMPTY (the honest pair — the batch
-#           primitive cannot signal failure, so an unfiltered list would advertise four unusable
-#           tools); zero widening; restarting OPA restores the pre-kill vector exactly
+#   E6      mid-run PDP kill: every call denies as `tool-gate-policy-unavailable` ("could not decide",
+#           not "the policy said no" — ADR 0037) and the roster goes EMPTY (the honest pair — during the
+#           outage nothing is callable, so an unfiltered list would advertise four unusable tools); zero
+#           widening; restarting OPA restores the pre-kill vector exactly
 #   E7      agent-gate OFF: the tool-gate stops narrowing and the catalog's target-gate still denies —
 #           OFF is not wider than ON, proven on the rig rather than argued
 #   E8      every deny is a structured tool error naming its layer and a stable code

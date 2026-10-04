@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.security.resilience;
 
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import java.io.IOException;
 import java.net.http.HttpTimeoutException;
 import java.util.function.Predicate;
@@ -22,7 +23,9 @@ import java.util.function.Predicate;
  * <p>Transport failures arrive as <em>exceptions</em> (classified by {@link #retryableError()}); HTTP-status
  * failures arrive as a returned response the edge inspects (classified by {@link #retryableStatus(int)},
  * which the edge folds into its own result predicate). Splitting the two mirrors how the JDK
- * {@code HttpClient} surfaces them — a 5xx is a normal response, only a transport fault throws.
+ * {@code HttpClient} surfaces them — a 5xx is a normal response, only a transport fault throws. The OPA
+ * edge is the exception: since ADR 0037 its client throws every failure as a
+ * {@link PolicyEngineException}, status included, and {@link #isRetryableError(Throwable)} reads its kind.
  *
  * <h2>Side-effect-free invariant</h2>
  * Retrying any classified failure — <strong>including a read timeout</strong> — is safe only because all
@@ -46,11 +49,25 @@ public final class RetryableClassification {
     }
 
     /**
-     * Is this thrown failure a transient transport fault worth retrying? {@link IOException} and its
-     * subclasses (connection refused, connect/read timeout, reset) → {@code true}; everything else →
-     * {@code false}. Unwraps one layer of cause so a wrapper around an {@code IOException} still classifies.
+     * Is this thrown failure a transient transport fault worth retrying?
+     *
+     * <p>A {@link PolicyEngineException} (the OPA edge, ADR 0037 §4) is classified <strong>by its kind
+     * alone</strong>, onto the table above: {@code TRANSPORT}, {@code TIMEOUT}, and an {@code HTTP_STATUS}
+     * that {@link #retryableStatus(int)} accepts → {@code true}; every other kind → {@code false}. Never by
+     * its cause chain — a malformed body can carry an {@code IOException} from the JSON parser, and that
+     * same bad body would come back on a retry.
+     *
+     * <p>Any other throwable: {@link IOException} and its subclasses (connection refused, connect/read
+     * timeout, reset) anywhere in the cause chain → {@code true}; everything else → {@code false}.
      */
     public static boolean isRetryableError(Throwable t) {
+        if (t instanceof PolicyEngineException engine) {
+            return switch (engine.kind()) {
+                case TRANSPORT, TIMEOUT -> true;
+                case HTTP_STATUS -> engine.httpStatus().isPresent() && retryableStatus(engine.httpStatus().getAsInt());
+                case INTERRUPTED, MALFORMED_RESPONSE, UNDEFINED_DECISION, CIRCUIT_OPEN -> false;
+            };
+        }
         for (Throwable cause = t; cause != null; cause = cause.getCause()) {
             if (cause instanceof IOException) {
                 // ConnectException, HttpConnectTimeoutException, HttpTimeoutException all extend IOException.

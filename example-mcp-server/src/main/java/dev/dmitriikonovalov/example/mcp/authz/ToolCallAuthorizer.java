@@ -9,6 +9,7 @@ import dev.dmitriikonovalov.example.mcp.identity.DelegationChainExtractor;
 import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -44,6 +45,11 @@ public class ToolCallAuthorizer {
     static final String CODE_IDENTITY_UNREADABLE = "tool-gate-identity-unreadable";
     static final String CODE_CAPABILITY_UNAVAILABLE = "tool-gate-capability-unavailable";
     static final String CODE_CEILING_UNAVAILABLE = "tool-gate-ceiling-unavailable";
+    /**
+     * The policy engine could not decide (ADR 0037): unreachable, timed out, not loaded. Distinct from
+     * {@link #CODE_POLICY_DENIED} on purpose — an agent may retry this one later; retrying a deny is pointless.
+     */
+    static final String CODE_POLICY_UNAVAILABLE = "tool-gate-policy-unavailable";
     static final String CODE_UNAUTHENTICATED = "tool-gate-unauthenticated";
 
     private static final Logger log = LoggerFactory.getLogger(ToolCallAuthorizer.class);
@@ -97,8 +103,8 @@ public class ToolCallAuthorizer {
             // configuration's javadoc) — and it would invert the roster's governing invariant, since
             // ToolRosterFilter still evaluates the same ceiling-only contexts and would then be
             // NARROWER than the call path, hiding tools the caller could successfully invoke. The
-            // shipped OpaClient is fail-closed by contract: any outage, timeout, malformed body or
-            // missing decision field returns false rather than throwing.
+            // shipped OpaClient answers a policy deny with false and THROWS when it could not decide
+            // (an outage, a timeout, a malformed body, a policy that is not loaded) — caught below.
             boolean allowed = opaClient.allow(context);
             if (!allowed) {
                 log.debug("Tool-gate denied '{}' by policy", toolName);
@@ -115,6 +121,10 @@ public class ToolCallAuthorizer {
         } catch (RoleResolutionException e) {
             log.warn("Tool-gate denied '{}': the principal's role could not be resolved", toolName, e);
             return ToolAuthorizationDecision.denied(CODE_CEILING_UNAVAILABLE);
+        } catch (DecisionIndeterminateException e) {
+            // Still a denial — the tool body never runs — but a distinct, caller-visible "not now".
+            log.warn("Tool-gate denied '{}': the policy engine could not decide ({})", toolName, e.getMessage());
+            return ToolAuthorizationDecision.denied(CODE_POLICY_UNAVAILABLE);
         }
     }
 

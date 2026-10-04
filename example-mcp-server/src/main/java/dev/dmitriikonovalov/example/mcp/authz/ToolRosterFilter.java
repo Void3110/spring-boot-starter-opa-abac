@@ -5,8 +5,9 @@ import dev.dmitriikonovalov.example.mcp.identity.DelegationChainException;
 import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import io.modelcontextprotocol.spec.McpSchema.ListToolsResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import java.util.ArrayList;
@@ -43,12 +44,13 @@ import org.slf4j.LoggerFactory;
  *
  * <h2>Failure semantics — three classes, deliberately different</h2>
  * <ul>
- *   <li><strong>The batch cannot report failure.</strong> {@link OpaClient#allowAll} is contractually
- *       total and fail-closed: it never throws and normalises outage, timeout, non-200, malformed body
- *       and length mismatch alike into an all-{@code false} vector. So an all-{@code false} answer is
- *       taken as <strong>authoritative — an empty roster</strong>, whether it came from a dead PDP or a
- *       zero-capability agent. That is honest in both cases: during that outage every {@code tools/call}
- *       denies too, so a roster advertising four unusable tools would be the misleading answer.</li>
+ *   <li><strong>A dead PDP answers the empty roster.</strong> {@link OpaClient#allowAll} throws
+ *       {@link PolicyEngineException} when it could not decide (an outage, a timeout, a non-200, a
+ *       malformed body, a policy that is not loaded — ADR 0037), and that is answered with
+ *       <strong>an empty roster</strong>, logged as the outage it is. It is the same answer a
+ *       zero-capability agent's all-{@code false} vector gets, and it is honest in both cases: during that
+ *       outage every {@code tools/call} denies too, so a roster advertising four unusable tools would be
+ *       the misleading answer.</li>
  *   <li><strong>The edges outside the batch degrade</strong> to the unfiltered list plus a WARN — an
  *       unreadable identity, a capability outage, an unresolvable ceiling. These can genuinely fail, and
  *       the hint carries no authority, so showing more is safe while the gate keeps denying.</li>
@@ -123,17 +125,28 @@ public class ToolRosterFilter {
             log.warn("Roster unfiltered: the agent capability source was unavailable. "
                     + "The call-time gate still denies every tool for the same outage.", e);
             return RosterDecision.unfiltered();
-        } catch (RoleResolutionException e) {
+        } catch (DecisionIndeterminateException e) {
+            // The principal's ceiling could not be resolved (a role-source outage, or an adopter's own
+            // family member): an edge OUTSIDE the batch, so the hint degrades to unfiltered.
             log.warn("Roster unfiltered: the principal's ceiling could not be resolved. "
                     + "The authoritative deny still happens per call.", e);
             return RosterDecision.unfiltered();
         }
 
         // ONE round-trip for the whole roster — the batch primitive, not N single calls.
-        List<Boolean> decisions = opaClient.allowAll(contexts);
+        List<Boolean> decisions;
+        try {
+            decisions = opaClient.allowAll(contexts);
+        } catch (DecisionIndeterminateException e) {
+            // The PDP could not decide. Every tools/call denies for the same outage, so the honest
+            // roster is the empty one — never the unfiltered list (see the class doc).
+            log.warn("Roster empty: the policy engine could not decide ({}). "
+                    + "Every tool call is denied for the same outage.", e.getMessage());
+            return RosterDecision.allowing(Set.of());
+        }
 
         if (decisions == null || decisions.size() != contexts.size()) {
-            // Unreachable via HttpOpaClient (it normalises this to all-false), but OpaClient is an
+            // Unreachable via HttpOpaClient (it throws on a wrong-length result), but OpaClient is an
             // implementable SPI. Land on the SMALLER result: a contract violation must not widen.
             log.warn("Roster empty: the OpaClient returned {} decision(s) for {} context(s) — "
                             + "a contract violation, failing closed rather than serving an unfiltered "

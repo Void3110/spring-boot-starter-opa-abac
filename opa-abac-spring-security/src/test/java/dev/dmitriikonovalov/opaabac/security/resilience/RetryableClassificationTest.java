@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.security.resilience;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.http.HttpTimeoutException;
@@ -81,5 +82,38 @@ class RetryableClassificationTest {
     @CsvSource({"428,false", "429,true", "430,false", "499,false", "500,true", "599,true"})
     void statusBoundaries(int status, boolean expected) {
         assertThat(RetryableClassification.retryableStatus(status)).isEqualTo(expected);
+    }
+
+    // --- ENGINE-ERRORS U12: the OPA edge's PolicyEngineException is classified by KIND alone ----
+
+    @Test
+    void policyEngineException_transientKinds_areRetryable() {
+        IOException io = new IOException("reset");
+        assertThat(RetryableClassification.isRetryableError(PolicyEngineException.transport("t", io))).isTrue();
+        assertThat(RetryableClassification.isRetryableError(
+                PolicyEngineException.timeout("t", new HttpTimeoutException("slow")))).isTrue();
+    }
+
+    @ParameterizedTest // an HTTP_STATUS fault reuses the status table: 5xx and 429 retry, every 4xx does not
+    @CsvSource({"500,true", "503,true", "429,true", "400,false", "404,false", "422,false"})
+    void policyEngineException_httpStatus_followsTheStatusTable(int status, boolean expected) {
+        assertThat(RetryableClassification.isRetryableError(PolicyEngineException.httpStatus(status, "t")))
+                .isEqualTo(expected);
+    }
+
+    @Test // deterministic or self-inflicted kinds fail fast
+    void policyEngineException_otherKinds_areNotRetryable() {
+        assertThat(RetryableClassification.isRetryableError(PolicyEngineException.undefinedDecision("t"))).isFalse();
+        assertThat(RetryableClassification.isRetryableError(
+                PolicyEngineException.interrupted("t", new InterruptedException()))).isFalse();
+        assertThat(RetryableClassification.isRetryableError(PolicyEngineException.circuitOpen("t", null))).isFalse();
+    }
+
+    @Test // KIND ONLY: a malformed body is not retried even when the parser's IOException is its cause
+    void policyEngineException_malformedResponse_isNotRetried_evenWithAnIoCause() {
+        PolicyEngineException malformed =
+                PolicyEngineException.malformedResponse("bad body", new IOException("unexpected end-of-input"));
+
+        assertThat(RetryableClassification.isRetryableError(malformed)).isFalse();
     }
 }

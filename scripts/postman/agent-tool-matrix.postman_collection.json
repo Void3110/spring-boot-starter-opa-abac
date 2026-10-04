@@ -1678,8 +1678,8 @@
         "type": "text/javascript",
         "exec": [
          "eval(pm.collectionVariables.get('mcpHelpers'));",
-         "mcpDenied('E6: a call that succeeded before the kill now denies at the tool-gate',",
-         "          pm.response, 'tool-gate', 'tool-gate-denied');"
+         "mcpDenied('E6: a call that succeeded before the kill now denies at the tool-gate, as \"could not decide\"',",
+         "          pm.response, 'tool-gate', 'tool-gate-policy-unavailable');"
         ]
        }
       }
@@ -1735,7 +1735,7 @@
          "// The direction that actually matters: no call denied BEFORE the kill may succeed",
          "// AFTER it. An outage may only ever shrink the answer.",
          "mcpDenied('E6: the outage never widens a decision', pm.response,",
-         "          'tool-gate', 'tool-gate-denied');"
+         "          'tool-gate', 'tool-gate-policy-unavailable');"
         ]
        }
       }
