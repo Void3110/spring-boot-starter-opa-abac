@@ -55,4 +55,5 @@ outage with zero configuration; the request-level gate still answers through the
 
 ## Commit
 
-_Recorded with the next ticket._
+`db3c221` — feat(starter): a fallback advice answers 503 for adopters without AbstractProblemAdvice
+(ENGINE-ERRORS T4).

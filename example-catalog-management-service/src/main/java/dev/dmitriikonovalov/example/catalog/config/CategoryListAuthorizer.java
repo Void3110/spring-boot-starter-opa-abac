@@ -6,7 +6,6 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
@@ -95,17 +94,12 @@ public class CategoryListAuthorizer {
         }
 
         // Resolve the role on the GOVERNING CATALOG (the team target), exactly as CategoryAuthorizer does.
-        RoleDefinition roleDefinition;
-        try {
-            roleDefinition = roleDefinitionSupplier
-                    .lookup(subject.id(), "catalog", catalogId.toString())
-                    .orElse(null);
-        } catch (RoleResolutionException e) {
-            // B2: role-source outage → empty page (fail-closed; matches the no-role empty-list posture and
-            // prevents the otherwise-uncaught throw becoming a 500). The outage never reaches the filter.
-            log.debug("category list denied: role-source outage ({})", e.getClass().getSimpleName());
-            return Page.empty(pageable);
-        }
+        // A role-source outage PROPAGATES (ADR 0037): the outage never reaches the filter, and the list
+        // answers "not now" (503 via the base advice) instead of an empty page that reads as "you may see
+        // nothing". (B2 caught it into an empty page to avoid a 500 — the advice now renders it properly.)
+        RoleDefinition roleDefinition = roleDefinitionSupplier
+                .lookup(subject.id(), "catalog", catalogId.toString())
+                .orElse(null);
 
         // The query context: the resource is UNKNOWN (it's the row being filtered); only the type is set
         // so the policy path resolves to `category`.

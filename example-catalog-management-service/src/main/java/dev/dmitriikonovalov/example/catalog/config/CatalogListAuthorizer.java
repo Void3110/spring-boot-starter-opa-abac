@@ -6,7 +6,6 @@ import dev.dmitriikonovalov.example.catalog.security.CatalogProvenanceMemo;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.filter.GovernedScopeResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
@@ -100,10 +99,11 @@ import org.springframework.stereotype.Component;
  * <h2>Fail-closed (ADR 0018 §5, ADR 0029 §Fail-closed posture)</h2>
  * Unauthenticated → empty page. No {@link AbacQueryService} bean (the starter off) → empty page. No
  * {@link GovernedScopeResolver} bean (e.g. the demo profile) → empty page. Both scopes empty → empty
- * page. An <b>unresolvable role on either leg</b> (a role-source outage, or a role revoked between the
- * two calls) → that leg contributes nothing and is <b>dropped, never defaulted</b> to a fallback role;
- * when no leg has authority the page is empty, exactly as a {@code null} role compiling the residual to
- * {@code DENY_ALL} would produce, without the needless round-trip. A
+ * page. A <b>role-source outage</b> on either leg → propagates as "could not decide" (503, ADR 0037) —
+ * never an empty or partial page that reads as an answer. An <b>authoritatively unresolvable role</b>
+ * (revoked between the two calls) → that leg contributes nothing and is <b>dropped, never defaulted</b>
+ * to a fallback role; when no leg has authority the page is empty, exactly as a {@code null} role
+ * compiling the residual to {@code DENY_ALL} would produce, without the needless round-trip. A
  * <b>supervised-source failure</b> degrades to <b>membership-only</b> — the client already fails closed to
  * an empty list, so the second leg simply is not there. In every branch the floor is the empty page, never
  * a partial supervised set and never the whole table.
@@ -284,8 +284,9 @@ public class CatalogListAuthorizer {
         }
 
         if (roleDefinition == null && membershipLeg && !supervisedIds.isEmpty()) {
-            // The membership role source failed, or the role no longer resolves (revoked between the two
-            // calls), while the subject still supervises catalogs. The membership leg contributes NOTHING
+            // The membership role no longer resolves (revoked between the two calls — an authoritative
+            // answer; an OUTAGE propagated out of resolveRole above), while the subject still supervises
+            // catalogs. The membership leg contributes NOTHING
             // — dropped, never defaulted to a fallback role — but the supervised leg stands on its own
             // authority, so degrade to the pure-supervisor shape rather than emptying the whole page.
             // Strictly narrower than the mixed page, never wider (U29).
@@ -347,17 +348,13 @@ public class CatalogListAuthorizer {
     }
 
     /**
-     * The role for {@code (subject, anchor)}, or {@code null} when it does not resolve — including a
-     * role-source outage, which is caught here so it lands on the fail-closed floor rather than becoming
-     * a 500.
+     * The role for {@code (subject, anchor)}, or {@code null} when it authoritatively does not resolve. A
+     * role-source <b>outage</b> is not caught (ADR 0037): it propagates, and the list answers "not now"
+     * (503) — never a silently partial page. Both legs resolve through the same supplier, so a real outage
+     * fails them both anyway; degrading to the supervised leg would only have hidden it.
      */
     private RoleDefinition resolveRole(String subjectId, UUID anchor) {
-        try {
-            return roleDefinitionSupplier.lookup(subjectId, CATALOG_TYPE, anchor.toString()).orElse(null);
-        } catch (RoleResolutionException e) {
-            log.debug("catalog list: role-source outage ({})", e.getClass().getSimpleName());
-            return null;
-        }
+        return roleDefinitionSupplier.lookup(subjectId, CATALOG_TYPE, anchor.toString()).orElse(null);
     }
 
     /**

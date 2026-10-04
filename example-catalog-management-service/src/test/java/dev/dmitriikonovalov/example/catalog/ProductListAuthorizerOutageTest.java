@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.example.catalog;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -8,7 +8,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.example.catalog.config.ProductListAuthorizer;
-import dev.dmitriikonovalov.example.catalog.domain.ProductEntity;
 import dev.dmitriikonovalov.example.catalog.domain.ProductRepository;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -23,7 +22,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -64,15 +62,14 @@ class ProductListAuthorizerOutageTest {
         SecurityContextHolder.clearContext();
     }
 
-    @Test // the role lookup throws (outage) → empty page, the query service is never called
-    void roleSourceOutage_returnsEmptyPage_neverQueries() {
-        when(supplier.lookup(any(), any(), any()))
-                .thenThrow(new RoleResolutionException("source unavailable"));
+    @Test // ENGINE-ERRORS U32 — the role lookup throws (outage) → it PROPAGATES ("could not decide", 503 via
+    // the advice), never an empty page; the query service is never called
+    void roleSourceOutage_propagates_neverQueries() {
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(supplier.lookup(any(), any(), any())).thenThrow(outage);
 
-        Page<ProductEntity> page = authorizer.readable(UUID.randomUUID(), UUID.randomUUID(), pageable);
-
-        assertThat(page.getContent()).isEmpty();
-        assertThat(page.getTotalElements()).isZero();
+        assertThatThrownBy(() -> authorizer.readable(UUID.randomUUID(), UUID.randomUUID(), pageable))
+                .isSameAs(outage);
         verify(queryService, never()).findAuthorized(any(), any(), any(), any(), any());
     }
 }

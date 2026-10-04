@@ -6,7 +6,6 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.data.filter.AbacQueryService;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
@@ -33,8 +32,9 @@ import org.springframework.stereotype.Component;
  * <p>Mirrors {@code CategoryListAuthorizer} point for point: the role resolves on the GOVERNING
  * CATALOG (the team target — a product's team is its catalog's, same as a category's); the residual
  * is AND-ed with the existing path scope, never replacing it; fail-closed on every branch
- * (unauthenticated / starter-off / role-source outage / no role definition → the empty page, never
- * the full table). See that class for the rationale prose; only the deltas are documented here.
+ * (unauthenticated / starter-off / no role definition → the empty page, never the full table; a
+ * role-source outage → propagates as "could not decide", 503 — ADR 0037). See that class for the
+ * rationale prose; only the deltas are documented here.
  *
  * <p>Hierarchy widening (5.5-B): an inheritable Catalog grant may widen the list via the
  * {@code subtreeSpec} — resolved on the same governing catalog, gated to roles with no denial
@@ -83,15 +83,10 @@ public class ProductListAuthorizer {
         }
 
         // Resolve the role on the GOVERNING CATALOG (the team target), exactly as the category list does.
-        RoleDefinition roleDefinition;
-        try {
-            roleDefinition = roleDefinitionSupplier
-                    .lookup(subject.id(), "catalog", catalogId.toString())
-                    .orElse(null);
-        } catch (RoleResolutionException e) {
-            log.debug("product list denied: role-source outage ({})", e.getClass().getSimpleName());
-            return Page.empty(pageable);
-        }
+        // A role-source outage propagates (ADR 0037): the list answers "not now" (503), never an empty page.
+        RoleDefinition roleDefinition = roleDefinitionSupplier
+                .lookup(subject.id(), "catalog", catalogId.toString())
+                .orElse(null);
 
         // The query context: the resource is UNKNOWN (the row being filtered); only the type is set
         // so the policy path resolves to `product`.

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "B3 cross-service HTTP resilience matrix",
-    "description": "The Slice B3 headline through the gateway: a TRANSIENT resolve outage recovering within budget yields a SUCCESSFUL protected request (E1); a SUSTAINED outage still DENIES (E2 — B2's wall, no realm-fallback widening). The resolve edge is fault-injected by infra/compose.resilience-stub.yaml; the runner flips STUB_MODE between passes and sets EXPECTED_STATUS / EXPECTED_LABEL accordingly. Asserts the actual cut (success vs 403), not just response shape.",
+    "description": "The Slice B3 headline through the gateway: a TRANSIENT resolve outage recovering within budget yields a SUCCESSFUL protected request (E1); a SUSTAINED outage is REFUSED as \"could not decide\" (E2 — 503 DEPENDENCY_UNAVAILABLE since ADR 0037, ENGINE-ERRORS; it was a 403 before: still B2's wall, no realm-fallback widening, but no longer dressed up as a policy denial). The resolve edge is fault-injected by infra/compose.resilience-stub.yaml; the runner flips STUB_MODE between passes and sets EXPECTED_STATUS / EXPECTED_LABEL accordingly. Asserts the actual cut (success vs 503 + the problem code), not just response shape.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -15,18 +15,31 @@
             "exec": [
               "// The cut: with STUB_MODE=transient the resolve guard rides out the blip → the gate resolves",
               "// the role and the id'd GET SUCCEEDS (200). With STUB_MODE=down the guard exhausts →",
-              "// RoleResolutionException → the gate DENIES (403). EXPECTED_STATUS is set per pass by the runner.",
+              "// RoleResolutionException → the gate cannot decide → 503 DEPENDENCY_UNAVAILABLE (ADR 0037).",
+              "// EXPECTED_STATUS is set per pass by the runner.",
               "const expected = Number(pm.environment.get('EXPECTED_STATUS'));",
               "const label = pm.environment.get('EXPECTED_LABEL') || '';",
               "pm.test(`${label}: status is ${expected}`, function () {",
               "    pm.response.to.have.status(expected);",
               "});",
-              "// E2 specifically asserts the deny is a clean 403 fail-closed (not a 5xx leak), and never a 2xx",
-              "// (no realm-fallback widening rode the outage to a wider grant than the resolved role).",
-              "if (expected === 403) {",
-              "    pm.test('sustained outage fails CLOSED (403), never widens to 2xx', function () {",
-              "        pm.expect(pm.response.code).to.be.oneOf([403]);",
+              "if (expected === 200) {",
+              "    pm.test('transient blip recovered: the body is the requested category', function () {",
+              "        pm.expect(pm.response.json().id).to.eql(pm.environment.get('category_id'));",
+              "    });",
+              "}",
+              "// E2: the sustained outage is refused as \"not now\" — the problem document with the 503 code —",
+              "// never a 2xx (no realm-fallback widening rode the outage) and never a 403 (an outage is not a",
+              "// policy answer).",
+              "if (expected === 503) {",
+              "    pm.test('sustained outage is refused as could-not-decide: 503 DEPENDENCY_UNAVAILABLE', function () {",
+              "        pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+              "        const problem = pm.response.json();",
+              "        pm.expect(problem.errorCode).to.eql('DEPENDENCY_UNAVAILABLE');",
+              "        pm.expect(problem.status).to.eql(503);",
+              "    });",
+              "    pm.test('sustained outage never widens to 2xx and is not reported as a denial', function () {",
               "        pm.expect(pm.response.code, 'must not be a 2xx success on a sustained outage').to.not.be.within(200, 299);",
+              "        pm.expect(pm.response.code, 'an outage is not a 403 policy answer').to.not.eql(403);",
               "    });",
               "}"
             ]

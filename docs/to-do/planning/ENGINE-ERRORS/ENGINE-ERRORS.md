@@ -72,7 +72,7 @@ costs exactly one OPA call and can never open the breaker.
 | T2 | The gates throw `AuthorizationIndeterminateException`; the base advice answers 503 | ✅ DONE |
 | T3 | The data layer propagates the family | ✅ DONE |
 | T4 | The starter's fallback advice | ✅ DONE |
-| T5 | The catalog example adopts it, and both live matrices prove it | 📋 TODO |
+| T5 | The catalog example adopts it, and both live matrices prove it | ✅ DONE |
 | T6 | Docs, changelog, proof gates | 📋 TODO |
 
 ## Related

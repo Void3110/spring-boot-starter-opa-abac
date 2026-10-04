@@ -143,9 +143,13 @@ its chain).
   (the membership-outage blocks flip, the no-role block stays), a `GET /catalogs` outage IT.
 - e2e: `resilience-matrix.postman_collection.json` E2 asserts 503 + `DEPENDENCY_UNAVAILABLE`;
   `run-resilience-matrix.sh`'s header narrative updated.
-- The rig run: `ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ENABLE_MCP=1 ./deploy.sh up --pods 2`,
-  `./deploy.sh build`, then `scripts/postman/run-resilience-matrix.sh`,
-  `scripts/postman/run-agent-tool-matrix.sh` and `scripts/postman/run-tests.sh`.
+- The rig run — **two configurations** (amended at T5: the resilience stub repoints the catalog's WHOLE
+  role source, so the agent-tool and main suites cannot share its rig). Rebuild the three images first
+  (`ENABLE_MCP=1 ./deploy.sh build` + the user-management image — `up` reuses a stale one), `./profile.sh up`,
+  then: **A** `ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up --pods 2` →
+  `scripts/postman/run-resilience-matrix.sh`; **B** `./deploy.sh down`, `./profile.sh up`,
+  `ENABLE_MCP=1 ./deploy.sh up --pods 2` → `ENABLE_MCP=1 scripts/postman/run-agent-tool-matrix.sh` and
+  `scripts/postman/run-tests.sh`.
 
 **Acceptance.** **U32** and **I6** green (`./gradlew :example-catalog-management-service:test`); **E1–E4** green on the rebuilt rig; `./gradlew build` green.
 

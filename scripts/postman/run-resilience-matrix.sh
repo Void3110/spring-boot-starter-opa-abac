@@ -9,9 +9,10 @@
 #   E1  STUB_MODE=transient (1 x 503 then the role) -> the resolve CallGuard (2 retries) rides out the blip
 #       -> the gate resolves the editor role -> GET /api/v1/categories/{id} SUCCEEDS (200).
 #   E2  STUB_MODE=down (always 503) -> the guard exhausts -> HttpRoleDefinitionSupplier throws
-#       RoleResolutionException -> the gate DENIES (403). B2's wall, un-breached: no realm-fallback widening
-#       rode the outage to a 2xx.
-# The contrast (transient recovers vs sustained still denies) is the slice's reason to exist.
+#       RoleResolutionException -> the gate cannot decide -> 503 DEPENDENCY_UNAVAILABLE (ADR 0037,
+#       ENGINE-ERRORS; a 403 before 1.4.0). B2's wall, un-breached: no realm-fallback widening rode the
+#       outage to a 2xx — and the refusal no longer poses as a policy denial.
+# The contrast (transient recovers vs sustained is refused as "not now") is the slice's reason to exist.
 #
 # Prereq: the rig up WITH OIDC + OPA + the resilience stub, with fresh app code in the pods:
 #   ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up --pods 2
@@ -119,11 +120,11 @@ seed_fixture
 set_stub_mode transient 1
 run_pass "E1-transient-recovers" 200
 
-# E2 — sustained outage -> STILL DENIES (B2's wall, no widening)
+# E2 — sustained outage -> REFUSED as "could not decide" (503; B2's wall, no widening — ADR 0037)
 set_stub_mode down
-run_pass "E2-sustained-denies" 403
+run_pass "E2-sustained-unavailable" 503
 
-note "B3 resilience matrix PASSED: transient recovered (200), sustained denied (403)."
+note "B3 resilience matrix PASSED: transient recovered (200), sustained refused as unavailable (503)."
 
 # --- teardown (success only — a failed run keeps its fixture for debugging) ---
 # KEEP_FIXTURES=1 skips it. The cccc… fixture lives only in the catalog DB (its role is resolved
