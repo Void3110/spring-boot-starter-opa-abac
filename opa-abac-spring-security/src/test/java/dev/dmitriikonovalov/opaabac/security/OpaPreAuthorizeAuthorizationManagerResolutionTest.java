@@ -253,7 +253,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
 
     @Test // ENGINE-ERRORS U23 — a resolver that OPTS its outage in (a family member) is not a plain deny:
     // the decision is indeterminate, OPA is never asked, nothing is cached
-    void resolverThrowsAFamilyMember_isIndeterminate() throws Exception {
+    void resolverThrowsAFamilyMember_isIndeterminate() {
         SpiOutage outage = new SpiOutage("repository down");
         when(resolver.resolve("product", PRODUCT_ID.toString())).thenThrow(outage);
 
@@ -267,7 +267,7 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
 
     @Test // ENGINE-ERRORS U23 — the rethrow invariant: the ancestor walk's degrade-catch must NOT swallow an
     // opted-in outage into an empty chain (a direct-grant-only decision that might have been an allow)
-    void chainThrowsAFamilyMember_isIndeterminate_notCollapsed() throws Exception {
+    void chainThrowsAFamilyMember_isIndeterminate_notCollapsed() {
         SampleProduct instance = new SampleProduct(PRODUCT_ID.toString(), Map.of("status", "live"));
         when(resolver.resolve("product", PRODUCT_ID.toString())).thenReturn(Optional.of(instance));
         SpiOutage outage = new SpiOutage("lineage store down");

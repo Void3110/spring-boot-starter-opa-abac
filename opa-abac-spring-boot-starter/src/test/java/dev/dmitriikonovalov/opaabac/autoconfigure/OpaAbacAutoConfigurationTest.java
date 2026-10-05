@@ -663,7 +663,12 @@ class OpaAbacAutoConfigurationTest {
                 assertThat(response.getStatusCode().value()).isEqualTo(503);
                 assertThat(response.getBody().errorCode()).isEqualTo("DEPENDENCY_UNAVAILABLE");
                 assertThat(response.getBody().detail()).isEqualTo("Authorization is temporarily unavailable");
+                assertThat(response.getBody().instance()).isEqualTo("/catalogs"); // the request URI
             }
+            // no request → no instance, and no NPE
+            assertThat(advice.handleIndeterminate(
+                    dev.dmitriikonovalov.opaabac.core.PolicyEngineException.timeout("t", null), null)
+                    .getBody().instance()).isNull();
         });
     }
 

@@ -224,7 +224,7 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
 
     @Test // ENGINE-ERRORS U23 — the rethrow invariant: a root resolver that OPTS its outage in is not
     // "unproven" — the enrichment's degrade-catch lets the family through and the decision is indeterminate
-    void rootResolverThrowsAFamilyMember_isIndeterminate_notUnproven() throws Exception {
+    void rootResolverThrowsAFamilyMember_isIndeterminate_notUnproven() {
         givenCategoryUnderCatalog();
         SpiOutage outage = new SpiOutage("catalog store down");
         when(resolver.resolve("catalog", CATALOG_ID.toString())).thenThrow(outage);

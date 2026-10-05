@@ -408,7 +408,7 @@ class OpaPreAuthorizeParentAttributesTest {
 
     @Test // ENGINE-ERRORS U23 — the rethrow invariant on the placement-parent walk: an opted-in outage is not
     // an unproven parent, it is no decision
-    void anAncestorWalkThatThrowsAFamilyMemberIsIndeterminate() throws Exception {
+    void anAncestorWalkThatThrowsAFamilyMemberIsIndeterminate() {
         givenCatalogTagged(CATALOG_TAGS);
         when(resolver.resolve("category", CATEGORY_ID.toString()))
                 .thenReturn(Optional.of(new SampleResource("category", CATEGORY_ID.toString(), CATEGORY_TAGS)));

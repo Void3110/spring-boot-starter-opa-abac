@@ -240,7 +240,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     // (no empty-role context is built, so the policy's realm fallback is never fed an outage input).
     // ENGINE-ERRORS U18: an outage is no longer a returned deny — it is thrown as "could not decide"
     // (ADR 0037 §5); OPA is still never asked on a role outage (ADR 0014's rule, unchanged).
-    void roleSourceOutage_isIndeterminate_neverCallsOpa() throws Exception {
+    void roleSourceOutage_isIndeterminate_neverCallsOpa() {
         UUID productId = UUID.randomUUID();
         RoleResolutionException outage = new RoleResolutionException("source unavailable");
         when(roleDefinitionSupplier.lookup("user-1", "product", productId.toString())).thenThrow(outage);
@@ -253,7 +253,7 @@ class OpaPreAuthorizeAuthorizationManagerTest {
     }
 
     @Test // ENGINE-ERRORS U18 — the policy engine could not decide → thrown, with the engine failure as cause
-    void engineFailure_isIndeterminate() throws Exception {
+    void engineFailure_isIndeterminate() {
         UUID productId = UUID.randomUUID();
         when(roleDefinitionSupplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
         PolicyEngineException failure = PolicyEngineException.timeout("decide for path 'product'", null);

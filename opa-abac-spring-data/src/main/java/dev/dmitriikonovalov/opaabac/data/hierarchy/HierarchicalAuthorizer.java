@@ -11,8 +11,6 @@ import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The single-resource hierarchical authorization seam: it ties the {@link AncestorResolver} → the
@@ -52,8 +50,6 @@ import org.slf4j.LoggerFactory;
  * routing supervised traffic here gets a spurious deny, never a widening.
  */
 public class HierarchicalAuthorizer {
-
-    private static final Logger log = LoggerFactory.getLogger(HierarchicalAuthorizer.class);
 
     private final AncestorResolver ancestorResolver;
     private final RoleDefinitionSupplier roleDefinitionSupplier;
@@ -122,8 +118,9 @@ public class HierarchicalAuthorizer {
         try {
             return opaClient.allow(context);
         } catch (DecisionIndeterminateException e) {
-            log.debug("hierarchical authorize indeterminate: {}", e.getClass().getSimpleName());
-            throw e; // the policy engine could not decide (ADR 0037) — no decision, not a deny
+            // The policy engine could not decide (ADR 0037) — no decision, not a deny. Already logged where it
+            // was classified (the client's WARN), so it passes through untouched.
+            throw e;
         } catch (RuntimeException _) {
             return false; // fail-closed: any other OPA-side error denies
         }

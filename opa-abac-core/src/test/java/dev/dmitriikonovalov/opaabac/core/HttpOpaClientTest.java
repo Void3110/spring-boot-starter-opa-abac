@@ -104,6 +104,19 @@ class HttpOpaClientTest {
         PolicyEngineException e = assertIndeterminate(client, PolicyEngineException.Kind.TRANSPORT);
         assertThat(e).hasCauseInstanceOf(IOException.class);
         assertThat(e.httpStatus()).isEmpty();
+        // The message is what the WARN log carries: the kind, the operation, the policy path and the cause.
+        assertThat(e.getMessage())
+                .startsWith("TRANSPORT: decide for path 'catalog/product': ")
+                .contains("ConnectException");
+    }
+
+    @Test // the message of a status failure names the operation, the path and the status — the WARN log line
+    void indeterminateMessage_namesOperationPathAndStatus() throws IOException {
+        String base = startServer(ex -> respond(ex, 503, "boom"));
+
+        PolicyEngineException e = assertIndeterminate(clientFor(base, "catalog"), PolicyEngineException.Kind.HTTP_STATUS);
+
+        assertThat(e.getMessage()).isEqualTo("HTTP_STATUS: decide for path 'catalog/product': status 503");
     }
 
     @Test // ENGINE-ERRORS U2

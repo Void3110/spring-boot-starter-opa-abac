@@ -56,6 +56,11 @@ public final class HttpOpaClient implements OpaClient {
 
     private static final String RESULT_FIELD = "result";
 
+    /** The operation names a failure's message and the WARN log carry. */
+    private static final String OP_DECIDE = "decide";
+    private static final String OP_COMPILE = "compile";
+    private static final String OP_BULK = "bulk";
+
     /**
      * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
      * query string) — only {@code [A-Za-z0-9_-]} segments joined by single {@code /} are accepted,
@@ -136,16 +141,16 @@ public final class HttpOpaClient implements OpaClient {
             log.warn("OPA denied (fail-closed): the request was not sent — {}", e.toString());
             return OpaDecision.deny();
         }
-        HttpResponse<byte[]> response = post("/v1/data/" + path, body, "decide", path);
-        requireOk(response, "decide", path);
+        HttpResponse<byte[]> response = post("/v1/data/" + path, body, OP_DECIDE, path);
+        requireOk(response, OP_DECIDE, path);
         return readDecision(response.body(), path);
     }
 
     private OpaDecision readDecision(byte[] responseBody, String path) {
-        JsonNode result = readResult(responseBody, "decide", path);
+        JsonNode result = readResult(responseBody, OP_DECIDE, path);
         if (!result.isObject()) {
             throw indeterminate(PolicyEngineException.malformedResponse(
-                    describe("decide", path) + ": 'result' is not an object", null));
+                    describe(OP_DECIDE, path) + ": 'result' is not an object", null));
         }
         JsonNode decision = result.get(config.decisionField());
         if (decision == null) {
@@ -156,7 +161,7 @@ public final class HttpOpaClient implements OpaClient {
         }
         if (!decision.isBoolean()) {
             throw indeterminate(PolicyEngineException.malformedResponse(
-                    describe("decide", path) + ": '" + config.decisionField() + "' is not a boolean", null));
+                    describe(OP_DECIDE, path) + ": '" + config.decisionField() + "' is not a boolean", null));
         }
         if (decision.booleanValue()) {
             // An allow is an allow. A document carrying both is contradictory, and the reason — which only
@@ -233,14 +238,14 @@ public final class HttpOpaClient implements OpaClient {
             log.warn("OPA compile denied (fail-closed): the request was not sent — {}", e.toString());
             return PartialResult.error(); // no policy answer: nothing may widen on top of it
         }
-        HttpResponse<byte[]> response = post("/v1/compile", body, "compile", path);
-        requireOk(response, "compile", path);
-        JsonNode root = readObject(response.body(), "compile", path);
+        HttpResponse<byte[]> response = post("/v1/compile", body, OP_COMPILE, path);
+        requireOk(response, OP_COMPILE, path);
+        JsonNode root = readObject(response.body(), OP_COMPILE, path);
         String resourceType = context.resource() == null ? null : context.resource().type();
         try {
             return new CompileResponseParser(resourceType).parse(root);
         } catch (RuntimeException e) {
-            throw indeterminate(PolicyEngineException.malformedResponse(describe("compile", path, e), e));
+            throw indeterminate(PolicyEngineException.malformedResponse(describe(OP_COMPILE, path, e), e));
         }
     }
 
@@ -280,22 +285,22 @@ public final class HttpOpaClient implements OpaClient {
             log.warn("OPA bulk denied (fail-closed): the request was not sent — {}", e.toString());
             return allFalse(n);
         }
-        HttpResponse<byte[]> response = post("/v1/data/" + path + "/bulk", body, "bulk", path);
-        requireOk(response, "bulk", path);
+        HttpResponse<byte[]> response = post("/v1/data/" + path + "/bulk", body, OP_BULK, path);
+        requireOk(response, OP_BULK, path);
         return readBulkDecisions(response.body(), n, path);
     }
 
     private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {
-        JsonNode result = readResult(responseBody, "bulk", path);
+        JsonNode result = readResult(responseBody, OP_BULK, path);
         if (!result.isArray() || result.size() != expected) {
             throw indeterminate(PolicyEngineException.malformedResponse(
-                    describe("bulk", path) + ": 'result' is not a list of length " + expected, null));
+                    describe(OP_BULK, path) + ": 'result' is not a list of length " + expected, null));
         }
         List<Boolean> decisions = new java.util.ArrayList<>(expected);
         for (JsonNode element : result) {
             if (!element.isBoolean()) {
                 throw indeterminate(PolicyEngineException.malformedResponse(
-                        describe("bulk", path) + ": a non-boolean element in 'result'", null));
+                        describe(OP_BULK, path) + ": a non-boolean element in 'result'", null));
             }
             decisions.add(element.booleanValue());
         }
@@ -318,13 +323,12 @@ public final class HttpOpaClient implements OpaClient {
         } catch (HttpTimeoutException e) {
             // Both the request timeout and the connect timeout (HttpConnectTimeoutException extends it).
             throw indeterminate(PolicyEngineException.timeout(describe(operation, path, e), e));
-        } catch (IOException e) {
-            throw indeterminate(PolicyEngineException.transport(describe(operation, path, e), e));
         } catch (InterruptedException e) {
             // Interrupt-correct: restore the flag so the container's shutdown/cancellation signal survives.
             Thread.currentThread().interrupt();
             throw indeterminate(PolicyEngineException.interrupted(describe(operation, path, e), e));
-        } catch (RuntimeException e) {
+        } catch (IOException | RuntimeException e) {
+            // Any other transport failure, or a request the client rejects outright.
             throw indeterminate(PolicyEngineException.transport(describe(operation, path, e), e));
         }
     }
