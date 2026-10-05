@@ -105,6 +105,8 @@ class HierarchyListFilterIT {
 
     private static final String SUBJ_REGION = "subject-region";
     private static final String SUBJ_INHERIT = "subject-inherit";
+    /** Holds the same inheritable catalog grant as SUBJ_INHERIT, but its filter compiles to ALLOW_ALL. */
+    private static final String SUBJ_ALL = "subject-all";
     // inheritance declaration: a category inherits from a catalog ancestor (opt-in).
     private static final Map<String, List<String>> INHERITABLE = Map.of("category", List.of("catalog"));
 
@@ -180,6 +182,15 @@ class HierarchyListFilterIT {
         assertThat(rows).isEmpty();
     }
 
+    @Test // I9 — an ALLOW_ALL residual is TRUE: OR-ed with a subtree widening it must still admit every in-scope
+    // row. Scope D, widening on C: the right answer is D's rows. ALLOW_ALL is Specification.unrestricted() — a null
+    // predicate — and Spring Data's or() drops a null side, which once collapsed this to "D AND C's subtree" = none
+    void allowAllResidual_withSubtree_admitsTheWholeScope() {
+        assertThat(listCategoriesScopedTo(SUBJ_ALL, catalogC, catalogD)).containsExactly(catD);
+        // In C's own scope the deny override still applies on top of the unrestricted residual.
+        assertThat(listCategories(SUBJ_ALL, catalogC)).containsExactlyInAnyOrder(catEmea, catApac);
+    }
+
     @Test // I8 — re-parent on list: move cat-apac from catalog C to catalog D, re-query both lists (MANDATORY)
     void reparent_movesRowBetweenWidenedLists() {
         // before: cat-apac is in C's widened list, not in D's.
@@ -251,10 +262,10 @@ class HierarchyListFilterIT {
         return new LtreeAncestorResolver(pathSource, 32);
     }
 
-    /** SUBJ_INHERIT has an inheritable catalog grant (read on catalog); SUBJ_REGION has none. */
+    /** SUBJ_INHERIT and SUBJ_ALL have an inheritable catalog grant (read on catalog); SUBJ_REGION has none. */
     private RoleDefinitionSupplier roleSupplier() {
         return (userId, type, id) -> {
-            if (SUBJ_INHERIT.equals(userId) && "catalog".equals(type)) {
+            if ((SUBJ_INHERIT.equals(userId) || SUBJ_ALL.equals(userId)) && "catalog".equals(type)) {
                 return Optional.of(new RoleDefinition("inherit", Map.of(), Map.of("catalog", List.of("read"))));
             }
             return Optional.empty();
@@ -268,6 +279,9 @@ class HierarchyListFilterIT {
                     PartialResult.Decision.CONDITIONAL,
                     List.of(new Conjunction(List.of(
                             new Condition("tags.region", Condition.Operator.EQ, "emea")))));
+        }
+        if (SUBJ_ALL.equals(subjectId)) {
+            return PartialResult.allowAll(); // an unconditional filter: every row in scope
         }
         // SUBJ_INHERIT: no tag grant at all → the filter rule compiles to DENY_ALL; the widening is the only
         // thing that lets it see rows (exactly what the subtreeSpec exists to provide).

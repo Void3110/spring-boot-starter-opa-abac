@@ -36,7 +36,9 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
  * <pre>combined = scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )</pre>
  * The {@code subtreeSpec} is OR-ed <em>inside</em> {@code scope.and(...)} so the widening can never escape
  * the caller's scope; {@code notDenied} is AND-ed <em>outside</em> the OR so a leaf deny overrides the
- * inherited widening too. The <strong>allowlist-batch path</strong> is independently hierarchy-aware: each
+ * inherited widening too. An {@code ALLOW_ALL} residual is already TRUE, so it takes no OR at all (its
+ * {@code unrestricted()} specification has a null predicate, which Spring Data's {@code or()} would drop —
+ * collapsing the list to the subtree alone). The <strong>allowlist-batch path</strong> is independently hierarchy-aware: each
  * per-row {@link AbacContext} carries the row's ancestor chain, so the per-row OPA decision is the same
  * {@code final_allow = (direct OR inherited) AND NOT denied} as a single-GET (so {@code subtreeSpec} is not
  * applied there — it would be redundant).
@@ -159,8 +161,9 @@ public class AbacQueryService {
      * <p>On the pure-SQL path the composition is
      * {@code scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )} — the widening OR-ed <em>inside</em>
      * {@code scope.and(...)} (so it cannot escape scope), the deny AND-ed <em>outside</em> the OR (so it
-     * overrides the widening). A {@code null} {@code subtreeSpec} reduces this to {@code scope.and(tagResidual)
-     * .and(notDenied)} — the tag-only path (now also deny-filtered; see the 3-arg overload's note).
+     * overrides the widening). A {@code null} {@code subtreeSpec}, or an {@code ALLOW_ALL} residual (already
+     * TRUE), reduces this to {@code scope.and(tagResidual).and(notDenied)} — the tag-only path (now also
+     * deny-filtered; see the 3-arg overload's note).
      *
      * @param subtreeSpec the hierarchy widening (from a {@code SubtreeSpecResolver}); {@code null} for no
      *     widening (the tag-only path). A failed resolution should arrive as {@code null} or an empty
@@ -296,10 +299,20 @@ public class AbacQueryService {
      */
     private <T> Specification<T> authorizedSpec(
             Specification<T> scope, PartialResult residual, Specification<T> subtreeSpec) {
-        Specification<T> tagResidual = specificationFactory.from(residual);
-        Specification<T> widened =
-                subtreeSpec == null ? tagResidual : tagResidual.or(subtreeSpec);
+        Specification<T> widened = widened(residual, specificationFactory.from(residual), subtreeSpec);
         return scopeOnly(scope).and(widened).and(notDenied());
+    }
+
+    /**
+     * The tag residual, OR-ed with the subtree widening when there is one — except for an {@code ALLOW_ALL}
+     * residual. ALLOW_ALL OR anything is TRUE, so there is nothing to widen; and it must not reach {@code or()}:
+     * ALLOW_ALL is {@code Specification.unrestricted()} — a null predicate — and Spring Data's composition drops
+     * a null side, which would turn "every row in scope" into "the subtree alone".
+     */
+    static <T> Specification<T> widened(
+            PartialResult residual, Specification<T> tagResidual, Specification<T> subtreeSpec) {
+        boolean unconditional = residual != null && residual.decision() == PartialResult.Decision.ALLOW_ALL;
+        return subtreeSpec == null || unconditional ? tagResidual : tagResidual.or(subtreeSpec);
     }
 
     /** The requested window over an already-filtered, already-ordered list; the list size is the total. */

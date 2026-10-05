@@ -70,6 +70,7 @@ tags:
 | I3 | `SupplierOutageGateIT` (catalog, Testcontainers): role source down on a protected GET | **503 `DEPENDENCY_UNAVAILABLE`** where 1.3.0 answered 403; OPA never asked | T2 |
 | I4 | starter auto-configuration: no `AbstractProblemAdvice` bean; an `AbstractProblemAdvice` subclass bean; a non-servlet app | `IndeterminateDecisionProblemAdvice` registered; not registered; not registered | T4 |
 | I5 | the standalone advice in an app whose own advice handles `AccessDeniedException` → 403 | an indeterminate still answers 503 (the fallback is ordered ahead); a plain deny still answers the app's 403 | T4 |
+| I7 | *(review round 2, outside the slice)* `HierarchyListFilterIT` I9: an `ALLOW_ALL` residual with a subtree widening on C, listed in catalog D's scope; and in C's own scope | D's rows (`[]` before the fix — `ALLOW_ALL OR subtree` had collapsed to the subtree); in C, every row but the denied one | review |
 | I6 | `GET /catalogs` (Testcontainers) with the scope resolvers answering and the role supplier throwing for a subject who is a member and a supervisor — *(review round 2)* throwing for the **membership anchor only**, the case 1.3.0 answered with a supervised-only 200; a contrast cell shows the supervised leg runs | 503 `DEPENDENCY_UNAVAILABLE` — not the supervised-only page, not an empty 200 (the category and product lists already 503 at the gate from T2) | T5 |
 
 ## E2E (E*)

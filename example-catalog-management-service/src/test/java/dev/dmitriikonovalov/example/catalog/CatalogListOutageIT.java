@@ -87,16 +87,17 @@ class CatalogListOutageIT extends AbstractPostgresIT {
         assertThat(body).doesNotContain(supervisedCatalog.toString(), memberCatalog.toString());
     }
 
-    @Test // the supervisor cell's contrast: the role source up — the supervised leg is live (its catalog is listed,
-    // stamped supervised), so the outage cell above is decided on a subject whose supervised leg really runs.
-    // The member's catalog is deliberately not asserted: under this IT's allow-all stub the residual is ALLOW_ALL,
-    // and ALLOW_ALL OR-ed with the subtree widening collapses to the subtree alone (Spring Data drops a
-    // null-predicate side) — a pre-existing defect, ENGINEERING-BACKLOG item 17
-    void roleSourceUp_memberAndSupervisor_runsTheSupervisedLeg() throws Exception {
+    @Test // the supervisor cell's contrast: the role source up — the mixed page lists the member's catalog AND the
+    // supervised one (stamped supervised), so the outage cell above is decided on a subject whose supervised leg
+    // really runs. Under this IT's allow-all stub the residual is ALLOW_ALL — the case that once collapsed the
+    // mixed page to the supervised catalog alone (ENGINEERING-BACKLOG item 17)
+    void roleSourceUp_memberAndSupervisor_listsBothCatalogs() throws Exception {
         UUID supervisedCatalog = seedSupervisedCatalog();
 
         mockMvc.perform(get("/api/v1/catalogs"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(2))
+                .andExpect(jsonPath("$.items[?(@.id == '" + memberCatalog + "')]").exists())
                 .andExpect(jsonPath("$.items[?(@.id == '" + supervisedCatalog + "')]._provenance")
                         .value("supervised"));
     }

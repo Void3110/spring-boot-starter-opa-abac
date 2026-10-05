@@ -105,12 +105,22 @@ anyway. The synthesis gates on *verified, re-ranked* findings, not on a raw verd
 | R2-6 | **Docs** — "about three failing requests open it" is false for timeouts (the default 5 s timeout outlasts the 2.5 s retry ceiling: one attempt per request, so five) (Opus); stale public javadoc in `PartialResult` and `ActionEnrichmentAdvice` describing the 1.3.0 failure values (Codex — missed by round 1's sweep because the phrases wrap across lines); stale "no change" rows in `00-DESIGN` / `01-DECOMPOSITION` (Opus); ADR §3's table omitted decide's non-object `result` (Fable). | All rewritten. |
 | R2-7 | **Two tests that could not fail** (Opus): the "body never reaches the WARN" cell used a body Jackson truncates anyway (it echoes identifier characters only), and the I6 supervisor cell took the same path as the plain-member cell (with the whole role source down, 1.3.0 also answered an empty 200). | The body is identifier-only (`secrettokenvalue`, which Jackson echoes in full); I6's outage now hits the membership anchor only — the case 1.3.0 answered with a supervised-only 200 — with a contrast cell proving the supervised leg runs. |
 
-**Found while fixing R2-7, out of scope:** the contrast cell exposed a **pre-existing** defect on `main` —
-`AbacQueryService.authorizedSpec` OR-s an `ALLOW_ALL` residual (`Specification.unrestricted()`, a `null`
-predicate) with the subtree widening, and Spring Data JPA drops a null side, so the list collapses to the subtree
-alone. Fail-closed but wrong (rows go missing). Tracked as **ENGINEERING-BACKLOG item 17** with a spun-off task;
-the contrast cell asserts only what it is for and neither depends on nor pins the defect. Also to the backlog:
-**item 18**, the example clients' unvalidated base URLs (Opus; example-only, pre-existing).
+**Found while fixing R2-7 — a pre-existing defect, fixed in its own commit at the maintainer's request:** the
+I6 contrast cell exposed that `AbacQueryService.authorizedSpec` OR-ed an `ALLOW_ALL` residual
+(`Specification.unrestricted()`, a `null` predicate) with the subtree widening, and Spring Data JPA's composition
+drops a null side — so `ALLOW_ALL OR subtree` became the subtree alone. Fail-closed but wrong: a catalog member
+who also supervised another catalog saw only the supervised one. Present since the 4-arg `findAuthorized`
+(June 2026); the Spring Boot 4 port review had recorded the neutral element as "only ever AND-ed with the
+caller's scope", which missed this OR site. **Fix:** skip the OR for an `ALLOW_ALL` residual (it is already TRUE).
+Proven red-then-green on real Postgres (`HierarchyListFilterIT` I9 — scope D, widening on C: `[]` before, D's rows
+after); the I6 contrast cell now asserts both catalogs. Sibling sweep: `authorizedSpec` is the only
+`Specification.or` that can meet a null predicate (the other `or`s are `CriteriaBuilder.or` over real predicates);
+both the paged and unpaged paths share it. No e2e cell covers a member of A who supervises B (E9's dual hat is
+one catalog, so no widening) — none encoded the bug, none could catch it; that e2e gap is queued as backlog
+**item 19**, after this PR (maintainer). Backlog **item 17** closed. PIT: the composition choice is extracted to a
+package-private `widened(...)` and pinned by identity in `AbacQueryServiceTest` (the IT that proves it on SQL is
+outside PIT's target tests). Still in
+the backlog: **item 18**, the example clients' unvalidated base URLs (Opus; example-only, pre-existing).
 
 ## Fail-closed verification
 

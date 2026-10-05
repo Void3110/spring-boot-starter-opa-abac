@@ -328,7 +328,7 @@ documented (maintainer decision); nobody has measured them. **Fix shape:** one l
 host-run harness) with OPA killed and restarted mid-run, reading the 503 window against the restart time;
 then decide whether the OPA edge wants its own shorter `open-duration` default.
 
-## 17. A list with an ALLOW_ALL residual and a subtree widening shows only the subtree (found 2026-10-05)
+## 17. A list with an ALLOW_ALL residual and a subtree widening shows only the subtree — ✅ FIXED 2026-10-05 (ENGINE-ERRORS branch, its own commit)
 
 **Found by** the ENGINE-ERRORS review, while writing an I6 contrast cell — **pre-existing** on `main` since the
 4-arg/paged `findAuthorized` (June 2026), not caused by that slice. `AbacQueryService.authorizedSpec` composes
@@ -339,7 +339,8 @@ a catalog member with an unconditional role who also supervises another catalog 
 an inheritable-grant list with an unconditional direct residual sees only the subtree. **Fix shape:** skip the
 OR when the residual is `ALLOW_ALL` (or map ALLOW_ALL to an explicit `cb.conjunction()` and re-verify every
 composition), pinned by a Testcontainers cell; then extend `CatalogListOutageIT`'s contrast cell to assert both
-ids. A task was spun off for it.
+ids. **Done:** `authorizedSpec` skips the OR for an `ALLOW_ALL` residual; `HierarchyListFilterIT` I9 (scope D,
+widening on C → D's rows; it answered `[]` before the fix) and the I6 contrast cell (both catalogs, count 2).
 
 ## 18. The example HTTP clients accept an invalid base URL (noted 2026-10-05)
 
@@ -350,6 +351,17 @@ example's `HttpRoleDefinitionSupplier`, `TagDefinitionClient`, `SupervisedScopeC
 protected request answers 403 (the lie ADR 0037 removes), and the two scope clients' "never throws" promise
 becomes a 500. **Fix shape:** the same startup validation as `OpaClientConfig` in each constructor (no value
 echoed).
+
+## 19. An e2e cell for the mixed catalog page — a member of A who supervises B (queued 2026-10-05, after the ENGINE-ERRORS PR)
+
+**Left by** the item-17 fix. The supervised-scope matrix covers a pure supervisor (E1/E2), an outsider (E3), and a
+dual hat on **one** catalog (E9 — supervised `S \ M` is empty, so no widening runs). No cell lists the mixed page —
+member of catalog A, supervisor of catalog B — the one shape that composes a residual with the subtree widening,
+so the rig never exercised what item 17 broke and fixed. **Fix shape:** a persona (or a seed on an existing one)
+that is a member of one catalog and supervises another, under a role whose `filter` compiles unconditional (the
+item-17 trigger); `GET /catalogs` must list **both** ids, A stamped `member` and B stamped `supervised`, and the
+count must be exactly two (assert the cut, not the shape). Add it to `supervised-scope-matrix`, keep
+`check-collection-conformance.py` clean, and run it on the rig (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1`).
 
 ---
 

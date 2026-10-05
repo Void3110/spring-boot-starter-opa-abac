@@ -791,4 +791,27 @@ class AbacQueryServiceTest {
             return java.util.Optional.of(new ParentRef("catalog", "C"));
         }
     }
+
+    // --- widened(): an ALLOW_ALL residual is never OR-ed (ENGINE-ERRORS review; backlog 17) -------------------
+    // The SQL proof is HierarchyListFilterIT I9 on real Postgres; this pins the choice by instance identity.
+
+    @Test
+    void widened_allowAllResidual_isNeverOrEdWithTheSubtree() {
+        Specification<Object> tag = Specification.unrestricted();
+        Specification<Object> subtree = (root, query, cb) -> cb.conjunction();
+
+        assertThat(AbacQueryService.widened(PartialResult.allowAll(), tag, subtree)).isSameAs(tag);
+    }
+
+    @Test
+    void widened_otherResiduals_areOrEdWithTheSubtree_andNoSubtreeMeansTheResidualAlone() {
+        Specification<Object> tag = (root, query, cb) -> cb.disjunction();
+        Specification<Object> subtree = (root, query, cb) -> cb.conjunction();
+
+        assertThat(AbacQueryService.widened(PartialResult.denyAll(), tag, subtree)).isNotSameAs(tag);
+        assertThat(AbacQueryService.widened(PartialResult.unsupported(), tag, subtree)).isNotSameAs(tag);
+        assertThat(AbacQueryService.widened(null, tag, subtree)).isNotSameAs(tag);
+        assertThat(AbacQueryService.widened(PartialResult.allowAll(), tag, null)).isSameAs(tag);
+        assertThat(AbacQueryService.widened(PartialResult.denyAll(), tag, null)).isSameAs(tag);
+    }
 }

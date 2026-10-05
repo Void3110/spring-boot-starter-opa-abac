@@ -279,6 +279,12 @@ mirrored as SQL:
 combined = scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )
 ```
 
+An `ALLOW_ALL` residual is already TRUE, so the OR is skipped: `scope.and(notDenied)`. This is not an
+optimization. `ALLOW_ALL` is `Specification.unrestricted()`, whose predicate is `null`, and Spring Data's `or()`
+drops a null side — so `unrestricted().or(subtreeSpec)` *is* `subtreeSpec`. Until 1.4.0 that collapsed an
+unconditional list to the subtree alone (a member who also supervised another catalog saw only the supervised
+one). Composing `Specification`s, a null predicate is neutral for `and()` and **wrong** for `or()`.
+
 - **`subtreeSpec`** — "the rows in the governing root's subtree", produced by `SubtreeSpecResolver` **iff**
   the subject's role, resolved once on that root, **inheritably** grants the verb (else empty). Root-only;
   mid-tree per-node grants are Phase 8. It comes from a new additive

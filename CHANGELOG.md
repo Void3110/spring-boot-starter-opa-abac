@@ -44,6 +44,16 @@ second state distinguishable by type:
   a servlet application that does not extend `AbstractProblemAdvice`; it backs off when one exists. The
   request memo also replays an outage an SPI opts in with, not only `RoleResolutionException`.
 
+### Fixed
+
+- **`opa-abac-spring-data`** — a list whose residual is `ALLOW_ALL` (an unconditional `filter`) and that passes a
+  subtree widening returned **only the subtree's rows**, not every row in scope. `ALLOW_ALL` is
+  `Specification.unrestricted()`, a null predicate, and Spring Data's `or()` drops a null side, so
+  `ALLOW_ALL OR subtree` collapsed to the subtree. Fail-closed (rows went missing, nothing extra showed) but
+  wrong — e.g. the example's catalog member who also supervised another catalog saw only the supervised one.
+  `AbacQueryService` now skips the OR for an `ALLOW_ALL` residual. Present since the 4-argument
+  `findAuthorized` (1.0.0).
+
 ### Upgrade notes — behaviour changes
 
 1. **A direct `OpaClient` caller** gets `PolicyEngineException` where it used to get `false`, a deny, an
