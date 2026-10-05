@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -10,7 +10,9 @@ tags:
 
 # ENGINE-ERRORS — "could not decide" is not "the policy said no"
 
-> **Status: Planning — design settled 2026-10-04, mini package, collaborative build; target release 1.4.0.**
+> **Status: ✅ BUILT 2026-10-05 — mini package, collaborative build, six tickets on
+> `feature/void3110/engine-errors` (PR pending); release 1.4.0.** Design settled 2026-10-04. Proven live on both
+> outage classes; PIT: every mutant on a changed line killed; local Sonar: 0 findings in main code.
 > An OPA outage, a broken policy deployment or a role-source outage today reaches the user as a 403 (or an
 > empty list) and the operator as a stream of denials. This slice makes "could not decide" a thrown,
 > typed, still fail-closed signal at every decision surface — 503 at the HTTP edge, retryable by a client
@@ -73,7 +75,7 @@ costs exactly one OPA call and can never open the breaker.
 | T3 | The data layer propagates the family | ✅ DONE |
 | T4 | The starter's fallback advice | ✅ DONE |
 | T5 | The catalog example adopts it, and both live matrices prove it | ✅ DONE |
-| T6 | Docs, changelog, proof gates | 📋 TODO |
+| T6 | Docs, changelog, proof gates | ✅ DONE |
 
 ## Related
 

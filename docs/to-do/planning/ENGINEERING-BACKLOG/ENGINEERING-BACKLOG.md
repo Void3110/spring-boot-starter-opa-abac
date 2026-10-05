@@ -284,6 +284,38 @@ without error — no 5xx, one heavier OPA round-trip). Pre-existing surface. **F
 `spring.servlet.multipart`/`server.max-http-request-header-size`-style bounds where they apply; pin
 with a gateway cell (413).
 
+## 13. The built-in ancestor resolvers still classify their own SQL failures as "degrade" (noted 2026-10-05)
+
+**Left by** ENGINE-ERRORS ([[0037-indeterminate-decision-distinct-from-deny|ADR 0037]] §7, deliberately).
+`LtreeAncestorResolver` and `RecursiveCteAncestorResolver` wrap a data-access failure into
+`AncestorResolutionException`, which every consumer degrades to a direct-grant-only decision — the same
+wrap as a cycle or a broken link, though an outage is "could not decide", not a data answer. An adopter's
+*own* source SPI can already opt in (the resolvers rethrow a `DecisionIndeterminateException`); the
+built-ins do not. Rare in practice: the leaf resolve fails first when the database is down, and that stays a
+deny (ADR 0013). **Fix shape:** split a data-access failure (`DataAccessException`) into a new
+`AncestorUnavailableException extends DecisionIndeterminateException`, keep cycles / breaks / depth as
+`AncestorResolutionException`; one test per site.
+
+## 14. A root-type list still answers an empty 200 when its base-scope source is down (noted 2026-10-05)
+
+**Left by** ENGINE-ERRORS (ADR 0037 §3a, a documented blind spot). `GET /api/v1/catalogs` is scoped by a
+`GovernedScopeResolver` and, in the example, a supervised-scope client — base-scope SPIs whose contract is
+*fail closed to empty, never throw* (mx-1ce7d5). When the user-service behind them is down they answer an
+empty scope, and `CatalogListAuthorizer` returns an empty 200 before any role lookup or OPA call: fail-closed,
+but the same "you may see nothing" lie ADR 0037 removed from the other lists. **Fix shape:** amend the
+base-scope SPI contract so an outage throws a `DecisionIndeterminateException` subtype (the example's
+`HttpGovernedScopeResolver` / `SupervisedScopeClient` opt in), keeping "authoritatively empty" as `List.of()`;
+an IT + the resilience matrix's stub can prove it.
+
+## 15. The user-service's "is this role assignable" policy call answers 422 on an outage (noted 2026-10-05)
+
+**Left by** ENGINE-ERRORS (out of its mechanism). `RoleAssignableClient` in the example user-management
+service queries the policy engine through its own `RestClient` (`/v1/data/role/assignable`), not through
+`OpaClient`, and returns `false` on any failure — so an engine outage reads as "not assignable" (422). The
+same lie class, outside the `OpaClient` contract. **Fix shape:** route it through `OpaClient` (a decide on
+the `role` document), or classify its failures into `PolicyEngineException` itself and let the base advice
+answer 503.
+
 ---
 
 ## Related

@@ -10,7 +10,7 @@ tags:
 
 # ADR 0037 — "Could not decide" is indeterminate, distinct from a deny, at every decision surface
 
-**Status:** Accepted (planned — slice **ENGINE-ERRORS**, [[ENGINE-ERRORS]]; target release 1.4.0)
+**Status:** Accepted — implemented 2026-10-05 by slice **ENGINE-ERRORS** ([[ENGINE-ERRORS]], T1–T6; PR pending); release 1.4.0
 **Date:** 2026-10-04
 **Context tags:** fail-closed, indeterminate vs deny, OPA engine error, role-source outage, `OpaClient` contract, resilience retry, 503 vs 403
 

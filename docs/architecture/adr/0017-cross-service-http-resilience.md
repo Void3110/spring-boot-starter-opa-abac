@@ -10,6 +10,12 @@ tags:
 # ADR 0017 — Cross-service HTTP resilience (retry / backoff / circuit-break)
 
 **Status:** Accepted (planned — Slice B3, [[B3-HTTP-RESILIENCE]])
+**Amended 2026-10-05 by [[0037-indeterminate-decision-distinct-from-deny|ADR 0037]]** (release 1.4.0) — §2's
+"identical fail-closed *value*" becomes "identical fail-closed *outcome*": the plain `HttpOpaClient` now throws
+`PolicyEngineException` (with a `Kind`) instead of returning `false` / `PartialResult.error()` / all-false, so
+the decorator retries **thrown transient kinds only** (never a returned decision — a deny is called once),
+throws `CIRCUIT_OPEN` on an open breaker, and its breaker counts real faults (§5's "never a decision input",
+now true by construction). §3's retry table is unchanged; a `PolicyEngineException` is classified by kind.
 **Date:** 2026-06-18
 **Context tags:** `HttpOpaClient`, `HttpRoleDefinitionSupplier`, `TagDefinitionClient`, resilience,
 retry, circuit-breaker, fail-closed, Resilience4j, `CallGuard` seam, optional integration

@@ -139,6 +139,13 @@ re-measured in the same console. The baseline moves to Spring Boot **4.0.8**. Se
 [`TAG-BASED-AUTHORIZATION.md`](docs/guides/TAG-BASED-AUTHORIZATION.md) §Layer 3 and
 [ADR 0034](docs/architecture/adr/0034-tag-gated-placement-input-contract.md).
 
+**1.4.0 (unreleased):** **"could not decide" is no longer reported as "no".** A policy-engine failure or a
+role-source outage is still fail-closed, but it now surfaces as a typed `DecisionIndeterminateException` —
+**503 `DEPENDENCY_UNAVAILABLE`** at the HTTP edge instead of a 403 or an empty list — and the resilience
+layer stops retrying genuine denies. It changes error-path behaviour; read the upgrade notes in
+[`CHANGELOG.md`](CHANGELOG.md) before bumping, and see
+[ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md).
+
 **1.2.0 (2026-08-18):** two capability phases. **Agent tool-call authorization** — an MCP tool surface
 (`example-mcp-server`, Spring AI) behind the same OPA gate, with two-layer enforcement: the tool-gate can
 only ever *narrow*, and the target gate still decides (ADR 0028). And the **supervisor read path** — a unit

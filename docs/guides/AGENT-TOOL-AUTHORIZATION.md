@@ -163,20 +163,22 @@ Every edge lands on **deny, or the smaller result**.
 | capability supplier | authoritative-empty | **deny** every tool |
 | capability supplier | outage | **deny** (distinct code, identical caller-facing error) |
 | principal ceiling | outage at **call** time | **deny** (`tool-gate-ceiling-unavailable`) |
-| tool-gate OPA call | down / timeout / malformed / no `allow` binding | **deny** |
+| tool-gate OPA call | down / timeout / non-200 / malformed / package not loaded | **deny** with `tool-gate-policy-unavailable` — "could not decide", retryable later (since 1.4.0, ADR 0037; it was `tool-gate-denied` before) |
+| tool-gate OPA call | the package is loaded but `allow` is undefined for this input | **deny** with `tool-gate-denied` (undefined-means-deny is a policy answer) |
 | tool metadata | a tool with no declared action/category/risk/target-type | **deny at registration time** — startup fails, the tool is never exposed |
 | roster batch | dead PDP, **or** a genuinely zero-capability agent | the **empty roster**, treated as authoritative (see below) |
 | roster identity / capability / ceiling at **list** time | unreadable or throwing | the **unfiltered** list + WARN, with the gate still denying per call |
 | roster adapter | pinned SDK internals moved by an upgrade | **startup failure**, naming the pins |
 
-**Why an empty roster is the honest answer.** `OpaClient.allowAll` is contractually **total and
-fail-closed**: it never throws, and normalises outage, timeout, non-200, malformed body *and* length
-mismatch alike into an all-`false` vector. "The batch failed" is therefore not a signal this seam can
-emit — a PDP outage is indistinguishable from a zero-capability agent, and the design does not
-pretend otherwise. Both are answered with an empty roster, which is correct in both cases: during
-that outage every `tools/call` denies too, so a roster advertising four unusable tools would be the
-misleading one. Degradation to the *unfiltered* list survives only for the edges **outside** the
-batch, which genuinely can fail.
+**Why an empty roster is the honest answer.** Since 1.4.0 ([[0037-indeterminate-decision-distinct-from-deny|ADR
+0037]]) `OpaClient.allowAll` **can** report failure: an outage, a timeout, a non-200, a malformed body or a
+wrong-length result throws `PolicyEngineException` instead of padding an all-`false` vector. The roster
+filter catches it and still answers the **empty roster** — now chosen on a distinguishable signal, and logged
+as the outage it is, where before a dead PDP was indistinguishable from a zero-capability agent. The reason
+it is the right answer did not change: during that outage every `tools/call` is denied too (with
+`tool-gate-policy-unavailable`), so a roster advertising four unusable tools would be the misleading one.
+Degradation to the *unfiltered* list survives only for the edges **outside** the batch — identity,
+capability, ceiling — where showing more is safe because the gate keeps denying.
 
 ### Kill-switches — and what OFF means
 

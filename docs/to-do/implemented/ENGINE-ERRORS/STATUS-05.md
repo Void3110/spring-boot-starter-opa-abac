@@ -74,4 +74,5 @@ Self-review: nothing substantive in the code. Two rig findings, folded into the 
 
 ## Commit
 
-_Recorded with the next ticket._
+`0e7c261` — feat(example): catalog lists answer 503 on a role-source outage; both outage classes proven live
+(ENGINE-ERRORS T5).

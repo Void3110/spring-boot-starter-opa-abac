@@ -10,6 +10,12 @@ tags:
 # ADR 0014 — Role-source outage is error-distinct from no-role at the supplier SPI
 
 **Status:** Accepted (planned — Slice B2, [[B2-SUPPLIER-OUTAGE]])
+**Amended 2026-10-05 by [[0037-indeterminate-decision-distinct-from-deny|ADR 0037]]** (release 1.4.0) — the
+outage stays error-distinct and still never falls back, but §3's per-consumer mapping no longer lands it on a
+deny: `RoleResolutionException` joins the `DecisionIndeterminateException` family, the two gates throw
+`AuthorizationIndeterminateException` (503, not `AuthorizationDecision(false)`), and the data consumers
+propagate it instead of returning `false` / no widening / an empty page. The classification (§1, §4) is
+unchanged.
 **Date:** 2026-06-15
 **Context tags:** `RoleDefinitionSupplier`, fail-closed, realm-role fallback, outage vs no-role, SPI contract
 
