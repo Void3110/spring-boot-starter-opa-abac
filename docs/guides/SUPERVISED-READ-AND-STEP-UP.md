@@ -427,7 +427,7 @@ them.
 
 | Gate | Proves |
 |---|---|
-| `scripts/postman/run-supervised-scope-matrix.sh` | The list: reach by id, the CONTROL-seat rule, withdrawal on the next request |
+| `scripts/postman/run-supervised-scope-matrix.sh` | The list: reach by id, the CONTROL-seat rule, the mixed member-and-supervisor page (both rows, each stamped by its own path), withdrawal on the next request |
 | `scripts/postman/run-production-tier-matrix.sh` | The tier: liveness in both directions, and unstrippability by the catalog's own owner |
 | `scripts/postman/run-step-up-matrix.sh` | The RFC 9470 round trip, the sole-blocker answers, both audit events, and that a refresh does not extend the window |
 | `docs/to-do/implemented/SPA-CHALLENGE-UX/10-QA-TEST-CASES.md` **E10–E21** | The committed **browser** case list — the behavioural spec for the client half, run adversarially in the Browser pane |
