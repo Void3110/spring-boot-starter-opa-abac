@@ -336,6 +336,24 @@ class Resilience4jCallGuardTest {
         assertThat(g.breaker().tryAcquirePermission()).as("no second slot").isFalse();
     }
 
+    @Test // a result predicate that THROWS is settled like any thrown failure: the half-open probe it held is
+    // released (unrecorded form), so exactly one more probe is admitted
+    void throwingResultPredicate_releasesTheHalfOpenProbe() {
+        Resilience4jCallGuard g = guard("edge", breakerAfterThree());
+        g.breaker().transitionToOpenState();
+        g.breaker().transitionToHalfOpenState();
+        IllegalStateException failure = new IllegalStateException("response classification failed");
+
+        Throwable thrown = catchThrowable(() -> g.call(() -> 200, RETRY_IO, value -> {
+            throw failure;
+        }, error -> false));
+
+        assertThat(thrown).isSameAs(failure);
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+        assertThat(g.breaker().tryAcquirePermission()).as("the released probe slot").isTrue();
+        assertThat(g.breaker().tryAcquirePermission()).as("no second slot").isFalse();
+    }
+
     @Test // the interface default ignores recordableError and delegates to the three-argument form
     void interfaceDefault_delegatesToTheThreeArgumentForm() {
         CallGuard plain = new CallGuard() {

@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Objects;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -488,7 +487,7 @@ public final class HttpOpaClient implements OpaClient {
      * leading/trailing/empty segment — the same grammar an anchored
      * {@code [A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*} regex would accept.
      *
-     * <p>Deliberately a single linear scan, not a {@link Pattern}: that regex's {@code (…/…)*} group
+     * <p>Deliberately a single linear scan, not a {@link java.util.regex.Pattern}: that regex's {@code (…/…)*} group
      * compiles to a recursive match in {@code java.util.regex}, so a long resolver-derived path
      * (thousands of segments) overflows the stack with a {@link StackOverflowError}. That is an
      * {@link Error}, not an {@link Exception}, so it would escape the refusal handlers in

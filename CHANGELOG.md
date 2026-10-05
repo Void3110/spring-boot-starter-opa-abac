@@ -103,8 +103,9 @@ second state distinguishable by type:
    context. The message never echoes the value (a URL can carry credentials).
 10. **A policy evaluation error** — OPA answers a policy that itself fails on this input (a complete rule
     producing two outputs: `eval_conflict_error`; `eval_type_error`; `eval_with_merge_error`) with HTTP 500. In
-    1.3.0 that was a 403 on a decision, an empty 200 on a list, and omitted `_actions` on enrichment; it is now
-    `EVALUATION_ERROR` (503), not retried and not counted on the breaker, and the WARN names the code. OPA's
+    1.3.0 that was a 403 on a decision, an empty 200 on a list, and omitted `_actions` on enrichment; on a
+    decision or a list it is now `EVALUATION_ERROR` (503), and enrichment still omits `_actions`. It is not
+    retried and not counted on the breaker, and the WARN names the code. OPA's
     other `eval_*` codes (cancellation, internal, built-in and `http.send` failures) stay a retryable,
     counted status. Fix the policy — `opa test` with the input that triggered it.
 

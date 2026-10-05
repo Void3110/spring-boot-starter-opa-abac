@@ -10,7 +10,8 @@ tags:
 
 # ENGINE-ERRORS — Code Review
 
-> **Verdict**: Approved with fixes (round 1 and round 2 — see [Round 2](#round-2--three-reviewers-on-the-fix-commit))
+> **Verdict**: Approved with fixes — four rounds; rounds 2–4 with three reviewers (see
+> [Round 2](#round-2--three-reviewers-on-the-fix-commit) and the sections after it)
 > **Scope**: The whole slice — ADR 0037's "could not decide" family across core, the two Spring gates, the
 > data layer, the starter's fallback advice, the catalog and MCP examples, the resilience decorator, the e2e
 > collections and the docs. · **Branch**: `feature/void3110/engine-errors` vs `main` (10 commits, 90 files,
@@ -140,6 +141,21 @@ below).
 already buffers and parses whole bodies the same way, so capping only the 500 path protects nothing; a response-size
 bound would be a client-wide change for a trusted sidecar — not this slice.
 
+## Round 4 — the closing round
+
+Same three reviewers on `e2cc8d5` only. Fable **APPROVE** (0 behaviour-changing); Opus and Codex
+**APPROVE-WITH-FIXES** (1 each — the same finding). All three independently found it:
+
+| # | Finding (who) | Fix |
+|---|---|---|
+| R4-1 | **A throwing result predicate left its permission unsettled** (all three; Low; introduced by R3-1's restructure): the predicate had moved out of the `try`, so its exception escaped past `recordOrRelease` — a half-open probe slot lost. No shipped caller reaches it (all pass `result -> false`). | The predicate runs inside the `try` again; the value's settlement and backoff stay outside it. U41 — red on `e2cc8d5`, green after. |
+| R4-2 | **Docs** — CHANGELOG note 10 said enrichment now answers 503 (it still omits `_actions`) (Opus); ADR §3's strict-mode note was incomplete — `eval_type_error` is strict-only too, and the `eval_http_send_*` codes appear inside a policy's result, never as a 500 (Fable, measured with `opa eval`); a now Javadoc-only `Pattern` import (Fable); this note's header verdict (Opus). | All corrected. |
+
+**Closing the loop — waiver recorded.** Round 4 still changed behaviour, so by the loop rule it is not the terminal
+round. **The maintainer declared it terminal as a proportionality call (2026-10-05):** its one fix restores the
+pre-`e2cc8d5` behaviour for that path and is pinned red-then-green; all three reviewers verified every other path of
+the guard clean; and rounds 3–4 surfaced only Lows on guard edges no shipped caller reaches — diminishing returns.
+
 ## Fail-closed verification
 
 Every error/empty path re-traced by both reviewers and re-checked here for the fixes: `HttpOpaClient`
@@ -218,6 +234,8 @@ every touched module re-run green after each later change; Sonar back to the 15-
 two rounds of nits (S7467, S1130 ×3); PIT on the final tree — round 3's changes 9/9 KILLED, everything since
 round 1 28/28 KILLED, the whole slice vs `origin/main` 123 KILLED + the same single documented `childrenOf`
 NO_COVERAGE. Each new resilience cell proven by hand-mutation (U39: removing the release; U40: adding a second).
+Round 4's fix: Sonar unchanged at the baseline (0 in main code); PIT 1/1 KILLED on its changed line, the whole
+slice 123 KILLED + the documented `childrenOf` NO_COVERAGE; U41 red on `e2cc8d5`, green after.
 **newman: not re-run, with one known gap** — `030bcfe` does change a rig-observable response (`GET /catalogs` for
 a member of A who supervises B under an unconditional role: one catalog → both), and no e2e cell covers that
 shape; it is queued as backlog item 19, after this PR.

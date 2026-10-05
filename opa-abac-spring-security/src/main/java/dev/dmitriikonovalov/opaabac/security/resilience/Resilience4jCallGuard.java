@@ -120,8 +120,11 @@ public final class Resilience4jCallGuard implements CallGuard {
             attempt++;
             acquirePermission(lastError);
             T result;
+            boolean retryValue;
             try {
                 result = body.get();
+                // Inside the try: a classifier that throws is settled like any thrown failure.
+                retryValue = retryableResult.test(result);
             } catch (RuntimeException e) {
                 recordOrRelease(e, recordableError);
                 if (!retryableError.test(e)) {
@@ -135,7 +138,7 @@ public final class Resilience4jCallGuard implements CallGuard {
                 }
                 throw e; // budget exhausted — re-throw the last cause unchanged (the caller maps it)
             }
-            if (!retryableResult.test(result)) {
+            if (!retryValue) {
                 breaker.onSuccess(0L, TimeUnit.NANOSECONDS);
                 return result;
             }
