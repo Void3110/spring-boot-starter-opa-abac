@@ -80,7 +80,7 @@ class HttpOpaClientEvaluationErrorTest {
     }
 
     @Test // the message names the code — never the error's message or the policy file's location
-    void message_namesTheCode_notTheMessageOrLocation() throws IOException {
+    void message_namesTheCode_notTheMessageOrLocation() {
         PolicyEngineException e = thrownBy(() -> clientAnswering(500, CONFLICT_BODY).decide(ctx()));
 
         assertThat(e.getMessage()).contains("policy evaluation error eval_conflict_error")
@@ -88,7 +88,7 @@ class HttpOpaClientEvaluationErrorTest {
     }
 
     @Test // anything that is not an all-eval_* error body stays a 500 status — retryable like any other 5xx
-    void otherFiveHundreds_stayHttpStatus() throws IOException {
+    void otherFiveHundreds_stayHttpStatus() {
         List<String> bodies = List.of(
                 "not-json",
                 "{}",
@@ -106,7 +106,7 @@ class HttpOpaClientEvaluationErrorTest {
     }
 
     @Test // only a 500 is read: an eval_* body on another status is still that status
-    void evalBodyOnAnotherStatus_staysHttpStatus() throws IOException {
+    void evalBodyOnAnotherStatus_staysHttpStatus() {
         PolicyEngineException e = thrownBy(() -> clientAnswering(503, CONFLICT_BODY).decide(ctx()));
 
         assertThat(e.kind()).isEqualTo(PolicyEngineException.Kind.HTTP_STATUS);

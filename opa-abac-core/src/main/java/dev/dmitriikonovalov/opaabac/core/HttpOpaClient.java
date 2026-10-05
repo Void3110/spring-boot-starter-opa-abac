@@ -376,7 +376,7 @@ public final class HttpOpaClient implements OpaClient {
                 codes.add(code.stringValue());
             }
             return codes;
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             return Set.of(); // an unreadable error body is just a status
         }
     }
