@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,6 +15,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -156,12 +158,22 @@ class SubtreeSpecResolverTest {
         verify(ancestorResolver, never()).subtreeOf(anyString(), anyString());
     }
 
-    @Test // B2 U6 — a role-source outage (RoleResolutionException) collapses to no widening, via the SAME
-    // existing catch (RuntimeException). Proves B2 needs NO code change here; pins it so a refactor cannot
-    // silently widen it. subtreeOf is never reached.
-    void roleSourceOutage_isEmpty_noWidening() {
+    @Test // B2 U6 → ENGINE-ERRORS U28 — a role-source outage PROPAGATES instead of collapsing to "no
+    // widening", which answered the list with a silently partial page during the outage (ADR 0037 §7).
+    // Still never wider: subtreeOf is never reached.
+    void roleSourceOutage_propagates_neverWidens() {
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(supplier.lookup(anyString(), anyString(), anyString())).thenThrow(outage);
+
+        assertThatThrownBy(() -> resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read"))
+                .isSameAs(outage);
+        verify(ancestorResolver, never()).subtreeOf(anyString(), anyString());
+    }
+
+    @Test // ENGINE-ERRORS U28 — any OTHER resolution failure still collapses to no widening (unchanged)
+    void aNonFamilyResolutionFailure_isEmpty_noWidening() {
         when(supplier.lookup(anyString(), anyString(), anyString()))
-                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+                .thenThrow(new IllegalStateException("a bug, not an outage"));
 
         Optional<Specification<AbacResource>> result =
                 resolver().subtreeSpec(subject(), "category", CATALOG_ROOT, "read");

@@ -154,13 +154,15 @@ class ToolRosterFilterTest {
         RosterDecision decision = filter(authorizer, dead).decide();
 
         assertThat(decision.isUnfiltered())
-                .as("all-false is authoritative — it must NOT be read as a failure to decide")
+                .as("a dead PDP answers the EMPTY roster — never the unfiltered hint (ENGINE-ERRORS U31)")
                 .isFalse();
         assertThat(namesOf(ToolRosterFilter.apply(decision, fullRoster()))).isEmpty();
         assertThat(DESCRIPTORS.stream().map(ToolDescriptor::name))
-                .allSatisfy(name -> assertThat(authorizer.authorize(name).allowed())
-                        .as("call-time gate for %s during the same outage", name)
-                        .isFalse());
+                .allSatisfy(name -> {
+                    ToolAuthorizationDecision call = authorizer.authorize(name);
+                    assertThat(call.allowed()).as("call-time gate for %s during the same outage", name).isFalse();
+                    assertThat(call.code()).isEqualTo(ToolCallAuthorizer.CODE_POLICY_UNAVAILABLE);
+                });
     }
 
     @Test // I18 — the other two dead-PDP edges, asserted separately
@@ -179,7 +181,7 @@ class ToolRosterFilterTest {
         assertThat(rosterNames(new ToolRosterFilter(
                 registry, authorizer(stalling, CAPABILITY_SUPPLIER, CEILING_SUPPLIER),
                 impatient, properties)))
-                .as("a timeout is normalised to all-false by the shipped client")
+                .as("a timeout is an outage, and an outage answers the empty roster")
                 .isEmpty();
 
         // Connection refused: a port nothing is listening on.

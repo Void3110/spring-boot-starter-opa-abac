@@ -16,6 +16,13 @@ tags:
 > Resilience makes outages **rarer, never wider.** This guide is the shipped contract; the design record
 > (the ten settled forks, the behavior matrix) lives in the B3-HTTP-RESILIENCE package under
 > `docs/to-do/implemented/`.
+>
+> **Since 1.4.0 ([[0037-indeterminate-decision-distinct-from-deny|ADR 0037]]).** An exhausted outage still
+> fails closed, but it no longer *poses as a deny*: the OPA edge throws `PolicyEngineException` and a
+> role-source outage stays `RoleResolutionException` all the way out, so the HTTP answer is **503
+> `DEPENDENCY_UNAVAILABLE`** ("not now") instead of 403 ("no"). The OPA decorator now retries **thrown faults
+> only** — a genuine deny is called exactly once — and its breaker counts real faults. The sections below
+> describe the 1.4.0 behaviour; the B3-era sentinel retry is kept as history where it explains a choice.
 
 ## Why this slice exists
 
@@ -30,8 +37,8 @@ still fails closed**.
 
 | Edge | Where | On (exhausted) failure — unchanged by B3 | Resilience provided by |
 |---|---|---|---|
-| `HttpOpaClient` (`allow`/`compile`/`allowAll`) | the gate, **every request** | `false` / `PartialResult.error()` / n×`false` | the **library** (a decorator, optional R4j) |
-| `HttpRoleDefinitionSupplier` (resolve) | role resolve, on the gate path | **throws `RoleResolutionException`** → deny | the **example app** (a wrapper) |
+| `HttpOpaClient` (`allow`/`compile`/`allowAll`) | the gate, **every request** | **throws `PolicyEngineException`** (with its `Kind`) → 503 — since 1.4.0; before: `false` / `PartialResult.error()` / n×`false` | the **library** (a decorator, optional R4j) |
+| `HttpRoleDefinitionSupplier` (resolve) | role resolve, on the gate path | **throws `RoleResolutionException`** → 503 since 1.4.0 (a 403 deny before) — never the realm fallback | the **example app** (a wrapper) |
 | `TagDefinitionClient` (tag) | tag-assignment validation | **throws `TagDefinitionFetchException`** → 503 | the **example app** (a wrapper) |
 
 "Uniform posture" means **uniform classification + config shape + fail-closed contract — NOT uniform
@@ -47,9 +54,10 @@ and **returned results** as retryable or terminal.
 <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult);
 ```
 
-- **Two predicates** because the edges classify an HTTP failure *after* a successful `send()` (a 5xx is a
-  normal response object; only a transport fault throws), and the plain `HttpOpaClient` swallows failures
-  and never throws.
+- **Two predicates** because the resolve and tag edges classify an HTTP failure *after* a successful
+  `send()` (a 5xx is a normal response object; only a transport fault throws). The OPA edge uses only the
+  exception predicate since 1.4.0 — its client throws every failure, status included, as a
+  `PolicyEngineException`, and passes a result predicate that never retries a value.
 - **Backend-agnostic** — no Resilience4j type appears in the seam. B3 ships only the
   `Resilience4jCallGuard` impl; a Spring-Framework-7 / Spring-Boot-4 native backend (`@Retryable`,
   `RetryTemplate`, `@ConcurrencyLimit`, zero external deps) is a later **one-impl swap**, not a three-edge
@@ -102,57 +110,72 @@ host but stay independent, so a fault in `/internal/tag-definitions` cannot trip
 > per row; the whole exchange is the retry unit (safe: a read-only GET on the request thread). Since 7.3
 > the method-security advisor also resolves its manager lazily, so the gate path genuinely shares these
 > decorated beans (an eagerly-injected manager used to skip every bean-level wrapper, the OPA edge's
-> `ResilientOpaClient` included — with the side effect that a gate *deny* now costs the documented one
-> extra fast sidecar hop, because the OPA-edge guard deliberately retries the fail-closed `false`).
+> `ResilientOpaClient` included). Until 1.4.0 that meant a gate *deny* cost one extra fast sidecar hop,
+> because the OPA-edge guard retried the fail-closed `false`; since ADR 0037 a deny is called exactly once.
 
 > **Breaker outcome-invariance.** The breaker is a load/availability optimization over the fail-closed path,
 > **never a decision input.** Every state — closed, open, half-open — yields an outcome *already reachable
-> without the breaker*. An open breaker is *strictly more* fail-closed, never less: open OPA → `allow`
-> false / `compile` `error()` / `allowAll` all-false; open resolve → throw `RoleResolutionException`; open
-> tag → throw `TagDefinitionFetchException`. It changes *when* and *how fast* we fail closed, never
-> *whether* the answer is fail-closed.
+> without the breaker*. An open breaker is *strictly more* fail-closed, never less: open OPA → throw
+> `PolicyEngineException` of kind `CIRCUIT_OPEN` (since 1.4.0; it synthesized `false` / `error()` /
+> all-false before); open resolve → throw `RoleResolutionException`; open tag → throw
+> `TagDefinitionFetchException`. It changes *when* and *how fast* we fail closed, never *whether* the answer
+> is fail-closed.
 
-> **What opens a breaker: a thrown fault, never a returned sentinel.** A breaker counts a failure **only on
-> a thrown `retryableError`** — an unambiguous transport/timeout fault — never on a returned fail-closed
-> *value*. This is load-bearing for "never a decision input": on the OPA edge the only failure signal is the
-> returned sentinel (`false` / `error()` / all-false), which is *indistinguishable from a genuine policy
-> deny*; counting it would let a stream of legitimate denials self-open the OPA breaker and then force-deny
-> otherwise-allowable requests. So the **resolve/tag breakers open** (those edges surface a real outage as a
-> thrown `Transient*Exception`), while the **OPA breaker is effectively a no-op** (the plain `HttpOpaClient`
-> swallows every fault into the sentinel and never throws). That is the honest price of a swallow-everything
-> delegate — the OPA edge gets retry-driven transient recovery without a decision-driven breaker. A breaker
-> the OPA edge *could* legitimately open would require the delegate to surface faults distinctly from
-> denies, which it deliberately does not (fail-closed-by-construction).
+> **What opens a breaker: a thrown fault, never a returned value.** A breaker counts a failure **only on a
+> thrown exception** — never on a returned *value*, which on the OPA edge is always a decision. This is
+> load-bearing for "never a decision input": counting a returned deny would let a stream of legitimate
+> denials self-open the OPA breaker and then refuse otherwise-allowable requests. Until 1.4.0 the plain
+> `HttpOpaClient` swallowed every fault into a deny value, so the **OPA breaker was effectively a no-op**;
+> since ADR 0037 it throws `PolicyEngineException` for every failure, and the OPA breaker **counts real
+> faults — exactly the ones it retries**: `TRANSPORT`, `TIMEOUT`, 5xx, 429. A fail-fast kind
+> (`UNDEFINED_DECISION`, `EVALUATION_ERROR`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers "could not
+> decide" for that call and never opens the breaker. One breaker serves every type and all four methods, and a
+> fail-fast fault is often local — a package that loads late for one type, an enrichable type with no `bulk`
+> rule, one product whose data makes a rule produce two outputs (OPA's `500` with `eval_conflict_error`) — so
+> counting it would let one type's defect refuse every healthy type; and a fault that is never retried
+> costs no latency for the breaker to shed. The decorator passes its retry predicate as the guard's
+> `recordableError`; the resolve and tag edges keep counting every thrown failure.
+
+> **The OPA breaker is live for the first time in 1.4.0 — mind its window.** With the defaults below
+> (`failure-threshold` 5, one retry per call) roughly three fast-failing requests open it — a refused
+> connection or a 5xx records two attempts per request; a timeout records one, since the default 5 s timeout
+> outlasts the 2.5 s retry ceiling, so it takes five — and every OPA-backed call then answers `CIRCUIT_OPEN`
+> (503) until a half-open probe
+> succeeds, up to `open-duration` (10 s) after OPA is back. A sidecar restart that cost a few hundred
+> milliseconds of 403s in 1.3.0 can now cost ~10 s of 503s under load. Tune
+> `opa.abac.resilience.opa.breaker.failure-threshold` / `open-duration` to your restart profile; a measured
+> default is backlog (a load ceiling with OPA killed).
 
 ## The fail-closed contract — identical in every state
 
-On **retries-exhausted** *and* **breaker-open** (the delegate is not called at all), each edge yields the
-*same* value the plain delegate would on a failure:
+On **retries-exhausted** *and* **breaker-open** (the delegate is not called at all), each edge fails closed
+the *same way* the plain delegate does on a failure:
 
-| Method / edge | Fail-closed value |
+| Method / edge | Fail-closed outcome (1.4.0) |
 |---|---|
-| `allow` | `false` |
-| `compile` | **`PartialResult.error()`** — `fromError == true`, **never** `denyAll()` (`fromError == false`) and **never** `allowAll()` |
-| `allowAll(n)` | `n` × `false` |
+| `allow` / `decide` / `compile` / `allowAll` | throws **`PolicyEngineException`** — the delegate's own kind on an exhausted retry, `CIRCUIT_OPEN` on an open breaker (`INTERRUPTED` if the backoff was interrupted). A returned value is always a policy decision. |
 | resolve | throws `RoleResolutionException` |
 | tag | throws `TagDefinitionFetchException` → 503 |
 
-> **The `error()`-not-`denyAll()` distinction is load-bearing.** `fromError` is what suppresses the 5.5-B
-> hierarchy `subtreeSpec` widening composed alongside the residual (see
-> [[PARTIAL-EVALUATION-FILTERING]] §the-from-error-flag). A breaker-open path returning `denyAll()` would
-> let a hierarchy widening survive an OPA outage — a real fail-open hole. `allowAll()` ("match all rows") is
-> the catastrophe value, never synthesized. A **contract test** pins decorator-value == delegate-value for
-> all three OPA methods.
+> **Nothing widens on a throw.** A thrown failure carries no residual, so no hierarchy `subtreeSpec` widening
+> can survive next to it — the property the B3-era `error()`-not-`denyAll()` rule protected by value is now
+> true by construction. (`PartialResult.error()` keeps that meaning for the one case it is still produced —
+> the client *refusing* to send a compile request, e.g. an unsafe path; see
+> [[PARTIAL-EVALUATION-FILTERING]].) A **contract test** pins that decorator and delegate throw the same kind
+> on a sustained failure and return the same value for a decision.
 
-### How the OPA decorator detects a failure to retry
+### How the OPA decorator decides what to retry
 
-The plain `HttpOpaClient` never throws — it swallows failures into the fail-closed value. So the
-`ResilientOpaClient` decorator retries on the **returned sentinel**: `compile` on `fromError()` (the exact
-failure flag, distinct from a real `denyAll()`); `allow` on `false`; `allowAll` **only on an all-`false` (or null/short) block** — a mixed block is a
-real 200 answer with genuine per-row denies and is never retried. A genuine
-policy deny *also* retries — accepted because the OPA gate is a local sidecar at 1 retry / ~50ms and an OPA
-decision is deterministic (a real deny stays `false`, never widens): one extra fast hop on a deny, fully
-fail-closed, while a transient blip recovers the real answer.
+The plain `HttpOpaClient` throws `PolicyEngineException` when it could not obtain a decision and returns
+only what the policy answered. So `ResilientOpaClient` retries a **thrown** fault whose **kind** is
+transient — `TRANSPORT`, `TIMEOUT`, or an `HTTP_STATUS` of 5xx or 429 — and fails fast on every other kind
+(`MALFORMED_RESPONSE`, `UNDEFINED_DECISION`, `EVALUATION_ERROR`, 4xx, `INTERRUPTED`). The kind is the whole
+classification:
+never the cause chain, because a malformed body can carry the JSON parser's `IOException` and would come
+back unchanged on a retry. A **returned value is never retried** — a deny, a reasoned deny, a mixed or an
+all-false bulk page are real answers. (Until 1.4.0 the decorator had to retry the deny *value*, since a
+swallowed failure looked exactly like it: every genuine deny paid an extra hop plus backoff, and Slice 7.3
+had to exempt mixed bulk blocks after measuring ~8× enrichment latency.)
 
 ### How the resolve/tag wrappers preserve B2
 

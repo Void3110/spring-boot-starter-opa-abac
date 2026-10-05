@@ -160,7 +160,8 @@ public class CatalogProvenanceAdvice implements ResponseBodyAdvice<Object> {
                     .map(CatalogProvenanceAdvice::labelOf)
                     .orElse(null);
         } catch (Exception e) {
-            // A role-source outage (or anything else) leaves the value UNKNOWN — omit, never guess.
+            // A role-source outage (any DecisionIndeterminateException, ADR 0037) or anything else leaves the
+            // value UNKNOWN — omit, never guess. A decoration: it never turns an allowed read into an error.
             log.debug("catalog provenance: role lookup failed for {} ({})",
                     catalog.getId(), e.getClass().getSimpleName());
             return;

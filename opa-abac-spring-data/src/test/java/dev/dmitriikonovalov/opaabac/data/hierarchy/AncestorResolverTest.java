@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.opaabac.data.hierarchy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -165,6 +166,62 @@ class AncestorResolverTest {
         assertThatThrownBy(() -> resolver.ancestorsOf("product", PRODUCT))
                 .isInstanceOf(AncestorResolutionException.class)
                 .hasMessageContaining("lookup failed");
+    }
+
+    // --- ENGINE-ERRORS U33: a source that OPTS its outage in is never wrapped or degraded -------------
+
+    /** An adopter source's own outage signal, opted into the family (ADR 0037 §2). */
+    private static final class SourceOutage extends DecisionIndeterminateException {
+        SourceOutage() {
+            super("lineage store down");
+        }
+    }
+
+    @Test // ltree ancestorsOf: the family member propagates unwrapped; a plain throw is still wrapped (above)
+    void ltree_familyMemberFromTheSource_propagatesUnwrapped() {
+        SourceOutage outage = new SourceOutage();
+        AncestorResolver resolver = new LtreeAncestorResolver((t, id) -> {
+            throw outage;
+        }, 32);
+
+        assertThatThrownBy(() -> resolver.ancestorsOf("product", PRODUCT)).isSameAs(outage);
+    }
+
+    @Test // ltree subtreeOf: the family member propagates instead of collapsing to the empty widening
+    void ltree_subtreeOf_familyMemberFromTheSource_propagates() {
+        SourceOutage outage = new SourceOutage();
+        AncestorResolver resolver = new LtreeAncestorResolver((t, id) -> {
+            throw outage;
+        }, 32);
+
+        assertThatThrownBy(() -> resolver.subtreeOf("catalog", "c-1")).isSameAs(outage);
+    }
+
+    @Test // CTE ancestorsOf: the family member propagates unwrapped
+    void cte_familyMemberFromTheParentSource_propagatesUnwrapped() {
+        SourceOutage outage = new SourceOutage();
+        AncestorResolver resolver = new RecursiveCteAncestorResolver((t, id) -> {
+            throw outage;
+        }, 32);
+
+        assertThatThrownBy(() -> resolver.ancestorsOf("product", PRODUCT)).isSameAs(outage);
+    }
+
+    @Test // CTE subtreeOf: the family member from the child-link source propagates; a plain throw still
+    // collapses to the empty widening
+    void cte_subtreeOf_familyMemberFromTheDescendantSource_propagates() {
+        SourceOutage outage = new SourceOutage();
+        AncestorResolver familyDown = new RecursiveCteAncestorResolver(
+                (t, id) -> Optional.empty(), (t, id) -> {
+                    throw outage;
+                }, 32);
+        AncestorResolver plainDown = new RecursiveCteAncestorResolver(
+                (t, id) -> Optional.empty(), (t, id) -> {
+                    throw new IllegalStateException("db down");
+                }, 32);
+
+        assertThatThrownBy(() -> familyDown.subtreeOf("catalog", "c-1")).isSameAs(outage);
+        assertThat(plainDown.<Object>subtreeOf("catalog", "c-1")).isNotNull(); // the empty widening, no throw
     }
 
     @Test // I1 (unit) — both impls agree on the same tree

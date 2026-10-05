@@ -306,7 +306,7 @@ must not become an authorization outage.
 |---|---|
 | Missing / unmapped `acr`, missing or non-numeric `auth_time` | `elevated` is undefined → the production deny holds |
 | A **malformed** `deny_reason` on the wire | plain deny at the parse — the reason is dropped, never coerced |
-| An OPA outage, breaker open, retries exhausted | plain deny at the resilient wrapper — **never a fabricated reason** |
+| An OPA outage, breaker open, retries exhausted | "could not decide" — a 503 since 1.4.0 (ADR 0037; a plain deny before) — **never a fabricated reason** |
 | A reason with any **null** field | the ordinary **403** at the advice — never a half-formed challenge |
 | Audit emission throwing | nothing; the decision stands |
 

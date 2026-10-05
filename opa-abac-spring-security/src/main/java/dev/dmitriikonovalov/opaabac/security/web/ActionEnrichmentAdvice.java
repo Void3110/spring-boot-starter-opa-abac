@@ -4,6 +4,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.AbacResourceCache;
 import dev.dmitriikonovalov.opaabac.core.AncestorChainSupplier;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
@@ -66,17 +67,18 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  * <ul>
  *   <li>no authenticated subject (all rows);</li>
  *   <li>a cache miss (that row) or an ancestor-resolution failure (that row);</li>
- *   <li>the batch role resolution throwing {@link RoleResolutionException} — a <em>whole-batch</em>
+ *   <li>the batch role resolution throwing {@link RoleResolutionException} (or any other
+ *       {@link DecisionIndeterminateException}, ADR 0037) — a <em>whole-batch</em>
  *       outage by contract (ADR 0024 §2): every root's answer is unknown, so the <strong>whole
  *       group</strong> is omitted while the response body stays intact (affordance never blocks).
  *       Pre-7.3 a role outage omitted the row that hit it; the batch form makes the same outage
  *       omit the page's group — a fully-degraded page over a mixed-snapshot one (ADR 0023's
  *       posture);</li>
  *   <li>{@code allowAll} throwing, or returning a list whose length does not match the batch;</li>
- *   <li><strong>an all-{@code false} verdict block</strong> for the row — the production
- *       {@link OpaClient#allowAll(List)} fails closed to all-{@code false} on a transport error, which
- *       is indistinguishable from a genuine fully-denied resource by the returned booleans alone; the
- *       advice therefore treats an all-{@code false} block as <em>could-not-compute</em> and omits,
+ *   <li><strong>an all-{@code false} verdict block</strong> for the row — a client that pads a failure to
+ *       all-{@code false} (the shipped {@link OpaClient#allowAll(List)} throws instead since ADR 0037; a custom
+ *       one may not) is indistinguishable from a genuine fully-denied resource by the returned booleans alone;
+ *       the advice therefore treats an all-{@code false} block as <em>could-not-compute</em> and omits,
  *       rather than risk emitting a fabricated all-{@code false} map (the inverting-client footgun
  *       ADR 0016 §7 forbids). A caller who reached enrichment already passed a gated read, so a real
  *       row almost always has at least one {@code true} (typically {@code view}).</li>
@@ -198,9 +200,11 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
         Map<ResolveTarget, Optional<RoleDefinition>> roles;
         try {
             roles = roleDefinitionSupplier.lookupAll(subject.id(), roots);
-        } catch (RoleResolutionException _) {
-            // Whole-batch outage (B2's tri-state, batched): every root's answer is unknown → omit the
-            // whole group, response body intact (never fall back, never widen, never block).
+        } catch (DecisionIndeterminateException _) {
+            // Whole-batch outage (B2's tri-state, batched; any member of the ADR 0037 family, so a custom
+            // supplier's own outage subtype cannot escape and block the body): every root's answer is
+            // unknown → omit the whole group, response body intact (never fall back, never widen, never
+            // block). An affordance decorates an already-authorized response; it never becomes its error.
             log.warn("Action enrichment omitted for the group: role resolution outage (batch of {})",
                     roots.size());
             return;
@@ -239,7 +243,8 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
         try {
             verdicts = opaClient.allowAll(contexts);
         } catch (RuntimeException ex) {
-            // A custom OpaClient may throw; the production HttpOpaClient does not. Either way → omit all.
+            // The policy engine could not decide (a PolicyEngineException, ADR 0037), or a custom OpaClient
+            // threw something else. Either way → omit all; the already-authorized body is never blocked.
             log.warn("Action enrichment omitted: allowAll failed ({})", ex.getClass().getSimpleName());
             return;
         }
@@ -261,8 +266,9 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
                 actions.put(verb, allowed);
                 anyTrue = anyTrue || allowed;
             }
-            // An all-false block is indistinguishable from a transport-error degrade (allowAll pads to
-            // all-false on failure). Omit rather than risk a fabricated all-false map (ADR 0016 §7).
+            // An all-false block is indistinguishable from a client that pads a failure to all-false (the
+            // shipped client throws since ADR 0037; a custom one may not). Omit rather than risk a fabricated
+            // all-false map (ADR 0016 §7).
             if (anyTrue) {
                 dto.setActions(actions);
             }

@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.opaabac.security;
 import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -26,12 +27,13 @@ import org.springframework.web.context.request.RequestContextHolder;
  *       per-request resolves collapse to one real call);</li>
  *   <li>{@code Optional.empty()} — authoritative no-role (without it, a no-role caller's enriched
  *       page keeps the full fan-out: a deny-path DoS shape);</li>
- *   <li>the {@link RoleResolutionException} <strong>outage</strong> — stored as a marker and
- *       <strong>re-thrown</strong> on every repeat lookup of that key in the same request. Each
- *       caller keeps its own fail-closed degrade for the replayed throw (gate → deny; enrichment →
- *       omit; query path → direct-grant-only); a fully-degraded page is preferable to a
- *       mixed-snapshot page. Only {@code RoleResolutionException} — the SPI's contractual outage
- *       signal — is memoized; any other exception propagates un-memoized.</li>
+ *   <li>the <strong>outage</strong> — a {@link RoleResolutionException}, or any other
+ *       {@link DecisionIndeterminateException} a supplier opts in with (ADR 0037 §2) — stored as a
+ *       marker and <strong>re-thrown</strong> on every repeat lookup of that key in the same request.
+ *       Each caller keeps its own handling of the replayed throw (a gate → 503; enrichment → omit);
+ *       a fully-degraded page is preferable to a mixed-snapshot page. Only the "could not decide"
+ *       family — the SPI's contractual outage signal — is memoized; any other exception propagates
+ *       un-memoized.</li>
  * </ul>
  *
  * <p><strong>Staleness contract:</strong> a resolve answer is a per-request snapshot; a mid-request
@@ -130,7 +132,7 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
      */
     private Map<ResolveTarget, Optional<RoleDefinition>> resolveBatch(
             String userId, Set<ResolveTarget> misses, Map<MemoKey, Object> memo) {
-        RoleResolutionException outage;
+        DecisionIndeterminateException outage;
         try {
             Map<ResolveTarget, Optional<RoleDefinition>> fresh = delegate.lookupAll(userId, misses);
             if (fresh.size() == misses.size() && fresh.keySet().containsAll(misses)) {
@@ -139,7 +141,7 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
             outage = new RoleResolutionException(
                     "lookupAll contract violation: expected exactly one entry per requested target ("
                             + misses.size() + " requested, " + fresh.size() + " returned)");
-        } catch (RoleResolutionException e) {
+        } catch (DecisionIndeterminateException e) {
             outage = e;
         }
         Outage marker = new Outage(outage);
@@ -153,14 +155,14 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
     private Object resolve(MemoKey key) {
         try {
             return delegate.lookup(key.userId(), key.resourceType(), key.resourceId());
-        } catch (RoleResolutionException outage) {
+        } catch (DecisionIndeterminateException outage) {
             return new Outage(outage);
         }
     }
 
     @SuppressWarnings("unchecked")
     private static Optional<RoleDefinition> replay(Object outcome) {
-        if (outcome instanceof Outage(RoleResolutionException cause)) {
+        if (outcome instanceof Outage(DecisionIndeterminateException cause)) {
             throw cause;
         }
         return (Optional<RoleDefinition>) outcome;
@@ -197,5 +199,5 @@ public final class MemoizingRoleDefinitionSupplier implements RoleDefinitionSupp
     record MemoKey(String userId, String resourceType, String resourceId) {}
 
     /** The memoized third state: the contractual outage, re-thrown verbatim on replay. */
-    private record Outage(RoleResolutionException cause) {}
+    private record Outage(DecisionIndeterminateException cause) {}
 }

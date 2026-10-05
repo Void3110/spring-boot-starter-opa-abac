@@ -191,7 +191,7 @@ state). This keeps the contract simple; adopt `PATCH` only if partial update bec
 | `404 Not Found` | the resource (or its claimed parent) doesn't exist | unknown `catalogId`; child not under the parent |
 | `409 Conflict` | the request collides with current **state** (a uniqueness/immutability/lifecycle conflict) | duplicate team target; editing a system (immutable) role |
 | `422 Unprocessable Entity` | the request is **syntactically valid but semantically rejected** by a domain rule | a tag value not in the dictionary; the role-subset rule |
-| `503 Service Unavailable` | a required dependency was unreachable and the operation **fails closed** | the tag dictionary could not be fetched |
+| `503 Service Unavailable` | a required dependency was unreachable and the operation **fails closed** | the tag dictionary could not be fetched; the authorization decision could not be made — the policy engine or the role source was down (ADR [[0037-indeterminate-decision-distinct-from-deny\|0037]]) |
 
 **`401` is step-up only.** Authentication happens at the gateway (APISIX OIDC) before a request reaches
 a service; a service only sees already-authenticated requests, and an ordinary authorization denial is a
@@ -226,6 +226,22 @@ unreachable, **reject the operation** rather than proceed without the attributes
 throws `503` if the tag dictionary can't be fetched — it will *not* store a resource untagged, because an
 untagged resource could later read as more-permissive than intended. Failing closed on a dependency outage
 is the same invariant the whole library is built on; an API endpoint must not be the place it leaks.
+
+**"Could not decide" is a `503`, not a `403` (since 1.4.0, ADR
+[[0037-indeterminate-decision-distinct-from-deny|0037]]).** The authorization decision is itself a dependency:
+when the policy engine or the role source is down, the request is refused — nothing ran — but the honest
+answer is "not now", so a client may retry it, which it must never do with a `403`. The same applies to a
+list: an outage answers `503`, never an empty page that reads as "you may see nothing". No `Retry-After`
+is sent; there is no truthful value for it.
+
+Who renders it: an application extending `AbstractProblemAdvice` gets the mapping from the base. Otherwise
+the starter registers a fallback `IndeterminateDecisionProblemAdvice` at **highest precedence** — MVC asks
+advices in order and the first with a matching handler wins, so it answers the two family types ahead of
+your own `AccessDeniedException` handler, and ahead of your handler for an exception that *wraps* a family
+member (MVC walks the cause chain inside one advice before asking the next). To render your own envelope,
+extend `AbstractProblemAdvice`, or declare your own `IndeterminateDecisionProblemAdvice` bean overriding
+`handleIndeterminate`. Note that an `AbstractProblemAdvice` subclass turns the fallback off for the whole
+application, even when it is scoped to some controllers.
 
 **A status alone is not enough — pair it with a typed `errorCode`.** Two `422`s (a bad tag value vs the
 role-subset rule) or several `409`s (a duplicate target vs an immutable role) are different problems a
@@ -445,6 +461,7 @@ not scattered through controllers. Representative mappings:
 | a uniqueness / immutability / lifecycle conflict (`*ConflictException`, `*ImmutableException`) | `409` | `STATE_CONFLICT` or a service refinement |
 | a domain-rule violation (`IllegalTagAssignmentException` / `SubsetRuleViolationException` / `InvalidTagDefinitionException`) | `422` | `TAG_VALUE_ILLEGAL` / `ROLE_SUBSET_VIOLATION` / `TAG_DEFINITION_INVALID` |
 | a dependency-unreachable, fail-closed condition (`TagDefinitionFetchException`) | `503` | `DEPENDENCY_UNAVAILABLE` |
+| the authorization decision could not be made (`AuthorizationIndeterminateException` / any `DecisionIndeterminateException`) | `503` | `DEPENDENCY_UNAVAILABLE` |
 | an OPA-deny / unauthenticated / unresolved subject | `403` | `ACCESS_DENIED` |
 
 A new error condition gets a **typed exception** + a handler entry mapped to an `ApiErrorCode`, not an

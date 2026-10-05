@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.example.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -176,17 +177,15 @@ class CatalogListAuthorizerTest {
         verify(supplier, never()).lookup(any(), any(), any());
     }
 
-    @Test // membership-only outage with NO supervised leg → empty page, never queries (fail-closed, no 500)
-    void roleSourceOutage_membershipOnly_returnsEmptyPage_neverQueries() {
+    @Test // ENGINE-ERRORS U32 — a membership-only outage PROPAGATES ("could not decide" → 503 via the
+    // advice), never an empty page that reads as "you may see nothing"; still never queries
+    void roleSourceOutage_membershipOnly_propagates_neverQueries() {
         membership(C1);
         supervised();
-        when(supplier.lookup("sub-1", "catalog", C1.toString()))
-                .thenThrow(new RoleResolutionException("source unavailable"));
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(supplier.lookup("sub-1", "catalog", C1.toString())).thenThrow(outage);
 
-        Page<CatalogEntity> page = authorizer.readable(pageable);
-
-        assertThat(page.getContent()).isEmpty();
-        assertThat(page.getTotalElements()).isZero();
+        assertThatThrownBy(() -> authorizer.readable(pageable)).isSameAs(outage);
         verify(queryService, never()).findAuthorized(any(), any(), any(), any(), any());
     }
 
@@ -298,14 +297,27 @@ class CatalogListAuthorizerTest {
         assertThat(composition.role()).isEqualTo(MEMBERSHIP_ROLE);
     }
 
-    // --- U29 — the membership role source throws while supervised ids exist ---------------------------
+    // --- U29 → ENGINE-ERRORS U32 — the membership role does not resolve while supervised ids exist -------
 
-    @Test
-    void membershipRoleOutage_withSupervisedIds_keepsTheSupervisedLeg_noThrow() {
+    @Test // an OUTAGE propagates (fork 16): degrading to the supervised leg would hide it behind a partial
+    // page, and both legs resolve through the same supplier anyway
+    void membershipRoleOutage_withSupervisedIds_propagates() {
         membership(C1);
         supervised(C3);
-        when(supplier.lookup("sub-1", "catalog", C1.toString()))
-                .thenThrow(new RoleResolutionException("source unavailable"));
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(supplier.lookup("sub-1", "catalog", C1.toString())).thenThrow(outage);
+        roleOn(C3, SUPERVISOR_ROLE);
+
+        assertThatThrownBy(() -> authorizer.readable(pageable)).isSameAs(outage);
+        verify(supplier, never()).lookup("sub-1", "catalog", C3.toString());
+        verify(queryService, never()).findAuthorized(any(), any(), any(), any(), any());
+    }
+
+    @Test // an AUTHORITATIVE no-role (revoked between the two calls) keeps the designed supervised-only degrade
+    void membershipRoleNoLongerResolves_withSupervisedIds_keepsTheSupervisedLeg() {
+        membership(C1);
+        supervised(C3);
+        when(supplier.lookup("sub-1", "catalog", C1.toString())).thenReturn(Optional.empty());
         roleOn(C3, SUPERVISOR_ROLE);
         queryReturnsEmptyPage();
 
@@ -322,8 +334,7 @@ class CatalogListAuthorizerTest {
     void bothLegsUnresolvable_returnsEmptyPage() {
         membership(C1);
         supervised(C3);
-        when(supplier.lookup("sub-1", "catalog", C1.toString()))
-                .thenThrow(new RoleResolutionException("source unavailable"));
+        when(supplier.lookup("sub-1", "catalog", C1.toString())).thenReturn(Optional.empty());
         when(supplier.lookup("sub-1", "catalog", C3.toString())).thenReturn(Optional.empty());
 
         assertThat(authorizer.readable(pageable).getContent()).isEmpty();
@@ -444,12 +455,12 @@ class CatalogListAuthorizerTest {
         assertThat(CatalogProvenanceMemo.read()).contains(Set.of());
     }
 
-    @Test // membership-role outage: the page degraded to supervised-only, and the memo is exactly those
+    @Test // the membership role no longer resolves: the page degraded to supervised-only, and the memo is
+    // exactly those (an OUTAGE no longer degrades — it propagates, see membershipRoleOutage_withSupervisedIds_propagates)
     void memoCoversTheWholePageWhenTheMembershipLegDropped() {
         membership(C1);
         supervised(C3);
-        when(supplier.lookup("sub-1", "catalog", C1.toString()))
-                .thenThrow(new RoleResolutionException("source unavailable"));
+        when(supplier.lookup("sub-1", "catalog", C1.toString())).thenReturn(Optional.empty());
         roleOn(C3, SUPERVISOR_ROLE);
         queryReturnsEmptyPage();
 

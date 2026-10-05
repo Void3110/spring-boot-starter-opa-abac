@@ -15,9 +15,11 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.AbacResource;
 import dev.dmitriikonovalov.opaabac.core.Condition;
 import dev.dmitriikonovalov.opaabac.core.Conjunction;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolutionException;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
@@ -293,6 +295,107 @@ class AbacQueryServiceTest {
         ArgumentCaptor<List<AbacContext>> perRow = ArgumentCaptor.forClass(List.class);
         verify(client).allowAll(perRow.capture());
         assertThat(perRow.getValue().get(0).resource().ancestors()).isEmpty(); // fail-closed: direct-only
+    }
+
+    // ---- ENGINE-ERRORS U25/U29: "could not decide" propagates — never an empty page (ADR 0037 §7) -------
+
+    @Test // U25 — the compile call fails → both overloads throw; no repository call, no count
+    void compileIndeterminate_propagates_bothOverloads_noRepoCall() {
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        AbacQueryService svc = service(engine(null, DOWN), AbacQueryService.PartialEvalSettings.defaults());
+
+        assertThatThrownBy(() -> svc.findAuthorized(repo, (r, q, cb) -> null, context())).isSameAs(DOWN);
+        assertThatThrownBy(() -> svc.findAuthorized(repo, (r, q, cb) -> null, context(), null, sortedPage()))
+                .isSameAs(DOWN);
+        Mockito.verifyNoInteractions(repo);
+    }
+
+    @Test // U25 — the kill-switch's coarse allow() fails → both overloads throw; no repository call
+    void killSwitchIndeterminate_propagates_bothOverloads_noRepoCall() {
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        AbacQueryService svc = service(engine(null, DOWN), new AbacQueryService.PartialEvalSettings(false, true));
+
+        assertThatThrownBy(() -> svc.findAuthorized(repo, (r, q, cb) -> null, context())).isSameAs(DOWN);
+        assertThatThrownBy(() -> svc.findAuthorized(repo, (r, q, cb) -> null, context(), null, sortedPage()))
+                .isSameAs(DOWN);
+        Mockito.verifyNoInteractions(repo);
+    }
+
+    @Test // U25 — the allowlist batch fails → both overloads throw: the candidates were fetched, none returned
+    void allowlistBatchIndeterminate_propagates_bothOverloads() {
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of(new Row("a"), new Row("b")));
+        when(repo.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of(new Row("a")));
+        AbacQueryService svc = service(
+                engine(PartialResult.unsupported(), DOWN), new AbacQueryService.PartialEvalSettings(true, true));
+
+        assertThatThrownBy(() -> svc.findAuthorized(repo, (r, q, cb) -> null, context())).isSameAs(DOWN);
+        assertThatThrownBy(() -> svc.findAuthorized(repo, (r, q, cb) -> null, context(), null, sortedPage()))
+                .isSameAs(DOWN);
+    }
+
+    @Test // U29 — the rethrow invariant on the batch path: an ancestor resolver's OWN outage subtype propagates
+    // instead of degrading the row to its direct grant (AncestorResolutionException still degrades — U12)
+    void batchPath_resolverFamilyMember_propagates() {
+        JpaSpecificationExecutor<Row> repo = mock(JpaSpecificationExecutor.class);
+        when(repo.findAll(any(Specification.class))).thenReturn(List.of(new HierRow("a")));
+        OpaClient client = spy(stub(PartialResult.unsupported(), List.of(true), false));
+        LineageOutage outage = new LineageOutage();
+        AncestorResolver down = new AncestorResolver() {
+            @Override
+            public List<ParentRef> ancestorsOf(String leafType, String leafId) {
+                throw outage;
+            }
+
+            @Override
+            public <T> Specification<T> subtreeOf(String rootType, String rootId) {
+                return (root, query, cb) -> cb.disjunction();
+            }
+        };
+
+        assertThatThrownBy(() -> hierService(client, new AbacQueryService.PartialEvalSettings(true, true), down)
+                .findAuthorized(repo, (r, q, cb) -> null, context(), null)).isSameAs(outage);
+        verify(client, never()).allowAll(any());
+    }
+
+    private static final PolicyEngineException DOWN =
+            PolicyEngineException.transport("policy engine unreachable", new java.io.IOException("refused"));
+
+    /** An adopter ancestor source's own outage signal, opted into the family (ADR 0037 §2). */
+    private static final class LineageOutage extends DecisionIndeterminateException {
+        LineageOutage() {
+            super("lineage store down");
+        }
+    }
+
+    private static Pageable sortedPage() {
+        return PageRequest.of(0, 10, Sort.by("id").ascending());
+    }
+
+    /**
+     * An OpaClient whose engine fails: {@code allow} and {@code allowAll} throw {@code failure}; {@code compile}
+     * answers {@code compileResult}, or throws {@code failure} too when that is {@code null}.
+     */
+    private static OpaClient engine(PartialResult compileResult, RuntimeException failure) {
+        return new OpaClient() {
+            @Override
+            public boolean allow(AbacContext context) {
+                throw failure;
+            }
+
+            @Override
+            public PartialResult compile(AbacContext context) {
+                if (compileResult == null) {
+                    throw failure;
+                }
+                return compileResult;
+            }
+
+            @Override
+            public List<Boolean> allowAll(List<AbacContext> contexts) {
+                throw failure;
+            }
+        };
     }
 
     @Test // U11/U12 — short/all-false batch decision still drops rows (fail-closed), hierarchy-aware
@@ -687,5 +790,28 @@ class AbacQueryServiceTest {
         public java.util.Optional<ParentRef> abacParent() {
             return java.util.Optional.of(new ParentRef("catalog", "C"));
         }
+    }
+
+    // --- widened(): an ALLOW_ALL residual is never OR-ed (ENGINE-ERRORS review; backlog 17) -------------------
+    // The SQL proof is HierarchyListFilterIT I9 on real Postgres; this pins the choice by instance identity.
+
+    @Test
+    void widened_allowAllResidual_isNeverOrEdWithTheSubtree() {
+        Specification<Object> tag = Specification.unrestricted();
+        Specification<Object> subtree = (root, query, cb) -> cb.conjunction();
+
+        assertThat(AbacQueryService.widened(PartialResult.allowAll(), tag, subtree)).isSameAs(tag);
+    }
+
+    @Test
+    void widened_otherResiduals_areOrEdWithTheSubtree_andNoSubtreeMeansTheResidualAlone() {
+        Specification<Object> tag = (root, query, cb) -> cb.disjunction();
+        Specification<Object> subtree = (root, query, cb) -> cb.conjunction();
+
+        assertThat(AbacQueryService.widened(PartialResult.denyAll(), tag, subtree)).isNotSameAs(tag);
+        assertThat(AbacQueryService.widened(PartialResult.unsupported(), tag, subtree)).isNotSameAs(tag);
+        assertThat(AbacQueryService.widened(null, tag, subtree)).isNotSameAs(tag);
+        assertThat(AbacQueryService.widened(PartialResult.allowAll(), tag, null)).isSameAs(tag);
+        assertThat(AbacQueryService.widened(PartialResult.denyAll(), tag, null)).isSameAs(tag);
     }
 }

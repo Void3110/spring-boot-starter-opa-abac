@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -20,8 +21,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Unit tests for {@link HttpOpaClient#allowAll(List)} (the batch primitive) against an in-process
  * {@link HttpServer} stub. Covers QA cases U10–U12: positional mapping of a mixed bulk body; every
- * fail-closed path (500 / refused / timeout / malformed / wrong-length → all-false of length N); empty
- * input → empty list with no HTTP call.
+ * failure path (500 / refused / timeout / malformed / wrong-length / no result → a thrown
+ * {@link PolicyEngineException} of the matching kind, ENGINE-ERRORS); the refusals (mixed types, unsafe
+ * path → all-false, no HTTP call); empty input → empty list with no HTTP call.
  */
 class HttpOpaClientAllowAllTest {
 
@@ -94,21 +96,24 @@ class HttpOpaClientAllowAllTest {
         assertThat(input.get("items").get(1).get("resource").get("id").asString()).isEqualTo("b");
     }
 
-    @Test // U11 — fail-closed on HTTP 500 → all-false of length N
-    void failClosed_onHttp500() throws IOException {
-        String base = startServer(ex -> respond(ex, 500, "boom"));
-        assertThat(clientFor(base, "catalog").allowAll(List.of(ctx("a"), ctx("b"))))
-                .containsExactly(false, false);
+    // ENGINE-ERRORS (ADR 0037): a failed batch THROWS — never a padded all-false list that a caller would
+    // read as "every item denied". A refusal (mixed types, unsafe path) stays all-false, below.
+
+    @Test // ENGINE-ERRORS U10 — non-200 → HTTP_STATUS, the status carried
+    void indeterminate_onHttp503() throws IOException {
+        String base = startServer(ex -> respond(ex, 503, "boom"));
+
+        assertThat(assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.HTTP_STATUS).httpStatus())
+                .hasValue(503);
     }
 
-    @Test // U11 — fail-closed on connection refused
-    void failClosed_onConnectionRefused() {
-        assertThat(clientFor("http://127.0.0.1:1", "catalog").allowAll(List.of(ctx("a"), ctx("b"), ctx("c"))))
-                .containsExactly(false, false, false);
+    @Test // ENGINE-ERRORS U10 — connection refused → TRANSPORT
+    void indeterminate_onConnectionRefused() {
+        assertKind(clientFor("http://127.0.0.1:1", "catalog"), PolicyEngineException.Kind.TRANSPORT);
     }
 
-    @Test // U11 — fail-closed on timeout
-    void failClosed_onTimeout() throws IOException {
+    @Test // ENGINE-ERRORS U10 — timeout → TIMEOUT
+    void indeterminate_onTimeout() throws IOException {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000);
@@ -117,29 +122,40 @@ class HttpOpaClientAllowAllTest {
             }
             respond(ex, 200, "{\"result\":[true,true]}");
         });
-        assertThat(clientFor(base, "catalog").allowAll(List.of(ctx("a"), ctx("b"))))
-                .containsExactly(false, false);
+
+        assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.TIMEOUT);
     }
 
-    @Test // U11 — fail-closed on malformed body
-    void failClosed_onMalformedBody() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "not-json"));
-        assertThat(clientFor(base, "catalog").allowAll(List.of(ctx("a"), ctx("b"))))
-                .containsExactly(false, false);
+    @Test // ENGINE-ERRORS U10 — no result: no such package, or a package without a `bulk` rule
+    void indeterminate_onNoResult_isUndefinedDecision() throws IOException {
+        String base = startServer(ex -> respond(ex, 200, "{}"));
+
+        assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.UNDEFINED_DECISION);
     }
 
-    @Test // U11 — fail-closed on a length mismatch (result shorter than N)
-    void failClosed_onLengthMismatch() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "{\"result\":[true]}"));
-        assertThat(clientFor(base, "catalog").allowAll(List.of(ctx("a"), ctx("b"), ctx("c"))))
-                .containsExactly(false, false, false);
+    @Test // ENGINE-ERRORS U10 — every body that is not a boolean list of length N → MALFORMED_RESPONSE
+    void indeterminate_onMalformedBody() throws IOException {
+        for (String body : List.of(
+                "not-json",                       // unparseable
+                "{\"result\":null}",              // an explicit null is not "no result"
+                "{\"result\":[true]}",            // shorter than the input
+                "{\"result\":[true,true,true]}",  // longer than the input
+                "{\"result\":[true,\"yes\"]}",    // a non-boolean element
+                "{\"result\":{\"a\":true}}")) {   // not a list at all
+            String base = startServer(ex -> respond(ex, 200, body));
+
+            assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
+            server.stop(0);
+        }
     }
 
-    @Test // U11 — fail-closed on a non-boolean element
-    void failClosed_onNonBooleanElement() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "{\"result\":[true,\"yes\"]}"));
-        assertThat(clientFor(base, "catalog").allowAll(List.of(ctx("a"), ctx("b"))))
-                .containsExactly(false, false);
+    /** A two-item batch throws the given kind; returns it for further assertions. */
+    private PolicyEngineException assertKind(HttpOpaClient client, PolicyEngineException.Kind kind) {
+        Throwable thrown = catchThrowable(() -> client.allowAll(List.of(ctx("a"), ctx("b"))));
+        assertThat(thrown).isInstanceOf(PolicyEngineException.class);
+        PolicyEngineException e = (PolicyEngineException) thrown;
+        assertThat(e.kind()).isEqualTo(kind);
+        return e;
     }
 
     @Test // U12 — empty input → empty list, no HTTP call made

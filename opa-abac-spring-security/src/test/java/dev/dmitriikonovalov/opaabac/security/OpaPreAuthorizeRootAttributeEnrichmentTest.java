@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -219,6 +220,19 @@ class OpaPreAuthorizeRootAttributeEnrichmentTest {
         assertThat(decision).isNotNull();
         assertThat(decision.isGranted()).isTrue();
         assertThat(capturedContext().resource().rootAttributes()).isNull();
+    }
+
+    @Test // ENGINE-ERRORS U23 — the rethrow invariant: a root resolver that OPTS its outage in is not
+    // "unproven" — the enrichment's degrade-catch lets the family through and the decision is indeterminate
+    void rootResolverThrowsAFamilyMember_isIndeterminate_notUnproven() {
+        givenCategoryUnderCatalog();
+        SpiOutage outage = new SpiOutage("catalog store down");
+        when(resolver.resolve("catalog", CATALOG_ID.toString())).thenThrow(outage);
+
+        assertThatThrownBy(() -> manager().authorize(noopAuthSupplier, getCategory()))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(outage);
+        verify(opaClient, never()).decide(any());
     }
 
     @Test

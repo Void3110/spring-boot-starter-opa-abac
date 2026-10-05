@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -9,7 +10,9 @@ import static org.mockito.Mockito.when;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
+import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +20,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
@@ -78,15 +82,28 @@ class OpaAuthorizationManagerTest {
 
     @Test // B2 U4 — supplier throws RoleResolutionException (outage) → deny, OpaClient NEVER invoked
     // (no empty-role context reaches OPA's realm fallback). Mirror of the @OpaPreAuthorize manager.
-    void roleSourceOutage_failClosedDeny_neverCallsOpa() {
-        when(supplier.lookup(any(), any(), any()))
-                .thenThrow(new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("source unavailable"));
+    // ENGINE-ERRORS U19: thrown as "could not decide" (ADR 0037 §5) — still an AccessDeniedException, so the
+    // filter chain's AccessDeniedHandler answers it (403 by default); OPA is never asked (ADR 0014).
+    void roleSourceOutage_isIndeterminate_neverCallsOpa() {
+        RoleResolutionException outage = new RoleResolutionException("source unavailable");
+        when(supplier.lookup(any(), any(), any())).thenThrow(outage);
 
-        AuthorizationDecision decision =
-                manager().authorize(authenticated(), requestContext("POST", "/api/v1/products"));
-
-        assertThat(decision.isGranted()).isFalse();
+        assertThatThrownBy(() -> manager().authorize(authenticated(), requestContext("POST", "/api/v1/products")))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .isInstanceOf(AccessDeniedException.class)
+                .hasCause(outage);
         verify(opaClient, never()).allow(any());
+    }
+
+    @Test // ENGINE-ERRORS U19 — the policy engine could not decide → thrown, with the engine failure as cause
+    void engineFailure_isIndeterminate() {
+        when(supplier.lookup(any(), any(), any())).thenReturn(Optional.empty());
+        PolicyEngineException failure = PolicyEngineException.httpStatus(503, "decide for path 'product'");
+        when(opaClient.allow(any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> manager().authorize(authenticated(), requestContext("GET", "/api/v1/products")))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(failure);
     }
 
     @Test // B2 U4 sibling — authoritative no-role (Optional.empty()) → OPA still called (fallback decides).

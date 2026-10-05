@@ -20,6 +20,7 @@ import dev.dmitriikonovalov.opaabac.data.hierarchy.LtreePathSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.ParentLinkSource;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.RecursiveCteAncestorResolver;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.SubtreeSpecResolver;
+import dev.dmitriikonovalov.opaabac.security.AbstractProblemAdvice;
 import dev.dmitriikonovalov.opaabac.security.RequestAttributesResourceCache;
 import dev.dmitriikonovalov.opaabac.security.ResourceResolutionSupport;
 import dev.dmitriikonovalov.opaabac.security.web.ActionEnrichmentAdvice;
@@ -287,6 +288,24 @@ public class OpaAbacAutoConfiguration {
         @ConditionalOnMissingBean
         public EntityNotFoundProblemAdvice entityNotFoundProblemAdvice() {
             return new EntityNotFoundProblemAdvice();
+        }
+    }
+
+    /**
+     * The "could not decide" fallback (ADR 0037 §8): {@code 503 DEPENDENCY_UNAVAILABLE} problem+json for an
+     * application whose exception handling does <em>not</em> extend {@link AbstractProblemAdvice} — the base
+     * carries the same mapping itself, so the fallback backs off whenever an {@code AbstractProblemAdvice}
+     * bean exists (no duplicate handlers), and whenever the application supplies its own
+     * {@link IndeterminateDecisionProblemAdvice}.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    static class IndeterminateDecisionAdviceAutoConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean({AbstractProblemAdvice.class, IndeterminateDecisionProblemAdvice.class})
+        public IndeterminateDecisionProblemAdvice indeterminateDecisionProblemAdvice() {
+            return new IndeterminateDecisionProblemAdvice();
         }
     }
 

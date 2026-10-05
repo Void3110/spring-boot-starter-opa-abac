@@ -37,10 +37,31 @@ so core stays Spring-free. `allow(AbacContext)`:
 2. POSTs `{"input": <context>}` to `<baseUrl>/v1/data/<path>`;
 3. reads `result.<decisionField>` (default `allow`) as a boolean.
 
-**Fail-closed is the cardinal rule.** Any non-200, `IOException`, timeout, connection refused, malformed
-body, or missing/non-boolean field ⇒ `false`. `allow()` never throws for an OPA/transport failure — it
-logs a warning (path + status, never the token) and denies. The authorization manager adds a second
-fail-closed layer: any exception while building the context or calling OPA also denies.
+**Fail-closed is the cardinal rule — and "could not decide" is not "no" (ADR
+[[0037-indeterminate-decision-distinct-from-deny|0037]], since 1.4.0).** The client returns only what the
+policy answered: `allow: true` → `true`; `allow: false` → `false`; a loaded package whose `allow` is
+undefined for this input → `false` (undefined-means-deny). When it could not obtain a decision — a non-200,
+an `IOException`, a timeout, connection refused, a malformed body or non-boolean `allow`, or no `result` at
+all (the package is not loaded) — it **throws `PolicyEngineException`** with a `Kind`, logged once at WARN
+(path + kind, never the token). A throw is never an allow. A request the client *refuses* to send (an unsafe
+policy path, a mixed-type batch) stays a plain deny.
+
+The authorization managers translate that — and a role-source `RoleResolutionException`, the same
+`DecisionIndeterminateException` family — into **`AuthorizationIndeterminateException`**, a Spring
+`AuthorizationServiceException`: still an `AccessDeniedException`, so every existing handler still refuses
+the call, but `AbstractProblemAdvice` (or the starter's fallback advice) renders it as **503
+`DEPENDENCY_UNAVAILABLE`** rather than 403. Any *other* exception while building the context or calling OPA
+— a SpEL error, a resolver throw, a broken client — still denies, as before. An SPI that wants its own
+outage treated as "could not decide" throws a `DecisionIndeterminateException` subtype.
+
+> **The request-level gate** (`OpaAuthorizationManager` in the filter chain) throws the same type, which
+> reaches `ExceptionTranslationFilter` and the application's `AccessDeniedHandler` — a 403 by default, since
+> the starter never registers a filter chain. To answer 503 there, check the type in your handler:
+>
+> ```java
+> http.exceptionHandling(e -> e.accessDeniedHandler((request, response, denied) ->
+>         response.sendError(denied instanceof AuthorizationIndeterminateException ? 503 : 403)));
+> ```
 
 ### The decision envelope — an optional, structured `deny_reason` (ADR 0030 §6)
 
@@ -116,7 +137,7 @@ every other suppression rule.
 |---|---|---|
 | A **malformed** reason on the wire (wrong types, missing field, not an object) | plain deny, reason **dropped** | A reason whose types are not the contract is a policy the library does not understand. Types are checked by hand rather than coerced — Jackson would turn `"300"` into a window the library then advertises. |
 | A reason accompanying **`allow: true`** | allow, reason dropped | An allow is an allow; a document carrying both is contradictory. |
-| Transport failure, non-200, breaker open, retries exhausted | plain deny, **never a fabricated reason** | A reason promises "re-authenticating clears this". During an outage that promise is false, and the client would loop on a factor that changes nothing. |
+| Transport failure, non-200, breaker open, retries exhausted | **no decision at all** — `PolicyEngineException`, rendered 503 (since 1.4.0; a plain deny before) — and **never a fabricated reason** | A reason promises "re-authenticating clears this". During an outage that promise is false, and the client would loop on a factor that changes nothing. |
 | A reason **missing any field** at the enforcement point | the ordinary 403 | See `hasCompleteReason()` — a challenge without its window is an infinite challenge loop (ADR 0030 §7). |
 
 **A decorator MUST override `decide`.** A wrapper that implements `OpaClient` and overrides only
@@ -174,8 +195,10 @@ fallback, though the catalog policies carry no blanket one post-B4). An applicat
 >   blanket** one post-B4 (ADR [[0018-team-scoped-resource-isolation|0018]]) — only the narrow
 >   `catalog:create` realm-role fallback survives (see [[PERMISSION-MODEL]]).
 > - **throws `RoleResolutionException`** — **outage**: the source was unavailable, the result is
->   *unknown*; every consumer **fails closed** (the gate denies before any OPA call; the data
->   consumers return no widening / an empty page) and **never** falls back.
+>   *unknown*; every consumer **fails closed** and **never** falls back. Since 1.4.0 (ADR
+>   [[0037-indeterminate-decision-distinct-from-deny|0037]]) "fails closed" means *could not decide*: the
+>   gate throws `AuthorizationIndeterminateException` before any OPA call and the data consumers
+>   propagate the outage — a 503, not a 403, an empty page or a silently partial list.
 >
 > An in-process supplier (`NoOp`, the demo) never throws — only a remote/queried one (the
 > `HttpRoleDefinitionSupplier`) classifies a failure as an outage. The mechanism: the **supplier

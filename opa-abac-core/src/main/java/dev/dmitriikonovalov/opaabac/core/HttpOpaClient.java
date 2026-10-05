@@ -1,18 +1,20 @@
 package dev.dmitriikonovalov.opaabac.core;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,11 +26,20 @@ import org.slf4j.LoggerFactory;
  * {@code {"input": <context>}} to {@code <baseUrl>/v1/data/<path>}, and reads
  * {@code result.<decisionField>} as a boolean.
  *
- * <h2>Fail-closed</h2>
- * The cardinal rule: an authorization system that fails <em>open</em> is worse than none. Every error
- * — non-200, {@link java.io.IOException}, timeout, connection refused, malformed body, a missing or
- * non-boolean decision field — results in {@code false}. {@code allow(...)} never throws for an
- * OPA/transport failure; it logs a warning (path + status, never the token) and denies.
+ * <h2>Fail-closed, and honest about why (ADR 0037)</h2>
+ * The cardinal rule: an authorization system that fails <em>open</em> is worse than none. No path here
+ * ever returns an allow it did not read from a {@code 200}. Every other outcome is one of two things, and
+ * the two are kept apart:
+ * <ul>
+ *   <li><strong>A deny</strong> — the policy answered no ({@code allow: false}, or a loaded package whose
+ *       {@code allow} is undefined for this input), or this client <em>refused to ask</em> because the
+ *       request itself is defective (an unsafe policy path, a mixed-type batch, a context that will not
+ *       serialize). A defect is deterministic and possibly caller-supplied, so it must keep answering no.</li>
+ *   <li><strong>No decision</strong> — the engine could not be asked or did not answer with a decision:
+ *       transport failure, timeout, a non-200, an interrupt, a body that is not a decision, or no
+ *       {@code result} at all. These throw {@link PolicyEngineException} with the matching
+ *       {@link PolicyEngineException.Kind}, logged once at WARN (path, kind, cause — never the token).</li>
+ * </ul>
  */
 public final class HttpOpaClient implements OpaClient {
 
@@ -43,6 +54,21 @@ public final class HttpOpaClient implements OpaClient {
      * per-deployment naming choice.
      */
     private static final String DENY_REASON_FIELD = "deny_reason";
+
+    private static final String RESULT_FIELD = "result";
+
+    /** The operation names a failure's message and the WARN log carry. */
+    private static final String OP_DECIDE = "decide";
+    private static final String OP_COMPILE = "compile";
+    private static final String OP_BULK = "bulk";
+
+    /**
+     * The OPA {@code eval_*} codes that are the policy's own failure on this input. OPA 1.10.1 defines eight; the
+     * other five — {@code eval_cancel_error}, {@code eval_internal_error}, {@code eval_builtin_error} and the two
+     * {@code eval_http_send_*} — can be operational or environmental, so they stay a retryable status.
+     */
+    private static final Set<String> EVALUATION_ERROR_CODES =
+            Set.of("eval_conflict_error", "eval_type_error", "eval_with_merge_error");
 
     /**
      * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
@@ -95,8 +121,8 @@ public final class HttpOpaClient implements OpaClient {
      * The same single decision, additionally reading the optional structured {@code deny_reason} from
      * the <em>same</em> response (ADR 0030 §6) — no second round-trip.
      *
-     * <p>Fail-closed exactly like {@link #allow(AbacContext)}, and never inventive: a transport failure,
-     * a non-200, a malformed body or a malformed reason all deny with a {@code null} reason.
+     * <p>Never inventive: a reason reaches the caller only from a {@code 200} that denied with a
+     * well-formed one. A malformed reason is dropped (a plain deny), never an error.
      */
     @Override
     public OpaDecision decide(AbacContext context) {
@@ -109,90 +135,74 @@ public final class HttpOpaClient implements OpaClient {
      * <p>Deliberately <em>not</em> written as {@code allow} delegating to {@code decide}: the interface's
      * {@code decide} default delegates to {@code allow}, so that shape would become an infinite recursion
      * the moment someone removed the override here — and a {@link StackOverflowError} is an
-     * {@link Error}, which escapes the {@code catch (Exception)} fail-closed handlers rather than denying
-     * (the same reasoning as {@link #isSafePath(String)}). A private helper both public methods call
-     * cannot form that cycle.
+     * {@link Error}, which escapes every fail-closed handler rather than denying (the same reasoning as
+     * {@link #isSafePath(String)}). A private helper both public methods call cannot form that cycle.
      */
     private OpaDecision evaluate(AbacContext context) {
-        String path = null;
+        String path;
+        byte[] body;
         try {
             path = requireSafePath(pathResolver.resolve(context));
-            URI uri = URI.create(config.baseUrl() + "/v1/data/" + path);
-            byte[] body = objectMapper.writeValueAsBytes(new OpaInput(context));
-
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(config.timeout())
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                    .build();
-
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            int status = response.statusCode();
-            if (status != 200) {
-                log.warn("OPA denied (fail-closed): non-200 status {} for path '{}'", status, path);
-                return OpaDecision.deny();
-            }
-            return readDecision(response.body(), path);
-        } catch (InterruptedException _) {
-            // Fail-closed AND interrupt-correct: deny, but restore the flag so the container's
-            // shutdown/cancellation signal survives this call.
-            Thread.currentThread().interrupt();
-            log.warn("OPA denied (fail-closed): interrupted for path '{}'", path);
-            return OpaDecision.deny();
-        } catch (Exception e) {
-            // Fail-closed: any transport/serialization/timeout failure denies. Never log the token —
-            // exception class + message carry the URL/transport detail, not credentials.
-            log.warn("OPA denied (fail-closed): {} for path '{}'", e, path);
-            log.debug("OPA allow call failed", e);
+            body = objectMapper.writeValueAsBytes(new OpaInput(context));
+        } catch (DecisionIndeterminateException e) {
+            throw e; // a path resolver that opted its own outage in (ADR 0037 §2)
+        } catch (RuntimeException e) {
+            log.warn("OPA denied (fail-closed): the request was not sent — {}", e.toString());
             return OpaDecision.deny();
         }
+        HttpResponse<byte[]> response = post("/v1/data/" + path, body, OP_DECIDE, path);
+        requireOk(response, OP_DECIDE, path);
+        return readDecision(response.body(), path);
     }
 
     private OpaDecision readDecision(byte[] responseBody, String path) {
-        try {
-            OpaResult result = objectMapper.readValue(responseBody, OpaResult.class);
-            Map<String, Object> fields = result.result();
-            Object decision = fields == null ? null : fields.get(config.decisionField());
-            if (!(decision instanceof Boolean)) {
-                log.warn("OPA denied (fail-closed): missing/non-boolean '{}' in result for path '{}'",
-                        config.decisionField(), path);
-                return OpaDecision.deny();
-            }
-            if (Boolean.TRUE.equals(decision)) {
-                // An allow is an allow. A document carrying both is contradictory, and the reason —
-                // which only ever means "a deny you could clear" — is dropped rather than passed on.
-                return OpaDecision.permit();
-            }
-            return new OpaDecision(false, readDenyReason(fields, path));
-        } catch (Exception e) {
-            log.warn("OPA denied (fail-closed): malformed response ({}) for path '{}'",
-                    e.getClass().getSimpleName(), path);
+        JsonNode result = readResult(responseBody, OP_DECIDE, path);
+        if (!result.isObject()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_DECIDE, path) + ": 'result' is not an object", null));
+        }
+        JsonNode decision = result.get(config.decisionField());
+        if (decision == null) {
+            // Undefined-means-deny: the package is loaded and simply has no value for the decision field
+            // on this input — OPA's idiom for a policy without a `default` (ADR 0037 §3). A real answer.
+            log.debug("OPA denied: '{}' is undefined in the result for path '{}'", config.decisionField(), path);
             return OpaDecision.deny();
         }
+        if (!decision.isBoolean()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_DECIDE, path) + ": '" + config.decisionField() + "' is not a boolean", null));
+        }
+        if (decision.booleanValue()) {
+            // An allow is an allow. A document carrying both is contradictory, and the reason — which only
+            // ever means "a deny you could clear" — is dropped rather than passed on.
+            return OpaDecision.permit();
+        }
+        return new OpaDecision(false, readDenyReason(result, path));
     }
 
     /**
      * Read {@code result.deny_reason}, or {@code null} if it is absent or not a well-formed reason.
      *
-     * <p>The field types are checked by hand rather than handed to {@code convertValue}: Jackson would
-     * happily <em>coerce</em> a {@code "300"} string into {@code maxAge}, and a reason whose types are
-     * not what the contract says is a policy the library does not understand. Dropping it costs a
-     * challenge and yields a plain deny; trusting it would put a guessed window on the wire. Nothing
-     * here throws — a parse problem must never widen, and must never surface as an error either.
+     * <p>The field types are checked by hand rather than handed to a converter: Jackson would happily
+     * <em>coerce</em> a {@code "300"} string into {@code maxAge}, and a reason whose types are not what the
+     * contract says is a policy the library does not understand. Dropping it costs a challenge and yields a
+     * plain deny; trusting it would put a guessed window on the wire. Nothing here throws — the deny itself
+     * is a real answer, and a parse problem in its optional reason must neither widen it nor turn it into an
+     * error.
      */
-    private DenyReason readDenyReason(Map<String, Object> fields, String path) {
-        Object raw = fields.get(DENY_REASON_FIELD);
-        if (raw == null) {
+    private DenyReason readDenyReason(JsonNode result, String path) {
+        JsonNode raw = result.get(DENY_REASON_FIELD);
+        if (raw == null || raw.isNull()) {
             return null; // the overwhelmingly common case: a plain deny
         }
-        if (!(raw instanceof Map<?, ?> reason)) {
+        if (!raw.isObject()) {
             log.warn("OPA deny reason dropped (fail-closed): '{}' is not an object for path '{}'",
                     DENY_REASON_FIELD, path);
             return null;
         }
-        String type = asString(reason.get("type"));
-        String requiredAcr = asString(reason.get("required_acr"));
-        Integer maxAge = asInteger(reason.get("max_age"));
+        String type = asString(raw.get("type"));
+        String requiredAcr = asString(raw.get("required_acr"));
+        Integer maxAge = asInteger(raw.get("max_age"));
         if (type == null || requiredAcr == null || maxAge == null) {
             log.warn("OPA deny reason dropped (fail-closed): malformed '{}' for path '{}'",
                     DENY_REASON_FIELD, path);
@@ -201,72 +211,64 @@ public final class HttpOpaClient implements OpaClient {
         return new DenyReason(type, requiredAcr, maxAge);
     }
 
-    private static String asString(Object value) {
-        return value instanceof String s && !s.isEmpty() ? s : null;
+    private static String asString(JsonNode value) {
+        return value != null && value.isString() && !value.stringValue().isEmpty() ? value.stringValue() : null;
     }
 
-    private static Integer asInteger(Object value) {
-        // Jackson maps a JSON integer to Integer/Long depending on magnitude; a JSON float or a string
-        // is not a window this library will advertise.
-        if (value instanceof Integer i) {
-            return i;
-        }
-        if (value instanceof Long l && l == l.intValue()) {
-            return l.intValue();
-        }
-        return null;
+    private static Integer asInteger(JsonNode value) {
+        // A JSON integer that fits an int; a JSON float or a string is not a window this library will
+        // advertise.
+        return value != null && value.isIntegralNumber() && value.canConvertToInt() ? value.intValue() : null;
     }
 
     /**
      * Partially evaluate the policy's {@code filter} rule with the resource declared unknown, returning
      * the residual. POSTs to {@code <baseUrl>/v1/compile} with
      * {@code {"query": "data.<path>.filter == true", "input": {…}, "unknowns": ["input.resource"]}}, the
-     * resource omitted from {@code input}. A failed call (transport, non-200, unparseable body) fails
-     * closed to {@link PartialResult#error()} — deny-all, flagged {@code fromError} so callers suppress
-     * any widening too.
+     * resource omitted from {@code input}.
+     *
+     * <p>A failed call throws {@link PolicyEngineException}. A request this client refuses to send (an
+     * unsafe path) returns {@link PartialResult#error()} — deny-all that also suppresses any widening a
+     * caller composes with it. A Compile API answer always carries a {@code result} object, so a missing,
+     * null or non-object {@code result}, a non-array {@code queries}, or a query that is not an array of
+     * expression objects, is malformed; an expression this client cannot translate is "unsupported" (the
+     * caller's exact re-check), never malformed. {@code {"result": {}}}
+     * stays {@link PartialResult#denyAll()}: partially evaluating an undefined reference answers exactly
+     * that, so a missing package cannot be told apart here (ADR 0037 §3a).
      */
     @Override
     public PartialResult compile(AbacContext context) {
-        String path = null;
+        String path;
+        byte[] body;
         try {
             path = requireSafePath(pathResolver.resolve(context));
             String query = "data." + path.replace('/', '.') + ".filter == true";
-            URI uri = URI.create(config.baseUrl() + "/v1/compile");
-            byte[] body = objectMapper.writeValueAsBytes(new CompileRequest(query, new CompileInput(context), UNKNOWNS));
-
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(config.timeout())
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                    .build();
-
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            int status = response.statusCode();
-            if (status != 200) {
-                log.warn("OPA compile denied (fail-closed): non-200 status {} for path '{}'", status, path);
-                return PartialResult.error();
-            }
-            String resourceType = context.resource() == null ? null : context.resource().type();
-            JsonNode root = objectMapper.readTree(response.body());
+            body = objectMapper.writeValueAsBytes(new CompileRequest(query, new CompileInput(context), UNKNOWNS));
+        } catch (DecisionIndeterminateException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("OPA compile denied (fail-closed): the request was not sent — {}", e.toString());
+            return PartialResult.error(); // no policy answer: nothing may widen on top of it
+        }
+        HttpResponse<byte[]> response = post("/v1/compile", body, OP_COMPILE, path);
+        requireOk(response, OP_COMPILE, path);
+        JsonNode root = readObject(response.body(), OP_COMPILE, path);
+        requireCompileShape(root, path);
+        String resourceType = context.resource() == null ? null : context.resource().type();
+        try {
             return new CompileResponseParser(resourceType).parse(root);
-        } catch (InterruptedException _) {
-            Thread.currentThread().interrupt();
-            log.warn("OPA compile denied (fail-closed): interrupted for path '{}'", path);
-            return PartialResult.error();
-        } catch (Exception e) {
-            // Fail-closed: a compile/transport/parse failure must never widen visibility. The result is
-            // flagged fromError so callers also suppress any widening composed alongside the residual.
-            log.warn("OPA compile denied (fail-closed): {} for path '{}'", e, path);
-            log.debug("OPA compile call failed", e);
-            return PartialResult.error();
+        } catch (RuntimeException e) {
+            throw indeterminate(PolicyEngineException.malformedResponse(describeUnparseable(OP_COMPILE, path, e), e));
         }
     }
 
     /**
      * Evaluate N decisions in one round-trip via the per-type {@code bulk} rule. POSTs
      * {@code {"input": {"items": [<ctx>, …]}}} to {@code <baseUrl>/v1/data/<path>/bulk} and reads
-     * {@code result} as a boolean list of the same length. Fails closed to all-false on any error or a
-     * length mismatch; an empty input list returns an empty list with no HTTP call.
+     * {@code result} as a boolean list of the same length. A failed call, a result of the wrong shape or
+     * length, and a missing {@code result} (no such package, or no {@code bulk} rule in it) throw
+     * {@link PolicyEngineException}; a mixed-type batch or an unsafe path is refused as all-false. An empty
+     * input list returns an empty list with no HTTP call.
      */
     @Override
     public List<Boolean> allowAll(List<AbacContext> contexts) {
@@ -274,11 +276,12 @@ public final class HttpOpaClient implements OpaClient {
             return List.of();
         }
         int n = contexts.size();
-        String path = null;
+        String path;
+        byte[] body;
         try {
             // All contexts in a batch must share one resource type (one list endpoint) — the first context
             // resolves the policy path for the whole batch. A mixed batch would silently evaluate every
-            // item against the first item's policy, so it is rejected outright (all-false, fail-closed).
+            // item against the first item's policy, so it is refused outright (all-false, fail-closed).
             String batchType = resourceTypeOf(contexts.get(0));
             for (AbacContext context : contexts) {
                 if (!Objects.equals(batchType, resourceTypeOf(context))) {
@@ -288,38 +291,190 @@ public final class HttpOpaClient implements OpaClient {
                 }
             }
             path = requireSafePath(pathResolver.resolve(contexts.get(0)));
-            URI uri = URI.create(config.baseUrl() + "/v1/data/" + path + "/bulk");
-            byte[] body = objectMapper.writeValueAsBytes(new BulkInput(new BulkItems(contexts)));
+            body = objectMapper.writeValueAsBytes(new BulkInput(new BulkItems(contexts)));
+        } catch (DecisionIndeterminateException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("OPA bulk denied (fail-closed): the request was not sent — {}", e.toString());
+            return allFalse(n);
+        }
+        HttpResponse<byte[]> response = post("/v1/data/" + path + "/bulk", body, OP_BULK, path);
+        requireOk(response, OP_BULK, path);
+        return readBulkDecisions(response.body(), n, path);
+    }
 
-            HttpRequest request = HttpRequest.newBuilder(uri)
+    private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {
+        JsonNode result = readResult(responseBody, OP_BULK, path);
+        if (!result.isArray() || result.size() != expected) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_BULK, path) + ": 'result' is not a list of length " + expected, null));
+        }
+        List<Boolean> decisions = new java.util.ArrayList<>(expected);
+        for (JsonNode element : result) {
+            if (!element.isBoolean()) {
+                throw indeterminate(PolicyEngineException.malformedResponse(
+                        describe(OP_BULK, path) + ": a non-boolean element in 'result'", null));
+            }
+            decisions.add(element.booleanValue());
+        }
+        return List.copyOf(decisions);
+    }
+
+    /**
+     * POST {@code body} to {@code <baseUrl><endpoint>}. Every way the exchange can fail becomes a
+     * {@link PolicyEngineException} of the matching kind — including a request the {@link HttpClient}
+     * rejects outright (a misconfigured base URL), which is no less "the engine could not be asked".
+     */
+    private HttpResponse<byte[]> post(String endpoint, byte[] body, String operation, String path) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + endpoint))
                     .timeout(config.timeout())
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build();
-
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            int status = response.statusCode();
-            if (status != 200) {
-                log.warn("OPA bulk denied (fail-closed): non-200 status {} for path '{}'", status, path);
-                return allFalse(n);
-            }
-            return readBulkDecisions(response.body(), n, path);
-        } catch (InterruptedException _) {
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (HttpTimeoutException e) {
+            // Both the request timeout and the connect timeout (HttpConnectTimeoutException extends it).
+            throw indeterminate(PolicyEngineException.timeout(describe(operation, path, e), e));
+        } catch (InterruptedException e) {
+            // Interrupt-correct: restore the flag so the container's shutdown/cancellation signal survives.
             Thread.currentThread().interrupt();
-            log.warn("OPA bulk denied (fail-closed): interrupted for path '{}'", path);
-            return allFalse(n);
-        } catch (Exception e) {
-            log.warn("OPA bulk denied (fail-closed): {} for path '{}'", e, path);
-            log.debug("OPA bulk call failed", e);
-            return allFalse(n);
+            throw indeterminate(PolicyEngineException.interrupted(describe(operation, path, e), e));
+        } catch (IOException | RuntimeException e) {
+            // Any other transport failure, or a request the client rejects outright.
+            throw indeterminate(PolicyEngineException.transport(describe(operation, path, e), e));
         }
+    }
+
+    private void requireOk(HttpResponse<byte[]> response, String operation, String path) {
+        int status = response.statusCode();
+        if (status == 200) {
+            return;
+        }
+        Set<String> evaluationErrors = status == 500 ? evaluationErrorCodes(response.body()) : Set.of();
+        if (!evaluationErrors.isEmpty()) {
+            // The policy itself failed on this input — deterministic, so neither retried nor a breaker input.
+            throw indeterminate(PolicyEngineException.evaluationError(
+                    describe(operation, path) + ": policy evaluation error " + String.join(", ", evaluationErrors)));
+        }
+        throw indeterminate(PolicyEngineException.httpStatus(status, describe(operation, path) + ": status " + status));
+    }
+
+    /**
+     * The codes of an OPA evaluation-error body — {@code {"code": "internal_error", "errors": [{"code":
+     * "eval_conflict_error", …}]}} — or empty unless the body parses and <em>every</em> listed error is one of
+     * {@link #EVALUATION_ERROR_CODES}. Only the codes are read: the messages and locations (policy file paths)
+     * never are. The 200 path parses whole bodies the same way, so reading a 500's adds no new exposure.
+     */
+    private Set<String> evaluationErrorCodes(byte[] responseBody) {
+        try {
+            JsonNode errors = objectMapper.readTree(responseBody).path("errors");
+            if (!errors.isArray() || errors.isEmpty()) {
+                return Set.of();
+            }
+            Set<String> codes = new LinkedHashSet<>();
+            for (JsonNode error : errors) {
+                JsonNode code = error.path("code");
+                if (!code.isString() || !EVALUATION_ERROR_CODES.contains(code.stringValue())) {
+                    return Set.of();
+                }
+                codes.add(code.stringValue());
+            }
+            return codes;
+        } catch (RuntimeException _) {
+            return Set.of(); // an unreadable error body is just a status
+        }
+    }
+
+    /** The response's {@code result} node: absent → {@code UNDEFINED_DECISION}; explicit null → malformed. */
+    private JsonNode readResult(byte[] responseBody, String operation, String path) {
+        JsonNode result = readObject(responseBody, operation, path).get(RESULT_FIELD);
+        if (result == null) {
+            throw indeterminate(PolicyEngineException.undefinedDecision(
+                    describe(operation, path) + ": no 'result' — is the policy loaded at this path?"));
+        }
+        if (result.isNull()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(operation, path) + ": 'result' is null", null));
+        }
+        return result;
+    }
+
+    /** A Compile API answer is {@code {"result": {…}}}, with {@code queries} an array when present. */
+    private static void requireCompileShape(JsonNode root, String path) {
+        JsonNode result = root.get(RESULT_FIELD);
+        if (result == null || !result.isObject()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_COMPILE, path) + ": 'result' is missing or not an object", null));
+        }
+        JsonNode queries = result.get("queries");
+        if (queries == null) {
+            return;
+        }
+        if (!queries.isArray()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_COMPILE, path) + ": 'result.queries' is not an array", null));
+        }
+        // Structure only: each query is an array of expression objects. What an expression SAYS (an operator
+        // or term this client does not translate) stays the parser's call — "unsupported", never malformed.
+        for (JsonNode query : queries) {
+            if (!query.isArray() || !allObjects(query)) {
+                throw indeterminate(PolicyEngineException.malformedResponse(
+                        describe(OP_COMPILE, path) + ": a query is not an array of expressions", null));
+            }
+        }
+    }
+
+    private static boolean allObjects(JsonNode array) {
+        for (JsonNode element : array) {
+            if (!element.isObject()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private JsonNode readObject(byte[] responseBody, String operation, String path) {
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(responseBody);
+        } catch (RuntimeException e) {
+            throw indeterminate(PolicyEngineException.malformedResponse(describeUnparseable(operation, path, e), e));
+        }
+        if (root == null || !root.isObject()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(operation, path) + ": the body is not a JSON object", null));
+        }
+        return root;
+    }
+
+    /** Log a failure once, at the point it is classified, and hand it back for throwing. */
+    private static PolicyEngineException indeterminate(PolicyEngineException e) {
+        log.warn("OPA decision indeterminate (fail-closed): {}", e.getMessage());
+        log.debug("OPA call failed", e);
+        return e;
+    }
+
+    private static String describe(String operation, String path) {
+        return operation + " for path '" + path + "'";
+    }
+
+    private static String describe(String operation, String path, Throwable cause) {
+        // The cause's class and message carry the URL/transport detail, never credentials.
+        return describe(operation, path) + ": " + cause;
+    }
+
+    private static String describeUnparseable(String operation, String path, Throwable cause) {
+        // A parser's message quotes the body it choked on; the WARN names the parser's exception only, and
+        // the full cause stays at DEBUG.
+        return describe(operation, path) + ": malformed body (" + cause.getClass().getSimpleName() + ")";
     }
 
     private static String resourceTypeOf(AbacContext context) {
         return context.resource() == null ? null : context.resource().type();
     }
 
-    /** Throws on an unsafe/empty path; the caller's fail-closed catch turns that into a deny. */
+    /** Throws on an unsafe/empty path; the caller turns that into a refusal (a deny), never an engine error. */
     private static String requireSafePath(String path) {
         if (!isSafePath(path)) {
             throw new IllegalArgumentException("unsafe OPA policy path '" + path + "'");
@@ -332,13 +487,13 @@ public final class HttpOpaClient implements OpaClient {
      * leading/trailing/empty segment — the same grammar an anchored
      * {@code [A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*} regex would accept.
      *
-     * <p>Deliberately a single linear scan, not a {@link Pattern}: that regex's {@code (…/…)*} group
+     * <p>Deliberately a single linear scan, not a {@link java.util.regex.Pattern}: that regex's {@code (…/…)*} group
      * compiles to a recursive match in {@code java.util.regex}, so a long resolver-derived path
      * (thousands of segments) overflows the stack with a {@link StackOverflowError}. That is an
-     * {@link Error}, not an {@link Exception}, so it would escape the {@code catch (Exception)}
-     * fail-closed handlers in {@link #allow}/{@link #compile}/{@link #allowAll} and propagate uncaught
-     * — turning a clean deny into an unhandled failure. This scan runs in constant stack and O(n) time,
-     * and the length cap bounds n regardless.
+     * {@link Error}, not an {@link Exception}, so it would escape the refusal handlers in
+     * {@link #allow}/{@link #compile}/{@link #allowAll} and propagate uncaught — turning a clean deny into
+     * an unhandled failure. This scan runs in constant stack and O(n) time, and the length cap bounds n
+     * regardless.
      */
     private static boolean isSafePath(String path) {
         if (path == null || path.isEmpty() || path.length() > MAX_PATH_LENGTH) {
@@ -360,31 +515,6 @@ public final class HttpOpaClient implements OpaClient {
             }
         }
         return !prevWasSlash; // a trailing '/' leaves prevWasSlash true
-    }
-
-    private List<Boolean> readBulkDecisions(byte[] responseBody, int expected, String path) {
-        try {
-            JsonNode root = objectMapper.readTree(responseBody);
-            JsonNode result = root.get("result");
-            if (result == null || !result.isArray() || result.size() != expected) {
-                log.warn("OPA bulk denied (fail-closed): result is not a boolean list of length {} for path '{}'",
-                        expected, path);
-                return allFalse(expected);
-            }
-            List<Boolean> decisions = new java.util.ArrayList<>(expected);
-            for (JsonNode element : result) {
-                if (!element.isBoolean()) {
-                    log.warn("OPA bulk denied (fail-closed): non-boolean element in result for path '{}'", path);
-                    return allFalse(expected);
-                }
-                decisions.add(element.asBoolean());
-            }
-            return List.copyOf(decisions);
-        } catch (Exception e) {
-            log.warn("OPA bulk denied (fail-closed): malformed response ({}) for path '{}'",
-                    e.getClass().getSimpleName(), path);
-            return allFalse(expected);
-        }
     }
 
     private static List<Boolean> allFalse(int n) {
@@ -418,11 +548,4 @@ public final class HttpOpaClient implements OpaClient {
 
     /** The bulk items list the {@code bulk} rule iterates: {@code {"items": [<ctx>, …]}}. */
     private record BulkItems(List<AbacContext> items) {}
-
-    /**
-     * OPA's {@code POST /v1/data/<path>} response: {@code {"result": {...}}}. The decision field is
-     * read by name from the {@code result} map, so unknown fields are tolerated.
-     */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record OpaResult(@JsonProperty("result") Map<String, Object> result) {}
 }

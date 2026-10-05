@@ -75,7 +75,8 @@ The table lives in **OPA `data`** — `infra/opa/policies/permission_categories.
 > [[0014-supplier-outage-error-distinct|0014]]).** "No role definition" is a *tri-state* signal at the
 > `RoleDefinitionSupplier` seam: an authoritative no-role (`Optional.empty()`, e.g. the user-service
 > answers `204`) → the policy decides as above (deny, or the `create`-only fallback); a role-source
-> **outage** (timeout / 5xx / malformed) **throws** and the gate denies *before any OPA call*. Before B2,
+> **outage** (timeout / 5xx / malformed) **throws** and the gate refuses *before any OPA call* — as a 503
+> "could not decide" since 1.4.0 ([[0037-indeterminate-decision-distinct-from-deny|ADR 0037]]), a 403 before. Before B2,
 > an outage on the then-blanket fallback let a realm `catalog-editor` ride it to `{READ,WRITE,TAG}`,
 > erasing the resolved role's `denied_actions`/`required_tags` narrowing; B2 closed that widening-on-failure
 > path ([[PERMISSION-CATEGORIES-REVIEW]] C1/C4) and B4 then removed the blanket fallback entirely (see

@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -221,23 +222,24 @@ class HttpOpaClientCompileTest {
         assertThat(hits.get()).isZero();
     }
 
-    @Test // U7 — fail-closed on HTTP 500, flagged fromError (a failed call, not a policy answer)
-    void failClosed_onHttp500() throws IOException {
+    // ENGINE-ERRORS (ADR 0037): a FAILED compile call throws — it no longer reaches the caller as an empty
+    // list. (A request the client refuses to send still answers error(), the unsafe-path cell above.)
+
+    @Test // ENGINE-ERRORS U9 — non-200 → HTTP_STATUS
+    void indeterminate_onHttp500() throws IOException {
         String base = startServer(ex -> respond(ex, 500, "boom"));
-        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
-        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(result.fromError()).isTrue();
+
+        assertThat(assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.HTTP_STATUS).httpStatus())
+                .hasValue(500);
     }
 
-    @Test // U7 — fail-closed on connection refused, flagged fromError
-    void failClosed_onConnectionRefused() {
-        PartialResult result = clientFor("http://127.0.0.1:1", "catalog").compile(categoryListContext());
-        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(result.fromError()).isTrue();
+    @Test // ENGINE-ERRORS U9 — connection refused → TRANSPORT
+    void indeterminate_onConnectionRefused() {
+        assertKind(clientFor("http://127.0.0.1:1", "catalog"), PolicyEngineException.Kind.TRANSPORT);
     }
 
-    @Test // U7 — fail-closed on timeout, flagged fromError
-    void failClosed_onTimeout() throws IOException {
+    @Test // ENGINE-ERRORS U9 — timeout → TIMEOUT
+    void indeterminate_onTimeout() throws IOException {
         String base = startServer(ex -> {
             try {
                 Thread.sleep(2000);
@@ -246,17 +248,77 @@ class HttpOpaClientCompileTest {
             }
             respond(ex, 200, "{\"result\":{\"queries\":[[]]}}");
         });
-        PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
-        assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(result.fromError()).isTrue();
+
+        assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.TIMEOUT);
     }
 
-    @Test // U7 — fail-closed on malformed body, flagged fromError
-    void failClosed_onMalformedBody() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "not-json"));
+    @Test // ENGINE-ERRORS U9 — interrupt → INTERRUPTED, the flag restored
+    void indeterminate_onInterrupt_restoresTheFlag() throws IOException {
+        String base = startServer(ex -> {
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+            respond(ex, 200, "{\"result\":{\"queries\":[[]]}}");
+        });
+        HttpOpaClient client = clientFor(base, "catalog");
+
+        Thread.currentThread().interrupt();
+        try {
+            assertKind(client, PolicyEngineException.Kind.INTERRUPTED);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted(); // never leave the test thread interrupted
+        }
+    }
+
+    @Test // ENGINE-ERRORS U9 — an unparseable body, one that is not a JSON object, or a Compile API answer of the
+    // wrong shape (no result object, a non-array queries, a query that is not an array of expression objects)
+    // → MALFORMED_RESPONSE, never a silent deny-all
+    void indeterminate_onMalformedBody() throws IOException {
+        List<String> bodies = List.of("not-json", "[]", "{}", "{\"result\":null}", "{\"result\":\"x\"}",
+                "{\"result\":[]}", "{\"result\":{\"queries\":\"x\"}}", "{\"result\":{\"queries\":[{}]}}",
+                "{\"result\":{\"queries\":[[1]]}}", "{\"result\":{\"queries\":[[\"x\"]]}}");
+        for (String body : bodies) {
+            String base = startServer(ex -> respond(ex, 200, body));
+
+            assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
+            server.stop(0);
+        }
+    }
+
+    @Test // ENGINE-ERRORS U9 — an unparseable body is named by the parser's exception only: the parser's message
+    // quotes the body, and the WARN must not. The body is identifier characters only, because Jackson echoes
+    // exactly those in full ("Unrecognized token 'secrettokenvalue'") — so a regression to the parser's message
+    // would fail this cell
+    void malformedMessage_namesTheParserException_notTheBody() throws IOException {
+        String base = startServer(ex -> respond(ex, 200, "secrettokenvalue"));
+
+        PolicyEngineException e =
+                assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
+
+        assertThat(e.getMessage()).contains("compile for path '", "malformed body (")
+                .doesNotContain("secrettokenvalue");
+    }
+
+    @Test // ENGINE-ERRORS U9 — the documented blind spot (ADR 0037 §3a): an undefined reference compiles to
+    // exactly what an unsatisfiable filter compiles to, so a missing package stays a policy-shaped deny-all
+    void blindSpot_emptyResult_staysAPolicyDenyAll() throws IOException {
+        String base = startServer(ex -> respond(ex, 200, "{\"result\":{}}"));
+
         PartialResult result = clientFor(base, "catalog").compile(categoryListContext());
+
         assertThat(result.decision()).isEqualTo(PartialResult.Decision.DENY_ALL);
-        assertThat(result.fromError()).isTrue();
+        assertThat(result.fromError()).isFalse();
+    }
+
+    private PolicyEngineException assertKind(HttpOpaClient client, PolicyEngineException.Kind kind) {
+        Throwable thrown = catchThrowable(() -> client.compile(categoryListContext()));
+        assertThat(thrown).isInstanceOf(PolicyEngineException.class);
+        PolicyEngineException e = (PolicyEngineException) thrown;
+        assertThat(e.kind()).isEqualTo(kind);
+        return e;
     }
 
     @Test // U8 — unsupported operator (e.g. gt) anywhere in the residual → DENY_ALL

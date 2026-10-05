@@ -1,10 +1,10 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Locale;
 import java.util.Map;
@@ -27,7 +27,11 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  * {@link OpaPreAuthorize}, which can name the concrete resource type and action; this is provided for
  * completeness and wired by the app only if it wants it.
  *
- * <p>Fail-closed: unauthenticated or any exception denies.
+ * <p>Fail-closed: unauthenticated or any exception denies. When no decision could be made — the policy
+ * engine failed or the role source is down (ADR 0037) — it throws {@link AuthorizationIndeterminateException}
+ * instead: still an {@code AccessDeniedException}, so Spring Security's {@code ExceptionTranslationFilter}
+ * answers it with the application's {@code AccessDeniedHandler} (a 403 by default). An application that
+ * wants a 503 there checks for the type in its own handler.
  */
 public final class OpaAuthorizationManager implements AuthorizationManager<RequestAuthorizationContext> {
 
@@ -71,14 +75,12 @@ public final class OpaAuthorizationManager implements AuthorizationManager<Reque
             AbacContext abacContext = new AbacContext(
                     subject, action, new AbacContext.Resource(type, null, Map.of()), roleDefinition, Map.of());
             return new AuthorizationDecision(opaClient.allow(abacContext));
-        } catch (RoleResolutionException e) {
-            // B2: role-source outage → deny, never the realm fallback (ADR 0014). An outage makes the
-            // role UNKNOWN; deny here so an empty-role context never reaches OPA's realm fallback and
-            // widens access. (The broad catch below would also catch this; the explicit catch makes the
-            // fail-closed decision legible and tested.)
-            log.debug("OPA request authorization denied: role-source outage ({})",
-                    e.getClass().getSimpleName());
-            return DENY;
+        } catch (DecisionIndeterminateException e) {
+            // No decision could be made (ADR 0037): the policy engine failed, or the role source is down
+            // (ADR 0014 — the role is UNKNOWN, so an empty-role context never reaches OPA's realm fallback).
+            // The throw still refuses the request; it tells the handler "not now" instead of "no".
+            log.debug("OPA request authorization indeterminate: {}", e.getClass().getSimpleName());
+            throw new AuthorizationIndeterminateException("request authorization indeterminate", e);
         } catch (Exception e) {
             log.warn("OPA request authorization denied (fail-closed): {}", e.getClass().getSimpleName());
             return DENY;

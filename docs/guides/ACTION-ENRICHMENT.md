@@ -125,8 +125,10 @@ Excluded by design: `list`/`create` (collection-level) · `define-tags` (control
    "you can't do anything" that lies when the truth is "couldn't check," and that a convention-inverting
    client reads as "show everything"). **`_actions` present ⇒ a complete, real per-verb verdict with ≥1
    `true`; absent ⇒ enrichment could not be computed** — the client falls back to its own default. The
-   all-`false`→omit rule exists because the production `OpaClient.allowAll` fails closed to a full-length
+   all-`false`→omit rule was born when the production `OpaClient.allowAll` failed closed to a full-length
    all-`false` list on a transport error, indistinguishable from a genuine all-deny by the booleans alone.
+   Since 1.4.0 the shipped client throws instead (ADR 0037) and the advice omits on the throw; the rule stays,
+   because a custom `OpaClient` may still pad a failure and the booleans still cannot tell.
    On the wire this is enforced by `@JsonInclude(NON_EMPTY)` on `Enrichable.getActions()` — an unset map
    (the generated DTO defaults it to `{}`) is **omitted from the JSON**, never serialized as `{}`.
 

@@ -79,10 +79,14 @@ exact, not cheap. Keeping the pure-SQL path the common one is why the multi-type
 ```java
 public interface OpaClient {
     boolean allow(AbacContext context);                       // unchanged (the spine)
-    PartialResult compile(AbacContext context);               // Phase 5 — partial eval, fails closed to denyAll()
-    List<Boolean> allowAll(List<AbacContext> contexts);       // Phase 5 — batch, fails closed to all-false
+    PartialResult compile(AbacContext context);               // Phase 5 — partial eval
+    List<Boolean> allowAll(List<AbacContext> contexts);       // Phase 5 — batch
 }
 ```
+
+Each method returns only what the policy answered; when the client could not obtain an answer it throws
+`PolicyEngineException` (since 1.4.0, ADR 0037 — before, `compile` failed closed to `denyAll()`/`error()` and
+`allowAll` to all-false).
 
 Both new methods are **abstract, not `default`** — a custom client cannot silently inherit a fail-**open**
 filter. The residual model (`PartialResult`/`Conjunction`/`Condition`, operators `EQ`/`NEQ`/`IN`/`CONTAINS`)
@@ -234,8 +238,12 @@ opa:
 
 ## The load-bearing safety property
 
-**Every failure mode lands on deny or on an exact batch re-check — never on "return everything."** A
-compile error → `DENY_ALL` (empty page); a batch error → all-false; an unsupported residual → deny, or
+**Every failure mode lands on deny, on "could not decide", or on an exact batch re-check — never on "return
+everything."** A failed compile call or a failed batch → the engine could not decide: `PolicyEngineException`
+**propagates** out of `findAuthorized` — no rows, no count, a 503 at the edge (since 1.4.0, ADR
+[[0037-indeterminate-decision-distinct-from-deny|0037]]; before, an empty page / all-false that read as "you
+may see nothing"). One documented blind spot: a policy package that is not loaded compiles to exactly what
+an unsatisfiable filter compiles to (`{"result": {}}`), so it stays a deny-all. An unsupported residual → deny, or
 (with the allowlist on) an exact batch re-check — the fallback fetches **all scoped candidates**
 (scope-only, per ADR [[adr/0012-pagination-envelope|0012]]) and batch-decides each row; the
 untranslatable conjuncts do **not** pre-narrow the fetch. A list with no role definition → empty. The
@@ -270,6 +278,12 @@ mirrored as SQL:
 ```
 combined = scope.and( tagResidual.or(subtreeSpec) ).and( notDenied )
 ```
+
+An `ALLOW_ALL` residual is already TRUE, so the OR is skipped: `scope.and(notDenied)`. This is not an
+optimization. `ALLOW_ALL` is `Specification.unrestricted()`, whose predicate is `null`, and Spring Data's `or()`
+drops a null side — so `unrestricted().or(subtreeSpec)` *is* `subtreeSpec`. Until 1.4.0 that collapsed an
+unconditional list to the subtree alone (a member who also supervised another catalog saw only the supervised
+one). Composing `Specification`s, a null predicate is neutral for `and()` and **wrong** for `or()`.
 
 - **`subtreeSpec`** — "the rows in the governing root's subtree", produced by `SubtreeSpecResolver` **iff**
   the subject's role, resolved once on that root, **inheritably** grants the verb (else empty). Root-only;
@@ -317,7 +331,8 @@ set, and `Page.getTotalElements()` is the **exact, subject-relative authorized t
 | **Pure-SQL** | `repo.findAll(combined, pageable)` — the same `scope.and(tagResidual.or(subtreeSpec)).and(notDenied)` composition; Spring Data derives the `COUNT` from it | exact, from SQL |
 | **Allowlist fallback** | the candidates are fetched **SQL-sorted** (`findAll(scope, pageable.getSort())` — so the page order is identical to the pure-SQL path's), batch-filtered (order-preserving), and the window sliced in memory | exact = the survivor count; the fetch-all cost is the path's existing Phase-5 degradation — pagination adds nothing, the in-memory slice is what keeps the count exact |
 | **Kill-switch** (`partialEval.enabled=false`) | coarse `allow`, then `scope.and(notDenied)` paged — the deny-override stays AND-ed even degraded | exact under the degraded policy |
-| **`fromError`** (failed compile) | an empty page, **no repository call** — a failed compile empties the page *including the count* (no count leak) | `0` |
+| **The engine could not decide** (compile / kill-switch `allow` / batch throws) | the `DecisionIndeterminateException` **propagates** — before any repository call on the compile and kill-switch paths; nothing is returned (since 1.4.0) | none — no page |
+| **`fromError`** (no policy answer: the client refused to send the compile request, or a custom client's failure value) | an empty page, **no repository call** — the page is emptied *including the count* (no count leak), and no widening survives | `0` |
 
 - **The unsorted-`Pageable` guard:** the paged seam **throws `IllegalArgumentException`** on an unsorted
   (or unpaged) `Pageable` before any OPA or repository call. Paginating without a total order is a
@@ -355,7 +370,8 @@ predicates (see §Indexing above).
   [[TWO-LAYER-AUTHORIZATION]] · [[ABAC-AUTHORIZATION]] · [[TAG-BASED-AUTHORIZATION]] ·
   [[HIERARCHICAL-AUTHORIZATION]] · [[ACTION-ENRICHMENT]] (the list-path write-through feeds its
   read-side `_actions` map; the `allowAll`/`bulk` batch primitive is shared) · [[HTTP-RESILIENCE]] (Slice
-  B3 — the resilient `OpaClient` decorator must return `compile`→`error()` (`fromError=true`), **never**
-  `denyAll()`, on a breaker-open/exhausted OPA outage, so the `fromError` suppression above survives the
-  outage and no hierarchy widening outlives it) · [[REST-API-DESIGN]] ·
+  B3 — since 1.4.0 the resilient `OpaClient` decorator *throws* on a breaker-open/exhausted OPA outage, so no
+  residual exists for a hierarchy widening to outlive; the B3-era rule "return `error()`, never `denyAll()`"
+  protected the same property by value) · [[0037-indeterminate-decision-distinct-from-deny|ADR 0037]] ·
+  [[REST-API-DESIGN]] ·
   [[E2E-TESTING]] · [[POC-ROADMAP]].

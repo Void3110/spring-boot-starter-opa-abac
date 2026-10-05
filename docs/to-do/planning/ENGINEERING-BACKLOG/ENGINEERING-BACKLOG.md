@@ -284,6 +284,85 @@ without error — no 5xx, one heavier OPA round-trip). Pre-existing surface. **F
 `spring.servlet.multipart`/`server.max-http-request-header-size`-style bounds where they apply; pin
 with a gateway cell (413).
 
+## 13. The built-in ancestor resolvers still classify their own SQL failures as "degrade" (noted 2026-10-05)
+
+**Left by** ENGINE-ERRORS ([[0037-indeterminate-decision-distinct-from-deny|ADR 0037]] §7, deliberately).
+`LtreeAncestorResolver` and `RecursiveCteAncestorResolver` wrap a data-access failure into
+`AncestorResolutionException`, which every consumer degrades to a direct-grant-only decision — the same
+wrap as a cycle or a broken link, though an outage is "could not decide", not a data answer. An adopter's
+*own* source SPI can already opt in (the resolvers rethrow a `DecisionIndeterminateException`); the
+built-ins do not. Rare in practice: the leaf resolve fails first when the database is down, and that stays a
+deny (ADR 0013). **Fix shape:** split a data-access failure (`DataAccessException`) into a new
+`AncestorUnavailableException extends DecisionIndeterminateException`, keep cycles / breaks / depth as
+`AncestorResolutionException`; one test per site.
+
+## 14. A root-type list still answers an empty 200 when its base-scope source is down (noted 2026-10-05)
+
+**Left by** ENGINE-ERRORS (ADR 0037 §3a, a documented blind spot). `GET /api/v1/catalogs` is scoped by a
+`GovernedScopeResolver` and, in the example, a supervised-scope client — base-scope SPIs whose contract is
+*fail closed to empty, never throw* (mx-1ce7d5). When the user-service behind them is down they answer an
+empty scope, and `CatalogListAuthorizer` returns an empty 200 before any role lookup or OPA call — or, for
+a member who also supervises when only the supervised source is down, a silently **membership-only** 200:
+fail-closed, but the same "you may see nothing" / partial-page lie ADR 0037 removed from the other lists
+(the review ranked this the first of 13–15 to schedule). **Fix shape:** amend the
+base-scope SPI contract so an outage throws a `DecisionIndeterminateException` subtype (the example's
+`HttpGovernedScopeResolver` / `SupervisedScopeClient` opt in), keeping "authoritatively empty" as `List.of()`;
+an IT + the resilience matrix's stub can prove it.
+
+## 15. The user-service's "is this role assignable" policy call answers 422 on an outage (noted 2026-10-05)
+
+**Left by** ENGINE-ERRORS (out of its mechanism). `RoleAssignableClient` in the example user-management
+service queries the policy engine through its own `RestClient` (`/v1/data/role/assignable`), not through
+`OpaClient`, and returns `false` on any failure — so an engine outage reads as "not assignable" (422). The
+same lie class, outside the `OpaClient` contract. **Fix shape:** route it through `OpaClient` (a decide on
+the `role` document), or classify its failures into `PolicyEngineException` itself and let the base advice
+answer 503.
+
+## 16. Measure the OPA breaker's defaults under an OPA kill (noted 2026-10-05)
+
+**Left by** the ENGINE-ERRORS review. Since 1.4.0 the OPA breaker opens on a real outage for the first time
+(ADR 0037 §4): with the defaults (`failure-threshold` 5, one retry, `open-duration` 10 s) about three
+fast-failing requests open it (five for timeouts, which are not retried under the default 5 s timeout), and every OPA-backed call answers `CIRCUIT_OPEN` (503) until a half-open probe succeeds —
+up to 10 s after a sidecar that restarted in a few hundred milliseconds is back. The defaults were kept and
+documented (maintainer decision); nobody has measured them. **Fix shape:** one load ceiling (the ADR 0021
+host-run harness) with OPA killed and restarted mid-run, reading the 503 window against the restart time;
+then decide whether the OPA edge wants its own shorter `open-duration` default.
+
+## 17. A list with an ALLOW_ALL residual and a subtree widening shows only the subtree — ✅ FIXED 2026-10-05 (ENGINE-ERRORS branch, its own commit)
+
+**Found by** the ENGINE-ERRORS review, while writing an I6 contrast cell — **pre-existing** on `main` since the
+4-arg/paged `findAuthorized` (June 2026), not caused by that slice. `AbacQueryService.authorizedSpec` composes
+`scope.and(tagResidual.or(subtreeSpec))`; an `ALLOW_ALL` residual is `Specification.unrestricted()`, whose
+predicate is `null`, and Spring Data JPA's composition returns the *other* side when one is null — so
+`ALLOW_ALL OR subtree` becomes just the subtree. Fail-closed (rows go missing, nothing extra shows), but wrong:
+a catalog member with an unconditional role who also supervises another catalog sees only the supervised one;
+an inheritable-grant list with an unconditional direct residual sees only the subtree. **Fix shape:** skip the
+OR when the residual is `ALLOW_ALL` (or map ALLOW_ALL to an explicit `cb.conjunction()` and re-verify every
+composition), pinned by a Testcontainers cell; then extend `CatalogListOutageIT`'s contrast cell to assert both
+ids. **Done:** `authorizedSpec` skips the OR for an `ALLOW_ALL` residual; `HierarchyListFilterIT` I9 (scope D,
+widening on C → D's rows; it answered `[]` before the fix) and the I6 contrast cell (both catalogs, count 2).
+
+## 18. The example HTTP clients accept an invalid base URL (noted 2026-10-05)
+
+**Left by** the ENGINE-ERRORS review (pre-existing, example-only; the library's sibling was fixed). The catalog
+example's `HttpRoleDefinitionSupplier`, `TagDefinitionClient`, `SupervisedScopeClient` and
+`HttpGovernedScopeResolver` only strip a trailing slash; `catalog.user-service.base-url=localhost:8080` makes
+`HttpRequest.newBuilder` throw on every call — the role supplier's throw is outside the family, so every
+protected request answers 403 (the lie ADR 0037 removes), and the two scope clients' "never throws" promise
+becomes a 500. **Fix shape:** the same startup validation as `OpaClientConfig` in each constructor (no value
+echoed).
+
+## 19. An e2e cell for the mixed catalog page — a member of A who supervises B (queued 2026-10-05, after the ENGINE-ERRORS PR)
+
+**Left by** the item-17 fix. The supervised-scope matrix covers a pure supervisor (E1/E2), an outsider (E3), and a
+dual hat on **one** catalog (E9 — supervised `S \ M` is empty, so no widening runs). No cell lists the mixed page —
+member of catalog A, supervisor of catalog B — the one shape that composes a residual with the subtree widening,
+so the rig never exercised what item 17 broke and fixed. **Fix shape:** a persona (or a seed on an existing one)
+that is a member of one catalog and supervises another, under a role whose `filter` compiles unconditional (the
+item-17 trigger); `GET /catalogs` must list **both** ids, A stamped `member` and B stamped `supervised`, and the
+count must be exactly two (assert the cut, not the shape). Add it to `supervised-scope-matrix`, keep
+`check-collection-conformance.py` clean, and run it on the rig (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1`).
+
 ---
 
 ## Related

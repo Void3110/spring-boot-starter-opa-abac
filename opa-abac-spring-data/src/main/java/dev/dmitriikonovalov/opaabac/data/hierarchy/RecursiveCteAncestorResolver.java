@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -80,6 +81,8 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
             Optional<ParentRef> parent;
             try {
                 parent = parentSource.parentOf(currentType, currentId);
+            } catch (DecisionIndeterminateException e) {
+                throw e; // a parent-link source that opted its outage in (ADR 0037 §7)
             } catch (RuntimeException e) {
                 throw new AncestorResolutionException(
                         "parent-link lookup failed for " + currentType + ":" + currentId, e);
@@ -186,14 +189,7 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
             int levelSize = frontier.size();
             for (int i = 0; i < levelSize; i++) {
                 ParentRef node = frontier.poll();
-                List<ParentRef> children;
-                try {
-                    children = descendantSource.childrenOf(node.type(), node.id());
-                } catch (RuntimeException e) {
-                    throw new AncestorResolutionException(
-                            "child-link lookup failed for " + node.type() + ":" + node.id(), e);
-                }
-                for (ParentRef child : children) {
+                for (ParentRef child : childrenOf(node)) {
                     if (!visited.add(key(child.type(), child.id()))) {
                         throw new AncestorResolutionException(
                                 "cycle detected at " + child.type() + ":" + child.id()
@@ -205,6 +201,22 @@ public class RecursiveCteAncestorResolver implements AncestorResolver {
             }
         }
         return ids;
+    }
+
+    /**
+     * One hop down: the node's children from the {@link DescendantIdSource}. A data-access failure becomes an
+     * {@link AncestorResolutionException} (the walk collapses fail-closed); a source that opted its outage in
+     * with a {@link DecisionIndeterminateException} passes through unwrapped (ADR 0037 §7).
+     */
+    private List<ParentRef> childrenOf(ParentRef node) {
+        try {
+            return descendantSource.childrenOf(node.type(), node.id());
+        } catch (DecisionIndeterminateException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new AncestorResolutionException(
+                    "child-link lookup failed for " + node.type() + ":" + node.id(), e);
+        }
     }
 
     /** An always-false predicate — the fail-closed empty-widening shape (matches no row). */

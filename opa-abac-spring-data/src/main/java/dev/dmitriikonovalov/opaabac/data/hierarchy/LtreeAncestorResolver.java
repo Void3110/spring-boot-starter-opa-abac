@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.data.hierarchy;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,8 +55,8 @@ public class LtreeAncestorResolver implements AncestorResolver {
                     .filter(p -> !p.isBlank())
                     .orElseThrow(() -> new AncestorResolutionException(
                             "no ltree path for " + leafType + ":" + leafId + " (broken lineage)"));
-        } catch (AncestorResolutionException e) {
-            throw e;
+        } catch (AncestorResolutionException | DecisionIndeterminateException e) {
+            throw e; // a path source that opted its outage in stays "could not decide" (ADR 0037 §7)
         } catch (RuntimeException e) {
             // A SQL/data-access error must fail closed, never silently widen.
             throw new AncestorResolutionException(
@@ -113,6 +114,8 @@ public class LtreeAncestorResolver implements AncestorResolver {
             rootPath = pathSource.pathOf(rootType, rootId)
                     .filter(p -> !p.isBlank())
                     .orElse(null);
+        } catch (DecisionIndeterminateException e) {
+            throw e; // a path source that opted its outage in: no widening decision at all (ADR 0037 §7)
         } catch (RuntimeException _) {
             // A SQL/data-access error must fail closed (empty widening), never the whole table.
             rootPath = null;

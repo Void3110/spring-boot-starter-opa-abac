@@ -646,6 +646,68 @@ class OpaAbacAutoConfigurationTest {
         }
     }
 
+    // --- "could not decide" fallback advice (ENGINE-ERRORS T4, ADR 0037 §8) ----
+
+    @Test // I4 — present in a servlet web app with no AbstractProblemAdvice; maps both family types → 503
+    void indeterminateAdvicePresent_withoutTheBaseAdvice_andMaps503() {
+        webRunner.run(context -> {
+            assertThat(context).hasSingleBean(IndeterminateDecisionProblemAdvice.class);
+            IndeterminateDecisionProblemAdvice advice = context.getBean(IndeterminateDecisionProblemAdvice.class);
+
+            for (RuntimeException failure : java.util.List.of(
+                    new dev.dmitriikonovalov.opaabac.security.AuthorizationIndeterminateException("gate",
+                            new dev.dmitriikonovalov.opaabac.core.RoleResolutionException("role source down")),
+                    dev.dmitriikonovalov.opaabac.core.PolicyEngineException.undefinedDecision("no policy"))) {
+                var response = advice.handleIndeterminate(failure,
+                        new org.springframework.mock.web.MockHttpServletRequest("GET", "/catalogs"));
+                assertThat(response.getStatusCode().value()).isEqualTo(503);
+                assertThat(response.getBody().errorCode()).isEqualTo("DEPENDENCY_UNAVAILABLE");
+                assertThat(response.getBody().detail()).isEqualTo("Authorization is temporarily unavailable");
+                assertThat(response.getBody().instance()).isEqualTo("/catalogs"); // the request URI
+            }
+            // no request → no instance, and no NPE
+            assertThat(advice.handleIndeterminate(
+                    dev.dmitriikonovalov.opaabac.core.PolicyEngineException.timeout("t", null), null)
+                    .getBody().instance()).isNull();
+        });
+    }
+
+    @Test // I4 — backs off when the application extends AbstractProblemAdvice (the base maps it already)
+    void indeterminateAdviceAbsent_whenTheBaseAdviceExists() {
+        webRunner.withUserConfiguration(BaseAdviceConfig.class).run(context ->
+                assertThat(context).doesNotHaveBean(IndeterminateDecisionProblemAdvice.class));
+    }
+
+    @Test // I4 — absent in a non-web context
+    void indeterminateAdviceAbsent_withoutWeb() {
+        runner.run(context -> assertThat(context).doesNotHaveBean(IndeterminateDecisionProblemAdvice.class));
+    }
+
+    @Test // I4 — a user-supplied fallback bean overrides the starter's
+    void userIndeterminateAdviceWins() {
+        webRunner.withUserConfiguration(UserIndeterminateAdviceConfig.class).run(context ->
+                assertThat(context.getBean(IndeterminateDecisionProblemAdvice.class))
+                        .isSameAs(UserIndeterminateAdviceConfig.ADVICE));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class BaseAdviceConfig {
+        @Bean
+        dev.dmitriikonovalov.opaabac.security.AbstractProblemAdvice appProblemAdvice() {
+            return new dev.dmitriikonovalov.opaabac.security.AbstractProblemAdvice() {};
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserIndeterminateAdviceConfig {
+        static final IndeterminateDecisionProblemAdvice ADVICE = new IndeterminateDecisionProblemAdvice();
+
+        @Bean
+        IndeterminateDecisionProblemAdvice indeterminateDecisionProblemAdvice() {
+            return ADVICE;
+        }
+    }
+
     // --- action-enrichment advice + write-through wiring (Phase 6, T4) --------
 
     @Test // U11 — defaults, web app, a resolver present (→ a cache bean) → the advice bean is registered

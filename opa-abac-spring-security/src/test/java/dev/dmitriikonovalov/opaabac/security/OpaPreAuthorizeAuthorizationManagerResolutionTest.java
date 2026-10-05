@@ -1,6 +1,7 @@
 package dev.dmitriikonovalov.opaabac.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -248,6 +249,35 @@ class OpaPreAuthorizeAuthorizationManagerResolutionTest {
         assertThat(decision.isGranted()).isFalse();
         verify(opaClient, never()).decide(any());
         assertThat(cache.puts).isZero();
+    }
+
+    @Test // ENGINE-ERRORS U23 — a resolver that OPTS its outage in (a family member) is not a plain deny:
+    // the decision is indeterminate, OPA is never asked, nothing is cached
+    void resolverThrowsAFamilyMember_isIndeterminate() {
+        SpiOutage outage = new SpiOutage("repository down");
+        when(resolver.resolve("product", PRODUCT_ID.toString())).thenThrow(outage);
+
+        assertThatThrownBy(() -> managerWithSupport().authorize(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID})))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(outage);
+        verify(opaClient, never()).decide(any());
+        assertThat(cache.puts).isZero();
+    }
+
+    @Test // ENGINE-ERRORS U23 — the rethrow invariant: the ancestor walk's degrade-catch must NOT swallow an
+    // opted-in outage into an empty chain (a direct-grant-only decision that might have been an allow)
+    void chainThrowsAFamilyMember_isIndeterminate_notCollapsed() {
+        SampleProduct instance = new SampleProduct(PRODUCT_ID.toString(), Map.of("status", "live"));
+        when(resolver.resolve("product", PRODUCT_ID.toString())).thenReturn(Optional.of(instance));
+        SpiOutage outage = new SpiOutage("lineage store down");
+        when(chainSupplier.ancestorsOf("product", PRODUCT_ID.toString())).thenThrow(outage);
+
+        assertThatThrownBy(() -> managerWithSupport().authorize(noopAuthSupplier,
+                invocationOf("writeById", new Class<?>[] {UUID.class}, new Object[] {PRODUCT_ID})))
+                .isInstanceOf(AuthorizationIndeterminateException.class)
+                .hasCause(outage);
+        verify(opaClient, never()).decide(any());
     }
 
     // --- U10: ancestor failure → collapse, never deny ---------------------------

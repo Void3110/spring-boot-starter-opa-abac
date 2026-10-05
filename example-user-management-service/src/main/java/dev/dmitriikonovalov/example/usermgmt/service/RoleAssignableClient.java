@@ -62,7 +62,9 @@ public class RoleAssignableClient {
             }
             return response.get("result").asBoolean();
         } catch (RuntimeException e) {
-            log.warn("assignable verdict unavailable ({}) — rejecting (fail-closed)", e.getMessage());
+            // The class only at WARN: a RestClient error's message carries the engine's whole response body.
+            log.warn("assignable verdict unavailable ({}) — rejecting (fail-closed)", e.getClass().getSimpleName());
+            log.debug("assignable verdict failure", e);
             return false;
         }
     }

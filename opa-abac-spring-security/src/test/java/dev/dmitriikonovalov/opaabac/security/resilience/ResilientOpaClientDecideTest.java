@@ -1,12 +1,14 @@
 package dev.dmitriikonovalov.opaabac.security.resilience;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.DenyReason;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaDecision;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
+import dev.dmitriikonovalov.opaabac.core.PolicyEngineException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,50 +69,40 @@ class ResilientOpaClientDecideTest {
         assertThat(client.decide(context()).allow()).isTrue();
     }
 
-    // --- every fail-closed outcome: deny, and NEVER a fabricated reason ------------------
+    // --- every failure: a thrown PolicyEngineException, and NEVER a fabricated reason ------
 
-    @Test // breaker open: the delegate is never invoked; the decorator synthesizes the deny by hand
-    void decide_breakerOpenDeniesWithNoReason() {
+    @Test // breaker open: the delegate is never invoked, and no decision — reasoned or not — is invented
+    void decide_breakerOpenThrowsCircuitOpen() {
         RecordingClient delegate = new RecordingClient(new OpaDecision(false, STEP_UP));
         ResilientOpaClient client = new ResilientOpaClient(delegate, new BreakerOpenGuard());
 
-        OpaDecision decision = client.decide(context());
-
-        assertThat(decision).isEqualTo(OpaDecision.deny());
-        assertThat(decision.denyReason()).isNull();
+        assertThatThrownBy(() -> client.decide(context()))
+                .isInstanceOfSatisfying(PolicyEngineException.class,
+                        e -> assertThat(e.kind()).isEqualTo(PolicyEngineException.Kind.CIRCUIT_OPEN));
         assertThat(delegate.decideCalls.get()).isZero();
     }
 
-    @Test // a transport failure: the delegate already swallowed it into (false, null) — nothing invents
-    void decide_transportFailureDeniesWithNoReason() {
+    @Test // a reasonless deny is a real answer — returned, never mistaken for a failure
+    void decide_aReasonlessDenyIsReturnedAsIs() {
         ResilientOpaClient client = new ResilientOpaClient(
                 new RecordingClient(OpaDecision.deny()), new CountingGuard());
 
         assertThat(client.decide(context())).isEqualTo(OpaDecision.deny());
     }
 
-    @Test // retries exhausted: the guard hands back the delegate's last value, still reasonless
-    void decide_exhaustedRetryDeniesWithNoReason() {
-        RecordingClient delegate = new RecordingClient(OpaDecision.deny());
-        ResilientOpaClient client = new ResilientOpaClient(delegate, new RetryingGuard(2));
+    @Test // ENGINE-ERRORS U13 — neither deny is retried: the decorator retries thrown faults, never values
+    void decide_noDenyIsRetried() {
+        for (OpaDecision answer : List.of(OpaDecision.deny(), new OpaDecision(false, STEP_UP))) {
+            RecordingClient delegate = new RecordingClient(answer);
+            ResilientOpaClient client = new ResilientOpaClient(delegate, new RetryingGuard(3));
 
-        OpaDecision decision = client.decide(context());
+            OpaDecision decision = client.decide(context());
 
-        assertThat(decision).isEqualTo(OpaDecision.deny());
-        assertThat(delegate.decideCalls.get()).as("the sentinel was retried").isEqualTo(2);
-    }
-
-    @Test // a REASON-CARRYING deny is a proven 200 answer, never the sentinel — it is NOT retried
-    void decide_reasonCarryingDenyIsNotRetried() { // (allowAll()'s MIXED discipline, applied here)
-        RecordingClient delegate = new RecordingClient(new OpaDecision(false, STEP_UP));
-        ResilientOpaClient client = new ResilientOpaClient(delegate, new RetryingGuard(3));
-
-        OpaDecision decision = client.decide(context());
-
-        assertThat(decision).isEqualTo(new OpaDecision(false, STEP_UP));
-        assertThat(delegate.decideCalls.get())
-                .as("a deterministic real answer is asked for exactly once")
-                .isEqualTo(1);
+            assertThat(decision).isEqualTo(answer); // the reason survives unchanged
+            assertThat(delegate.decideCalls.get())
+                    .as("a deterministic real answer is asked for exactly once")
+                    .isEqualTo(1);
+        }
     }
 
     @Test // a delegate that answers null cannot make the decorator NPE its way past the deny
@@ -142,7 +134,7 @@ class ResilientOpaClientDecideTest {
         }
     }
 
-    /** Re-runs the body while the caller's predicate says the result is the fail-closed sentinel. */
+    /** Re-runs the body while the caller's result predicate asks for it — which it never should now. */
     private record RetryingGuard(int attempts) implements CallGuard {
         @Override
         public <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult) {

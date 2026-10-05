@@ -2,6 +2,7 @@ package dev.dmitriikonovalov.opaabac.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -173,19 +174,28 @@ class HttpOpaClientDecideTest {
                 .isEqualTo(new DenyReason("insufficient_user_authentication", "aal2", 300));
     }
 
-    @Test // transport/5xx/non-JSON: the existing fail-closed false, with a null reason, and no throw
-    void decide_failsClosedWithoutAReason() throws IOException {
+    @Test // ENGINE-ERRORS: a failure never carries a reason — because it never returns a decision at all
+    void decide_onFailure_throwsInsteadOfInventingADeny() throws IOException {
         OpaClient nonJson = clientReturning(200, "not json at all");
-        assertThatCode(() -> assertThat(nonJson.decide(context())).isEqualTo(OpaDecision.deny()))
-                .doesNotThrowAnyException();
+        assertKind(nonJson, PolicyEngineException.Kind.MALFORMED_RESPONSE);
 
         tearDown();
+        // A 5xx whose body happens to say allow:true must not be read — neither as an allow nor a deny.
         OpaClient serverError = clientReturning(503, "{\"result\":{\"allow\":true}}");
-        assertThat(serverError.decide(context())).isEqualTo(OpaDecision.deny());
+        assertKind(serverError, PolicyEngineException.Kind.HTTP_STATUS);
 
         tearDown();
+        // A reason riding on a body that is not a decision is never surfaced either.
+        OpaClient malformedWithReason = clientReturning(200, """
+                {"result":{"allow":"no","deny_reason":
+                  {"type":"insufficient_user_authentication","required_acr":"aal2","max_age":300}}}""");
+        assertKind(malformedWithReason, PolicyEngineException.Kind.MALFORMED_RESPONSE);
+
+        tearDown();
+        // The package is loaded and `allow` is undefined for this input: a real deny, no reason, no throw.
         OpaClient missingField = clientReturning(200, "{\"result\":{}}");
-        assertThat(missingField.decide(context())).isEqualTo(OpaDecision.deny());
+        assertThatCode(() -> assertThat(missingField.decide(context())).isEqualTo(OpaDecision.deny()))
+                .doesNotThrowAnyException();
 
         // A dead endpoint: nothing listening on the port the client was built for.
         OpaClientConfig config = new OpaClientConfig(
@@ -193,7 +203,12 @@ class HttpOpaClientDecideTest {
         OpaClient dead = new HttpOpaClient(new ObjectMapper(), new PerTypePolicyPathResolver(""), config);
         server.stop(0);
         server = null;
-        assertThat(dead.decide(context())).isEqualTo(OpaDecision.deny());
+        assertKind(dead, PolicyEngineException.Kind.TRANSPORT);
+    }
+
+    private static void assertKind(OpaClient client, PolicyEngineException.Kind kind) {
+        assertThatThrownBy(() -> client.decide(context()))
+                .isInstanceOfSatisfying(PolicyEngineException.class, e -> assertThat(e.kind()).isEqualTo(kind));
     }
 
     @Test // the reason travels on the SAME response — decide() must not cost an extra round-trip
