@@ -17,6 +17,9 @@
 #        run-production-tier-matrix.sh; it did not vanish.)
 #   E9  pm-carol (member AND supervisor of one catalog) -> the row ONCE, with the MEMBERSHIP
 #                                                          role's affordances (update:true)
+#   E11 the MIXED page: sup-victor is bound (in-collection, AFTER E2) as owner of Sup Victor Co,
+#       so he is a member of one catalog and supervises ANOTHER -> exactly both, count 2, each row
+#       stamped and judged by the path that earned it (the shape backlog item 17 had collapsed)
 #   E4  remove pm-bob from anna's reports -> his catalog gone next request; a direct GET -> 403
 #   E8  (SECOND PASS) the supervised edge faulted -> anna degrades to her own memberships (empty),
 #       while pm-carol's membership page is UNCHANGED (the fault is confined to that one edge)
@@ -67,6 +70,7 @@ CAROL_CATALOG_ID="${CAROL_CATALOG_ID:-eeee0000-0000-0000-0000-0000000000c0}"
 DAVE_CATALOG_ID="${DAVE_CATALOG_ID:-eeee0000-0000-0000-0000-0000000000d0}"
 ERIN_CATALOG_ID="${ERIN_CATALOG_ID:-eeee0000-0000-0000-0000-0000000000e0}"
 READER_CATALOG_ID="${READER_CATALOG_ID:-eeee0000-0000-0000-0000-0000000000f0}"
+VICTOR_CATALOG_ID="${VICTOR_CATALOG_ID:-eeee0000-0000-0000-0000-0000000000a0}"
 
 # --- preflight ---------------------------------------------------------------
 command -v newman >/dev/null 2>&1 || {
@@ -174,11 +178,12 @@ reset_fixtures() {
 DELETE FROM reporting_edge WHERE manager_id IN (SELECT id FROM app_user WHERE subject IN
   ('$ANNA_SUB', '$VICTOR_SUB', '$CAROL_SUB'));
 DELETE FROM team WHERE name IN
-  ('Sup Bob Team', 'Sup Carol Team', 'Sup Dave Team', 'Sup Erin Team', 'Sup Reader Team');
+  ('Sup Bob Team', 'Sup Carol Team', 'Sup Dave Team', 'Sup Erin Team', 'Sup Reader Team',
+   'Sup Victor Team');
 SQL
   "$RUNTIME" exec -i "$PG_CONTAINER" psql -U catalog -d catalog -v ON_ERROR_STOP=1 >/dev/null <<SQL
 DELETE FROM catalog WHERE id IN ('$BOB_CATALOG_ID', '$CAROL_CATALOG_ID', '$DAVE_CATALOG_ID',
-                                 '$ERIN_CATALOG_ID', '$READER_CATALOG_ID');
+                                 '$ERIN_CATALOG_ID', '$READER_CATALOG_ID', '$VICTOR_CATALOG_ID');
 SQL
 }
 echo "==> Resetting any prior supervised-scope fixtures (eeee… + Sup * teams + reporting edges) ..."
@@ -199,6 +204,7 @@ seed_catalog "$CAROL_CATALOG_ID"  "Sup Carol Co"
 seed_catalog "$DAVE_CATALOG_ID"   "Sup Dave Co"
 seed_catalog "$ERIN_CATALOG_ID"   "Sup Erin Co"
 seed_catalog "$READER_CATALOG_ID" "Sup Reader Co"
+seed_catalog "$VICTOR_CATALOG_ID" "Sup Victor Co"
 
 # --- bootstrap the identities ------------------------------------------------
 echo "==> Bootstrapping the personas in the user-service ..."
@@ -233,6 +239,10 @@ CAROL_TEAM="$(new_team 'Sup Carol Team' "$CAROL_CATALOG_ID")"
 DAVE_TEAM="$(new_team 'Sup Dave Team' "$DAVE_CATALOG_ID")"
 ERIN_TEAM="$(new_team 'Sup Erin Team' "$ERIN_CATALOG_ID")"
 READER_TEAM="$(new_team 'Sup Reader Team' "$READER_CATALOG_ID")"
+# E11's team is created here but deliberately left EMPTY: the collection binds sup-victor to it
+# after E2, which needs him a PURE supervisor. Nobody reports to victor, so his membership widens
+# no one else's reach.
+VICTOR_TEAM="$(new_team 'Sup Victor Team' "$VICTOR_CATALOG_ID")"
 
 bind "$BOB_TEAM"    "$BOB_UID"   owner            # CONTROL-capable -> propagates
 bind "$CAROL_TEAM"  "$CAROL_UID" administrator    # CONTROL-capable -> propagates
@@ -298,6 +308,9 @@ newman_run() {
     --env-var "carol_token=$CAROL_TOKEN" \
     --env-var "anna_uid=$ANNA_UID" \
     --env-var "carol_uid=$CAROL_UID" \
+    --env-var "victor_uid=$VICTOR_UID" \
+    --env-var "victor_team_id=$VICTOR_TEAM" \
+    --env-var "victor_catalog_id=$VICTOR_CATALOG_ID" \
     --env-var "bob_catalog_id=$BOB_CATALOG_ID" \
     --env-var "carol_catalog_id=$CAROL_CATALOG_ID" \
     --env-var "dave_catalog_id=$DAVE_CATALOG_ID" \
@@ -309,7 +322,7 @@ newman_run() {
     --reporter-json-export "$REPORT_DIR/$RUN_ID/$report"
 }
 
-echo "==> newman PASS 1: the supervised-scope matrix (E1-E6, E9, E10, then E4) ..."
+echo "==> newman PASS 1: the supervised-scope matrix (E1-E6, E9, E10, E11, then E4) ..."
 newman_run "Matrix" "supervised-scope-matrix-report.json"
 
 # --- pass 2: E8, with ONLY the supervised edge repointed at a dead port -------

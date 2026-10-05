@@ -352,7 +352,7 @@ protected request answers 403 (the lie ADR 0037 removes), and the two scope clie
 becomes a 500. **Fix shape:** the same startup validation as `OpaClientConfig` in each constructor (no value
 echoed).
 
-## 19. An e2e cell for the mixed catalog page — a member of A who supervises B (queued 2026-10-05, after the ENGINE-ERRORS PR)
+## 19. An e2e cell for the mixed catalog page — a member of A who supervises B — ✅ SHIPPED 2026-10-05
 
 **Left by** the item-17 fix. The supervised-scope matrix covers a pure supervisor (E1/E2), an outsider (E3), and a
 dual hat on **one** catalog (E9 — supervised `S \ M` is empty, so no widening runs). No cell lists the mixed page —
@@ -362,6 +362,12 @@ that is a member of one catalog and supervises another, under a role whose `filt
 item-17 trigger); `GET /catalogs` must list **both** ids, A stamped `member` and B stamped `supervised`, and the
 count must be exactly two (assert the cut, not the shape). Add it to `supervised-scope-matrix`, keep
 `check-collection-conformance.py` clean, and run it on the rig (`ENABLE_OIDC=1 ENABLE_USER_SERVICE=1`).
+**Done:** `supervised-scope-matrix` **E11**. `sup-victor` (nobody reports to him, so no other reach moves) is bound
+in-collection, after E2, as `owner` of a sixth fixture, `Sup Victor Co` (`eeee…00a0`, its team seeded empty);
+**E11b** asserts his page is exactly `{Sup Victor Co, Sup Erin Co}`, `count: 2`, the member row `member` with
+`update:true` and the supervised row `supervised` and view-only. **Falsifier, measured:** against a catalog image
+built from `24bee89` (main just before the item-17 fix) only E11b fails — one row, `count: 1`, the member row
+missing — and the other 46 assertions stay green; on the rebuilt `main` image the whole matrix is green.
 
 ---
 

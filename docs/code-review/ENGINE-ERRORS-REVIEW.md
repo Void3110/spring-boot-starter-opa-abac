@@ -239,3 +239,17 @@ slice 123 KILLED + the documented `childrenOf` NO_COVERAGE; U41 red on `e2cc8d5`
 **newman: not re-run, with one known gap** — `030bcfe` does change a rig-observable response (`GET /catalogs` for
 a member of A who supervises B under an unconditional role: one catalog → both), and no e2e cell covers that
 shape; it is queued as backlog item 19, after this PR.
+
+**Post-merge e2e (2026-10-05, on `main` at `9f228b2`, all three images rebuilt).** The gap is closed:
+
+| Rig | Suite | Result |
+|---|---|---|
+| A — `ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1` | `run-resilience-matrix.sh` | ✅ E1 200 (2/2); E2 **503** `DEPENDENCY_UNAVAILABLE` (3/3) |
+| B — `ENABLE_MCP=1` (forces OIDC + OPA + user-service; flavour flags exported) | `run-supervised-scope-matrix.sh` | ✅ pass 1 49/49 incl. the new **E11** mixed page; pass 2 (E8) 6/6 |
+| B | `run-agent-tool-matrix.sh` | ✅ every folder 0 failures; the E6 kill drill's roster is exactly `[]` |
+| B | `run-tests.sh` | ✅ 22/22 |
+
+**E11** (backlog item 19) is the mixed page: `sup-victor`, bound in-collection as `owner` of one catalog while still
+supervising another, lists exactly both, each row stamped by its own path. Against a catalog image built from
+`24bee89` (before the `030bcfe` fix) only E11b fails — one row, `count: 1` — so the cell is measured to catch the
+item-17 collapse, not just to agree with the fixed code.

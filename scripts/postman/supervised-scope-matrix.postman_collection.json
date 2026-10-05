@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Supervised-scope matrix (Slice A - ADR 0029)",
-    "description": "A unit manager who is a member of NO team sees the catalogs of the teams their reports own or manage - read-only, live, and derived entirely from the reporting structure, never from a realm grant. Asserted on EXACT ids and counts through the gateway.\n\nRuns in ORDER. E4 is deliberately LAST: it mutates the reporting edges (the declarative bootstrap replace) and every earlier cell depends on the original org.\n\nTWO FOLDERS, TWO PASSES. 'Matrix' is E1-E6/E9/E10 on the normal rig. 'Supervised-edge outage' is E8 and needs a SECOND short pass with only CATALOG_USER_SERVICE_SUPERVISED_BASE_URL repointed at a dead port - see run-supervised-scope-matrix.sh.",
+    "description": "A unit manager who is a member of NO team sees the catalogs of the teams their reports own or manage - read-only, live, and derived entirely from the reporting structure, never from a realm grant. Asserted on EXACT ids and counts through the gateway.\n\nRuns in ORDER. E11 binds sup-victor to a team, so it must follow E2, which needs him a PURE supervisor. E4 is deliberately LAST: it mutates the reporting edges (the declarative bootstrap replace) and every earlier cell depends on the original org.\n\nTWO FOLDERS, TWO PASSES. 'Matrix' is E1-E6/E9/E10/E11, then E4, on the normal rig. 'Supervised-edge outage' is E8 and needs a SECOND short pass with only CATALOG_USER_SERVICE_SUPERVISED_BASE_URL repointed at a dead port - see run-supervised-scope-matrix.sh.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -571,6 +571,112 @@
                   "// (which E5e pinned as update:false on this very same catalog).",
                   "pm.test('E9 the row carries the MEMBERSHIP role\\'s affordances (update:true)', () =>",
                   "  pm.expect(row._actions.update).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E11a — bind sup-victor as OWNER of Sup Victor Co (he now also governs a catalog)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"teamId\":\"{{victor_team_id}}\",\"userId\":\"{{victor_uid}}\",\"roleCode\":\"owner\"}"
+            },
+            "url": {
+              "raw": "{{user_service}}/internal/bootstrap/memberships",
+              "host": [
+                "{{user_service}}"
+              ],
+              "path": [
+                "internal",
+                "bootstrap",
+                "memberships"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// E2 needed victor a PURE supervisor; from here on he is ALSO a member of Sup Victor Co (an",
+                  "// owner seat on the team the runner created empty). Nobody reports to victor, so no other",
+                  "// subject's reach changes, and the outage pass (E8) does not read his page.",
+                  "pm.test('E11a the owner seat was bound (200)', () => pm.response.to.have.status(200));",
+                  "pm.test('E11a the user-service returned the membership id', () =>",
+                  "  pm.expect(pm.response.json().membershipId).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E11b — MIXED PAGE: sup-victor (member of one catalog, supervisor of another) -> exactly both",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{victor_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{collection_base_url}}/catalogs?perPage=50",
+              "host": [
+                "{{collection_base_url}}"
+              ],
+              "path": [
+                "catalogs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('E11b 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const own = pm.environment.get('victor_catalog_id');",
+                  "const erin = pm.environment.get('erin_catalog_id');",
+                  "const ids = body.items.map(i => i.id);",
+                  "// victor is a MEMBER of Sup Victor Co (owner: no required tags, so the membership residual is",
+                  "// ALLOW_ALL) and still SUPERVISES Sup Erin Co through pm-erin. The mixed shape composes",
+                  "// id IN (M + S) AND (residual OR id IN S): the member row rides the residual, the supervised",
+                  "// row the widening arm. FALSIFIER (backlog item 17): Spring Data drops the null-predicate",
+                  "// ALLOW_ALL side of or(), so before the fix the arm collapsed to `id IN S` and this page",
+                  "// listed Sup Erin Co alone (count 1).",
+                  "pm.test('E11b the page lists EXACTLY his own catalog and the one he supervises', () =>",
+                  "  pm.expect(ids.slice().sort()).to.eql([own, erin].sort()));",
+                  "pm.test('E11b the authorized total is 2 (the member row is not dropped)', () =>",
+                  "  pm.expect(body.count).to.eql(2));",
+                  "const mine = body.items.find(i => i.id === own);",
+                  "const supervised = body.items.find(i => i.id === erin);",
+                  "// Each row is stamped and judged by the path that earned it (ADR 0033's _provenance).",
+                  "pm.test('E11b the member row is stamped member and carries the owner affordances', () => {",
+                  "  pm.expect(mine._provenance).to.eql('member');",
+                  "  pm.expect(mine._actions.update).to.eql(true);",
+                  "});",
+                  "pm.test('E11b the supervised row is stamped supervised and stays view-only', () => {",
+                  "  pm.expect(supervised._provenance).to.eql('supervised');",
+                  "  pm.expect(supervised._actions.update).to.eql(false);",
+                  "});"
                 ]
               }
             }
