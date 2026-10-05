@@ -4,7 +4,7 @@ All notable changes to the published `opa-abac-*` modules. The `example-*` servi
 published; their changes appear here only where they show an adopter what to do. Earlier releases
 (1.0.0 – 1.3.0) are described by their git tags and the README's release notes.
 
-## [1.4.0] — unreleased
+## [1.4.0] — 2026-10-05
 
 ### "Could not decide" is no longer reported as "no" ([ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md))
 
@@ -53,6 +53,15 @@ second state distinguishable by type:
   wrong — e.g. the example's catalog member who also supervised another catalog saw only the supervised one.
   `AbacQueryService` now skips the OR for an `ALLOW_ALL` residual. Present since the 4-argument
   `findAuthorized` (1.0.0).
+
+### Dependencies
+
+- **`opa-abac-core`** declares Jackson 3 (`tools.jackson.core:jackson-databind`) **3.1.7**, up from 3.1.5. Seven
+  Jackson advisories published 2026-09-28 – 10-01 affect 3.1.5; the library uses none of the affected features
+  (polymorphic typing, object identity, `Path`, `XMLGregorianCalendar`, `DataInput` parsing — it only reads
+  OPA's response as a tree). The modules that import the Spring Boot BOM still resolve **Boot's** managed
+  Jackson (3.1.5 and 2.21.5 under Boot 4.0.8), as does every Boot application: to move ahead of Boot, override
+  Jackson in your own build, or take the Boot patch that manages a fixed version.
 
 ### Upgrade notes — behaviour changes
 
