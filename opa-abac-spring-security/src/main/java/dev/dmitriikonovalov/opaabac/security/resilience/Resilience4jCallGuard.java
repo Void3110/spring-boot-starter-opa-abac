@@ -129,6 +129,9 @@ public final class Resilience4jCallGuard implements CallGuard {
                     // sustained legitimate denials self-open it and then force-deny otherwise-allowable
                     // requests — a self-inflicted availability regression that ADR 0017 §5 forbids ("never a
                     // decision input"). Only a *thrown* fault drives the breaker (recordOrRelease, below).
+                    // Not an observation either way, so release the permission — or a half-open probe that
+                    // returned a retryable value would hold the only probe slot for good.
+                    breaker.releasePermission();
                     if (canRetry(attempt, deadlineMillis)) {
                         backoffBeforeRetry(attempt);
                         continue;

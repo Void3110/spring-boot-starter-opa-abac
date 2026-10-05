@@ -116,10 +116,15 @@ public class ToolCallAuthorizer {
                     toolName, e.getMessage());
             return ToolAuthorizationDecision.denied(CODE_IDENTITY_UNREADABLE);
         } catch (AgentCapabilityUnavailableException e) {
-            log.warn("Tool-gate denied '{}': the agent capability source was unavailable", toolName, e);
+            // The message only at WARN: a cause can be a parser exception quoting the source's body.
+            log.warn("Tool-gate denied '{}': the agent capability source was unavailable ({})",
+                    toolName, e.getMessage());
+            log.debug("Capability source failure for '{}'", toolName, e);
             return ToolAuthorizationDecision.denied(CODE_CAPABILITY_UNAVAILABLE);
         } catch (RoleResolutionException e) {
-            log.warn("Tool-gate denied '{}': the principal's role could not be resolved", toolName, e);
+            log.warn("Tool-gate denied '{}': the principal's role could not be resolved ({})",
+                    toolName, e.getMessage());
+            log.debug("Role resolution failure for '{}'", toolName, e);
             return ToolAuthorizationDecision.denied(CODE_CEILING_UNAVAILABLE);
         } catch (DecisionIndeterminateException e) {
             // Still a denial — the tool body never runs — but a distinct, caller-visible "not now".

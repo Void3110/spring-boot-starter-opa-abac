@@ -60,7 +60,7 @@ RoleDefinitionSupplier ──throws RoleResolutionException──┐        │
 | `OpaAuthorizationManager` | same catch change |
 | `web/ActionEnrichmentAdvice` | behaviour unchanged (omit the group); the `lookupAll` catch at the role batch widens from `RoleResolutionException` to the family (a custom SPI subtype must not escape `beforeBodyWrite`); comments and logs name the family |
 | `AbstractProblemAdvice` | `@ExceptionHandler({AuthorizationIndeterminateException.class, DecisionIndeterminateException.class})` → 503 `DEPENDENCY_UNAVAILABLE`, detail "Authorization is temporarily unavailable" |
-| `resilience/Resilience4jCallGuard`, `MemoizingRoleDefinitionSupplier` | **no change** — the guard keeps recording every thrown fault (ADR §4's accepted consequence); the memo replays `RoleResolutionException`, now in the family |
+| `resilience/Resilience4jCallGuard`, `MemoizingRoleDefinitionSupplier` | **no change** — the guard keeps recording every thrown fault (ADR §4's accepted consequence); the memo replays `RoleResolutionException`, now in the family. *(Superseded by the review: the guard takes an optional `recordableError` and releases the permission of a call it does not record; the OPA decorator counts only retried faults; both memos replay any family member.)* |
 
 ### 1.3 `opa-abac-spring-data`
 

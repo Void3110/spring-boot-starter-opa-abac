@@ -8,8 +8,8 @@ import java.util.OptionalInt;
  *
  * <p>The {@link Kind} says why, so a caller can decide what to do without parsing a message: the resilience
  * layer retries only the transient kinds, a log line names the kind, and an adopter can tell a policy
- * deployment that never loaded ({@link Kind#UNDEFINED_DECISION}) from a sidecar that is down
- * ({@link Kind#TRANSPORT}).
+ * deployment that never loaded ({@link Kind#UNDEFINED_DECISION}) or a policy that errors on this input
+ * ({@link Kind#EVALUATION_ERROR}) from a sidecar that is down ({@link Kind#TRANSPORT}).
  *
  * <p>Instances are built through the static factories, one per kind, so the {@link #httpStatus()} invariant
  * (present exactly for {@link Kind#HTTP_STATUS}) cannot be broken.
@@ -33,6 +33,14 @@ public final class PolicyEngineException extends DecisionIndeterminateException 
          * activated, a wrong path) — or, on a bulk call, the package defines no {@code bulk} rule.
          */
         UNDEFINED_DECISION,
+        /**
+         * The engine answered, but the policy raised an error while evaluating this input — OPA's
+         * {@code eval_*} errors (a complete rule producing two outputs, a strict built-in error), which its data
+         * API reports as an HTTP {@code 500}. Deterministic for this input: the same request fails the same way.
+         *
+         * @since 1.4.0
+         */
+        EVALUATION_ERROR,
         /** The resilience layer's circuit breaker is open; the engine was not called. */
         CIRCUIT_OPEN
     }
@@ -76,6 +84,11 @@ public final class PolicyEngineException extends DecisionIndeterminateException 
     /** A {@code 200} with no {@code result}: the policy document (or its bulk rule) is not there. */
     public static PolicyEngineException undefinedDecision(String detail) {
         return new PolicyEngineException(Kind.UNDEFINED_DECISION, NO_STATUS, detail, null);
+    }
+
+    /** The policy raised an evaluation error for this input (OPA's {@code eval_*} errors). */
+    public static PolicyEngineException evaluationError(String detail) {
+        return new PolicyEngineException(Kind.EVALUATION_ERROR, NO_STATUS, detail, null);
     }
 
     /** The circuit breaker is open; {@code cause} may be {@code null}. */

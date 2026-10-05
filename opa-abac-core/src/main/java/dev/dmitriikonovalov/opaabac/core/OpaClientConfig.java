@@ -28,19 +28,23 @@ public record OpaClientConfig(String baseUrl, Duration timeout, String decisionF
         requireHttpUrl(baseUrl);
     }
 
+    /**
+     * The messages never echo the value: a base URL may carry credentials in its user-info part, and a startup
+     * failure is logged. Not even the parse exception is attached — its message quotes the input.
+     */
     private static void requireHttpUrl(String baseUrl) {
         URI uri;
         try {
             uri = new URI(baseUrl);
         } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("OPA base URL is not a valid URI: '" + baseUrl + "'", e);
+            throw new IllegalArgumentException(
+                    "OPA base URL is not a valid URI (" + e.getReason() + " at index " + e.getIndex() + ")");
         }
         String scheme = uri.getScheme();
         boolean httpScheme = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
         if (!httpScheme || uri.getHost() == null) {
             throw new IllegalArgumentException(
-                    "OPA base URL must be an absolute http(s) URL with a host, e.g. http://localhost:8181: '"
-                            + baseUrl + "'");
+                    "OPA base URL must be an absolute http(s) URL with a host, e.g. http://localhost:8181");
         }
     }
 

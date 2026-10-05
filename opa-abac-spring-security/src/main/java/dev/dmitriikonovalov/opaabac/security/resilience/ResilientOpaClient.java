@@ -39,8 +39,9 @@ import org.slf4j.LoggerFactory;
  * {@code OpaClient} — all four methods implemented by hand, no {@code default} inherited.
  *
  * <h2>What the breaker counts</h2>
- * Exactly what the decorator retries: a transient fault. A fail-fast kind — an undefined decision, a
- * malformed body, a 4xx, an interrupt — answers "could not decide" for that call but never opens the
+ * Exactly what the decorator retries: a transient fault. A fail-fast kind — an undefined decision, a policy
+ * evaluation error, a malformed body, a 4xx, an interrupt — answers "could not decide" for that call but never
+ * opens the
  * breaker (ADR 0037 §4). One breaker serves every resource type and all four methods, and a fail-fast fault
  * is often local to one of them — a type whose package loads late, a type with no {@code bulk} rule — so
  * counting it would let one type's defect answer {@code CIRCUIT_OPEN} for every healthy type. It costs no

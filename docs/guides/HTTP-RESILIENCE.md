@@ -128,16 +128,19 @@ host but stay independent, so a fault in `/internal/tag-definitions` cannot trip
 > `HttpOpaClient` swallowed every fault into a deny value, so the **OPA breaker was effectively a no-op**;
 > since ADR 0037 it throws `PolicyEngineException` for every failure, and the OPA breaker **counts real
 > faults — exactly the ones it retries**: `TRANSPORT`, `TIMEOUT`, 5xx, 429. A fail-fast kind
-> (`UNDEFINED_DECISION`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers "could not decide" for that call
-> and never opens the breaker. One breaker serves every type and all four methods, and a fail-fast fault is
-> often local — a package that loads late for one type, an enrichable type with no `bulk` rule — so
+> (`UNDEFINED_DECISION`, `EVALUATION_ERROR`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers "could not
+> decide" for that call and never opens the breaker. One breaker serves every type and all four methods, and a
+> fail-fast fault is often local — a package that loads late for one type, an enrichable type with no `bulk`
+> rule, one product whose data makes a rule produce two outputs (OPA's `500` with `eval_*` codes) — so
 > counting it would let one type's defect refuse every healthy type; and a fault that is never retried
 > costs no latency for the breaker to shed. The decorator passes its retry predicate as the guard's
 > `recordableError`; the resolve and tag edges keep counting every thrown failure.
 
 > **The OPA breaker is live for the first time in 1.4.0 — mind its window.** With the defaults below
-> (`failure-threshold` 5, one retry per call) roughly three failing requests open it — each failing request
-> records two attempts — and every OPA-backed call then answers `CIRCUIT_OPEN` (503) until a half-open probe
+> (`failure-threshold` 5, one retry per call) roughly three fast-failing requests open it — a refused
+> connection or a 5xx records two attempts per request; a timeout records one, since the default 5 s timeout
+> outlasts the 2.5 s retry ceiling, so it takes five — and every OPA-backed call then answers `CIRCUIT_OPEN`
+> (503) until a half-open probe
 > succeeds, up to `open-duration` (10 s) after OPA is back. A sidecar restart that cost a few hundred
 > milliseconds of 403s in 1.3.0 can now cost ~10 s of 503s under load. Tune
 > `opa.abac.resilience.opa.breaker.failure-threshold` / `open-duration` to your restart profile; a measured
@@ -166,7 +169,8 @@ the *same way* the plain delegate does on a failure:
 The plain `HttpOpaClient` throws `PolicyEngineException` when it could not obtain a decision and returns
 only what the policy answered. So `ResilientOpaClient` retries a **thrown** fault whose **kind** is
 transient — `TRANSPORT`, `TIMEOUT`, or an `HTTP_STATUS` of 5xx or 429 — and fails fast on every other kind
-(`MALFORMED_RESPONSE`, `UNDEFINED_DECISION`, 4xx, `INTERRUPTED`). The kind is the whole classification:
+(`MALFORMED_RESPONSE`, `UNDEFINED_DECISION`, `EVALUATION_ERROR`, 4xx, `INTERRUPTED`). The kind is the whole
+classification:
 never the cause chain, because a malformed body can carry the JSON parser's `IOException` and would come
 back unchanged on a retry. A **returned value is never retried** — a deny, a reasoned deny, a mixed or an
 all-false bulk page are real answers. (Until 1.4.0 the decorator had to retry the deny *value*, since a

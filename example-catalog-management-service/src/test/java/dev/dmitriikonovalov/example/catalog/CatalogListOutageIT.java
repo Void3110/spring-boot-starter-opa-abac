@@ -37,8 +37,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * and, for a subject who also supervised catalogs, into a silently partial supervised-only page. Since
  * ADR 0037 the outage propagates and the list answers <b>503 {@code DEPENDENCY_UNAVAILABLE}</b>: "not now".
  * The contrast cell flips only the outage off and shows the same request listing the member's catalog.
- * The supervisor cell is the QA row's subject: a member of one catalog who supervises another — the case
- * 1.3.0 answered with the supervised-only page.
+ * The supervisor cells are the QA row's subject: a member of one catalog who supervises another. With the
+ * outage on the membership anchor only, 1.3.0 caught it, fell through to the supervised role and answered a
+ * supervised-only 200; the contrast cell shows the supervised leg is live (both catalogs listed).
  */
 @AutoConfigureMockMvc
 @Import(CatalogListOutageIT.OutageListConfig.class)
@@ -53,6 +54,7 @@ class CatalogListOutageIT extends AbstractPostgresIT {
     @BeforeEach
     void seed() {
         OutageListConfig.outage = false;
+        OutageListConfig.outageAnchor = null;
         memberCatalog = catalogs.save(new CatalogEntity(UUID.randomUUID(), "Outage Co", "outage IT")).getId();
         OutageListConfig.governed = List.of(memberCatalog);
         OutageListConfig.supervised = List.of();
@@ -70,13 +72,11 @@ class CatalogListOutageIT extends AbstractPostgresIT {
                 .andExpect(header().doesNotExist("Retry-After"));
     }
 
-    @Test // I6 — the QA row's subject: a member who also supervises another catalog. The outage is not
-    // narrowed to the supervised-only page; the whole list is refused as "could not decide"
-    void roleSourceOutage_memberAndSupervisor_answers503_notTheSupervisedOnlyPage() throws Exception {
-        UUID supervisedCatalog =
-                catalogs.save(new CatalogEntity(UUID.randomUUID(), "Supervised Co", "outage IT")).getId();
-        OutageListConfig.supervised = List.of(supervisedCatalog);
-        OutageListConfig.outage = true;
+    @Test // I6 — the QA row's subject: a member who also supervises another catalog, the role source down for
+    // the membership anchor only. Not narrowed to the supervised-only page 1.3.0 answered: refused as a whole
+    void membershipAnchorOutage_memberAndSupervisor_answers503_notTheSupervisedOnlyPage() throws Exception {
+        UUID supervisedCatalog = seedSupervisedCatalog();
+        OutageListConfig.outageAnchor = memberCatalog;
 
         String body = mockMvc.perform(get("/api/v1/catalogs"))
                 .andExpect(status().isServiceUnavailable())
@@ -85,6 +85,27 @@ class CatalogListOutageIT extends AbstractPostgresIT {
                 .andReturn().getResponse().getContentAsString();
 
         assertThat(body).doesNotContain(supervisedCatalog.toString(), memberCatalog.toString());
+    }
+
+    @Test // the supervisor cell's contrast: the role source up — the supervised leg is live (its catalog is listed,
+    // stamped supervised), so the outage cell above is decided on a subject whose supervised leg really runs.
+    // The member's catalog is deliberately not asserted: under this IT's allow-all stub the residual is ALLOW_ALL,
+    // and ALLOW_ALL OR-ed with the subtree widening collapses to the subtree alone (Spring Data drops a
+    // null-predicate side) — a pre-existing defect, ENGINEERING-BACKLOG item 17
+    void roleSourceUp_memberAndSupervisor_runsTheSupervisedLeg() throws Exception {
+        UUID supervisedCatalog = seedSupervisedCatalog();
+
+        mockMvc.perform(get("/api/v1/catalogs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + supervisedCatalog + "')]._provenance")
+                        .value("supervised"));
+    }
+
+    private UUID seedSupervisedCatalog() {
+        UUID supervisedCatalog =
+                catalogs.save(new CatalogEntity(UUID.randomUUID(), "Supervised Co", "outage IT")).getId();
+        OutageListConfig.supervised = List.of(supervisedCatalog);
+        return supervisedCatalog;
     }
 
     @Test // the contrast: the same request with the role source up lists the member's catalog
@@ -99,6 +120,8 @@ class CatalogListOutageIT extends AbstractPostgresIT {
     @TestConfiguration
     static class OutageListConfig {
         static volatile boolean outage;
+        /** When set, the role source is down for this catalog only (the membership anchor). */
+        static volatile UUID outageAnchor;
         static volatile List<UUID> governed = List.of();
         static volatile List<UUID> supervised = List.of();
 
@@ -124,7 +147,8 @@ class CatalogListOutageIT extends AbstractPostgresIT {
         @Bean
         RoleDefinitionSupplier outageRoleSupplier() {
             return (userId, type, id) -> {
-                if (outage) {
+                UUID anchor = outageAnchor;
+                if (outage || (anchor != null && anchor.toString().equals(id))) {
                     throw new RoleResolutionException("user-management unavailable");
                 }
                 return Optional.of(new RoleDefinition("member", Map.of(), Map.of("catalog", List.of("READ"))));

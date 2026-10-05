@@ -28,6 +28,7 @@ class PolicyEngineExceptionTest {
                 PolicyEngineException.interrupted("t", CAUSE),
                 PolicyEngineException.malformedResponse("t", null),
                 PolicyEngineException.undefinedDecision("t"),
+                PolicyEngineException.evaluationError("t"),
                 PolicyEngineException.circuitOpen("t", null));
 
         Set<PolicyEngineException.Kind> kinds =

@@ -274,10 +274,12 @@ class HttpOpaClientCompileTest {
     }
 
     @Test // ENGINE-ERRORS U9 — an unparseable body, one that is not a JSON object, or a Compile API answer of the
-    // wrong shape (no result object, a non-array queries) → MALFORMED_RESPONSE, never a silent deny-all
+    // wrong shape (no result object, a non-array queries, a query that is not an array of expression objects)
+    // → MALFORMED_RESPONSE, never a silent deny-all
     void indeterminate_onMalformedBody() throws IOException {
         List<String> bodies = List.of("not-json", "[]", "{}", "{\"result\":null}", "{\"result\":\"x\"}",
-                "{\"result\":[]}", "{\"result\":{\"queries\":\"x\"}}");
+                "{\"result\":[]}", "{\"result\":{\"queries\":\"x\"}}", "{\"result\":{\"queries\":[{}]}}",
+                "{\"result\":{\"queries\":[[1]]}}", "{\"result\":{\"queries\":[[\"x\"]]}}");
         for (String body : bodies) {
             String base = startServer(ex -> respond(ex, 200, body));
 
@@ -287,15 +289,17 @@ class HttpOpaClientCompileTest {
     }
 
     @Test // ENGINE-ERRORS U9 — an unparseable body is named by the parser's exception only: the parser's message
-    // quotes the body, and the WARN must not
+    // quotes the body, and the WARN must not. The body is identifier characters only, because Jackson echoes
+    // exactly those in full ("Unrecognized token 'secrettokenvalue'") — so a regression to the parser's message
+    // would fail this cell
     void malformedMessage_namesTheParserException_notTheBody() throws IOException {
-        String base = startServer(ex -> respond(ex, 200, "secret-looking-token"));
+        String base = startServer(ex -> respond(ex, 200, "secrettokenvalue"));
 
         PolicyEngineException e =
                 assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
 
         assertThat(e.getMessage()).contains("compile for path '", "malformed body (")
-                .doesNotContain("secret-looking-token");
+                .doesNotContain("secrettokenvalue");
     }
 
     @Test // ENGINE-ERRORS U9 — the documented blind spot (ADR 0037 §3a): an undefined reference compiles to

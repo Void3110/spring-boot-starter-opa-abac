@@ -65,7 +65,7 @@ public final class RetryableClassification {
             return switch (engine.kind()) {
                 case TRANSPORT, TIMEOUT -> true;
                 case HTTP_STATUS -> engine.httpStatus().isPresent() && retryableStatus(engine.httpStatus().getAsInt());
-                case INTERRUPTED, MALFORMED_RESPONSE, UNDEFINED_DECISION, CIRCUIT_OPEN -> false;
+                case INTERRUPTED, MALFORMED_RESPONSE, UNDEFINED_DECISION, EVALUATION_ERROR, CIRCUIT_OPEN -> false;
             };
         }
         for (Throwable cause = t; cause != null; cause = cause.getCause()) {

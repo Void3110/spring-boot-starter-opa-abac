@@ -12,7 +12,7 @@ tags:
 
 **Status:** Accepted — implemented 2026-10-05 by slice **ENGINE-ERRORS** ([[ENGINE-ERRORS]], T1–T6; PR pending); release 1.4.0.
 Amended the same day by the slice's review ([[ENGINE-ERRORS-REVIEW]]): §4's breaker counts only the faults it
-retries; §3's compile row and §3a's wording tightened.
+retries; §3's compile row and §3a's wording tightened; a new `EVALUATION_ERROR` kind (round 2).
 **Date:** 2026-10-04
 **Context tags:** fail-closed, indeterminate vs deny, OPA engine error, role-source outage, `OpaClient` contract, resilience retry, 503 vs 403
 
@@ -80,9 +80,10 @@ guesses (§6). `opa-abac-core` stays free of Spring.
 |---|---|---|
 | connection refused, reset, other transport `IOException` | indeterminate | `TRANSPORT` |
 | request or connect timeout | indeterminate | `TIMEOUT` |
-| any non-200 status | indeterminate | `HTTP_STATUS` (status carried) |
+| any non-200 status not in the next row | indeterminate | `HTTP_STATUS` (status carried) |
+| a `500` whose body lists only OPA `eval_*` errors — `{"code": "internal_error", "errors": [{"code": "eval_conflict_error", …}]}`: the policy raised an error evaluating **this input** (two outputs from a complete rule, a strict built-in error). Measured on OPA 1.10.1; only the codes are read, never the messages or locations | indeterminate | `EVALUATION_ERROR` |
 | thread interrupted (the flag is restored first) | indeterminate | `INTERRUPTED` |
-| unparseable body; a non-boolean `allow`; an explicit `"result": null`; a bulk `result` that is not a boolean list of the input's length; on compile, a `result` that is missing or not an object, or a `queries` that is not an array (a Compile API answer always carries a `result` object) | indeterminate | `MALFORMED_RESPONSE` |
+| unparseable body; on decide, a `result` that is not an object or a non-boolean `allow`; an explicit `"result": null`; a bulk `result` that is not a boolean list of the input's length; on compile, a `result` that is missing or not an object, a `queries` that is not an array, or a query that is not an array of expression objects (a Compile API answer always carries a `result` object; an expression the client cannot translate is *unsupported*, never malformed) | indeterminate | `MALFORMED_RESPONSE` |
 | **`{}` — no `result` key** (decide: the package/path is not loaded — a bundle not yet activated, a wrong path; bulk: the same, **or a loaded package that defines no `bulk` rule**, which is optional per type) | indeterminate | `UNDEFINED_DECISION` |
 | **`{"result": {…}}` with no `allow`** (the package is loaded; `allow` is undefined for this input) | **deny** — undefined-means-deny, OPA's idiom for a policy without `default allow := false` | — |
 | `allow: false`, with or without a `deny_reason` | deny (unchanged; a reasoned deny is unchanged) | — |
@@ -103,12 +104,12 @@ guesses (§6). `opa-abac-core` stays free of Spring.
 ### 4. `PolicyEngineException` carries a `Kind`; resilience retries faults, never decisions
 
 `Kind` = `TRANSPORT`, `TIMEOUT`, `HTTP_STATUS` (+ the status), `INTERRUPTED`, `MALFORMED_RESPONSE`,
-`UNDEFINED_DECISION`, `CIRCUIT_OPEN`. **Amends [[0017-cross-service-http-resilience|ADR 0017]] §2:**
+`UNDEFINED_DECISION`, `EVALUATION_ERROR`, `CIRCUIT_OPEN`. **Amends [[0017-cross-service-http-resilience|ADR 0017]] §2:**
 
 - **Retry on thrown transient faults only.** `RetryableClassification` classifies a `PolicyEngineException`
   **by its `Kind` alone** — never by its cause chain, because a JSON-parse failure can carry an `IOException`
   cause and would otherwise be retried — onto ADR 0017 §3's existing table: `TRANSPORT`, `TIMEOUT`, 5xx and
-  429 retry; 4xx, `MALFORMED_RESPONSE`, `UNDEFINED_DECISION` and `INTERRUPTED` fail fast. The `IOException`
+  429 retry; 4xx, `MALFORMED_RESPONSE`, `UNDEFINED_DECISION`, `EVALUATION_ERROR` and `INTERRUPTED` fail fast. The `IOException`
   cause-chain rule stays for the other edges' throwables. A bundle still loading will not heal within a
   ~50 ms in-call retry, so an undefined result goes straight out as a 503 and the *client* retries later.
 - **No more sentinel retry.** A genuine deny, a reasoned deny, a mixed bulk page and an all-false bulk page
@@ -116,10 +117,12 @@ guesses (§6). `opa-abac-core` stays free of Spring.
   every deny; Slice 7.3 measured ~8× enrichment latency before the mixed-block exemption.)
 - **The OPA breaker counts exactly the faults that are retried, never a returned decision** — ADR 0017 §5's
   "never a decision input", now true by construction rather than by exemption. `TRANSPORT`, `TIMEOUT`, 5xx
-  and 429 count; a fail-fast kind (`UNDEFINED_DECISION`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers
-  "could not decide" for that call and neither opens the breaker nor resets its window. One breaker serves
-  every resource type and all four methods, and a fail-fast fault is often local to one of them — a type
-  whose package loads late, an enrichable type with no `bulk` rule, a caller-side cancellation — so counting
+  and 429 count; a fail-fast kind (`UNDEFINED_DECISION`, `EVALUATION_ERROR`, `MALFORMED_RESPONSE`, a 4xx,
+  `INTERRUPTED`) answers "could not decide" for that call and neither opens the breaker nor resets its window.
+  One breaker serves every resource type and all four methods, and a fail-fast fault is often local to one of
+  them — a type whose package loads late, an enrichable type with no `bulk` rule, one product whose data makes
+  a rule produce two outputs (OPA answers that with a `500`, hence `EVALUATION_ERROR` rather than a retryable
+  status), a caller-side cancellation — so counting
   it would let one type's defect answer `CIRCUIT_OPEN` for every healthy type. It also costs no latency
   (never retried), so there is nothing to shed. The mechanism is a fourth, optional `CallGuard` argument
   (`recordableError`) the decorator sets to its retry predicate; the resolve and tag edges keep counting
@@ -128,8 +131,11 @@ guesses (§6). `opa-abac-core` stays free of Spring.
   either way" — false when the fault is local to one type or one method.)*
 - **The OPA breaker opens for the first time.** Before this ADR the plain client never threw, so the OPA
   breaker never counted anything. Now a real outage opens it: with the defaults (`failure-threshold` 5,
-  one retry, `open-duration` 10 s) about three failing requests open it, and calls answer `CIRCUIT_OPEN` until
-  a half-open probe succeeds — up to 10 s after OPA is back. The defaults stay; the upgrade notes name the
+  one retry, `open-duration` 10 s) about three fast-failing requests open it (a refused connection or a 5xx
+  records two attempts each) — five for timeouts, which are never retried because the default 5 s timeout
+  outlasts the 2.5 s retry ceiling — and calls answer `CIRCUIT_OPEN` until a half-open probe succeeds, up to
+  10 s after OPA is back. A timeout is a load signal and stays counted even when one type's rule is the slow
+  one. The defaults stay; the upgrade notes name the
   properties, and a load ceiling with OPA killed is backlog.
 - **Breaker open → `PolicyEngineException(CIRCUIT_OPEN)`.** The decorator stops synthesizing deny values. An
   interrupt during the guard's backoff (which the guard reports as a not-permitted call with an
@@ -247,7 +253,8 @@ error-path behaviour, which is what the release exists for. A new `CHANGELOG.md`
   three input defects stay denies and are never thrown.
 - The decorator retries thrown transient kinds, never a returned decision (a deny is called **once**), and
   throws `CIRCUIT_OPEN` when the breaker is open; decorator and delegate agree in every state. A sustained
-  fail-fast kind never opens the breaker, and one method's deterministic fault leaves a healthy call alone.
+  fail-fast kind (including a policy evaluation error) never opens the breaker, and one method's
+  deterministic fault leaves a healthy call alone.
 - Each gate maps each family member to `AuthorizationIndeterminateException`; a `catch
   (AccessDeniedException)` still catches it; a non-family throw still returns `DENY`.
 - Every degrade-catch has a test that a family member passes through it.

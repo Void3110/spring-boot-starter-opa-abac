@@ -10,7 +10,7 @@ tags:
 
 # ENGINE-ERRORS — Code Review
 
-> **Verdict**: Approved with fixes
+> **Verdict**: Approved with fixes (round 1 and round 2 — see [Round 2](#round-2--three-reviewers-on-the-fix-commit))
 > **Scope**: The whole slice — ADR 0037's "could not decide" family across core, the two Spring gates, the
 > data layer, the starter's fallback advice, the catalog and MCP examples, the resilience decorator, the e2e
 > collections and the docs. · **Branch**: `feature/void3110/engine-errors` vs `main` (10 commits, 90 files,
@@ -75,6 +75,42 @@ Not changed: U2's connect-timeout variant has no dedicated cell — classificati
 | c. The breaker counts every thrown fault | keep, name `INTERRUPTED` | change | **Changed** (#1) — maintainer decision. Fable's objection (the resolve/tag edges rely on counting everything) is met by making the narrowing OPA-edge-only. |
 | d. Fallback advice at highest precedence, only without the base | keep + document | keep + document | **Kept, documented** (#5). |
 | e. Backlog 13–15 | none blocks | none blocks; 14 first | **None blocks 1.4.0**; 14 marked first. |
+
+## Round 2 — three reviewers on the fix commit
+
+The loop rule makes the terminal round a no-fix round, and round 1 fixed behaviour, so round 2 reviewed `b646868`
+(the round-1 fixes) — the Fable + Opus pair again, **plus OpenAI's Codex CLI as a third, independent reviewer**
+(maintainer's call; run read-only in a clean clone of the branch so no gitignored local file was readable — its
+capability evaluation lives outside this repo). Same brief for all three: did each fix land clean, regressions and
+unswept siblings, can each new test fail, docs truthfulness, the slice invariants.
+
+| Reviewer | Verdict | Behaviour-changing findings |
+|---|---|---|
+| Fable | APPROVE | 0 (one pre-existing latent defect, for the backlog) |
+| Opus | APPROVE-WITH-FIXES | 1 |
+| Codex | BLOCK | 4 |
+
+**Synthesis: APPROVE-WITH-FIXES, not BLOCK.** Every Codex claim held when re-read from source, but its BLOCK rested
+on two over-rated findings — a URL echoed in a startup error (rated Critical; Low: startup-only, for an already
+invalid value) and a nested compile corruption (rated High; Low: nothing realistic emits it). Both were fixed
+anyway. The synthesis gates on *verified, re-ranked* findings, not on a raw verdict.
+
+| # | Finding (who) | Fix |
+|---|---|---|
+| R2-1 | **An OPA policy *evaluation* error still opened the shared breaker** (Opus; Medium). OPA's data API answers `eval_conflict_error` with HTTP **500** (this repo measured it before — a `false`-valued attribute triggered one), and every 5xx was retried and counted — so one product's data could refuse every type, the exact class round 1 fixed. The round-1 docs claimed it closed. | **New `Kind` `EVALUATION_ERROR` (maintainer decision)**: a 500 whose body lists only `eval_*` codes (body shape measured on OPA 1.10.1 here) is fail-fast — not retried, not counted. Only the codes are read; the messages and the policy file's location never are; codes are matched against `eval_[a-z_]+`. U38; in U34's never-opens list; ADR §3/§4, CHANGELOG note 10. |
+| R2-2 | **The guard leaked a half-open probe slot on a retried *returned value*** (Fable + Codex; pre-existing, unreachable by shipped callers — all pass `result -> false`). | The value branch releases the permission too, like an unrecorded throw. U39 — proven by removing the release (the cell fails). |
+| R2-3 | **A nested compile corruption was still a quiet deny-shaped result** (Codex): `{"result":{"queries":[{}]}}` passed round 1's check and became `unsupported()` — an empty page with the allowlist fallback off. | `requireCompileShape` also requires each query to be an array of expression objects; what an expression *says* stays the parser's "unsupported". Three U9 bodies. |
+| R2-4 | **The base-URL check echoed the raw value** (Codex) — a user-info part would reach the startup log, and the attached `URISyntaxException` quotes the input too. | No value in either message; the syntax reason and index only, no cause attached. A credential-canary cell walks the whole cause chain. |
+| R2-5 | **Two example clients put a response body in a WARN** (Codex: `RoleAssignableClient` logs `e.getMessage()`, which Spring Web 7.0.8's `StatusHandler` builds from the whole body; Opus: `ToolCallAuthorizer` logged role/capability failures with the throwable, whose parser cause quotes the body). | WARN carries the class or our own message only; the throwable moves to DEBUG. |
+| R2-6 | **Docs** — "about three failing requests open it" is false for timeouts (the default 5 s timeout outlasts the 2.5 s retry ceiling: one attempt per request, so five) (Opus); stale public javadoc in `PartialResult` and `ActionEnrichmentAdvice` describing the 1.3.0 failure values (Codex — missed by round 1's sweep because the phrases wrap across lines); stale "no change" rows in `00-DESIGN` / `01-DECOMPOSITION` (Opus); ADR §3's table omitted decide's non-object `result` (Fable). | All rewritten. |
+| R2-7 | **Two tests that could not fail** (Opus): the "body never reaches the WARN" cell used a body Jackson truncates anyway (it echoes identifier characters only), and the I6 supervisor cell took the same path as the plain-member cell (with the whole role source down, 1.3.0 also answered an empty 200). | The body is identifier-only (`secrettokenvalue`, which Jackson echoes in full); I6's outage now hits the membership anchor only — the case 1.3.0 answered with a supervised-only 200 — with a contrast cell proving the supervised leg runs. |
+
+**Found while fixing R2-7, out of scope:** the contrast cell exposed a **pre-existing** defect on `main` —
+`AbacQueryService.authorizedSpec` OR-s an `ALLOW_ALL` residual (`Specification.unrestricted()`, a `null`
+predicate) with the subtree widening, and Spring Data JPA drops a null side, so the list collapses to the subtree
+alone. Fail-closed but wrong (rows go missing). Tracked as **ENGINEERING-BACKLOG item 17** with a spun-off task;
+the contrast cell asserts only what it is for and neither depends on nor pins the defect. Also to the backlog:
+**item 18**, the example clients' unvalidated base URLs (Opus; example-only, pre-existing).
 
 ## Fail-closed verification
 
@@ -146,5 +182,8 @@ carry live controls. The routing claims were exact to the bytecode.
   by the Docker-backed `SubtreeOfIT` that PIT's target tests exclude (the documented spring-data inflation).
   The half-open `releasePermission()` cell was additionally proven by hand-mutation (removed → the cell fails).
 - Clean-room scan of the review's 690 added lines against the private patterns + token/path shapes: clean.
+
+Round 2 (fixes over `b646868`): see the round-2 commit and the run's own gate results below it — recorded when
+round 3 closes.
 - newman: not re-run — the fixes do not change any rig-observable path (the breaker change narrows what
   opens the OPA breaker; E4's kill drill is a `TRANSPORT` outage, still counted). STATUS-05's live run stands.

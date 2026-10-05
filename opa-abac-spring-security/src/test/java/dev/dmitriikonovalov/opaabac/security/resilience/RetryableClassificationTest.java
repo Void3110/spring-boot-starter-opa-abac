@@ -104,6 +104,7 @@ class RetryableClassificationTest {
     @Test // deterministic or self-inflicted kinds fail fast
     void policyEngineException_otherKinds_areNotRetryable() {
         assertThat(RetryableClassification.isRetryableError(PolicyEngineException.undefinedDecision("t"))).isFalse();
+        assertThat(RetryableClassification.isRetryableError(PolicyEngineException.evaluationError("t"))).isFalse();
         assertThat(RetryableClassification.isRetryableError(
                 PolicyEngineException.interrupted("t", new InterruptedException()))).isFalse();
         assertThat(RetryableClassification.isRetryableError(PolicyEngineException.circuitOpen("t", null))).isFalse();

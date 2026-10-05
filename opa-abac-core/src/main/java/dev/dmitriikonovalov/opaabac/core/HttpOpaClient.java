@@ -10,8 +10,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -60,6 +62,9 @@ public final class HttpOpaClient implements OpaClient {
     private static final String OP_DECIDE = "decide";
     private static final String OP_COMPILE = "compile";
     private static final String OP_BULK = "bulk";
+
+    /** An OPA evaluation-error code ({@code eval_conflict_error}, {@code eval_builtin_error}, …) — nothing else. */
+    private static final Pattern EVALUATION_ERROR_CODE = Pattern.compile("eval_[a-z_]{1,48}");
 
     /**
      * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
@@ -221,7 +226,9 @@ public final class HttpOpaClient implements OpaClient {
      * <p>A failed call throws {@link PolicyEngineException}. A request this client refuses to send (an
      * unsafe path) returns {@link PartialResult#error()} — deny-all that also suppresses any widening a
      * caller composes with it. A Compile API answer always carries a {@code result} object, so a missing,
-     * null or non-object {@code result}, or a non-array {@code queries}, is malformed. {@code {"result": {}}}
+     * null or non-object {@code result}, a non-array {@code queries}, or a query that is not an array of
+     * expression objects, is malformed; an expression this client cannot translate is "unsupported" (the
+     * caller's exact re-check), never malformed. {@code {"result": {}}}
      * stays {@link PartialResult#denyAll()}: partially evaluating an undefined reference answers exactly
      * that, so a missing package cannot be told apart here (ADR 0037 §3a).
      */
@@ -335,10 +342,42 @@ public final class HttpOpaClient implements OpaClient {
         }
     }
 
-    private static void requireOk(HttpResponse<byte[]> response, String operation, String path) {
+    private void requireOk(HttpResponse<byte[]> response, String operation, String path) {
         int status = response.statusCode();
-        if (status != 200) {
-            throw indeterminate(PolicyEngineException.httpStatus(status, describe(operation, path) + ": status " + status));
+        if (status == 200) {
+            return;
+        }
+        Set<String> evaluationErrors = status == 500 ? evaluationErrorCodes(response.body()) : Set.of();
+        if (!evaluationErrors.isEmpty()) {
+            // The policy itself failed on this input — deterministic, so neither retried nor a breaker input.
+            throw indeterminate(PolicyEngineException.evaluationError(
+                    describe(operation, path) + ": policy evaluation error " + String.join(", ", evaluationErrors)));
+        }
+        throw indeterminate(PolicyEngineException.httpStatus(status, describe(operation, path) + ": status " + status));
+    }
+
+    /**
+     * The codes of an OPA evaluation-error body — {@code {"code": "internal_error", "errors": [{"code":
+     * "eval_conflict_error", …}]}} — or empty unless the body parses and <em>every</em> listed error is an
+     * {@code eval_*} code. Only the codes are read: the messages and locations (policy file paths) never are.
+     */
+    private Set<String> evaluationErrorCodes(byte[] responseBody) {
+        try {
+            JsonNode errors = objectMapper.readTree(responseBody).path("errors");
+            if (!errors.isArray() || errors.isEmpty()) {
+                return Set.of();
+            }
+            Set<String> codes = new LinkedHashSet<>();
+            for (JsonNode error : errors) {
+                JsonNode code = error.path("code");
+                if (!code.isString() || !EVALUATION_ERROR_CODE.matcher(code.stringValue()).matches()) {
+                    return Set.of();
+                }
+                codes.add(code.stringValue());
+            }
+            return codes;
+        } catch (RuntimeException e) {
+            return Set.of(); // an unreadable error body is just a status
         }
     }
 
@@ -364,10 +403,30 @@ public final class HttpOpaClient implements OpaClient {
                     describe(OP_COMPILE, path) + ": 'result' is missing or not an object", null));
         }
         JsonNode queries = result.get("queries");
-        if (queries != null && !queries.isArray()) {
+        if (queries == null) {
+            return;
+        }
+        if (!queries.isArray()) {
             throw indeterminate(PolicyEngineException.malformedResponse(
                     describe(OP_COMPILE, path) + ": 'result.queries' is not an array", null));
         }
+        // Structure only: each query is an array of expression objects. What an expression SAYS (an operator
+        // or term this client does not translate) stays the parser's call — "unsupported", never malformed.
+        for (JsonNode query : queries) {
+            if (!query.isArray() || !allObjects(query)) {
+                throw indeterminate(PolicyEngineException.malformedResponse(
+                        describe(OP_COMPILE, path) + ": a query is not an array of expressions", null));
+            }
+        }
+    }
+
+    private static boolean allObjects(JsonNode array) {
+        for (JsonNode element : array) {
+            if (!element.isObject()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private JsonNode readObject(byte[] responseBody, String operation, String path) {

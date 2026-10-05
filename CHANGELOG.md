@@ -20,7 +20,7 @@ second state distinguishable by type:
 
 - **`opa-abac-core`** — a Spring-free, abstract `DecisionIndeterminateException` family.
   `PolicyEngineException` (new) carries a `Kind`: `TRANSPORT`, `TIMEOUT`, `HTTP_STATUS` (with the status),
-  `INTERRUPTED`, `MALFORMED_RESPONSE`, `UNDEFINED_DECISION`, `CIRCUIT_OPEN`. `RoleResolutionException` joins
+  `INTERRUPTED`, `MALFORMED_RESPONSE`, `UNDEFINED_DECISION`, `EVALUATION_ERROR`, `CIRCUIT_OPEN`. `RoleResolutionException` joins
   the family (source- and binary-compatible). An SPI implementation opts its own outage in by throwing a
   subtype.
 - **`HttpOpaClient`** throws `PolicyEngineException` when it could not obtain a decision, from all four
@@ -75,9 +75,10 @@ second state distinguishable by type:
 6. **Retries and the breaker** — a deny is called once instead of up to twice. **The OPA breaker now
    opens**, for the first time: in 1.3.0 the client never threw, so it never counted anything. It counts the
    faults it retries (transport, timeout, 5xx, 429); a fail-fast fault — a package that never loaded, a
-   malformed body, a 4xx — answers 503 on each call but never opens it, so one type's defect cannot refuse
-   every other type. With the defaults (`failure-threshold` 5, one retry per call) about three failing
-   requests open it, and every OPA-backed call answers `CIRCUIT_OPEN` (503) until a half-open probe succeeds —
+   policy evaluation error, a malformed body, a 4xx — answers 503 on each call but never opens it, so one
+   type's defect cannot refuse every other type. With the defaults (`failure-threshold` 5, one retry per call)
+   about three fast-failing requests open it (five for timeouts, which are not retried under the default 5 s
+   timeout and 2.5 s retry ceiling), and every OPA-backed call answers `CIRCUIT_OPEN` (503) until a half-open probe succeeds —
    up to `open-duration` (10 s) after OPA is back. A sidecar restart that cost a few hundred milliseconds of
    403s can now cost ~10 s of 503s under load; tune `opa.abac.resilience.opa.breaker.failure-threshold` and
    `open-duration` to your restart profile.
@@ -89,7 +90,11 @@ second state distinguishable by type:
    the full cause is at DEBUG. The gates log the translation at DEBUG.
 9. **Startup** — `OpaClientConfig` (and so `opa.abac.base-url`) rejects anything but an absolute `http`/`https`
    URL with a host. A value such as `opa:8181` used to fail every request; it now fails the application
-   context.
+   context. The message never echoes the value (a URL can carry credentials).
+10. **A policy evaluation error** — OPA answers a policy that errors on this input (a complete rule producing
+    two outputs, a strict built-in error) with HTTP 500 and `eval_*` error codes. It was a 403 in 1.3.0; it is
+    now `EVALUATION_ERROR` (503), not retried and not counted on the breaker, and the WARN names the codes.
+    Fix the policy — `opa test` with the input that triggered it.
 
 Two cases stay deny-shaped by design, documented in ADR 0037 §3a: a compile against a package that is not
 loaded (it compiles to exactly what an unsatisfiable filter compiles to), and a root-type list whose

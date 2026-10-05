@@ -222,11 +222,13 @@ class ResilientOpaClientTest {
     }
 
     @Test // U34 (amended by the review) — the breaker counts what is retried, so a sustained fail-fast fault
-    // (a policy that never loaded, a malformed body, a 4xx, a caller-side interrupt) answers "could not decide"
+    // (a policy that never loaded, a policy erroring on this input, a malformed body, a 4xx, a caller-side
+    // interrupt) answers "could not decide"
     // on every call and never opens the breaker
     void sustainedFailFastFaults_neverOpenTheBreaker() {
         List<PolicyEngineException> failFast = List.of(
                 PolicyEngineException.undefinedDecision("no policy at this path"),
+                PolicyEngineException.evaluationError("policy evaluation error eval_conflict_error"),
                 PolicyEngineException.malformedResponse("allow is not a boolean", null),
                 PolicyEngineException.httpStatus(400, "bad request"),
                 PolicyEngineException.interrupted("interrupted", null));

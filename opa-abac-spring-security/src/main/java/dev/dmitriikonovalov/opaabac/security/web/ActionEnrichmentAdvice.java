@@ -75,10 +75,10 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  *       omit the page's group — a fully-degraded page over a mixed-snapshot one (ADR 0023's
  *       posture);</li>
  *   <li>{@code allowAll} throwing, or returning a list whose length does not match the batch;</li>
- *   <li><strong>an all-{@code false} verdict block</strong> for the row — the production
- *       {@link OpaClient#allowAll(List)} fails closed to all-{@code false} on a transport error, which
- *       is indistinguishable from a genuine fully-denied resource by the returned booleans alone; the
- *       advice therefore treats an all-{@code false} block as <em>could-not-compute</em> and omits,
+ *   <li><strong>an all-{@code false} verdict block</strong> for the row — a client that pads a failure to
+ *       all-{@code false} (the shipped {@link OpaClient#allowAll(List)} throws instead since ADR 0037; a custom
+ *       one may not) is indistinguishable from a genuine fully-denied resource by the returned booleans alone;
+ *       the advice therefore treats an all-{@code false} block as <em>could-not-compute</em> and omits,
  *       rather than risk emitting a fabricated all-{@code false} map (the inverting-client footgun
  *       ADR 0016 §7 forbids). A caller who reached enrichment already passed a gated read, so a real
  *       row almost always has at least one {@code true} (typically {@code view}).</li>

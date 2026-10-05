@@ -298,6 +298,23 @@ class Resilience4jCallGuardTest {
         assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
+    @Test // a retryable RETURNED value is not a breaker observation either: the half-open probe that returned one
+    // releases its slot, so the next call still probes (and a success closes the breaker)
+    void retryableResult_inHalfOpen_releasesTheProbe() {
+        Resilience4jCallGuard g = guard("edge", breakerAfterThree());
+        for (int i = 0; i < 3; i++) {
+            catchThrowable(() -> g.call(() -> failWith(new UncheckedIOException(new IOException("down"))),
+                    RETRY_IO, neverRetryResult()));
+        }
+        clock.advance(Duration.ofSeconds(6)); // past the open duration: the next permission check half-opens
+
+        assertThat(g.call(() -> 503, RETRY_IO, RetryableClassification::retryableStatus)).isEqualTo(503);
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        assertThat(g.call(() -> 200, RETRY_IO, RetryableClassification::retryableStatus)).isEqualTo(200);
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
     @Test // the interface default ignores recordableError and delegates to the three-argument form
     void interfaceDefault_delegatesToTheThreeArgumentForm() {
         CallGuard plain = new CallGuard() {

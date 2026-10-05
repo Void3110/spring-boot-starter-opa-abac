@@ -14,17 +14,20 @@ import java.util.List;
  * <ul>
  *   <li>{@link Decision#ALLOW_ALL} — the query holds for every row (no predicate; match all);</li>
  *   <li>{@link Decision#DENY_ALL} — the query can never hold (an always-false predicate; match none).
- *       <strong>This is the fail-closed value</strong> ({@link #denyAll()}): every transport/parse/
- *       unsupported-expression failure resolves here, never to {@code ALLOW_ALL};</li>
+ *       <strong>This is the fail-closed value</strong> ({@link #denyAll()}): an unsatisfiable policy answer, an
+ *       unsupported expression ({@link #unsupported()}) and a request the client refused to send
+ *       ({@link #error()}) resolve here, never to {@code ALLOW_ALL}. A failed call is not a value at all — the
+ *       shipped client throws {@link PolicyEngineException} (ADR 0037);</li>
  *   <li>{@link Decision#CONDITIONAL} — the row must satisfy {@link #clauses()} as DNF:
  *       {@code (c0 AND c1) OR (c2) OR …}.</li>
  * </ul>
  *
  * <h2>The ALLOW_ALL vs DENY_ALL boundary (fail-closed)</h2>
- * The empty {@code result} the OPA Compile API returns when a query is <em>unsatisfiable</em> is the
- * <em>same</em> shape as a missing result, so it is mapped to {@code DENY_ALL} — never {@code ALLOW_ALL}.
- * {@code ALLOW_ALL} is produced only by an explicit, satisfiable, condition-free residual (a query whose
- * conjunction is empty). An absent/ambiguous compile output therefore denies, by construction.
+ * The empty {@code result} ({@code {"result": {}}}) the OPA Compile API returns when a query is
+ * <em>unsatisfiable</em> is mapped to {@code DENY_ALL} — never {@code ALLOW_ALL}. {@code ALLOW_ALL} is produced
+ * only by an explicit, satisfiable, condition-free residual (a query whose conjunction is empty). A missing or
+ * wrong-shaped {@code result} is not a residual at all: the shipped client throws
+ * {@link PolicyEngineException} of kind {@code MALFORMED_RESPONSE} (ADR 0037 §3).
  *
  * <p>No OPA types leak through this record — it is pure data, Spring-free, JSON-free.
  *

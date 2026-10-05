@@ -64,7 +64,8 @@ answers 500** (no handler yet) until T2's advice handler makes it 503.
 **Acceptance.** `./gradlew :opa-abac-core:test :opa-abac-spring-security:test --tests '*resilience*' :example-mcp-server:test` green, covering **U1–U17**, **U30**, **U31**, **U34** and **U35**; `./gradlew build` green; `scripts/checks/check-collection-conformance.py` green.
 
 **What NOT to touch.** `CompileResponseParser` (the blind spot stays, pinned by U9); `Resilience4jCallGuard`
-and `CallGuard` (the guard keeps recording every thrown fault — U34 pins the consequence); the other two
+and `CallGuard` (the guard keeps recording every thrown fault — U34 pins the consequence; *superseded by the
+review: the OPA breaker counts only retried faults, U34 flipped*); the other two
 resilience edges' classification; the resilience properties. `opa-abac-core` stays Spring-free.
 
 ## T2 — The gates throw `AuthorizationIndeterminateException`; the base advice answers 503

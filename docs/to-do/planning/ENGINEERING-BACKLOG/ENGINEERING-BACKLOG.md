@@ -321,12 +321,35 @@ answer 503.
 ## 16. Measure the OPA breaker's defaults under an OPA kill (noted 2026-10-05)
 
 **Left by** the ENGINE-ERRORS review. Since 1.4.0 the OPA breaker opens on a real outage for the first time
-(ADR 0037 §4): with the defaults (`failure-threshold` 5, one retry, `open-duration` 10 s) about three failing
-requests open it, and every OPA-backed call answers `CIRCUIT_OPEN` (503) until a half-open probe succeeds —
+(ADR 0037 §4): with the defaults (`failure-threshold` 5, one retry, `open-duration` 10 s) about three
+fast-failing requests open it (five for timeouts, which are not retried under the default 5 s timeout), and every OPA-backed call answers `CIRCUIT_OPEN` (503) until a half-open probe succeeds —
 up to 10 s after a sidecar that restarted in a few hundred milliseconds is back. The defaults were kept and
 documented (maintainer decision); nobody has measured them. **Fix shape:** one load ceiling (the ADR 0021
 host-run harness) with OPA killed and restarted mid-run, reading the 503 window against the restart time;
 then decide whether the OPA edge wants its own shorter `open-duration` default.
+
+## 17. A list with an ALLOW_ALL residual and a subtree widening shows only the subtree (found 2026-10-05)
+
+**Found by** the ENGINE-ERRORS review, while writing an I6 contrast cell — **pre-existing** on `main` since the
+4-arg/paged `findAuthorized` (June 2026), not caused by that slice. `AbacQueryService.authorizedSpec` composes
+`scope.and(tagResidual.or(subtreeSpec))`; an `ALLOW_ALL` residual is `Specification.unrestricted()`, whose
+predicate is `null`, and Spring Data JPA's composition returns the *other* side when one is null — so
+`ALLOW_ALL OR subtree` becomes just the subtree. Fail-closed (rows go missing, nothing extra shows), but wrong:
+a catalog member with an unconditional role who also supervises another catalog sees only the supervised one;
+an inheritable-grant list with an unconditional direct residual sees only the subtree. **Fix shape:** skip the
+OR when the residual is `ALLOW_ALL` (or map ALLOW_ALL to an explicit `cb.conjunction()` and re-verify every
+composition), pinned by a Testcontainers cell; then extend `CatalogListOutageIT`'s contrast cell to assert both
+ids. A task was spun off for it.
+
+## 18. The example HTTP clients accept an invalid base URL (noted 2026-10-05)
+
+**Left by** the ENGINE-ERRORS review (pre-existing, example-only; the library's sibling was fixed). The catalog
+example's `HttpRoleDefinitionSupplier`, `TagDefinitionClient`, `SupervisedScopeClient` and
+`HttpGovernedScopeResolver` only strip a trailing slash; `catalog.user-service.base-url=localhost:8080` makes
+`HttpRequest.newBuilder` throw on every call — the role supplier's throw is outside the family, so every
+protected request answers 403 (the lie ADR 0037 removes), and the two scope clients' "never throws" promise
+becomes a 500. **Fix shape:** the same startup validation as `OpaClientConfig` in each constructor (no value
+echoed).
 
 ---
 
