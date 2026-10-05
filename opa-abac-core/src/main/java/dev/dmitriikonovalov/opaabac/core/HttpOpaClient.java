@@ -63,8 +63,13 @@ public final class HttpOpaClient implements OpaClient {
     private static final String OP_COMPILE = "compile";
     private static final String OP_BULK = "bulk";
 
-    /** An OPA evaluation-error code ({@code eval_conflict_error}, {@code eval_builtin_error}, …) — nothing else. */
-    private static final Pattern EVALUATION_ERROR_CODE = Pattern.compile("eval_[a-z_]{1,48}");
+    /**
+     * The OPA {@code eval_*} codes that are the policy's own failure on this input. OPA 1.10.1 defines eight; the
+     * other five — {@code eval_cancel_error}, {@code eval_internal_error}, {@code eval_builtin_error} and the two
+     * {@code eval_http_send_*} — can be operational or environmental, so they stay a retryable status.
+     */
+    private static final Set<String> EVALUATION_ERROR_CODES =
+            Set.of("eval_conflict_error", "eval_type_error", "eval_with_merge_error");
 
     /**
      * The resolved policy path is interpolated into the request URI (and, for {@link #compile}, the
@@ -358,8 +363,9 @@ public final class HttpOpaClient implements OpaClient {
 
     /**
      * The codes of an OPA evaluation-error body — {@code {"code": "internal_error", "errors": [{"code":
-     * "eval_conflict_error", …}]}} — or empty unless the body parses and <em>every</em> listed error is an
-     * {@code eval_*} code. Only the codes are read: the messages and locations (policy file paths) never are.
+     * "eval_conflict_error", …}]}} — or empty unless the body parses and <em>every</em> listed error is one of
+     * {@link #EVALUATION_ERROR_CODES}. Only the codes are read: the messages and locations (policy file paths)
+     * never are. The 200 path parses whole bodies the same way, so reading a 500's adds no new exposure.
      */
     private Set<String> evaluationErrorCodes(byte[] responseBody) {
         try {
@@ -370,7 +376,7 @@ public final class HttpOpaClient implements OpaClient {
             Set<String> codes = new LinkedHashSet<>();
             for (JsonNode error : errors) {
                 JsonNode code = error.path("code");
-                if (!code.isString() || !EVALUATION_ERROR_CODE.matcher(code.stringValue()).matches()) {
+                if (!code.isString() || !EVALUATION_ERROR_CODES.contains(code.stringValue())) {
                     return Set.of();
                 }
                 codes.add(code.stringValue());

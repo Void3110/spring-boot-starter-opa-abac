@@ -34,9 +34,12 @@ public final class PolicyEngineException extends DecisionIndeterminateException 
          */
         UNDEFINED_DECISION,
         /**
-         * The engine answered, but the policy raised an error while evaluating this input — OPA's
-         * {@code eval_*} errors (a complete rule producing two outputs, a strict built-in error), which its data
-         * API reports as an HTTP {@code 500}. Deterministic for this input: the same request fails the same way.
+         * The engine answered, but the policy itself failed on this input — OPA's policy-local evaluation errors
+         * ({@code eval_conflict_error}: a complete rule producing two outputs; {@code eval_type_error};
+         * {@code eval_with_merge_error}), which its data API reports as an HTTP {@code 500}. Treated as
+         * deterministic for the input: not retried, and not counted on a circuit breaker. OPA's operational
+         * {@code eval_*} codes (cancellation, internal, built-in and {@code http.send} failures) stay
+         * {@link #HTTP_STATUS}.
          *
          * @since 1.4.0
          */
@@ -86,7 +89,7 @@ public final class PolicyEngineException extends DecisionIndeterminateException 
         return new PolicyEngineException(Kind.UNDEFINED_DECISION, NO_STATUS, detail, null);
     }
 
-    /** The policy raised an evaluation error for this input (OPA's {@code eval_*} errors). */
+    /** The policy itself failed on this input (OPA's policy-local {@code eval_*} errors). */
     public static PolicyEngineException evaluationError(String detail) {
         return new PolicyEngineException(Kind.EVALUATION_ERROR, NO_STATUS, detail, null);
     }

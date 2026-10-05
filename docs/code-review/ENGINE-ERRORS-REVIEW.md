@@ -79,7 +79,7 @@ Not changed: U2's connect-timeout variant has no dedicated cell — classificati
 ## Round 2 — three reviewers on the fix commit
 
 The loop rule makes the terminal round a no-fix round, and round 1 fixed behaviour, so round 2 reviewed `b646868`
-(the round-1 fixes) — the Fable + Opus pair again, **plus OpenAI's Codex CLI as a third, independent reviewer**
+(the round-1 fixes) — the Fable + Opus pair again, **plus the Codex CLI as a third, independent reviewer**
 (maintainer's call; run read-only in a clean clone of the branch so no gitignored local file was readable — its
 capability evaluation lives outside this repo). Same brief for all three: did each fix land clean, regressions and
 unswept siblings, can each new test fail, docs truthfulness, the slice invariants.
@@ -97,7 +97,7 @@ anyway. The synthesis gates on *verified, re-ranked* findings, not on a raw verd
 
 | # | Finding (who) | Fix |
 |---|---|---|
-| R2-1 | **An OPA policy *evaluation* error still opened the shared breaker** (Opus; Medium). OPA's data API answers `eval_conflict_error` with HTTP **500** (this repo measured it before — a `false`-valued attribute triggered one), and every 5xx was retried and counted — so one product's data could refuse every type, the exact class round 1 fixed. The round-1 docs claimed it closed. | **New `Kind` `EVALUATION_ERROR` (maintainer decision)**: a 500 whose body lists only `eval_*` codes (body shape measured on OPA 1.10.1 here) is fail-fast — not retried, not counted. Only the codes are read; the messages and the policy file's location never are; codes are matched against `eval_[a-z_]+`. U38; in U34's never-opens list; ADR §3/§4, CHANGELOG note 10. |
+| R2-1 | **An OPA policy *evaluation* error still opened the shared breaker** (Opus; Medium). OPA's data API answers `eval_conflict_error` with HTTP **500** (this repo measured it before — a `false`-valued attribute triggered one), and every 5xx was retried and counted — so one product's data could refuse every type, the exact class round 1 fixed. The round-1 docs claimed it closed. | **New `Kind` `EVALUATION_ERROR` (maintainer decision)**: a 500 whose body lists only `eval_*` codes (body shape measured on OPA 1.10.1 here) is fail-fast — not retried, not counted. Only the codes are read; the messages and the policy file's location never are. *(Round 3 narrowed the match to OPA's three policy-local codes — see R3-2.)* U38; in U34's never-opens list; ADR §3/§4, CHANGELOG note 10. |
 | R2-2 | **The guard leaked a half-open probe slot on a retried *returned value*** (Fable + Codex; pre-existing, unreachable by shipped callers — all pass `result -> false`). | The value branch releases the permission too, like an unrecorded throw. U39 — proven by removing the release (the cell fails). |
 | R2-3 | **A nested compile corruption was still a quiet deny-shaped result** (Codex): `{"result":{"queries":[{}]}}` passed round 1's check and became `unsupported()` — an empty page with the allowlist fallback off. | `requireCompileShape` also requires each query to be an array of expression objects; what an expression *says* stays the parser's "unsupported". Three U9 bodies. |
 | R2-4 | **The base-URL check echoed the raw value** (Codex) — a user-info part would reach the startup log, and the attached `URISyntaxException` quotes the input too. | No value in either message; the syntax reason and index only, no cause attached. A credential-canary cell walks the whole cause chain. |
@@ -121,6 +121,24 @@ one catalog, so no widening) — none encoded the bug, none could catch it; that
 package-private `widened(...)` and pinned by identity in `AbacQueryServiceTest` (the IT that proves it on SQL is
 outside PIT's target tests). Still in
 the backlog: **item 18**, the example clients' unvalidated base URLs (Opus; example-only, pre-existing).
+
+## Round 3 — the same three reviewers on the round-2 commits
+
+Fable **APPROVE** (0 behaviour-changing); Opus **APPROVE-WITH-FIXES** (2, both Low); Codex **APPROVE-WITH-FIXES**
+(3, rated up to Medium). Verified synthesis: APPROVE-WITH-FIXES — nothing above Low once re-ranked, no widening,
+no wrong status class. Codex's two Mediums split into one real (R3-2) and one already-existing exposure (declined,
+below).
+
+| # | Finding (who) | Fix |
+|---|---|---|
+| R3-1 | **An interrupted value-branch backoff settled one permission twice** (Opus + Codex; introduced by R2-2): the backoff ran inside the `try`, so its `CallNotPermittedException` reached the catch and `recordOrRelease` released (or recorded) the already-released permission — two half-open probes where one was configured. No shipped caller reaches it. | The value branch now runs after the `try`: the throw path settles in the catch, the value path releases once and backs off outside it. U40 — proven by inserting a second release (the cell fails). |
+| R3-2 | **Not every `eval_*` code is the policy's own failure** (Codex, Medium; Fable and Opus as docs). OPA 1.10.1 defines eight `eval_*` codes (read from the binary): `eval_cancel_error`, `eval_internal_error` and the two `eval_http_send_*` are operational, and `eval_builtin_error` can be environmental — classifying them fail-fast would never retry or count a real outage. | An allowlist of the three policy-local codes — `eval_conflict_error`, `eval_type_error`, `eval_with_merge_error`; every other code stays a retryable, counted `HTTP_STATUS`. Two U38 cells. Docs no longer cite "a strict built-in error" (Opus: OPA reports built-in errors only in strict mode, which this client never requests). |
+| R3-3 | **`ToolRosterFilter` still logged the body-quoting throwable at WARN** (Opus) — the unswept sibling of R2-5, same exception types from the same `buildContext`; pre-existing, line-local, in the class this branch fixes. | Message at WARN, throwable at DEBUG. |
+| R3-4 | **Docs** — CHANGELOG note 10's 1.3.0 baseline ("a 403") held only for the gates (a list was an empty 200, enrichment omitted `_actions`) (Fable, Opus); the QA U34 row missed the new kind; this note's round-1 newman bullet had been stranded under round 2, where it was false for `030bcfe`; R2-1's regex text; a vendor name in a provenance line (Codex, literal reading of the brief); a Mulch record still carrying the "only ever AND-ed" claim `030bcfe` disproved (Opus). | All corrected. |
+
+**Declined, with reason:** Codex rated "parsing a 500 body builds an unbounded JSON tree" Medium. The 200 path
+already buffers and parses whole bodies the same way, so capping only the 500 path protects nothing; a response-size
+bound would be a client-wide change for a trusted sidecar — not this slice.
 
 ## Fail-closed verification
 
@@ -192,8 +210,14 @@ carry live controls. The routing claims were exact to the bytecode.
   by the Docker-backed `SubtreeOfIT` that PIT's target tests exclude (the documented spring-data inflation).
   The half-open `releasePermission()` cell was additionally proven by hand-mutation (removed → the cell fails).
 - Clean-room scan of the review's 690 added lines against the private patterns + token/path shapes: clean.
-
-Round 2 (fixes over `b646868`): see the round-2 commit and the run's own gate results below it — recorded when
-round 3 closes.
 - newman: not re-run — the fixes do not change any rig-observable path (the breaker change narrows what
   opens the OPA breaker; E4's kill drill is a `TRANSPORT` outage, still counted). STATUS-05's live run stands.
+
+Rounds 2–3 (on `4d5892a`, `030bcfe`, `d3a8820` and the round-3 commit): `./gradlew build` green after round 2;
+every touched module re-run green after each later change; Sonar back to the 15-finding test-only baseline after
+two rounds of nits (S7467, S1130 ×3); PIT on the final tree — round 3's changes 9/9 KILLED, everything since
+round 1 28/28 KILLED, the whole slice vs `origin/main` 123 KILLED + the same single documented `childrenOf`
+NO_COVERAGE. Each new resilience cell proven by hand-mutation (U39: removing the release; U40: adding a second).
+**newman: not re-run, with one known gap** — `030bcfe` does change a rig-observable response (`GET /catalogs` for
+a member of A who supervises B under an unconditional role: one catalog → both), and no e2e cell covers that
+shape; it is queued as backlog item 19, after this PR.

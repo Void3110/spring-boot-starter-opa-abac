@@ -16,10 +16,11 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * ENGINE-ERRORS U38 — a policy that errors while evaluating this input (OPA's {@code eval_*} errors, answered by
- * the data API as HTTP 500 — measured on OPA 1.10.1) is {@link PolicyEngineException.Kind#EVALUATION_ERROR} on
- * all three methods, not a retryable {@code HTTP_STATUS}: deterministic for the input, so it is neither retried
- * nor counted on the shared breaker. Only the {@code eval_*} codes are read — never the messages or locations.
+ * ENGINE-ERRORS U38 — a policy that itself fails on this input (OPA's policy-local {@code eval_*} errors, answered
+ * by the data API as HTTP 500 — measured on OPA 1.10.1) is {@link PolicyEngineException.Kind#EVALUATION_ERROR} on
+ * all three methods, not a retryable {@code HTTP_STATUS}: treated as deterministic for the input, so it is neither
+ * retried nor counted on the shared breaker. OPA's operational {@code eval_*} codes stay a status. Only the codes
+ * are read — never the messages or locations.
  */
 class HttpOpaClientEvaluationErrorTest {
 
@@ -76,6 +77,29 @@ class HttpOpaClientEvaluationErrorTest {
             PolicyEngineException e = thrownBy(call);
             assertThat(e.kind()).isEqualTo(PolicyEngineException.Kind.EVALUATION_ERROR);
             assertThat(e.httpStatus()).isEmpty();
+        }
+    }
+
+    @Test // the three policy-local codes (OPA 1.10.1 defines eight eval_* codes in all)
+    void policyLocalCodes_areEvaluationErrors() throws IOException {
+        for (String code : List.of("eval_conflict_error", "eval_type_error", "eval_with_merge_error")) {
+            HttpOpaClient client = clientAnswering(500, "{\"code\":\"internal_error\",\"errors\":[{\"code\":\""
+                    + code + "\"}]}");
+            assertThat(thrownBy(() -> client.decide(ctx())).kind()).as(code)
+                    .isEqualTo(PolicyEngineException.Kind.EVALUATION_ERROR);
+            server.stop(0);
+        }
+    }
+
+    @Test // the operational and environmental eval_* codes are not the policy's own failure: a retryable status
+    void operationalEvalCodes_stayHttpStatus() {
+        for (String code : List.of("eval_cancel_error", "eval_internal_error", "eval_builtin_error",
+                "eval_http_send_network_error", "eval_http_send_internal_error")) {
+            String body = "{\"code\":\"internal_error\",\"errors\":[{\"code\":\"" + code + "\"}]}";
+            PolicyEngineException e = thrownBy(() -> clientAnswering(500, body).decide(ctx()));
+            assertThat(e.kind()).as(code).isEqualTo(PolicyEngineException.Kind.HTTP_STATUS);
+            assertThat(e.httpStatus()).as(code).hasValue(500);
+            server.stop(0);
         }
     }
 

@@ -122,14 +122,17 @@ public class ToolRosterFilter {
                     + "The call-time gate still denies every tool for the same reason.", e.getMessage());
             return RosterDecision.unfiltered();
         } catch (AgentCapabilityUnavailableException e) {
-            log.warn("Roster unfiltered: the agent capability source was unavailable. "
-                    + "The call-time gate still denies every tool for the same outage.", e);
+            // The message only at WARN: a cause can be a parser exception quoting the source's body.
+            log.warn("Roster unfiltered: the agent capability source was unavailable ({}). "
+                    + "The call-time gate still denies every tool for the same outage.", e.getMessage());
+            log.debug("Capability source failure", e);
             return RosterDecision.unfiltered();
         } catch (DecisionIndeterminateException e) {
             // The principal's ceiling could not be resolved (a role-source outage, or an adopter's own
             // family member): an edge OUTSIDE the batch, so the hint degrades to unfiltered.
-            log.warn("Roster unfiltered: the principal's ceiling could not be resolved. "
-                    + "The authoritative deny still happens per call.", e);
+            log.warn("Roster unfiltered: the principal's ceiling could not be resolved ({}). "
+                    + "The authoritative deny still happens per call.", e.getMessage());
+            log.debug("Ceiling resolution failure", e);
             return RosterDecision.unfiltered();
         }
 

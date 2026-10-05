@@ -315,6 +315,27 @@ class Resilience4jCallGuardTest {
         assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
+    @Test // a retryable value with retry budget whose backoff is INTERRUPTED: the permission it held is settled once,
+    // so a single-probe half-open breaker still admits exactly one more probe (not two)
+    void interruptedValueBackoff_releasesTheProbeOnlyOnce() {
+        ResilienceConfig oneRetry = new ResilienceConfig(true, 1, Duration.ofMillis(50), Duration.ofSeconds(3),
+                3, Duration.ofSeconds(5), 1);
+        CallNotPermittedException interruption =
+                new CallNotPermittedException("interrupted during retry backoff", new InterruptedException());
+        Resilience4jCallGuard g = new Resilience4jCallGuard("edge", oneRetry, clock, millis -> {
+            throw interruption;
+        });
+        g.breaker().transitionToOpenState();
+        g.breaker().transitionToHalfOpenState();
+
+        Throwable thrown = catchThrowable(() -> g.call(() -> 503, RETRY_IO,
+                RetryableClassification::retryableStatus, e -> false));
+
+        assertThat(thrown).isSameAs(interruption);
+        assertThat(g.breaker().tryAcquirePermission()).as("the released probe slot").isTrue();
+        assertThat(g.breaker().tryAcquirePermission()).as("no second slot").isFalse();
+    }
+
     @Test // the interface default ignores recordableError and delegates to the three-argument form
     void interfaceDefault_delegatesToTheThreeArgumentForm() {
         CallGuard plain = new CallGuard() {

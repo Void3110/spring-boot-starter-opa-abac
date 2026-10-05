@@ -101,10 +101,12 @@ second state distinguishable by type:
 9. **Startup** — `OpaClientConfig` (and so `opa.abac.base-url`) rejects anything but an absolute `http`/`https`
    URL with a host. A value such as `opa:8181` used to fail every request; it now fails the application
    context. The message never echoes the value (a URL can carry credentials).
-10. **A policy evaluation error** — OPA answers a policy that errors on this input (a complete rule producing
-    two outputs, a strict built-in error) with HTTP 500 and `eval_*` error codes. It was a 403 in 1.3.0; it is
-    now `EVALUATION_ERROR` (503), not retried and not counted on the breaker, and the WARN names the codes.
-    Fix the policy — `opa test` with the input that triggered it.
+10. **A policy evaluation error** — OPA answers a policy that itself fails on this input (a complete rule
+    producing two outputs: `eval_conflict_error`; `eval_type_error`; `eval_with_merge_error`) with HTTP 500. In
+    1.3.0 that was a 403 on a decision, an empty 200 on a list, and omitted `_actions` on enrichment; it is now
+    `EVALUATION_ERROR` (503), not retried and not counted on the breaker, and the WARN names the code. OPA's
+    other `eval_*` codes (cancellation, internal, built-in and `http.send` failures) stay a retryable,
+    counted status. Fix the policy — `opa test` with the input that triggered it.
 
 Two cases stay deny-shaped by design, documented in ADR 0037 §3a: a compile against a package that is not
 loaded (it compiles to exactly what an unsatisfiable filter compiles to), and a root-type list whose

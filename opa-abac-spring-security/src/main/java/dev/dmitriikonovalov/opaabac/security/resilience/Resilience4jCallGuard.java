@@ -119,27 +119,9 @@ public final class Resilience4jCallGuard implements CallGuard {
         while (true) {
             attempt++;
             acquirePermission(lastError);
+            T result;
             try {
-                T result = body.get();
-                if (retryableResult.test(result)) {
-                    // A returned retryable sentinel: RETRY it (a transient blip may recover), but do NOT
-                    // record it on the breaker. The body produced a *value*, not a thrown fault — and on the
-                    // OPA edge a value is a policy decision (before ADR 0037 the fail-closed sentinel was
-                    // indistinguishable from a genuine DENY). Feeding a decision into the breaker would let
-                    // sustained legitimate denials self-open it and then force-deny otherwise-allowable
-                    // requests — a self-inflicted availability regression that ADR 0017 §5 forbids ("never a
-                    // decision input"). Only a *thrown* fault drives the breaker (recordOrRelease, below).
-                    // Not an observation either way, so release the permission — or a half-open probe that
-                    // returned a retryable value would hold the only probe slot for good.
-                    breaker.releasePermission();
-                    if (canRetry(attempt, deadlineMillis)) {
-                        backoffBeforeRetry(attempt);
-                        continue;
-                    }
-                    return result; // budget exhausted — return the last value unchanged (the caller maps it)
-                }
-                breaker.onSuccess(0L, TimeUnit.NANOSECONDS);
-                return result;
+                result = body.get();
             } catch (RuntimeException e) {
                 recordOrRelease(e, recordableError);
                 if (!retryableError.test(e)) {
@@ -153,6 +135,24 @@ public final class Resilience4jCallGuard implements CallGuard {
                 }
                 throw e; // budget exhausted — re-throw the last cause unchanged (the caller maps it)
             }
+            if (!retryableResult.test(result)) {
+                breaker.onSuccess(0L, TimeUnit.NANOSECONDS);
+                return result;
+            }
+            // A returned retryable sentinel: RETRY it (a transient blip may recover), but do NOT record it on the
+            // breaker. The body produced a *value*, not a thrown fault — and on the OPA edge a value is a policy
+            // decision (before ADR 0037 the fail-closed sentinel was indistinguishable from a genuine DENY).
+            // Feeding a decision into the breaker would let sustained legitimate denials self-open it and then
+            // force-deny otherwise-allowable requests — a self-inflicted availability regression that ADR 0017 §5
+            // forbids ("never a decision input"). Not an observation either way, so release the permission — or a
+            // half-open probe that returned a retryable value would hold the only probe slot for good. The
+            // backoff runs outside the try above, so an interrupted one cannot settle this permission a second
+            // time.
+            breaker.releasePermission();
+            if (!canRetry(attempt, deadlineMillis)) {
+                return result; // budget exhausted — return the last value unchanged (the caller maps it)
+            }
+            backoffBeforeRetry(attempt);
         }
     }
 

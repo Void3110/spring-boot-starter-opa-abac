@@ -131,7 +131,7 @@ host but stay independent, so a fault in `/internal/tag-definitions` cannot trip
 > (`UNDEFINED_DECISION`, `EVALUATION_ERROR`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers "could not
 > decide" for that call and never opens the breaker. One breaker serves every type and all four methods, and a
 > fail-fast fault is often local — a package that loads late for one type, an enrichable type with no `bulk`
-> rule, one product whose data makes a rule produce two outputs (OPA's `500` with `eval_*` codes) — so
+> rule, one product whose data makes a rule produce two outputs (OPA's `500` with `eval_conflict_error`) — so
 > counting it would let one type's defect refuse every healthy type; and a fault that is never retried
 > costs no latency for the breaker to shed. The decorator passes its retry predicate as the guard's
 > `recordableError`; the resolve and tag edges keep counting every thrown failure.
