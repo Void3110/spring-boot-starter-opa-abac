@@ -25,9 +25,12 @@ pitest = "1.25.9"
 pitestJunit5 = "1.2.3"
 
 # Library deps
-# Jackson 3 (tools.jackson) — aligned with Boot 4.0.8's managed version (jackson-bom 3.1.5). Annotations stay on the
-# com.fasterxml 2.x artifact line (Jackson 3 reads them; databind brings them transitively).
-jackson = "3.1.5"
+# Jackson 3 (tools.jackson). Annotations stay on the com.fasterxml 2.x artifact line (Jackson 3 reads them;
+# databind brings them transitively). 3.1.7 (2026-10-05, the 1.4.0 pre-publish sweep): ahead of Boot 4.0.8's managed
+# 3.1.5, which seven advisories published 2026-09-28..10-01 affect (fixed in 3.1.6/3.1.7). This is OUR pin — it is
+# what opa-abac-core resolves and publishes — so it moves now; the Boot-managed copies follow Boot (backlog item 10).
+# Re-align with Boot's managed version once a Boot 4.0.x patch manages >= 3.1.7.
+jackson = "3.1.7"
 slf4j = "2.0.16"
 # Resilience4j — this catalog pin is authoritative (the library modules do not import the Boot BOM
 # for it). 2.4.0 removed the internal CircuitBreakerStateMachine(name, config, Clock) constructor

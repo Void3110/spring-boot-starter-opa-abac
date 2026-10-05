@@ -10,7 +10,7 @@ tags:
 
 # ADR 0037 — "Could not decide" is indeterminate, distinct from a deny, at every decision surface
 
-**Status:** Accepted — implemented 2026-10-05 by slice **ENGINE-ERRORS** ([[ENGINE-ERRORS]], T1–T6; PR pending); release 1.4.0.
+**Status:** Accepted — implemented 2026-10-05 by slice **ENGINE-ERRORS** ([[ENGINE-ERRORS]], T1–T6; merged as #132); release 1.4.0 ([[RELEASE-1.4.0]]).
 Amended the same day by the slice's review ([[ENGINE-ERRORS-REVIEW]]): §4's breaker counts only the faults it
 retries; §3's compile row and §3a's wording tightened; a new `EVALUATION_ERROR` kind (round 2).
 **Date:** 2026-10-04

@@ -233,7 +233,7 @@ only if Boot stalls *and* a reachable path appears.
 
 ---
 
-## 10. Three CRITICAL Tomcat advisories on the Boot-managed 11.0.24 — waiting on a Boot line that manages 11.0.25
+## 10. Boot-managed advisories (Tomcat 11.0.24; Jackson 3.1.5 / 2.21.5 since 2026-10-05) — waiting on a Boot patch
 
 **Value: hygiene. Effort: one line, once upstream moves. BLOCKED on an external release.**
 
@@ -260,6 +260,32 @@ overriding it is the thing the BOM exists to prevent, for advisories with no rea
 **The action is to re-check, not to patch:** when a Boot patch managing ≥ 11.0.25 lands, bump
 `springBoot` and re-run the committed sweep. Override the BOM only if Boot stalls *and* a reachable
 path appears (an adopter who turns on container-managed auth is the one who must not wait).
+
+**Widened 2026-10-05 (the 1.4.0 pre-publish sweep) — seven Jackson advisories on the Boot-managed copies.**
+Published 2026-09-28 – 10-01, on both lines Boot 4.0.8 manages: `tools.jackson.core` **3.1.5** and
+`com.fasterxml.jackson.core` **2.21.5** (core + databind). Fixed in 3.1.6/3.1.7 and 2.21.6/2.21.7, both on Central;
+Boot 4.0.8 is still the latest 4.0.x, and Tomcat 11.0.25/11.0.26 are now on Central too.
+
+| Advisory | Kind | Affected feature |
+|---|---|---|
+| GHSA-7hhh-6rmp-j9qf / CVE-2026-89425 (HIGH) | core DoS | `UTF8DataInputJsonParser` — parsing from a `DataInput` |
+| GHSA-p6pp-m3f8-5c89 / CVE-2026-89407 (HIGH) | core ReDoS | `NumberInput.looksLikeValidNumber` — string → number coercion |
+| GHSA-cxp5-3px4-pw24 / CVE-2026-91777 (HIGH) | databind DoS | forward-reference completion — object identity |
+| GHSA-wv8q-qhhj-9h54 / CVE-2026-91776 (HIGH) | databind DoS | unknown raw type ids — polymorphic typing |
+| GHSA-q4xh-88c3-wmh7 / CVE-2026-68497 (HIGH) | databind DoS | `Duration` / `XMLGregorianCalendar` parsing |
+| GHSA-gx83-3vf8-gh7j / CVE-2026-83557 (MODERATE) | databind | `DefaultBaseTypeLimitingValidator` denylist — default typing |
+| GHSA-wjgm-6hv5-3cvf / CVE-2026-19032 (MODERATE) | databind | `java.nio.file.Path` deserialization |
+
+**Exposure in the library is nil, measured:** the grep over the library's `src/main` for `JsonTypeInfo`,
+`JsonIdentityInfo`, `activateDefaultTyping`, `PolymorphicTypeValidator`, `XMLGregorianCalendar`,
+`javax.xml.datatype`, `DataInput` and `java.nio.file.Path` returns **0 files**, and its one parse site is
+`HttpOpaClient`'s `readTree(byte[])` of the configured OPA's response. **Split by ownership, the item-9 rule:** the
+`tools.jackson` pin in `libs.versions.toml` is **ours** — it is what `opa-abac-core` resolves and publishes — so
+it moved to **3.1.7** in the 1.4.0 cut (the sweep's hits on `:opa-abac-core` went 7 → 0). The modules that import
+the Boot BOM (spring-security, spring-data, keycloak-directory, the starter, the examples) still resolve Boot's
+3.1.5 / 2.21.5, like every Boot adopter. **Same action as the Tomcat trio:** bump `springBoot` when a 4.0.x patch
+manages Jackson ≥ 3.1.7 / 2.21.7 and Tomcat ≥ 11.0.25, re-run the sweep, and re-align the `jackson` pin with
+Boot's managed version.
 
 ---
 
