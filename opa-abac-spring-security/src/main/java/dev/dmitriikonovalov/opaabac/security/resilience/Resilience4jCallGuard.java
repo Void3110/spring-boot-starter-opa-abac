@@ -24,9 +24,11 @@ import org.slf4j.LoggerFactory;
  *   <li>Otherwise asks the breaker for permission; if the breaker is open it throws
  *       {@link CallNotPermittedException} <em>without</em> invoking the body (the caller fails closed).</li>
  *   <li>Runs the body. A thrown {@code retryableError}, or a returned {@code retryableResult}, is a
- *       transient failure: it is recorded on the breaker and retried after exponential backoff with full
- *       jitter, up to {@link ResilienceConfig#maxRetries()} times and never past
- *       {@link ResilienceConfig#ceiling()} of total elapsed time.</li>
+ *       transient failure: it is retried after exponential backoff with full jitter, up to
+ *       {@link ResilienceConfig#maxRetries()} times and never past {@link ResilienceConfig#ceiling()} of
+ *       total elapsed time. A thrown failure is recorded on the breaker when the caller's
+ *       {@code recordableError} accepts it (every thrown failure, in the three-argument form); a returned
+ *       value never is.</li>
  *   <li>On the final attempt the body's outcome is returned/re-thrown <strong>unchanged</strong> — the last
  *       value, or the last thrown cause — so the caller's fail-closed mapping sees the original outcome,
  *       not a backend wrapper.</li>
@@ -95,9 +97,16 @@ public final class Resilience4jCallGuard implements CallGuard {
 
     @Override
     public <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult) {
+        return call(body, retryableError, retryableResult, failure -> true);
+    }
+
+    @Override
+    public <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult,
+            Predicate<Throwable> recordableError) {
         Objects.requireNonNull(body, "body");
         Objects.requireNonNull(retryableError, "retryableError");
         Objects.requireNonNull(retryableResult, "retryableResult");
+        Objects.requireNonNull(recordableError, "recordableError");
 
         // Kill-switch off (or no budget): a single, unguarded attempt — byte-identical to pre-B3.
         if (!config.enabled()) {
@@ -109,21 +118,17 @@ public final class Resilience4jCallGuard implements CallGuard {
         RuntimeException lastError = null;
         while (true) {
             attempt++;
-            // Breaker gate: open ⇒ short-circuit without invoking the body (the caller fails closed).
-            if (!breaker.tryAcquirePermission()) {
-                throw new CallNotPermittedException(
-                        "circuit breaker '" + name + "' is open", lastError);
-            }
+            acquirePermission(lastError);
             try {
                 T result = body.get();
                 if (retryableResult.test(result)) {
                     // A returned retryable sentinel: RETRY it (a transient blip may recover), but do NOT
                     // record it on the breaker. The body produced a *value*, not a thrown fault — and on the
-                    // OPA edge that sentinel (allow=false / compile fromError / all-false) is indistinguishable
-                    // from a genuine policy DENY. Feeding a decision into the breaker would let sustained
-                    // legitimate denials self-open it and then force-deny otherwise-allowable requests — a
-                    // self-inflicted availability regression that ADR 0017 §5 forbids ("never a decision
-                    // input"). Only a *thrown* retryableError (an unambiguous fault) drives the breaker below.
+                    // OPA edge a value is a policy decision (before ADR 0037 the fail-closed sentinel was
+                    // indistinguishable from a genuine DENY). Feeding a decision into the breaker would let
+                    // sustained legitimate denials self-open it and then force-deny otherwise-allowable
+                    // requests — a self-inflicted availability regression that ADR 0017 §5 forbids ("never a
+                    // decision input"). Only a *thrown* fault drives the breaker (recordOrRelease, below).
                     if (canRetry(attempt, deadlineMillis)) {
                         backoffBeforeRetry(attempt);
                         continue;
@@ -133,9 +138,7 @@ public final class Resilience4jCallGuard implements CallGuard {
                 breaker.onSuccess(0L, TimeUnit.NANOSECONDS);
                 return result;
             } catch (RuntimeException e) {
-                // A thrown failure IS an unambiguous fault (transport error / a 5xx surfaced as an
-                // exception by an edge wrapper), so it records on the breaker — both retryable and not.
-                recordFailure(e);
+                recordOrRelease(e, recordableError);
                 if (!retryableError.test(e)) {
                     // Permanent failure (e.g. a 4xx surfaced as an exception): re-throw at once, no retry.
                     throw e;
@@ -147,6 +150,27 @@ public final class Resilience4jCallGuard implements CallGuard {
                 }
                 throw e; // budget exhausted — re-throw the last cause unchanged (the caller maps it)
             }
+        }
+    }
+
+    /** Breaker gate: open ⇒ short-circuit without invoking the body (the caller fails closed). */
+    private void acquirePermission(RuntimeException lastError) {
+        if (!breaker.tryAcquirePermission()) {
+            throw new CallNotPermittedException("circuit breaker '" + name + "' is open", lastError);
+        }
+    }
+
+    /**
+     * A thrown failure is a fault, not a decision. It counts on the breaker unless the caller says this kind is
+     * not one the breaker guards against (the OPA edge counts only what it retries; the resolve and tag edges
+     * count every thrown failure). An uncounted throw is neither a failure nor a success: its permission is
+     * released, so a half-open probe slot is not held by a call the breaker will never hear about.
+     */
+    private void recordOrRelease(RuntimeException failure, Predicate<Throwable> recordableError) {
+        if (recordableError.test(failure)) {
+            recordFailure(failure);
+        } else {
+            breaker.releasePermission();
         }
     }
 

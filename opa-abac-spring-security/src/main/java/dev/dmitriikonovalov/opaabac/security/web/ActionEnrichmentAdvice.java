@@ -266,8 +266,9 @@ public class ActionEnrichmentAdvice implements ResponseBodyAdvice<Object> {
                 actions.put(verb, allowed);
                 anyTrue = anyTrue || allowed;
             }
-            // An all-false block is indistinguishable from a transport-error degrade (allowAll pads to
-            // all-false on failure). Omit rather than risk a fabricated all-false map (ADR 0016 §7).
+            // An all-false block is indistinguishable from a client that pads a failure to all-false (the
+            // shipped client throws since ADR 0037; a custom one may not). Omit rather than risk a fabricated
+            // all-false map (ADR 0016 §7).
             if (anyTrue) {
                 dto.setActions(actions);
             }

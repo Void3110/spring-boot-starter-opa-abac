@@ -20,19 +20,24 @@ import java.util.function.Supplier;
  * The edges classify an HTTP failure <em>after</em> a successful {@code send()}: a 5xx comes back as a
  * normal response object, a transport error comes back as an exception. So a {@code CallGuard} retries on
  * <strong>either</strong> a {@code retryableError} (the thrown transport/timeout failure) or a
- * {@code retryableResult} (a returned value the caller deems a transient failure — e.g. a 5xx response, or
- * the OPA client's fail-closed sentinel). Both predicates come from the caller; the shared classification
- * lives in {@link RetryableClassification}. Whatever the body produced on the final attempt — value or the
- * last thrown cause — is returned/re-thrown unchanged, so the caller's fail-closed mapping sees the
- * original outcome (never a backend wrapper). The breaker treats the same retryable signals as failures.
+ * {@code retryableResult} (a returned value the caller deems a transient failure — e.g. a 5xx response).
+ * Both predicates come from the caller; the shared classification lives in {@link RetryableClassification}.
+ * Whatever the body produced on the final attempt — value or the last thrown cause — is returned/re-thrown
+ * unchanged, so the caller's fail-closed mapping sees the original outcome (never a backend wrapper).
+ *
+ * <h2>What the breaker counts</h2>
+ * A returned value never counts. A thrown failure counts unless the caller narrows it with the four-argument
+ * {@link #call(Supplier, Predicate, Predicate, Predicate) call}'s {@code recordableError}: the OPA decorator
+ * counts only the faults it retries, because a fail-fast answer (an undefined decision, a malformed body) is
+ * often one type's or one method's defect, and one breaker serves every type and method (ADR 0037 §4).
  *
  * <h2>Fail-closed is the caller's job, not the guard's</h2>
  * The {@code CallGuard} is a latency/load optimization over the fail-closed path, never a decision input
  * (ADR 0017 §5). On a breaker-open short-circuit it throws {@link CallNotPermittedException} <em>without</em>
- * invoking the body; the caller maps that — like an exhausted retry — to its own fail-closed value (the OPA
- * decorator to {@code false}/{@code error()}/all-false, the resolve/tag wrappers to their exceptions). The
- * guard never synthesizes a domain result. Every breaker state yields an outcome already reachable without
- * the breaker; open is strictly <em>more</em> fail-closed, never less.
+ * invoking the body; the caller maps that — like an exhausted retry — to its own fail-closed outcome (the OPA
+ * decorator to a {@code PolicyEngineException} of kind {@code CIRCUIT_OPEN}, the resolve/tag wrappers to
+ * their exceptions). The guard never synthesizes a domain result. Every breaker state yields an outcome
+ * already reachable without the breaker; open is strictly <em>more</em> fail-closed, never less.
  *
  * <h2>Deterministic timing</h2>
  * The impl takes an injectable clock/scheduler so all retry/backoff/breaker behavior can be driven in
@@ -57,4 +62,20 @@ public interface CallGuard {
      *                                   failure
      */
     <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult);
+
+    /**
+     * {@link #call(Supplier, Predicate, Predicate) call}, with the caller choosing which thrown failures the
+     * breaker counts. A thrown failure {@code recordableError} rejects is still retried or re-thrown as
+     * {@code retryableError} says, but it neither counts toward opening the breaker nor resets its window.
+     *
+     * <p>The default ignores {@code recordableError} and counts every thrown failure, as the three-argument
+     * form does; {@link Resilience4jCallGuard} honours it.
+     *
+     * @param recordableError classifies a thrown exception as one the breaker counts
+     * @since 1.4.0
+     */
+    default <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult,
+            Predicate<Throwable> recordableError) {
+        return call(body, retryableError, retryableResult);
+    }
 }

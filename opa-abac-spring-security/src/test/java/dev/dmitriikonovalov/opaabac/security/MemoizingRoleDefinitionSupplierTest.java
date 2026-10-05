@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ResolveTarget;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
@@ -82,6 +83,28 @@ class MemoizingRoleDefinitionSupplierTest {
         assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-1")).isSameAs(outage);
 
         assertThat(delegate.calls("u", "catalog", "c-1")).isEqualTo(1);
+    }
+
+    @Test // ENGINE-ERRORS review — an outage the supplier opts in with as its own family subtype (ADR 0037 §2) is
+    // memoized like a RoleResolutionException: one real call, the same instance re-thrown
+    void memoizesAnOptedInFamilyOutage() {
+        bindRequest();
+        SourceOutage outage = new SourceOutage();
+        delegate.answer("u", "catalog", "c-1", () -> {
+            throw outage;
+        });
+
+        assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-1")).isSameAs(outage);
+        assertThatThrownBy(() -> memo.lookup("u", "catalog", "c-1")).isSameAs(outage);
+
+        assertThat(delegate.calls("u", "catalog", "c-1")).isEqualTo(1);
+    }
+
+    /** A role source's own outage, opted into the "could not decide" family. */
+    private static final class SourceOutage extends DecisionIndeterminateException {
+        SourceOutage() {
+            super("role source down");
+        }
     }
 
     @Test // U1 — the memo replays, never reinterprets: an outage never becomes empty on a later call
@@ -380,7 +403,7 @@ class MemoizingRoleDefinitionSupplierTest {
         }
 
         private static String key(String userId, String type, String id) {
-            return userId + "|" + type + "|" + (id == null ? " <type-level>" : id);
+            return userId + "|" + type + "|" + (id == null ? "\0<type-level>" : id);
         }
     }
 }

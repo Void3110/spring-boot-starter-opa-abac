@@ -125,7 +125,8 @@ RoleDefinitionSupplier ──throws RoleResolutionException──┐        │
 | 17 | Root list under a scope-resolver outage | **document as a blind spot + backlog**; the base-scope SPI contract (fail to empty, never throw) is not amended in this slice | §3a |
 
 Also folded from validation, without a fork: the breaker records every thrown fault (the shared guard is
-unchanged — ADR §4's accepted consequence); retry classifies a `PolicyEngineException` by kind only; the
+unchanged — ADR §4's accepted consequence; **reversed by the review**: the OPA breaker now counts only the
+faults it retries, through an optional `recordableError` on `CallGuard` — see [[ENGINE-ERRORS-REVIEW]]); retry classifies a `PolicyEngineException` by kind only; the
 guard's backoff interrupt maps to `INTERRUPTED`; the bulk `{}` also means "no `bulk` rule"; the built-in
 ancestor resolvers rethrow the family from their source-SPI wraps.
 
@@ -162,7 +163,10 @@ failure still lands exactly where it did. The second half is new, with the two b
   a deny used to be retried. After T1 a deny is called **exactly once** — assert it, it is the point.
 - **The breaker counts deterministic faults too.** `Resilience4jCallGuard` records every thrown failure
   before classifying it; do not "fix" that here (the resolve and tag edges rely on it). A test pins that a
-  sustained undefined decision opens the breaker.
+  sustained undefined decision opens the breaker. *(Superseded by the review: one breaker serves every type
+  and method, so a fault local to one type opened it for all. The OPA decorator now passes its retry
+  predicate as the guard's `recordableError`; the resolve and tag edges still count every throw. U34 flipped,
+  U36 added.)*
 - **Where the rig's engine outage is reachable.** For the catalog routes APISIX's `opa` plugin calls the
   same `http://opa:8181` first, so stopping OPA decides at the gateway. The `/mcp` route carries no `opa`
   plugin, and `run-agent-tool-matrix.sh` already stops the OPA container for its kill drill — that is the

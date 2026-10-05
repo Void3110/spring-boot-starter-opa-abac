@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongConsumer;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -238,6 +239,75 @@ class Resilience4jCallGuardTest {
         String result = g.call(() -> "recovered", RETRY_IO, neverRetryResult());
         assertThat(result).isEqualTo("recovered");
         assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    // --- recordableError (ADR 0037 §4, amended by the review): the caller chooses what the breaker counts ----
+
+    /** 0 retries, breaker opens after 3 failures — each call() is one breaker observation. */
+    private static ResilienceConfig breakerAfterThree() {
+        return new ResilienceConfig(true, 0, Duration.ofMillis(50), Duration.ofSeconds(3),
+                3, Duration.ofSeconds(5), 1);
+    }
+
+    private static <T> T failWith(RuntimeException failure) {
+        throw failure;
+    }
+
+    @Test // the three-argument form counts EVERY thrown failure, retryable or not — the resolve/tag edges rely on it
+    void threeArgumentForm_countsNonRetryableThrows() {
+        Resilience4jCallGuard g = guard("resolve", breakerAfterThree());
+
+        for (int i = 0; i < 3; i++) {
+            catchThrowable(() -> g.call(() -> failWith(new IllegalStateException("4xx")),
+                    RETRY_IO, neverRetryResult()));
+        }
+
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test // a throw the caller does not count is re-thrown unchanged, and never opens the breaker
+    void unrecordedThrows_neverOpenTheBreaker() {
+        Resilience4jCallGuard g = guard("opa", breakerAfterThree());
+        IllegalStateException failure = new IllegalStateException("undefined decision");
+
+        for (int i = 0; i < 10; i++) {
+            Throwable thrown = catchThrowable(() -> g.call(() -> failWith(failure), RETRY_IO, neverRetryResult(),
+                    e -> false));
+            assertThat(thrown).isSameAs(failure);
+        }
+
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(g.breaker().getMetrics().getNumberOfFailedCalls()).isZero();
+    }
+
+    @Test // an unrecorded throw during the half-open probe releases the probe slot, so the next call still probes
+    void unrecordedThrow_inHalfOpen_releasesTheProbe() {
+        Resilience4jCallGuard g = guard("opa", breakerAfterThree());
+        for (int i = 0; i < 3; i++) {
+            catchThrowable(() -> g.call(() -> failWith(new UncheckedIOException(new IOException("down"))),
+                    RETRY_IO, neverRetryResult()));
+        }
+        clock.advance(Duration.ofSeconds(6)); // past the open duration: the next permission check half-opens
+
+        catchThrowable(() -> g.call(() -> failWith(new IllegalStateException("undefined decision")),
+                RETRY_IO, neverRetryResult(), e -> false));
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
+
+        String result = g.call(() -> "recovered", RETRY_IO, neverRetryResult(), e -> false);
+        assertThat(result).isEqualTo("recovered");
+        assertThat(g.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test // the interface default ignores recordableError and delegates to the three-argument form
+    void interfaceDefault_delegatesToTheThreeArgumentForm() {
+        CallGuard plain = new CallGuard() {
+            @Override
+            public <T> T call(Supplier<T> body, Predicate<Throwable> retryableError, Predicate<T> retryableResult) {
+                return body.get();
+            }
+        };
+
+        assertThat(plain.call(() -> "value", RETRY_IO, neverRetryResult(), e -> false)).isEqualTo("value");
     }
 
     private static Throwable catchThrowable(ThrowingRunnable runnable) {

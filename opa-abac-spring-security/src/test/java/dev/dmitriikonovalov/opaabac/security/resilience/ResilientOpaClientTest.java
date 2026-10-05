@@ -25,7 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The {@link ResilientOpaClient} contract after ADR 0037 §4 (ENGINE-ERRORS U13–U17, U34, U35; amends the
+ * The {@link ResilientOpaClient} contract after ADR 0037 §4 (ENGINE-ERRORS U13–U17, U34–U36; amends the
  * B3 U3/U4/U5 identity): the decorator retries <strong>thrown transient faults only</strong> and never a
  * returned decision; an exhausted retry rethrows the delegate's own {@link PolicyEngineException}; an open
  * breaker throws kind {@code CIRCUIT_OPEN} without touching the delegate. The identity cells run a real
@@ -221,22 +221,48 @@ class ResilientOpaClientTest {
         assertThat(denying.allowCalls).as("one call per deny — no retry, no short-circuit").isEqualTo(20);
     }
 
-    @Test // U34 — the accepted consequence (ADR 0037 §4): the guard records EVERY thrown fault, so a
-    // sustained deterministic fault (a policy that never loaded) opens the breaker like an outage does
-    void sustainedUndefinedDecision_opensTheBreaker() {
+    @Test // U34 (amended by the review) — the breaker counts what is retried, so a sustained fail-fast fault
+    // (a policy that never loaded, a malformed body, a 4xx, a caller-side interrupt) answers "could not decide"
+    // on every call and never opens the breaker
+    void sustainedFailFastFaults_neverOpenTheBreaker() {
+        List<PolicyEngineException> failFast = List.of(
+                PolicyEngineException.undefinedDecision("no policy at this path"),
+                PolicyEngineException.malformedResponse("allow is not a boolean", null),
+                PolicyEngineException.httpStatus(400, "bad request"),
+                PolicyEngineException.interrupted("interrupted", null));
+        for (PolicyEngineException fault : failFast) {
+            ScriptedOpaClient delegate = new ScriptedOpaClient();
+            Resilience4jCallGuard guard =
+                    new Resilience4jCallGuard("opa", breakerAfterThree(), clock, advancingSleeper);
+            ResilientOpaClient decorated = new ResilientOpaClient(delegate, guard);
+            delegate.fault = fault;
+
+            for (int i = 0; i < 10; i++) {
+                assertThat(thrownBy(() -> decorated.allow(ctx())).kind()).isEqualTo(fault.kind());
+            }
+
+            assertThat(guard.breaker().getState()).as(fault.kind() + " must not open the breaker")
+                    .isEqualTo(CircuitBreaker.State.CLOSED);
+            assertThat(delegate.allowCalls).as("one call each — fail-fast, never short-circuited").isEqualTo(10);
+        }
+    }
+
+    @Test // U36 — one type's defect cannot answer for another: a type with no bulk rule fails its enrichment
+    // call after call, and a healthy type's decision right after is still the policy's answer, not CIRCUIT_OPEN
+    void oneMethodsDeterministicFault_leavesHealthyCallsAlone() {
         ScriptedOpaClient delegate = new ScriptedOpaClient();
         Resilience4jCallGuard guard = new Resilience4jCallGuard("opa", breakerAfterThree(), clock, advancingSleeper);
         ResilientOpaClient decorated = new ResilientOpaClient(delegate, guard);
+        delegate.bulkFault = PolicyEngineException.undefinedDecision("no bulk rule for this type");
 
-        delegate.fault = PolicyEngineException.undefinedDecision("no policy at this path");
-        for (int i = 0; i < 3; i++) {
-            assertThat(thrownBy(() -> decorated.allow(ctx())).kind())
+        for (int i = 0; i < 5; i++) {
+            assertThat(thrownBy(() -> decorated.allowAll(List.of(ctx()))).kind())
                     .isEqualTo(PolicyEngineException.Kind.UNDEFINED_DECISION);
         }
 
-        assertThat(guard.breaker().getState()).isEqualTo(CircuitBreaker.State.OPEN);
-        assertThat(thrownBy(() -> decorated.allow(ctx())).kind()).isEqualTo(PolicyEngineException.Kind.CIRCUIT_OPEN);
-        assertThat(delegate.allowCalls).isEqualTo(3);
+        assertThat(decorated.decide(ctx()).allow()).isFalse();
+        assertThat(delegate.decideCalls).as("the healthy call reached the policy").isEqualTo(1);
+        assertThat(guard.breaker().getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     // --- U35: an interrupt during the backoff is INTERRUPTED, not CIRCUIT_OPEN --------------
@@ -267,6 +293,7 @@ class ResilientOpaClientTest {
      */
     private static final class ScriptedOpaClient implements OpaClient {
         volatile RuntimeException fault;
+        volatile RuntimeException bulkFault;
         volatile boolean interruptOnFault;
         volatile List<Boolean> bulkAnswer;
         int allowCalls;
@@ -298,6 +325,9 @@ class ResilientOpaClientTest {
         @Override
         public List<Boolean> allowAll(List<AbacContext> contexts) {
             allowAllCalls++;
+            if (bulkFault != null) {
+                throw bulkFault;
+            }
             throwIfFaulted();
             return bulkAnswer != null ? bulkAnswer : java.util.Collections.nCopies(contexts.size(), false);
         }

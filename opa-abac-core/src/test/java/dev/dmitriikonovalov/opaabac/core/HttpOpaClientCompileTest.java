@@ -273,14 +273,29 @@ class HttpOpaClientCompileTest {
         }
     }
 
-    @Test // ENGINE-ERRORS U9 — an unparseable body, or one that is not a JSON object → MALFORMED_RESPONSE
+    @Test // ENGINE-ERRORS U9 — an unparseable body, one that is not a JSON object, or a Compile API answer of the
+    // wrong shape (no result object, a non-array queries) → MALFORMED_RESPONSE, never a silent deny-all
     void indeterminate_onMalformedBody() throws IOException {
-        for (String body : List.of("not-json", "[]")) {
+        List<String> bodies = List.of("not-json", "[]", "{}", "{\"result\":null}", "{\"result\":\"x\"}",
+                "{\"result\":[]}", "{\"result\":{\"queries\":\"x\"}}");
+        for (String body : bodies) {
             String base = startServer(ex -> respond(ex, 200, body));
 
             assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
             server.stop(0);
         }
+    }
+
+    @Test // ENGINE-ERRORS U9 — an unparseable body is named by the parser's exception only: the parser's message
+    // quotes the body, and the WARN must not
+    void malformedMessage_namesTheParserException_notTheBody() throws IOException {
+        String base = startServer(ex -> respond(ex, 200, "secret-looking-token"));
+
+        PolicyEngineException e =
+                assertKind(clientFor(base, "catalog"), PolicyEngineException.Kind.MALFORMED_RESPONSE);
+
+        assertThat(e.getMessage()).contains("compile for path '", "malformed body (")
+                .doesNotContain("secret-looking-token");
     }
 
     @Test // ENGINE-ERRORS U9 — the documented blind spot (ADR 0037 §3a): an undefined reference compiles to

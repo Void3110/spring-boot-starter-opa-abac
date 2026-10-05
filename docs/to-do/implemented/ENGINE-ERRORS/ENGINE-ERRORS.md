@@ -25,6 +25,9 @@ tags:
 > **Review routing (the standing rule):** the first whole-delivery review is **one multi-lens
 > `/deep-review` workflow pass** — the remaining weekly budget and its expected cost are stated before it
 > launches; any follow-up round on this branch is a Fable + Opus pair.
+> **Reviewed 2026-10-05:** by the maintainer's call, a **Fable + Opus pair** in place of the multi-lens pass
+> (waiver recorded in [[ENGINE-ERRORS-REVIEW]]). Both APPROVE-WITH-FIXES, no Critical/High; one design fork
+> reversed (the OPA breaker counts only retried faults), everything folded the same day.
 > **Validated:** 2026-10-04 — mechanical gate green; then **one adversarial validation agent** (Fable,
 > the TAG-GATED-CREATE measured approach; ~0.49M tokens) over six angles: code grounding, a fail-open hunt,
 > framework semantics (five claims, all verified in Spring Security / MVC / Boot bytecode), build-breakers,
@@ -55,7 +58,8 @@ keep their designed degradation; the advice answers 503 `DEPENDENCY_UNAVAILABLE`
 
 **The headline.** The same request under the same sustained role-source outage, through the real gateway:
 1.3.0 answers 403, 1.4.0 answers 503 — beside the unchanged transient-recovers cell. And a genuine deny
-costs exactly one OPA call and can never open the breaker.
+costs exactly one OPA call and can never open the breaker; since the review, neither can a fail-fast fault
+local to one type.
 
 ## Files in this folder
 

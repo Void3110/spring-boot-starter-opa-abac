@@ -79,10 +79,14 @@ exact, not cheap. Keeping the pure-SQL path the common one is why the multi-type
 ```java
 public interface OpaClient {
     boolean allow(AbacContext context);                       // unchanged (the spine)
-    PartialResult compile(AbacContext context);               // Phase 5 — partial eval, fails closed to denyAll()
-    List<Boolean> allowAll(List<AbacContext> contexts);       // Phase 5 — batch, fails closed to all-false
+    PartialResult compile(AbacContext context);               // Phase 5 — partial eval
+    List<Boolean> allowAll(List<AbacContext> contexts);       // Phase 5 — batch
 }
 ```
+
+Each method returns only what the policy answered; when the client could not obtain an answer it throws
+`PolicyEngineException` (since 1.4.0, ADR 0037 — before, `compile` failed closed to `denyAll()`/`error()` and
+`allowAll` to all-false).
 
 Both new methods are **abstract, not `default`** — a custom client cannot silently inherit a fail-**open**
 filter. The residual model (`PartialResult`/`Conjunction`/`Condition`, operators `EQ`/`NEQ`/`IN`/`CONTAINS`)

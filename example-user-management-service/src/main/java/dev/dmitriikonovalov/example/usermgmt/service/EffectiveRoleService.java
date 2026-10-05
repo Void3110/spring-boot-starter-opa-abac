@@ -283,7 +283,7 @@ public class EffectiveRoleService {
     /**
      * DENIAL-AXIS GUARD (deep review 2026-08-24, round 5). A null denied_actions value on a
      * legacy row must FAIL the resolution loudly — the resolve endpoint 500s, the consuming
-     * supplier throws {@code RoleResolutionException}, and the ADR-0014 catch denies — because
+     * supplier throws {@code RoleResolutionException}, and the gate refuses (a 503 since ADR 0037) — because
      * letting it flow onward is a widening: the core {@code RoleDefinition} constructor
      * normalizes null values to empty lists, and an empty denial list is a well-formed
      * "subtracts nothing". An ABSENT map stays an honest "no denials".

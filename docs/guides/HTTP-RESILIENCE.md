@@ -127,11 +127,21 @@ host but stay independent, so a fault in `/internal/tag-definitions` cannot trip
 > denials self-open the OPA breaker and then refuse otherwise-allowable requests. Until 1.4.0 the plain
 > `HttpOpaClient` swallowed every fault into a deny value, so the **OPA breaker was effectively a no-op**;
 > since ADR 0037 it throws `PolicyEngineException` for every failure, and the OPA breaker **counts real
-> faults**. The shared guard records every thrown fault, transient or not, before classifying it (the resolve
-> and tag edges rely on that) — so a *sustained deterministic* fault, such as a policy package that never
-> loaded (`UNDEFINED_DECISION`), opens the OPA breaker like an outage does, and later calls answer
-> `CIRCUIT_OPEN` until it half-opens. Accepted: every call answers "could not decide" either way, and the
-> real kind is in the WARN log of the attempts that opened it.
+> faults — exactly the ones it retries**: `TRANSPORT`, `TIMEOUT`, 5xx, 429. A fail-fast kind
+> (`UNDEFINED_DECISION`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers "could not decide" for that call
+> and never opens the breaker. One breaker serves every type and all four methods, and a fail-fast fault is
+> often local — a package that loads late for one type, an enrichable type with no `bulk` rule — so
+> counting it would let one type's defect refuse every healthy type; and a fault that is never retried
+> costs no latency for the breaker to shed. The decorator passes its retry predicate as the guard's
+> `recordableError`; the resolve and tag edges keep counting every thrown failure.
+
+> **The OPA breaker is live for the first time in 1.4.0 — mind its window.** With the defaults below
+> (`failure-threshold` 5, one retry per call) roughly three failing requests open it — each failing request
+> records two attempts — and every OPA-backed call then answers `CIRCUIT_OPEN` (503) until a half-open probe
+> succeeds, up to `open-duration` (10 s) after OPA is back. A sidecar restart that cost a few hundred
+> milliseconds of 403s in 1.3.0 can now cost ~10 s of 503s under load. Tune
+> `opa.abac.resilience.opa.breaker.failure-threshold` / `open-duration` to your restart profile; a measured
+> default is backlog (a load ceiling with OPA killed).
 
 ## The fail-closed contract — identical in every state
 

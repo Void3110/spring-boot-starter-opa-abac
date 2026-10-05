@@ -234,6 +234,15 @@ answer is "not now", so a client may retry it, which it must never do with a `40
 list: an outage answers `503`, never an empty page that reads as "you may see nothing". No `Retry-After`
 is sent; there is no truthful value for it.
 
+Who renders it: an application extending `AbstractProblemAdvice` gets the mapping from the base. Otherwise
+the starter registers a fallback `IndeterminateDecisionProblemAdvice` at **highest precedence** — MVC asks
+advices in order and the first with a matching handler wins, so it answers the two family types ahead of
+your own `AccessDeniedException` handler, and ahead of your handler for an exception that *wraps* a family
+member (MVC walks the cause chain inside one advice before asking the next). To render your own envelope,
+extend `AbstractProblemAdvice`, or declare your own `IndeterminateDecisionProblemAdvice` bean overriding
+`handleIndeterminate`. Note that an `AbstractProblemAdvice` subclass turns the fallback off for the whole
+application, even when it is scoped to some controllers.
+
 **A status alone is not enough — pair it with a typed `errorCode`.** Two `422`s (a bad tag value vs the
 role-subset rule) or several `409`s (a duplicate target vs an immutable role) are different problems a
 client handles differently. The status answers "which bucket"; the `errorCode` (see

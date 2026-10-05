@@ -301,8 +301,10 @@ deny (ADR 0013). **Fix shape:** split a data-access failure (`DataAccessExceptio
 **Left by** ENGINE-ERRORS (ADR 0037 §3a, a documented blind spot). `GET /api/v1/catalogs` is scoped by a
 `GovernedScopeResolver` and, in the example, a supervised-scope client — base-scope SPIs whose contract is
 *fail closed to empty, never throw* (mx-1ce7d5). When the user-service behind them is down they answer an
-empty scope, and `CatalogListAuthorizer` returns an empty 200 before any role lookup or OPA call: fail-closed,
-but the same "you may see nothing" lie ADR 0037 removed from the other lists. **Fix shape:** amend the
+empty scope, and `CatalogListAuthorizer` returns an empty 200 before any role lookup or OPA call — or, for
+a member who also supervises when only the supervised source is down, a silently **membership-only** 200:
+fail-closed, but the same "you may see nothing" / partial-page lie ADR 0037 removed from the other lists
+(the review ranked this the first of 13–15 to schedule). **Fix shape:** amend the
 base-scope SPI contract so an outage throws a `DecisionIndeterminateException` subtype (the example's
 `HttpGovernedScopeResolver` / `SupervisedScopeClient` opt in), keeping "authoritatively empty" as `List.of()`;
 an IT + the resilience matrix's stub can prove it.
@@ -315,6 +317,16 @@ service queries the policy engine through its own `RestClient` (`/v1/data/role/a
 same lie class, outside the `OpaClient` contract. **Fix shape:** route it through `OpaClient` (a decide on
 the `role` document), or classify its failures into `PolicyEngineException` itself and let the base advice
 answer 503.
+
+## 16. Measure the OPA breaker's defaults under an OPA kill (noted 2026-10-05)
+
+**Left by** the ENGINE-ERRORS review. Since 1.4.0 the OPA breaker opens on a real outage for the first time
+(ADR 0037 §4): with the defaults (`failure-threshold` 5, one retry, `open-duration` 10 s) about three failing
+requests open it, and every OPA-backed call answers `CIRCUIT_OPEN` (503) until a half-open probe succeeds —
+up to 10 s after a sidecar that restarted in a few hundred milliseconds is back. The defaults were kept and
+documented (maintainer decision); nobody has measured them. **Fix shape:** one load ceiling (the ADR 0021
+host-run harness) with OPA killed and restarted mid-run, reading the 503 window against the restart time;
+then decide whether the OPA edge wants its own shorter `open-duration` default.
 
 ---
 

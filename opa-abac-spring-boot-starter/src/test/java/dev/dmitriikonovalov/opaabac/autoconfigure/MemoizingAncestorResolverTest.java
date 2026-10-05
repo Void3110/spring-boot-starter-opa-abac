@@ -3,6 +3,7 @@ package dev.dmitriikonovalov.opaabac.autoconfigure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolutionException;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
@@ -83,6 +84,19 @@ class MemoizingAncestorResolverTest {
         assertThat(delegate.calls("category", "c-1")).isEqualTo(1);
     }
 
+    @Test // ENGINE-ERRORS review — an outage the source opts in with (ADR 0037 §2) is memoized like a collapse:
+    // one real attempt per request, the same instance re-thrown to every later caller
+    void memoizesAnOptedInOutage() {
+        bindRequest();
+        SourceOutage outage = new SourceOutage();
+        delegate.failing("category", "c-1", outage);
+
+        assertThatThrownBy(() -> memo.ancestorsOf("category", "c-1")).isSameAs(outage);
+        assertThatThrownBy(() -> memo.ancestorsOf("category", "c-1")).isSameAs(outage);
+
+        assertThat(delegate.calls("category", "c-1")).isEqualTo(1);
+    }
+
     @Test // U7 — the filter and the enrichment can never see two different chains in one request
     void resolverFlipYieldsOneChainPerRequest() {
         bindRequest();
@@ -129,11 +143,18 @@ class MemoizingAncestorResolverTest {
         assertThat(delegate.subtreeCalls).isEqualTo(2);
     }
 
+    /** An ancestor source's own outage, opted into the "could not decide" family. */
+    private static final class SourceOutage extends DecisionIndeterminateException {
+        SourceOutage() {
+            super("ancestor source down");
+        }
+    }
+
     /** A scriptable counting fake: one chain or one failure per key; calls counted per key. */
     private static final class CountingResolver implements AncestorResolver {
 
         private final Map<String, List<ParentRef>> chains = new HashMap<>();
-        private final Map<String, AncestorResolutionException> failures = new HashMap<>();
+        private final Map<String, RuntimeException> failures = new HashMap<>();
         private final Map<String, Integer> counts = new HashMap<>();
         private int subtreeCalls;
 
@@ -142,7 +163,7 @@ class MemoizingAncestorResolverTest {
             failures.remove(type + "|" + id);
         }
 
-        void failing(String type, String id, AncestorResolutionException failure) {
+        void failing(String type, String id, RuntimeException failure) {
             failures.put(type + "|" + id, failure);
         }
 
@@ -154,7 +175,7 @@ class MemoizingAncestorResolverTest {
         public List<ParentRef> ancestorsOf(String leafType, String leafId) {
             String key = leafType + "|" + leafId;
             counts.merge(key, 1, Integer::sum);
-            AncestorResolutionException failure = failures.get(key);
+            RuntimeException failure = failures.get(key);
             if (failure != null) {
                 throw failure;
             }

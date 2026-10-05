@@ -10,7 +10,9 @@ tags:
 
 # ADR 0037 — "Could not decide" is indeterminate, distinct from a deny, at every decision surface
 
-**Status:** Accepted — implemented 2026-10-05 by slice **ENGINE-ERRORS** ([[ENGINE-ERRORS]], T1–T6; PR pending); release 1.4.0
+**Status:** Accepted — implemented 2026-10-05 by slice **ENGINE-ERRORS** ([[ENGINE-ERRORS]], T1–T6; PR pending); release 1.4.0.
+Amended the same day by the slice's review ([[ENGINE-ERRORS-REVIEW]]): §4's breaker counts only the faults it
+retries; §3's compile row and §3a's wording tightened.
 **Date:** 2026-10-04
 **Context tags:** fail-closed, indeterminate vs deny, OPA engine error, role-source outage, `OpaClient` contract, resilience retry, 503 vs 403
 
@@ -80,7 +82,7 @@ guesses (§6). `opa-abac-core` stays free of Spring.
 | request or connect timeout | indeterminate | `TIMEOUT` |
 | any non-200 status | indeterminate | `HTTP_STATUS` (status carried) |
 | thread interrupted (the flag is restored first) | indeterminate | `INTERRUPTED` |
-| unparseable body; a non-boolean `allow`; an explicit `"result": null`; a bulk `result` that is not a boolean list of the input's length | indeterminate | `MALFORMED_RESPONSE` |
+| unparseable body; a non-boolean `allow`; an explicit `"result": null`; a bulk `result` that is not a boolean list of the input's length; on compile, a `result` that is missing or not an object, or a `queries` that is not an array (a Compile API answer always carries a `result` object) | indeterminate | `MALFORMED_RESPONSE` |
 | **`{}` — no `result` key** (decide: the package/path is not loaded — a bundle not yet activated, a wrong path; bulk: the same, **or a loaded package that defines no `bulk` rule**, which is optional per type) | indeterminate | `UNDEFINED_DECISION` |
 | **`{"result": {…}}` with no `allow`** (the package is loaded; `allow` is undefined for this input) | **deny** — undefined-means-deny, OPA's idiom for a policy without `default allow := false` | — |
 | `allow: false`, with or without a `deny_reason` | deny (unchanged; a reasoned deny is unchanged) | — |
@@ -94,8 +96,9 @@ guesses (§6). `opa-abac-core` stays free of Spring.
 - **The root list fails to empty before any decision.** A root-type list (the example's `GET /catalogs`)
   is scoped by a `GovernedScopeResolver` and, in the example, a supervised-scope client — base-scope SPIs
   whose contract is *fail-closed to empty, never throw*. When the service behind them is down they answer
-  an empty scope and the list returns an empty 200 before a role lookup or an OPA call happens. Fail-closed,
-  but the same lie this ADR removes elsewhere; revisiting that SPI contract is backlog.
+  an empty scope, before a role lookup or an OPA call happens: the list is an empty 200, or — for a member
+  who also supervises, when only the supervised source is down — a membership-only 200. Fail-closed, but
+  the same lie this ADR removes elsewhere; revisiting that SPI contract is backlog.
 
 ### 4. `PolicyEngineException` carries a `Kind`; resilience retries faults, never decisions
 
@@ -111,12 +114,23 @@ guesses (§6). `opa-abac-core` stays free of Spring.
 - **No more sentinel retry.** A genuine deny, a reasoned deny, a mixed bulk page and an all-false bulk page
   are real answers and are never retried. (Measured cost of the old rule: one extra OPA hop + backoff on
   every deny; Slice 7.3 measured ~8× enrichment latency before the mixed-block exemption.)
-- **The breaker records every thrown fault, never a returned decision** — ADR 0017 §5's "never a decision
-  input", now true by construction rather than by exemption. The shared `Resilience4jCallGuard` records
-  each thrown failure, transient or not, before classifying it (the resolve and tag edges rely on that), and
-  it stays as it is. Consequence, accepted: a *sustained deterministic* fault — a policy package that never
-  loaded — opens the breaker like an outage does, and later calls answer `CIRCUIT_OPEN` until it half-opens.
-  The real kind is in the WARN log of the attempts that opened it, and every call answers 503 either way.
+- **The OPA breaker counts exactly the faults that are retried, never a returned decision** — ADR 0017 §5's
+  "never a decision input", now true by construction rather than by exemption. `TRANSPORT`, `TIMEOUT`, 5xx
+  and 429 count; a fail-fast kind (`UNDEFINED_DECISION`, `MALFORMED_RESPONSE`, a 4xx, `INTERRUPTED`) answers
+  "could not decide" for that call and neither opens the breaker nor resets its window. One breaker serves
+  every resource type and all four methods, and a fail-fast fault is often local to one of them — a type
+  whose package loads late, an enrichable type with no `bulk` rule, a caller-side cancellation — so counting
+  it would let one type's defect answer `CIRCUIT_OPEN` for every healthy type. It also costs no latency
+  (never retried), so there is nothing to shed. The mechanism is a fourth, optional `CallGuard` argument
+  (`recordableError`) the decorator sets to its retry predicate; the resolve and tag edges keep counting
+  every thrown failure. *(Amended by the review: as first built, the guard recorded every thrown fault and
+  this ADR accepted a deterministic fault opening the breaker on the premise that "every call answers 503
+  either way" — false when the fault is local to one type or one method.)*
+- **The OPA breaker opens for the first time.** Before this ADR the plain client never threw, so the OPA
+  breaker never counted anything. Now a real outage opens it: with the defaults (`failure-threshold` 5,
+  one retry, `open-duration` 10 s) about three failing requests open it, and calls answer `CIRCUIT_OPEN` until
+  a half-open probe succeeds — up to 10 s after OPA is back. The defaults stay; the upgrade notes name the
+  properties, and a load ceiling with OPA killed is backlog.
 - **Breaker open → `PolicyEngineException(CIRCUIT_OPEN)`.** The decorator stops synthesizing deny values. An
   interrupt during the guard's backoff (which the guard reports as a not-permitted call with an
   `InterruptedException` cause) maps to `INTERRUPTED`, not `CIRCUIT_OPEN`.
@@ -232,7 +246,8 @@ error-path behaviour, which is what the release exists for. A new `CHANGELOG.md`
   methods where it applies; `allow: false`, a reasoned deny and result-without-`allow` stay denies; the
   three input defects stay denies and are never thrown.
 - The decorator retries thrown transient kinds, never a returned decision (a deny is called **once**), and
-  throws `CIRCUIT_OPEN` when the breaker is open; decorator and delegate agree in every state.
+  throws `CIRCUIT_OPEN` when the breaker is open; decorator and delegate agree in every state. A sustained
+  fail-fast kind never opens the breaker, and one method's deterministic fault leaves a healthy call alone.
 - Each gate maps each family member to `AuthorizationIndeterminateException`; a `catch
   (AccessDeniedException)` still catches it; a non-family throw still returns `DENY`.
 - Every degrade-catch has a test that a family member passes through it.
@@ -275,7 +290,8 @@ Behaviour changes for adopters (the 1.4.0 upgrade notes):
 3. `AbacQueryService.findAuthorized`, `HierarchicalAuthorizer.isAllowed` and `SubtreeSpecResolver` throw the
    family instead of returning an empty list, `false` or no widening.
 4. `ResilientOpaClient` no longer retries denies: one OPA call per deny instead of up to two (a reasoned
-   deny was already called once). A sustained deterministic fault now opens the breaker (§4).
+   deny was already called once). The OPA breaker now opens on a real outage — for the first time — and
+   counts only the faults it retries (§4).
 5. An OPA answer of `{}` is now a 503, not a 403 — on a single decision the policy package is not loaded;
    on a bulk call, the package may also simply define no `bulk` rule. Check the policy path configuration,
    and give every type whose lists use the allowlist fallback a `bulk` rule.

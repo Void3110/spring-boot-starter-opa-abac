@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
+import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.ParentRef;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolutionException;
 import dev.dmitriikonovalov.opaabac.data.hierarchy.AncestorResolver;
@@ -13,8 +14,9 @@ import org.springframework.web.context.request.RequestContextHolder;
 /**
  * A request-scoped memoizing decorator over the application's {@link AncestorResolver} (ADR 0023):
  * within one web request, {@link #ancestorsOf} consults the delegate <strong>once</strong> per
- * {@code (leafType, leafId)} and replays its first outcome — the chain <em>or</em> the
- * {@link AncestorResolutionException} (re-thrown verbatim). This kills the measured per-list
+ * {@code (leafType, leafId)} and replays its first outcome — the chain, the
+ * {@link AncestorResolutionException}, or a {@link DecisionIndeterminateException} the source opts in
+ * with (ADR 0037 §2), each re-thrown verbatim. This kills the measured per-list
  * double-resolve: the query path ({@code AbacQueryService.withResource}) and the enrichment path
  * ({@code ActionEnrichmentAdvice.prepareRow}) hit the same bean for the same rows, 2×N per page.
  *
@@ -71,14 +73,14 @@ final class MemoizingAncestorResolver implements AncestorResolver {
     private Object resolve(MemoKey key) {
         try {
             return delegate.ancestorsOf(key.leafType(), key.leafId());
-        } catch (AncestorResolutionException collapse) {
-            return new Collapse(collapse);
+        } catch (AncestorResolutionException | DecisionIndeterminateException failure) {
+            return new Collapse(failure);
         }
     }
 
     @SuppressWarnings("unchecked")
     private static List<ParentRef> replay(Object outcome) {
-        if (outcome instanceof Collapse(AncestorResolutionException cause)) {
+        if (outcome instanceof Collapse(RuntimeException cause)) {
             throw cause;
         }
         return (List<ParentRef>) outcome;
@@ -113,6 +115,6 @@ final class MemoizingAncestorResolver implements AncestorResolver {
 
     record MemoKey(String leafType, String leafId) {}
 
-    /** The memoized failure state: the contractual chain-collapse, re-thrown verbatim on replay. */
-    private record Collapse(AncestorResolutionException cause) {}
+    /** The memoized failure state: the chain-collapse or the outage, re-thrown verbatim on replay. */
+    private record Collapse(RuntimeException cause) {}
 }

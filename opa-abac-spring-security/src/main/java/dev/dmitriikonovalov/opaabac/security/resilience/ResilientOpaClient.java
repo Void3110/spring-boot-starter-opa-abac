@@ -38,10 +38,13 @@ import org.slf4j.LoggerFactory;
  * delegate: both throw the family for a failure, both return the same value for a decision. It is a real
  * {@code OpaClient} — all four methods implemented by hand, no {@code default} inherited.
  *
- * <p>The guard records every thrown fault on the breaker, transient or not (the other edges rely on that),
- * so a sustained deterministic fault — a policy package that never loaded — opens it like an outage does.
- * Accepted (ADR 0037 §4): every call answers "could not decide" either way, and the real kind is in the
- * WARN log of the attempts that opened it.
+ * <h2>What the breaker counts</h2>
+ * Exactly what the decorator retries: a transient fault. A fail-fast kind — an undefined decision, a
+ * malformed body, a 4xx, an interrupt — answers "could not decide" for that call but never opens the
+ * breaker (ADR 0037 §4). One breaker serves every resource type and all four methods, and a fail-fast fault
+ * is often local to one of them — a type whose package loads late, a type with no {@code bulk} rule — so
+ * counting it would let one type's defect answer {@code CIRCUIT_OPEN} for every healthy type. It costs no
+ * latency either, since it is never retried, so there is nothing for the breaker to shed.
  */
 public final class ResilientOpaClient implements OpaClient {
 
@@ -105,7 +108,8 @@ public final class ResilientOpaClient implements OpaClient {
      */
     private <T> T guarded(String operation, Supplier<T> body) {
         try {
-            return guard.call(body, retryableError, result -> false); // a returned value is a decision
+            // A returned value is a decision; the breaker counts exactly the faults that are retried.
+            return guard.call(body, retryableError, result -> false, retryableError);
         } catch (CallNotPermittedException e) {
             if (e.getCause() instanceof InterruptedException) {
                 log.warn("OPA {} indeterminate (fail-closed): interrupted during retry backoff", operation);

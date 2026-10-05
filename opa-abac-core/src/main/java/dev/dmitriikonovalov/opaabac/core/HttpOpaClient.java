@@ -220,9 +220,10 @@ public final class HttpOpaClient implements OpaClient {
      *
      * <p>A failed call throws {@link PolicyEngineException}. A request this client refuses to send (an
      * unsafe path) returns {@link PartialResult#error()} — deny-all that also suppresses any widening a
-     * caller composes with it. {@code {"result": {}}} stays {@link PartialResult#denyAll()}: partially
-     * evaluating an undefined reference answers exactly that, so a missing package cannot be told apart
-     * here (ADR 0037 §3a).
+     * caller composes with it. A Compile API answer always carries a {@code result} object, so a missing,
+     * null or non-object {@code result}, or a non-array {@code queries}, is malformed. {@code {"result": {}}}
+     * stays {@link PartialResult#denyAll()}: partially evaluating an undefined reference answers exactly
+     * that, so a missing package cannot be told apart here (ADR 0037 §3a).
      */
     @Override
     public PartialResult compile(AbacContext context) {
@@ -241,11 +242,12 @@ public final class HttpOpaClient implements OpaClient {
         HttpResponse<byte[]> response = post("/v1/compile", body, OP_COMPILE, path);
         requireOk(response, OP_COMPILE, path);
         JsonNode root = readObject(response.body(), OP_COMPILE, path);
+        requireCompileShape(root, path);
         String resourceType = context.resource() == null ? null : context.resource().type();
         try {
             return new CompileResponseParser(resourceType).parse(root);
         } catch (RuntimeException e) {
-            throw indeterminate(PolicyEngineException.malformedResponse(describe(OP_COMPILE, path, e), e));
+            throw indeterminate(PolicyEngineException.malformedResponse(describeUnparseable(OP_COMPILE, path, e), e));
         }
     }
 
@@ -354,12 +356,26 @@ public final class HttpOpaClient implements OpaClient {
         return result;
     }
 
+    /** A Compile API answer is {@code {"result": {…}}}, with {@code queries} an array when present. */
+    private static void requireCompileShape(JsonNode root, String path) {
+        JsonNode result = root.get(RESULT_FIELD);
+        if (result == null || !result.isObject()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_COMPILE, path) + ": 'result' is missing or not an object", null));
+        }
+        JsonNode queries = result.get("queries");
+        if (queries != null && !queries.isArray()) {
+            throw indeterminate(PolicyEngineException.malformedResponse(
+                    describe(OP_COMPILE, path) + ": 'result.queries' is not an array", null));
+        }
+    }
+
     private JsonNode readObject(byte[] responseBody, String operation, String path) {
         JsonNode root;
         try {
             root = objectMapper.readTree(responseBody);
         } catch (RuntimeException e) {
-            throw indeterminate(PolicyEngineException.malformedResponse(describe(operation, path, e), e));
+            throw indeterminate(PolicyEngineException.malformedResponse(describeUnparseable(operation, path, e), e));
         }
         if (root == null || !root.isObject()) {
             throw indeterminate(PolicyEngineException.malformedResponse(
@@ -382,6 +398,12 @@ public final class HttpOpaClient implements OpaClient {
     private static String describe(String operation, String path, Throwable cause) {
         // The cause's class and message carry the URL/transport detail, never credentials.
         return describe(operation, path) + ": " + cause;
+    }
+
+    private static String describeUnparseable(String operation, String path, Throwable cause) {
+        // A parser's message quotes the body it choked on; the WARN names the parser's exception only, and
+        // the full cause stays at DEBUG.
+        return describe(operation, path) + ": malformed body (" + cause.getClass().getSimpleName() + ")";
     }
 
     private static String resourceTypeOf(AbacContext context) {

@@ -73,8 +73,12 @@ catch-all still turns the throw into 403.
 - `PartialResult.error()` re-documented, not deprecated (above).
 - A request the JDK `HttpClient` rejects outright (e.g. a misconfigured base URL) is `TRANSPORT` — "the engine
   could not be asked" — not a refusal: it is configuration, not caller input, and it should be loud.
+  *(Review: louder still — `OpaClientConfig` now rejects a base URL that is not an absolute http(s) URL with a
+  host, so the misconfiguration fails at startup; `TRANSPORT` stays the runtime classification. U37.)*
 - An `{"result": …}` that is not an object (decide) is `MALFORMED_RESPONSE`; a JSON body that is not an object
   on any path is `MALFORMED_RESPONSE`, including on compile (the blind spot is only `{"result":{}}`).
+  *(Review: as built, compile still turned a missing, null or non-object `result` into a silent `DENY_ALL` —
+  the parser's own fallbacks. Now those shapes, and a non-array `queries`, are `MALFORMED_RESPONSE`.)*
 - Local Sonar (P2) is deferred to T6 as planned — the repo's own stack is not running on this machine.
 
 ## Commit
