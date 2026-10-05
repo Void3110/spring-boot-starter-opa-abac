@@ -21,7 +21,7 @@ plus a **runnable example** that demonstrates the whole picture end to end.
 > **2. The way it was built** — this repo is also a **worked case study in high-autonomy AI-assisted
 > engineering**. Every feature was shipped through the same documented, self-correcting **loop** —
 > `plan → decompose → autonomous-implement → review` — where each pass leaves artifacts (in **Mulch**
-> and this vault) that make the next one sharper. **30 feature slices, 34 ADRs, 1275 unit/IT tests +
+> and this vault) that make the next one sharper. **31 feature slices, 35 ADRs, 1350 unit/IT tests +
 > 69 browser-free SPA unit tests + `opa test` 451/451 + a 19-runner gateway matrix, an ABAC gate measured at +0.79 ms p50, a 0-Critical
 > security review** — all delivered this way, with the prompts and per-slice retrospectives kept
 > verbatim so the *method* is inspectable, not just the result. → **[How this repo is built](#how-this-repo-is-built-ai-assisted-engineering-the-second-deliverable)** · **[`docs/methodology/`](docs/methodology/README.md)**
@@ -47,14 +47,14 @@ zookie/consistency story, no reverse index) and honest prior art in the Spring/O
 
 ## Status
 
-✅ **1.3.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
+✅ **1.4.0 — published to Maven Central.** Every functional slice is shipped and proven end-to-end
 (unit + Testcontainers ITs + `opa test` + a newman gateway matrix + a static-analysis quality gate + a
 browser-driven UI QA of the demo SPA), the codebase targets **Spring Boot 4.0 on Java 25**, and the
 library is resolvable under `dev.dmitriikonovalov`.
 
 ```kotlin
 // build.gradle.kts — pull in the whole line via the BOM, then reference modules version-free
-implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.3.0"))
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.4.0"))
 implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
 ```
 
@@ -126,15 +126,18 @@ delivered as its own reviewed slice. The technical plan lives in
 is [`RELEASING.md`](RELEASING.md); the full picture (architecture, ADRs, guides) is in
 [`docs/`](docs/README.md).
 
-**1.4.0 (unreleased):** **"could not decide" is no longer reported as "no".** A policy-engine failure or a
+**1.4.0 (2026-10-05):** **"could not decide" is no longer reported as "no".** A policy-engine failure or a
 role-source outage is still fail-closed, but it now surfaces as a typed `DecisionIndeterminateException` —
 **503 `DEPENDENCY_UNAVAILABLE`** at the HTTP edge instead of a 403 or an empty list — and the resilience
 layer stops retrying genuine denies (its OPA circuit breaker now opens on a real outage, for the first time).
 It changes error-path behaviour; read the upgrade notes in
 [`CHANGELOG.md`](CHANGELOG.md) before bumping, and see
-[ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md). Reviewed by two independent
-passes, which reversed one design call (the OPA breaker now counts only the faults it retries):
-[`docs/code-review/ENGINE-ERRORS-REVIEW.md`](docs/code-review/ENGINE-ERRORS-REVIEW.md).
+[ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md). The review ran four rounds of
+independent reviewers (a Fable + Opus pair, later joined by the Codex CLI). It reversed one design call, so the
+OPA breaker now counts only the faults it retries:
+[`docs/code-review/ENGINE-ERRORS-REVIEW.md`](docs/code-review/ENGINE-ERRORS-REVIEW.md). Also in 1.4.0:
+- A list whose residual is `ALLOW_ALL` no longer collapses to its subtree widening.
+- `opa-abac-core` declares Jackson 3.1.7, ahead of Boot 4.0.8's managed version.
 
 **1.3.0 (2026-09-11):** the **placement gate**. A tag-requiring role can no longer create what it could not
 read, nor *where* it could not read: a type-level create (and its tag-on-create) is decided on the placement
@@ -487,9 +490,9 @@ verified — nothing is hidden behind "the AI did it."
 
 | | |
 |---|---|
-| **30** feature slices | each planned → decomposed → implemented (autonomously or collaboratively) → reviewed |
-| **34** ADRs | every structural fork pinned as an immutable decision record |
-| **1275** unit/IT tests · `opa test` **451/451** · **19**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
+| **31** feature slices | each planned → decomposed → implemented (autonomously or collaboratively) → reviewed |
+| **35** ADRs | every structural fork pinned as an immutable decision record |
+| **1350** unit/IT tests · `opa test` **451/451** · **19**-runner gateway matrix | the automated proof, real Postgres (Testcontainers) + through-the-gateway |
 | **+0.79 ms** ABAC gate at p50 | measured on the real rig, statistically flat at the tail ([PERFORMANCE.md](PERFORMANCE.md)) |
 | **0 Critical** security review | pre-publish 8-angle review + secret scan + CVE sweep, findings fixed |
 

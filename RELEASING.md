@@ -189,6 +189,20 @@ validation and release — a successful run ends with **"Deployment is being pub
 Watch the **Deployments** tab on the Portal; a failed deployment leaves a droppable FAILED entry and
 releases nothing (safe to retry).
 
+**If it fails within seconds with `Failed to stop service 'maven-central-build-service'` and
+`PKIX path building failed`**, the JDK running Gradle does not trust the Portal's certificate chain. Nothing
+was uploaded and nothing was published. Re-run with the macOS keychain as the truststore and a fresh JVM
+(measured on the 1.4.0 cut, 2026-10-05: the upload went through, validated and was published in 16 s):
+
+```bash
+JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStoreType=KeychainStore-ROOT -Djavax.net.ssl.trustStore=NONE" \
+  ./gradlew publishAndReleaseToMavenCentral -I /tmp/use-gpg-cmd.init.gradle.kts --no-configuration-cache --no-daemon
+```
+
+`--no-daemon` matters: an already-running Gradle daemon was started without `JAVA_TOOL_OPTIONS` and would
+keep the JDK's own truststore. The same JVM-truststore gap breaks a Maven Central *download* of a version that
+is not yet cached, for example right after a dependency bump.
+
 Within ~10–30&nbsp;min the coordinates appear on `https://central.sonatype.com`; searchability on
 `https://search.maven.org` / `mvnrepository.com` can take a few hours longer.
 

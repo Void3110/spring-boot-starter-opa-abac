@@ -143,6 +143,25 @@ CHANGELOG's **upgrade notes** before bumping, especially if you:
      slice count).
 4. This record's §7, the publish log, and a `RELEASING.md` addendum if the cut teaches anything new.
 
+## 7. The publish log (2026-10-05) — what actually happened
+
+- **Release PR merged:** [#134](https://github.com/Void3110/spring-boot-starter-opa-abac/pull/134), as `adab7cc`, on all
+  five CI checks. The maintainer published from a clean worktree on exactly that commit, not from the primary
+  checkout, which was on another branch with uncommitted edits.
+- **Uplink probe** (`RELEASING.md` §4a): a 20 MB POST to a public echo endpoint uploaded at **~746 KB/s**,
+  comfortably above the ~500 KB/s the plugin's single-request upload needs. For comparison, the 1.3.0 failures
+  crawled at 30–100 KB/s.
+- **Attempt 1** failed in **3 s**: `Failed to stop service 'maven-central-build-service'` with
+  `PKIX path building failed`. The JDK running Gradle does not trust the Portal's certificate chain, the same gap
+  that blocked the Jackson 3.1.7 download earlier in this cut. Nothing was uploaded.
+- **Attempt 2** used the same command, with the keychain truststore (`JAVA_TOOL_OPTIONS`) and `--no-daemon` so a
+  fresh JVM picked it up. The bundle was **uploaded as AUTOMATIC**, as deployment
+  `fcf9e591-aae2-4571-9a99-cba2d9793ce5`. It validated and went to publishing: **BUILD SUCCESSFUL in 16 s**. The
+  fix is now in `RELEASING.md` §4.
+- **PUBLISHED** (Portal, 2026-10-05): deployment `fcf9e591-aae2-4571-9a99-cba2d9793ce5`, **7 of 7 components
+  validated**. Those are the six coordinates, with the BOM listed both as its `pom` and as its module. The Portal
+  showed the deployment PUBLISHED about 17 minutes after the upload. Then `v1.4.0` was tagged on `adab7cc`.
+
 ## Not in this release
 
 - Backlog item 10 (Boot-managed Tomcat and Jackson; waits on Boot).
