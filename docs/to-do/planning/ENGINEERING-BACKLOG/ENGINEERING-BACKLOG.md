@@ -395,6 +395,21 @@ in-collection, after E2, as `owner` of a sixth fixture, `Sup Victor Co` (`eeee�
 built from `24bee89` (main just before the item-17 fix) only E11b fails — one row, `count: 1`, the member row
 missing — and the other 46 assertions stay green; on the rebuilt `main` image the whole matrix is green.
 
+## 20. `opa.abac.enabled=false` silently ungated every `@OpaPreAuthorize` — ✅ FIXED 2026-10-07 (ADR 0038)
+
+**Found** 2026-10-03 while planning the MCP-auth library extraction: a downstream adopter that ships
+`opa.abac.enabled=false` had to drop the annotation for explicit gate calls. The master switch gates
+`OpaAbacAutoConfiguration` as a whole, so off removed the method-security advisor too and every annotated
+method ran with **no decision**. There was no error and no log, and the property was undocumented.
+Confirmed on `4b6c474` by an `ApplicationContextRunner` test (on: denied; off: the method returned).
+**Done** ([[0038-disabled-starter-never-ungates-declared-gates|ADR 0038]], 1.5.0): off plus any gated method fails
+startup, naming each `Type#method`, unless `opa.abac.allow-ungated-methods=true` acknowledges it (then a WARN
+names them). Detection is the advisor's own pointcut. `OpaAbacDisabledAutoConfigurationTest` pins 12 cells
+(interface declarations, a JDK-proxied bean judged by its target, a lazy bean, the rig's env-var form).
+`UnguardedBootIT` pins that the real catalog refuses to start unacknowledged and names its controllers and
+`TagDecisionGate`. `deploy.sh`'s unguarded branch and the user-service's standalone default set the
+acknowledgment.
+
 ---
 
 ## Related

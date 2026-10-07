@@ -180,7 +180,11 @@ HEADER
       OPA_ABAC_BASE_URL: \"http://opa:8181\"
       OPA_ABAC_POLICY_PREFIX: \"\""
       else
-        abac_env="      OPA_ABAC_ENABLED: \"false\""
+        # The starter off removes every @OpaPreAuthorize gate, and the app refuses to start that way
+        # unless the ungated controllers are acknowledged (ADR 0038) — which is exactly what this
+        # unguarded posture is for (the load-test baseline, ADR 0021 §2; the bare no-OIDC rig).
+        abac_env="      OPA_ABAC_ENABLED: \"false\"
+      OPA_ABAC_ALLOW_UNGATED_METHODS: \"true\""
       fi
       # Phase 4: resolve role definitions from the user-management service (the app-resolved path)
       # instead of the static demo supplier. The user-service is reachable in-network as 'usermgmt'.

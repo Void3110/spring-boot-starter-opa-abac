@@ -9,6 +9,7 @@ tags:
 # ADR 0021 — Load-testing methodology (the pre-publish performance baseline)
 
 **Status:** Shipped (Phase 7.2, [[LOAD-TESTING]] — the baseline lives in the root `PERFORMANCE.md`)
+**Amended 2026-10-07 by [[0038-disabled-starter-never-ungates-declared-gates|ADR 0038]]** (release 1.5.0) — the starter now refuses to boot with `opa.abac.enabled=false` while `@OpaPreAuthorize` methods exist, unless they are acknowledged; §2's `ENABLE_OPA=0` flip therefore also sets `OPA_ABAC_ALLOW_UNGATED_METHODS=true` (`deploy.sh`). The measured difference between the passes is unchanged.
 **Date:** 2026-07-07
 **Context tags:** k6, open-model load, gate-overhead delta, partial-eval ceiling, amplification ratio, fail-closed latency
 
