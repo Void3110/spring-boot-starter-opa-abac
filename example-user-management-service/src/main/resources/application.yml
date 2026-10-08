@@ -24,6 +24,11 @@ server:
 opa:
   abac:
     enabled: ${OPA_ABAC_ENABLED:false}
+    # Off removes every @OpaPreAuthorize gate, and the starter refuses to boot that way unless it is
+    # acknowledged (ADR 0038). This service's standalone default IS off — no OPA, no gateway — where
+    # nothing can authenticate a bearer, so /api/v1/** is a 401 wall; the acknowledgment records that.
+    # The rig always runs it enabled (infra/compose.usermgmt.yaml), where this line has no effect.
+    allow-ungated-methods: ${OPA_ABAC_ALLOW_UNGATED_METHODS:true}
     base-url: ${OPA_ABAC_BASE_URL:http://localhost:8181}
     policy-prefix: ${OPA_ABAC_POLICY_PREFIX:}
     subject:

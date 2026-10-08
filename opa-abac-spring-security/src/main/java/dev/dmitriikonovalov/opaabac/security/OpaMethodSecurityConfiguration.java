@@ -96,23 +96,32 @@ public class OpaMethodSecurityConfiguration {
         }
     }
 
+    /**
+     * The methods the {@code @OpaPreAuthorize} advisor gates. Public so that code which must agree with
+     * the advisor on <em>which</em> methods are gated (the starter's disabled-mode guard, ADR 0038) asks
+     * this one definition instead of re-deriving it.
+     *
+     * <p>{@code checkInherited = true}: the annotation is found on the <em>most specific</em> method AND up
+     * the type hierarchy — so {@code @OpaPreAuthorize} declared on an interface method is matched under
+     * class-based (CGLIB) proxies too, the same posture as Spring Security's own {@code @PreAuthorize}
+     * pointcut. Without it, an interface-annotated method runs with NO enforcement and no error. The
+     * annotation is METHOD-only by design (each method names its action), so there is no class-level
+     * pointcut half.
+     */
+    public static Pointcut opaPreAuthorizePointcut() {
+        return new AnnotationMatchingPointcut(null, OpaPreAuthorize.class, true);
+    }
+
     @Bean
     @Role(org.springframework.beans.factory.config.BeanDefinition.ROLE_INFRASTRUCTURE)
     @Order(INTERCEPTOR_ORDER)
     AuthorizationManagerBeforeMethodInterceptor opaPreAuthorizeMethodInterceptor(
             ObjectProvider<OpaPreAuthorizeAuthorizationManager> opaPreAuthorizeAuthorizationManager) {
 
-        // checkInherited = true: the annotation is found on the *most specific* method AND up the
-        // type hierarchy — so @OpaPreAuthorize declared on an interface method is matched under
-        // class-based (CGLIB) proxies too, the same posture as Spring Security's own @PreAuthorize
-        // pointcut. Without it, an interface-annotated method runs with NO enforcement and no error.
-        // The annotation is METHOD-only by design (each method names its action), so there is no
-        // class-level pointcut half.
-        Pointcut pointcut = new AnnotationMatchingPointcut(null, OpaPreAuthorize.class, true);
-
         AuthorizationManagerBeforeMethodInterceptor interceptor =
                 new AuthorizationManagerBeforeMethodInterceptor(
-                        pointcut, new DeferredAuthorizationManager(opaPreAuthorizeAuthorizationManager));
+                        opaPreAuthorizePointcut(),
+                        new DeferredAuthorizationManager(opaPreAuthorizeAuthorizationManager));
         interceptor.setOrder(INTERCEPTOR_ORDER);
         return interceptor;
     }

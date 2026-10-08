@@ -41,7 +41,8 @@ import org.springframework.context.annotation.ConfigurationCondition;
 /**
  * Auto-configuration for the OPA ABAC starter: "add the dependency + a few properties" turns the spine
  * on. Every bean is {@link ConditionalOnMissingBean} (the app overrides any of them); the whole config
- * is gated on {@code opa.abac.enabled} (default on).
+ * is gated on {@code opa.abac.enabled} (default on). Off is not a silent bypass of the declared gates:
+ * {@link OpaAbacDisabledAutoConfiguration} takes over then (ADR 0038).
  *
  * <p><strong>Module-aware:</strong> the core beans (OPA client, policy resolver, role-definition
  * supplier) are always available; the Spring-Security beans live in a nested config gated on the

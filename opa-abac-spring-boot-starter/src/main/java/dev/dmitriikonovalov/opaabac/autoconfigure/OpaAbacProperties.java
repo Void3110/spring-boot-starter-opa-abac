@@ -15,6 +15,7 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
  * opa:
  *   abac:
  *     enabled: true
+ *     allow-ungated-methods: false   # only read when enabled is false (ADR 0038)
  *     base-url: http://localhost:8181
  *     policy-prefix: catalog
  *     timeout: 5s
@@ -34,8 +35,19 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
 @ConfigurationProperties(prefix = "opa.abac")
 public class OpaAbacProperties {
 
-    /** Master switch for the ABAC auto-configuration. */
+    /**
+     * Master switch for the ABAC auto-configuration. Off removes every starter bean, the
+     * {@code @OpaPreAuthorize} advisor included — so with any {@code @OpaPreAuthorize} method in the
+     * context, startup fails unless {@link #allowUngatedMethods} acknowledges it (ADR 0038).
+     */
     private boolean enabled = true;
+
+    /**
+     * Acknowledges that, with {@link #enabled} off, every {@code @OpaPreAuthorize} method runs with NO
+     * authorization decision: the context then starts, and a WARN names those methods. Without it, the
+     * same context fails at startup. No effect while the starter is enabled (ADR 0038).
+     */
+    private boolean allowUngatedMethods = false;
 
     /** Base URL of the OPA server. */
     private String baseUrl = "http://localhost:8181";
@@ -85,6 +97,14 @@ public class OpaAbacProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public boolean isAllowUngatedMethods() {
+        return allowUngatedMethods;
+    }
+
+    public void setAllowUngatedMethods(boolean allowUngatedMethods) {
+        this.allowUngatedMethods = allowUngatedMethods;
     }
 
     public String getBaseUrl() {

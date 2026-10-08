@@ -396,6 +396,33 @@ exception is the narrow `catalog:create` realm-role fallback in `catalog.rego`. 
 > security beans only appear when Spring Security + web are on the classpath; the starter never registers
 > a `SecurityFilterChain`.
 
+### The master switch — `opa.abac.enabled` (ADR 0038)
+
+`opa.abac.enabled=false` removes **every** starter bean, the `@OpaPreAuthorize` advisor included. The
+annotation is only metadata, so without the advisor an annotated method just runs, with no decision. To
+keep that from happening silently, a separate auto-configuration (`OpaAbacDisabledAutoConfiguration`)
+runs exactly when the switch is off:
+
+| `enabled` | `@OpaPreAuthorize` methods in the context | `allow-ungated-methods` | Result |
+|---|---|---|---|
+| `true` (default) | any | ignored | the gates decide |
+| `false` | none | not needed | starts, nothing logged |
+| `false` | some | `false` (default) | **startup fails**, naming each `Type#method` |
+| `false` | some | `true` | starts; a WARN names each method that runs **without a decision** |
+
+The guard matches with the advisor's own pointcut (`OpaMethodSecurityConfiguration.opaPreAuthorizePointcut()`),
+so it finds exactly the methods the advisor would have gated, including annotations declared on an
+interface. It judges an instantiated bean by its target class behind any proxy, and a lazy or scoped bean
+by its predicted type. It runs before the web server starts and does not depend on
+`@EnableMethodSecurity`. The other starter beans fail differently when the switch is off: they are
+absent, so an application that injects one fails at startup.
+
+**When `true` is right.** You are running the app without enforcement on purpose, as the example's rig
+does. Its load-test baseline flips `ENABLE_OPA=0` to measure the gate's cost (ADR 0021 §2), and
+`deploy.sh` sets `OPA_ABAC_ENABLED=false` together with `OPA_ABAC_ALLOW_UNGATED_METHODS=true`. The
+user-service's standalone default is off too, and acknowledged in its `application.yml`. Anything that
+reaches those methods is then decided only by the `SecurityFilterChain` and the gateway in front of it.
+
 ## Verifying it
 
 - Library unit tests: the OPA client (fail-closed paths), the extractor (claim mapping, no signature
@@ -410,3 +437,4 @@ exception is the narrow `catalog:create` realm-role fallback in `catalog.rego`. 
 - [[DOMAIN-MODEL]] — the `AbacResource` resource side this consumes.
 - [[ACTION-ENRICHMENT]] — the read-side `_actions` affordance layer that mirrors this enforcement (not a gate).
 - [[E2E-TESTING]] — the allow/deny matrix.
+- [[0038-disabled-starter-never-ungates-declared-gates|ADR 0038]] — why the master switch refuses to ungate a declared gate silently.

@@ -199,6 +199,24 @@ request is anonymous until you opt in). To actually enforce ABAC, your applicati
 See [`docs/guides/ABAC-AUTHORIZATION.md`](docs/guides/ABAC-AUTHORIZATION.md) for the full wiring and the
 [example services](example-catalog-management-service/) for a working `SecurityConfig`.
 
+### Turning the starter off (`opa.abac.enabled`)
+
+`opa.abac.enabled` (default `true`) is the master switch. Setting it to `false` removes every starter
+bean, including the advisor behind `@OpaPreAuthorize`. An annotated method would then run with **no
+authorization decision**. So since 1.5.0, the starter **refuses to start** with `enabled=false` while any
+bean declares `@OpaPreAuthorize`, and the error names each method. If running them ungated is what you
+want (a load-test baseline, a local run with no policy engine), say so explicitly:
+
+```yaml
+opa:
+  abac:
+    enabled: false
+    allow-ungated-methods: true   # boots; a WARN names every method that runs without a decision
+```
+
+`allow-ungated-methods` has no effect while the starter is enabled. With no annotated methods, turning the
+starter off needs nothing. See [ADR 0038](docs/architecture/adr/0038-disabled-starter-never-ungates-declared-gates.md).
+
 ## This is a monorepo
 
 Two things live here, built together so the library and real consumers evolve in lockstep:

@@ -4,6 +4,29 @@ All notable changes to the published `opa-abac-*` modules. The `example-*` servi
 published; their changes appear here only where they show an adopter what to do. Earlier releases
 (1.0.0 – 1.3.0) are described by their git tags and the README's release notes.
 
+## [Unreleased] — 1.5.0
+
+### Turning the starter off no longer silently ungates `@OpaPreAuthorize` ([ADR 0038](docs/architecture/adr/0038-disabled-starter-never-ungates-declared-gates.md))
+
+`opa.abac.enabled=false` removes every starter bean, the `@OpaPreAuthorize` method-security advisor included.
+Until 1.4.0, every annotated method then ran with **no authorization decision**: no error and no log, in code
+that still reads as secured.
+
+- **`opa-abac-spring-boot-starter`**: with `opa.abac.enabled=false` and any bean method carrying
+  `@OpaPreAuthorize`, the context now **fails at startup** with an `IllegalStateException` naming each method.
+  The new property **`opa.abac.allow-ungated-methods=true`** acknowledges that the methods run ungated on
+  purpose: the context then starts and a WARN names them. The property has no effect while the starter is
+  enabled. With no annotated methods, turning the starter off needs nothing.
+  Detection uses the advisor's own pointcut, so a gate declared on an interface method counts. It does not
+  depend on `@EnableMethodSecurity`.
+- **`opa-abac-spring-security`**: `OpaMethodSecurityConfiguration.opaPreAuthorizePointcut()` is new and public.
+  It is the advisor's pointcut, exposed so other code can agree with it.
+
+**Upgrade note.** If you ship `opa.abac.enabled=false` and have `@OpaPreAuthorize` methods, those methods were
+running ungated. 1.5.0 refuses to start until you choose one of three fixes: remove `enabled=false` to
+enforce them, set `opa.abac.allow-ungated-methods=true` if ungated is what you want (a load-test baseline, a
+local run with no policy engine), or remove the annotations.
+
 ## [1.4.0] — 2026-10-05
 
 ### "Could not decide" is no longer reported as "no" ([ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md))
