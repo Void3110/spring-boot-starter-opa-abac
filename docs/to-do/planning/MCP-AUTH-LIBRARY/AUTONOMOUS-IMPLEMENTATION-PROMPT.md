@@ -34,7 +34,7 @@ tool-specification types, and pairs with a policy that recognizes an agent call 
 slice extracts the gate into a published, **incubating** module `opa-abac-mcp`, auto-configured by the
 starter, and turns every edge that is safe in the example but fail-open elsewhere — an unwrapped
 specification type, a disabled starter, a missing ceiling source, an agent client without its actor mapper,
-a policy older than the jar — into a startup failure or a deny. **Part 0 (T1–T4) moves code and changes no
+a v1-aware policy meeting a later input version — into a startup failure or a deny. **Part 0 (T1–T4) moves code and changes no
 behavior; part 1 (T5–T8) adds the new edges.** NOT in scope: a supported `tools/list` installer (waits for
 java-sdk #578 — the reflective one stays in the example), a thread-independent identity carrier, a Java
 decision path (OPA stays required), WebFlux, Spring AI 2.1, and releasing 1.5.0.
@@ -104,13 +104,16 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
      WebFlux, declarations ≠ wrapped) fails startup — never a skip, never present-but-inert.**
    - **Security check — the widenings that matter here: an agent call evaluated on the human branch (the
      actor dropped, misread, or an agent client without an actor); a memo (ceiling or capability) serving one
-     caller's answer to another — the key must include the subject and the memo must die with the request; a
+     caller's answer to another — the ceiling memo keys on `(subject, resourceType)`, the capability memo on
+     the actor id (its SPI's only argument), and both die with the request; a
      policy-path decorator that sends a non-`tool` decision to the tool document or vice versa; a denial
      message or WARN that leaks a source's response body. State why each cannot happen.**
    - **Concurrency / idempotency check — no mutation is gated in this slice; the concurrency risk is
      threading: every wrapper decides on the thread that invoked its handler (before any `Mono` exists) and
-     never re-decides at subscription; thread-bound state (`SecurityContextHolder`, request attributes) is
-     read only there; a resubscribed `Mono` does not call the authorizer again.**
+     never re-decides at subscription; the authorization's reads of thread-bound state
+     (`SecurityContextHolder`, request attributes) happen only there — the async result decoration may read
+     the failure record at emission, and absent request state leaves the result unchanged; a resubscribed
+     `Mono` does not call the authorizer again; startup guards stay eager under lazy initialization.**
    - **Wiring check** — every seam this ticket adds (an SPI, a property, a guard, an exception + advice
      mapping, a cache accessor, a rego entrypoint, a recovery edge) has a **named consumer** and a test
      through its **non-happy path**; zero call sites = the ticket is not done.
@@ -119,7 +122,8 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
      the mechanical cost is the moved tests' ceiling stubs (T2) and the example's deleted wiring (T3).**
    - **Module-layer separation — `opa-abac-mcp` holds types and logic and declares no beans; the starter
      owns every bean and post-processor; the example owns its catalog declarations, its ceiling source and the
-     reflective roster installer; the module never depends on the starter or the example.**
+     reflective roster installer; the module's main (published) scope never depends on the starter, the
+     example or Spring AI — wiring tests that need a running server live in the starter's test sources (T5).**
    - **Pattern-reuse check — the keycloak-directory module's build + `compileOnly` wiring (ADR 0020); the
      memo decorator's tri-state replay (`MemoizingRoleDefinitionSupplier`); bean-level BPP decoration
      (`OpaResolveMemoAutoConfiguration`); the `Binder` read (`OpaAbacDisabledAutoConfiguration`); the
@@ -172,8 +176,10 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - Create/modify the new `opa-abac-mcp` module, the starter (an added auto-configuration only), the BOM and
   the root build's publish allow-list, `example-mcp-server`, `agent_tools.rego` + its test (T7 only),
   `infra/compose.mcp.yaml`, `deploy.sh` (only if a drill needs it), `.github/workflows/ci.yml` (T8's one
-  step), tests, docs in this folder + the guides + the READMEs + `RELEASING.md` + root `CLAUDE.md`, the
-  `scripts/postman/` agent-tool runner/collection (T6's cell only), and Mulch — all on this branch.
+  step), `gradle/libs.versions.toml` (T1's `mcpSdk`, T8's `springBootCompat`), `settings.gradle.kts`, tests,
+  docs in this folder + the guides + the READMEs + `RELEASING.md` + `CHANGELOG.md` (under the existing
+  `[Unreleased] — 1.5.0` heading only) + root `CLAUDE.md`, the `scripts/postman/` agent-tool runner/collection
+  (T1's E5-check path, T2's one header comment, T6's cell), and Mulch — all on this branch.
 - Stand up / tear down / reseed the local rig (`./profile.sh`, `./deploy.sh`, `ENABLE_MCP=1 ./deploy.sh up --pods 2`);
   reset fixtures; rebuild images; restart OPA; drop/recreate the **local** schema if needed.
 - Bring up the local Sonar stack for the ★gate's static-analysis check
@@ -197,8 +203,9 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   install/startup-time failure **fails the context outright** rather than booting silently degraded.
   This slice has **two classes**: a **startup/installation** failure (no `OpaClient` — even under
   `opa.abac.enabled=false` + `opa.abac.allow-ungated-methods=true`; no `PrincipalCeilingSupplier`; no
-  `ToolRegistry`; declarations ≠ wrapped; an unwrappable specification type; WebFlux; a wiring check) **fails
-  the context**; a **request-time** failure denies that call with its own code (`tool-gate-unauthenticated`,
+  `ToolRegistry`; declarations ≠ wrapped; a specification type the module does not wrap — in part 0 every
+  type but stateful sync; WebFlux; a wiring check) **fails the context**, eagerly, even under lazy
+  initialization; a **request-time** failure denies that call with its own code (`tool-gate-unauthenticated`,
   `-identity-unreadable`, `-capability-unavailable`, `-ceiling-unavailable`, `-policy-unavailable`,
   `-actor-required`, `tool-undeclared`, `tool-gate-denied`) while the roster hint lands on **empty** (the
   engine could not decide; all-false; wrong length) or **unfiltered + WARN** (an identity / capability /
@@ -212,8 +219,9 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   then record the deviation in the STATUS *Decisions* section, in the ticket's own words, before
   proceeding. A plan that named the seam from a mental model is a planning defect the run should
   surface, not absorb.
-- **Slice-specific invariants:** (1) **part 0 changes no behavior** — a moved test keeps its assertions;
-  its only new outcomes are startup failures for misconfigurations; (2) **never present-but-inert** — no
+- **Slice-specific invariants:** (1) **part 0 changes no behavior the example can observe** — a moved test
+  keeps its assertions (the QA doc's part-0 rule names the only permitted edits); its new outcomes are startup
+  failures for misconfigurations plus T3's three named corrections; (2) **never present-but-inert** — no
   property disables the gate (`agent-gate.enabled=false` drops only the agent conjunct); (3) **match in
   Rego** — no Java decision path; (4) **additive library change** — no existing module's public API
   changes, `opa-abac-core` untouched; (5) **the module declares no beans** — the starter wires; (6) **the
@@ -242,8 +250,12 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
 - **Rig / e2e specifics** — rebuild the MCP image every time (`ENABLE_MCP=1 ./deploy.sh build`); the
   runner's E6/E7/E11 drills (and T6's E12) recreate the MCP pod and an EXIT trap restores it; restart OPA
   after T7's rego edit; the in-network token caveat applies (issuer `http://keycloak:8888`). T8's Boot 4.1 run
-  needs artifacts the sandbox cannot fetch on this host (PKIX) — the ticket records the deferral and the
-  maintainer runs the one command outside the sandbox before the PR.
+  and T5's WebFlux test need artifacts the sandbox cannot fetch on this host (PKIX: Boot 4.1.1,
+  `spring-webflux`) — each ticket records `**LOCAL PROOF DEFERRED:** PKIX — <artifact>` and continues; the
+  maintainer runs the named command outside the sandbox before the PR (or warms the cache before the run), and
+  CI on the PR to `main` is the gate — a feature-branch push triggers no CI.
+- **Release** — 1.5.0 = ADR 0038 + this slice, one cut after merge (no 1.4.1); the run never touches the
+  version, the CHANGELOG heading or a tag.
 - **CI does not run the rig yet** — the newman matrix is a local/manual gate; a compose-up→newman CI
   job is a tracked follow-up.
 - **Context management** — if the window grows long mid-run, finish the ticket, stop at its checkpoint,

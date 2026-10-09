@@ -10,7 +10,7 @@ tags:
 
 # MCP-AUTH-LIBRARY — the agent tool-gate as a library module (`opa-abac-mcp`)
 
-> **Status: 📋 decomposed 2026-10-09 — eight tickets, two parts; not yet implemented.** Designed 2026-10-03. Grill-me settled fifteen forks the same day
+> **Status: 📋 decomposed 2026-10-09 — eight tickets, two parts; not yet implemented.** Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
 > ([[00-DESIGN]] §Considered and rejected); the contract is
 > [[0036-mcp-auth-library-module|ADR 0036]], which **supersedes** the 2026-08-01 decision to defer this
 > extraction to a second consumer and **amends** [[0028-agent-tool-call-authorization|ADR 0028]]'s
@@ -19,12 +19,14 @@ tags:
 > "could not decide" family and `tool-gate-policy-unavailable`; ADR 0038's `allow-ungated-methods` does not
 > extend to MCP tools ([[0036-mcp-auth-library-module|ADR 0036]] §12, [[00-DESIGN]] fork 16).
 > **Execution:** autonomous, two parts (ORCHESTRATOR) — part 0 = T1–T4, the behavior-preserving extraction;
-> part 1 = T5–T8, the new behavior (declared in [[00-DESIGN]] §Execution parts). The decomposition pinned seven
+> part 1 = T5–T8, the new behavior (declared in [[00-DESIGN]] §Execution parts). The decomposition pinned the
 > seams the design named but did not specify ([[0036-mcp-auth-library-module|ADR 0036]] §13).
 > **Branch:** `feature/void3110/mcp-auth-library`.
-> **Review routing (the repo's standing rule):** one multi-lens `/deep-review` workflow pass when both
-> parts are in; any follow-up round on the same branch is a Fable + Opus pair. State the remaining usage
-> pool and the expected cost before the decompose validation, the run and the review.
+> **Review routing:** one multi-lens `/deep-review` workflow pass when both parts are in; follow-up rounds
+> per the maintainer's review rule.
+> **Release:** 1.5.0 ships ADR 0038 (already on `main`) **together with** this slice, as one cut after merge
+> (maintainer decision 2026-10-09; no 1.4.1). The module's CHANGELOG entry goes under the existing
+> `## [Unreleased] — 1.5.0` heading; the cut follows the `RELEASE-1.4.0` package's shape.
 > **Next:** the decomposition gates (6a mechanical, 6b adversarial) → `/autonomous-implement MCP-AUTH-LIBRARY`
 > on the maintainer's go → one multi-lens `/deep-review` → merge → release 1.5.0.
 
@@ -40,10 +42,10 @@ the role source, and dropped the roster filter), and the SDK seam the roster ada
 Packaging it is also where the example's configuration-specific safety stops being enough: a library runs
 under configurations the example never did. The slice's real content is the set of edges that are safe in
 the example and fail-open elsewhere — an async or stateless tool-specification type the wrapper never
-sees, a disabled starter, a missing ceiling source, a policy older than the jar reading a moved input
-field, an agent client whose IdP mapper is missing — each turned into a startup failure or a deny.
+sees, a disabled starter, a missing ceiling source, a v1-aware policy meeting a jar from a later input
+version, an agent client whose IdP mapper is missing — each turned into a startup failure or a deny.
 
-## The fifteen settled forks (one line each — detail in [[00-DESIGN]])
+## The sixteen settled forks — fifteen from the grill + the 2026-10-09 amendment (one line each — detail in [[00-DESIGN]])
 
 1. Extract now, **incubating** (API may change in minors until an external consumer adopts it).
 2. The roster **decision** ships; the reflective `tools/list` installer stays in the example until #578.
@@ -62,7 +64,7 @@ field, an agent client whose IdP mapper is missing — each turned into a startu
 12. Conventions: `opa.abac.mcp.*`, package `…opaabac.mcp`, documented denial codes, `ToolCallClassifier` out.
 13. One slice, two parts, autonomous.
 14. **OPA required** — no Java decision path.
-15. Schedule: decompose after the usage-pool reset; release 1.5.0 after merge (1.4.0 carries the engine-error slice).
+15. Schedule: decompose in a fresh session; release 1.5.0 after merge (1.4.0 carried the engine-error slice).
 16. *(amendment)* ADR 0038's acknowledgment does **not** let an MCP server boot without OPA.
 
 ## Files
@@ -72,7 +74,7 @@ field, an agent client whose IdP mapper is missing — each turned into a startu
 | [[00-DESIGN]] | ✅ written 2026-10-03 |
 | [[0036-mcp-auth-library-module|ADR 0036]] | ✅ Accepted (planned) |
 | [[01-DECOMPOSITION]] | ✅ written 2026-10-09 — T1–T8, critical path, slice-wide invariants |
-| [[10-QA-TEST-CASES]] | ✅ U1–U34 · I1–I6 · E1–E3 |
+| [[10-QA-TEST-CASES]] | ✅ U1–U37 · I1–I6 · E1–E3 |
 | [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] | ✅ the flow guide's §4 template, slots filled |
 | `STATUS-01.md` … `STATUS-08.md` | stubs, filled at each checkpoint |
 

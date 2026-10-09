@@ -10,7 +10,7 @@ tags:
 
 # MCP-AUTH-LIBRARY — 00-DESIGN
 
-> Settled by `/grill-me` on 2026-10-03 (fifteen forks, each grounded in the code before it was asked —
+> Settled by `/grill-me` on 2026-10-03 (fifteen forks, plus the 2026-10-09 amendment as fork 16, each grounded in the code before it was asked —
 > §Considered and rejected). The contract is [[0036-mcp-auth-library-module|ADR 0036]]; this note is the
 > mechanism the tickets decompose. Index: [[MCP-AUTH-LIBRARY]].
 
@@ -61,12 +61,14 @@ releasing 1.5.0 (a separate step after merge).
 ### 1. Module and packaging (ADR 0036 §1–§2, §10)
 
 - New Gradle module `opa-abac-mcp`, package `dev.dmitriikonovalov.opaabac.mcp`, depending on
-  `opa-abac-core` + `opa-abac-spring-security`, Spring AI's MCP server annotations and the MCP SDK (versions
-  from the Spring AI BOM; anything appearing in a public signature is `api`, the rest `implementation`).
+  `opa-abac-core` + `opa-abac-spring-security` and the MCP SDK (`mcp-core`, `api` — its types are in public
+  signatures — at an explicit catalog version equal to Spring AI's BOM). **No Spring AI artifact** *(corrected
+  at decomposition, measure item 5: the annotation-scanning validator that needed `@McpTool` is replaced)*.
 - Added to `opa-abac-bom` and to the publishing allow-list (`RELEASING.md`). Incubating: `package-info`,
   module README, root README module table.
-- The starter gets `compileOnly` on the module and on Spring AI, and an `OpaMcpAutoConfiguration` activated
-  by `@ConditionalOnClass` on both — **not** gated on `opa.abac.enabled` (§3).
+- The starter gets `compileOnly` on the module (and on Spring AI only if it references a Spring AI type), and
+  an `OpaMcpAutoConfiguration` activated by `@ConditionalOnClass` on both, by name — **not** gated on
+  `opa.abac.enabled` (§3).
 - Supported: MCP SDK 2.0.x + Spring AI 2.0.x on Boot 4.0.x and 4.1.x. The `build` CI job gains a step that
   re-runs `:opa-abac-mcp:test` and `:example-mcp-server:test` with Boot overridden to the newest 4.1.x — a
   step inside the existing job, so the `main` ruleset's five required checks are unchanged.
@@ -121,7 +123,7 @@ it falls into §3's "cannot wrap" row. ADR 0036 records the `McpTransportContext
   ADR 0037's family** (extends `DecisionIndeterminateException`): one catch covers "could not decide" for an
   adopter, whichever source failed. The gate and the roster already catch the specific types first, so the
   codes stay distinct; it lands with the move (part 0) and changes no outcome. YAML default `ConfigAgentCapabilitySupplier` reading
-  `opa.abac.mcp.agents.<id>`, `@ConditionalOnMissingBean`. The library's tests drive the gate with a stub
+  `opa.abac.mcp.agents.profiles[]`, `@ConditionalOnMissingBean`. The library's tests drive the gate with a stub
   supplier that **throws**, proving an outage denies and is never read as empty (what the waived I6 case
   was for).
 - **`DelegationChainExtractor`** — moves unchanged with `ClaimDelegationChainExtractor`.
@@ -168,7 +170,7 @@ structured `{layer, code}`; the codes (`tool-gate-denied`, `tool-undeclared`, `t
 | Edge | Lands on | Pinned by |
 |---|---|---|
 | unwrappable specification type / WebFlux / no `OpaClient` / no ceiling supplier / declarations ≠ wrapped | startup failure | auto-configuration tests (`ApplicationContextRunner`) |
-| identity not visible where an async/stateless gate decides | deny (`tool-gate-identity-unreadable`); type unsupported ⇒ startup failure | the per-type ITs |
+| identity not visible where an async/stateless gate decides | deny (`tool-gate-unauthenticated` — no principal on the deciding thread; `-identity-unreadable` is the malformed-claim code); type unsupported ⇒ startup failure | the per-type ITs |
 | ceiling supplier throws / returns empty | deny (`…-ceiling-unavailable` / policy default) | unit + `opa test` |
 | capability supplier throws | deny (`…-capability-unavailable`), never empty | unit (throwing stub) |
 | the policy engine could not decide (`PolicyEngineException`: transport, timeout, non-200, malformed, undefined) | deny (`tool-gate-policy-unavailable`); roster ⇒ **empty** | unit (moved from the example, ADR 0037) |
@@ -209,7 +211,7 @@ regression introduced while extracting would otherwise hide among intended chang
 >    request thread with the `AbacAuthentication` and the request attributes visible (async: also at
 >    subscription). The sync servers get there through Spring AI's servlet-only `immediateExecution(true)`.
 >    All four are expected supported; T5's ITs make it a shipped claim. Also measured: an `ASYNC` server
->    only scans `Mono`-returning tools, and a `@Primary` `McpSyncServerCustomizer` that drops
+>    only scans reactive-returning tools (`Mono`/`Flux`/`Publisher`), and a `@Primary` `McpSyncServerCustomizer` that drops
 >    `immediateExecution` moves handlers off-thread (⇒ every call denied, I6).
 > 2. A nested `@ConditionalOnWebApplication(type = REACTIVE)` configuration whose bean throws (T5).
 > 3. A catalog entry `springBootCompat = "4.1.1"` selected by `-PspringBootLine=compat` at every Boot-BOM
@@ -258,5 +260,5 @@ index.
 | 12 | Conventions | as §9 | — |
 | 13 | Slice shape | **one slice, two parts**, autonomous (ORCHESTRATOR) | two slices (two first reviews, later Part 3); one part (~10 tickets in one head) |
 | 14 | OPA optional? | **required** | decider SPI / Java fallback (second source of truth outside `opa test`) |
-| 15 | Schedule | design now → decompose after the 2026-10-08 usage-pool reset → run → review → release | decompose before the reset (risk of running out mid-validation) |
+| 15 | Schedule | design now → decompose in a fresh session (done 2026-10-09) → run → review → release | decompose in the grill's session (no fresh context for the validation; risk of running out mid-validation) |
 | 16 | *(amendment 2026-10-09)* Does ADR 0038's `allow-ungated-methods` let an MCP server boot with OPA off? | **no** — startup fails regardless | extend the acknowledgment to tools (an ungated tool surface in front of agents is the worst form of the posture ADR 0038 makes explicit) |

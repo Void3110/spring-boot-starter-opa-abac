@@ -68,8 +68,9 @@ would itself be API to keep.
 
 `opa-abac-mcp` (package `dev.dmitriikonovalov.opaabac.mcp`) holds the identity kernel, the capability
 seam, the tool declarations, the decision and its MCP adapter. The starter auto-configures it on the
-[[0020-user-directory-port|ADR 0020]] pattern: `compileOnly` on the module and on Spring AI, activated only
-when both are on the classpath. `opa-abac-core` gains nothing — the schema marker (§7) rides the existing
+[[0020-user-directory-port|ADR 0020]] pattern: `compileOnly` on the module, activated only when the module
+and Spring AI are both on the classpath (`@ConditionalOnClass` by name; the module itself carries no Spring AI
+dependency — §13). `opa-abac-core` gains nothing — the schema marker (§7) rides the existing
 `AbacContext.environment` map. A protocol-agnostic agent module (for a host-side `ToolCallingManager`
 gate) is **not** split out: it has no consumer, and the incubating status allows the split later.
 
@@ -85,7 +86,9 @@ gate) is **not** split out: it has no consumer, and the incubating status allows
   category integrity check stay in `agent_tools.rego`, where `opa test` covers them. A pluggable decider
   may come later if a real consumer needs a PDP-optional mode.
 - No property disables the gate. `opa.abac.mcp.agent-gate.enabled=false` removes the **agent conjunct**
-  only — the call is then the principal's own, still ceiling-bounded (never wider than ON, as today).
+  only — the call is then the principal's own, still ceiling-bounded: OFF can widen an agent's reach up to
+  its principal's ceiling, never beyond it, and the target service still enforces that ceiling downstream
+  (as today).
 - The decision is also public as a direct API (`ToolCallAuthorizer`) for tool specifications built by
   hand; the wrapping is the default path.
 
@@ -118,7 +121,7 @@ field of another library. When java-sdk #578 ships, a minor release adds a suppo
   ([[0023-request-scoped-resolution-memoization|ADR 0023]]). Not `RoleDefinitionSupplier` with a null id:
   that would silently reinterpret every adopter's existing supplier.
 - **`AgentCapabilitySupplier`** — unchanged tri-state ([[0014-supplier-outage-error-distinct|ADR 0014]]
-  applied to capability), plus a **YAML-backed default** (`opa.abac.mcp.agents.<id>`,
+  applied to capability), plus a **YAML-backed default** (`opa.abac.mcp.agents.profiles[]`,
   `@ConditionalOnMissingBean`): an unconfigured agent is authoritative-empty ⇒ every tool denied; a human
   call is unaffected.
 - **`DelegationChainExtractor`** — unchanged: configurable claim, nested RFC 8693 `act` or flattened
@@ -129,8 +132,10 @@ field of another library. When java-sdk #578 ships, a minor release adds a suppo
 
 The tool-gate input carries **`input.environment.schema = "opa-abac.mcp.tool-gate/v1"`**. The reference
 `agent_tools.rego` grants nothing unless the version is one it knows — an `opa test` pins *unknown version
-⇒ deny, human calls included*. Any incompatible input change bumps the version, so a policy older than the
-jar **denies** instead of misreading. Pinned for v1: the actor stays at **`input.subject.attributes.actor`**
+⇒ deny, human calls included*. Any incompatible input change bumps the version, so a v1-aware policy older
+than the jar **denies** instead of misreading. A policy written before v1 ignores the marker; it pairs safely
+with v1 only because v1 is the pre-existing field layout, and the 1.5.0 upgrade note deploys the v1-aware
+policy with the jar (§13). Pinned for v1: the actor stays at **`input.subject.attributes.actor`**
 — the policy recognizes an agent call by that key's presence, so moving it without a version bump would
 turn every agent call into an unnarrowed human call with every test still green. The v1 field list is
 published in [[AGENT-TOOL-AUTHORIZATION]].
@@ -159,7 +164,7 @@ is out of scope until it is GA.
 ### 11. Conventions
 
 Properties under `opa.abac.mcp.*` (`agent-gate.enabled`, `policy-path`,
-`identity.{actor-claim,max-chain-depth,max-claim-length,agent-clients}`, `agents.<id>`); the example's
+`identity.{actor-claim,max-chain-depth,max-claim-length,agent-clients}`, `agents.profiles[]`); the example's
 `example.mcp.*` keys move there, except `example.mcp.authz.roster-filter.enabled`, which stays with the
 installer. Denials are a `CallToolResult` with `isError` and a structured `{layer, code}`; the codes are
 documented API (including `tool-gate-policy-unavailable`, §12). `ToolInvocationException` + `ToolFailureRecord` (a tool body reporting a target-gate
@@ -189,11 +194,23 @@ the code contradicted.
   other gate in the application. The module decorates it: resource type `tool` ⇒ `opa.abac.mcp.policy-path`,
   every other type ⇒ the application's own resolver. The type name **`tool` is reserved**.
 - **What the wrapping covers.** Every specification in the server's startup lists (any `List` bean of the
-  four types, whichever Spring AI configuration produced it), checked element by element. A specification
-  added **after** startup (`addTool`, or a server customizer) is never wrapped, so no gate runs for it at
-  all — a documented limit; such code uses the direct API. The call-time `tool-undeclared` deny is the
-  backstop for a wrapped specification whose name the registry lost, not for an unwrapped one. An element
-  exposing an `McpSchema.Tool tool()` accessor that is none of the four types ⇒ startup failure.
+  four types, whichever Spring AI configuration produced it), checked element by element; a hand-built
+  specification is supported by contributing it as such a bean. A specification registered any other way —
+  `addTool` at runtime, or added by a server customizer (customizers run before the server is built, but
+  outside the list beans) — is never wrapped and never in the wrapped set: unsupported, ungated, documented;
+  declaring it fails the startup check. The direct API (`ToolCallGate.gate`) stays public for wiring without
+  the auto-configuration. The call-time `tool-undeclared` deny is the backstop for a wrapped specification
+  whose name the registry lost, not for an unwrapped one. An element exposing an `McpSchema.Tool tool()`
+  accessor that is not a supported type ⇒ startup failure — the module never serves a type it does not wrap.
+- **Startup guards are eager**: each is a `SmartInitializingSingleton` (or runs in the post-processor), so
+  `spring.main.lazy-initialization=true` cannot skip one.
+- **Schema v1 and older policies.** The marker protects a v1-aware policy from a jar sending a version it does
+  not know. A policy written before v1 ignores it — safe with v1 because v1 changes no field, and the reason the
+  1.5.0 upgrade note ships the v1-aware policy with the jar.
+- **The module's dependencies.** `mcp-core` at an explicit version (equal to the Spring AI BOM's), no Spring AI
+  artifact; Spring AI enters only through the starter's `@ConditionalOnClass(name = …)`.
+- **The `agent-clients` guard runs whether or not `agent-gate.enabled` is on** — an identity check, like the
+  malformed-claim deny, not an agent-narrowing conjunct.
 - **A non-web application** (e.g. stdio) starts, and every call is denied `tool-gate-unauthenticated` —
   there is no request identity to read. Deny-all, not inert.
 - **The capability profiles keep their list shape**, `opa.abac.mcp.agents.profiles[].actor-id` (§11's
@@ -206,7 +223,8 @@ the code contradicted.
   existing table; the call-time gate denies every tool with `tool-gate-actor-required`.
 - **Measured threading** (a throwaway spike over a real `POST /mcp`): in all four configurations on Spring MVC
   the handler is invoked on the request thread with the identity bound; the sync servers rely on Spring AI's
-  servlet-only `immediateExecution(true)`. An application `@Primary` `McpSyncServerCustomizer` that drops it
+  servlet-only `immediateExecution(true)`; an `ASYNC` server scans reactive-returning tools only. An application
+  `@Primary` `McpSyncServerCustomizer` that drops it
   moves handlers off-thread — every call is then denied, never allowed without identity. The per-type
   integration tests are what make "supported" a shipped claim; a type that fails its test moves to the
   startup-failure row and is recorded here.
@@ -234,7 +252,7 @@ the code contradicted.
   could be present-but-inert in an adopter's deployment (an unwrapped specification type, a disabled
   starter, a missing ceiling source, a moved input field, an agent client without its actor mapper) is a
   startup failure or a deny. `opa-abac-core` and every existing module's API are unchanged.
-- **Cost:** `opa-abac-mcp` is the first module whose compile classpath includes Spring AI and the MCP SDK,
+- **Cost:** `opa-abac-mcp` is the first module whose compile classpath includes the MCP SDK,
   and the first tested on two Boot lines. Adopters who want `tools/list` filtering on SDK 2.0.x copy the
   example's installer. Async/stateless support rests on the per-type integration tests, not on a
   thread-independent identity carrier.

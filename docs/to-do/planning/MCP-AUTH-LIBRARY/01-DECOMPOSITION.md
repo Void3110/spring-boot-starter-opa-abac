@@ -40,8 +40,9 @@ part 1:                        ──► T5 ──► T6 ──► T7 ──► 
   measured threading fact) first; T6 (the agent-clients guard) and T7 (schema v1 — jar and policy in one
   commit) are independent of each other but share the rig, so they stay sequential; T8 (the Boot 4.1 step +
   close-out) last.
-- **Independently landable subset:** T1–T4 (part 0). After T4 the module ships the example's behavior,
-  byte-for-byte, as a dependency — a usable incubating artifact even if part 1 slipped.
+- **Independently landable subset:** T1–T4 (part 0). After T4 the module ships the example's behavior as a
+  dependency — a usable incubating artifact even if part 1 slipped, because T3 already refuses to start on
+  any tool-specification type it does not wrap (stateful sync only, until T5).
 
 ## Slice-wide invariants (carried into every ticket's NOT-to-touch)
 
@@ -55,7 +56,16 @@ part 1:                        ──► T5 ──► T6 ──► T7 ──► 
   `opa-abac-spring-data`, `opa-abac-keycloak-directory`; the starter only *adds* an auto-configuration).
 - **Match in Rego.** The intersection, risk ordering and category check stay in `agent_tools.rego`; no Java
   decision path (fork 14). Only `agent_tools.rego` + its test change under `infra/opa/policies/` (T7).
-- **Part 0 changes no behavior.** Its only new outcomes are startup failures for misconfigurations.
+- **Part 0 changes no behavior the example can observe.** Its new outcomes are startup failures for
+  misconfigurations (incl. any tool-specification type part 0 does not yet wrap, T3) plus T3's three named
+  corrections — the policy-path fall-through for non-`tool` types, the private claim mapper, every-element
+  wrapping — each invisible to the example.
+- **Startup guards run eagerly.** Every startup check (prerequisites, wiring, unsupported types,
+  declarations, reactive) is a `SmartInitializingSingleton` or runs inside the post-processor, so
+  `spring.main.lazy-initialization=true` cannot skip it (Boot's `LazyInitializationBeanFactoryPostProcessor`
+  exempts `SmartInitializingSingleton` beans — verified by `javap -c`).
+- **The published module never depends on the starter, the example or Spring AI.** Test scopes may differ
+  (T5's ITs live in the starter's test sources, the `opa-abac-keycloak-directory` precedent).
 - **Clean-room.** The second consumer is "a hand-port in a codebase outside this repo" — nothing more.
 
 ---
@@ -68,11 +78,15 @@ with their tests, under `opa.abac.mcp.*` properties; the example consumes them f
 exactly as before.
 
 **Deliverables.**
-- **Module.** `opa-abac-mcp/` added to `settings.gradle.kts` (library block); `build.gradle.kts` on the
-  `opa-abac-keycloak-directory` pattern (`java-library` + dependency-management importing the Boot BOM at
-  `libs.versions.springBoot`, plus the Spring AI BOM `libs.spring.ai.bom` for the MCP SDK version);
-  `api(project(":opa-abac-spring-security"))`; `api("io.modelcontextprotocol.sdk:mcp-core")` — its types
-  appear in public signatures from T2 (`ToolCallGate.gate(SyncToolSpecification, …)`); Spring Web
+- **Module.** `opa-abac-mcp/` added to `settings.gradle.kts` (library block — and the example block's comment
+  loses its "no library module changes" sentence); `build.gradle.kts` on the `opa-abac-keycloak-directory`
+  pattern (`java-library` + dependency-management importing the Boot BOM at `libs.versions.springBoot`);
+  `api(project(":opa-abac-spring-security"))`; **`api(libs.mcp.core)` with an explicit version** — a new
+  catalog entry `mcpSdk = "2.0.0"` (the version Spring AI 2.0.0's BOM manages; a comment says they must move
+  together) and library `mcp-core = io.modelcontextprotocol.sdk:mcp-core`. Not a BOM-only version: a
+  version from this module's `mavenBom` import would not reach the starter, whose `compileOnly` edge to the
+  module would then resolve `mcp-core` with no version (the Boot BOM does not manage it). Its types appear in
+  public signatures from T2 (`ToolCallGate.gate(SyncToolSpecification, …)`); Spring Web
   (`RequestContextHolder`) and Spring Security core declared **by the module itself** — the starter's build
   notes that `opa-abac-spring-security` declares them `implementation`, so they do not arrive transitively
   on the compile classpath; `org.springframework.boot:spring-boot` + the configuration processor for the
@@ -80,8 +94,11 @@ exactly as before.
   declared in this module**; the starter owns the wiring, T3). *(Seam verified: `mcp-core-2.0.0.jar` in the
   Gradle cache, `javap` of the four specification records; keycloak module's build file read.)*
 - **Packaging.** `opa-abac-bom` gains the constraint; the root build's `publishableJarModules` allow-list
-  gains `opa-abac-mcp` (`build.gradle.kts:38`); `RELEASING.md` names the module. PIT wiring is **not**
-  changed in this slice.
+  gains `opa-abac-mcp` (`build.gradle.kts:38`); `opa-abac-mcp/gradle.properties` carries `POM_ARTIFACT_ID`,
+  `POM_NAME`, `POM_DESCRIPTION` (the keycloak module's file is the template — every allow-listed module has
+  one); `RELEASING.md` says **seven** coordinates where it says six (`:14`, `:169`, `:266`). Verify with
+  `./gradlew :opa-abac-mcp:generatePomFileForMavenPublication` that the POM lists `mcp-core` with version
+  `2.0.0` at compile scope and no Spring AI artifact. PIT wiring is **not** changed in this slice.
 - **Moves** (package `dev.dmitriikonovalov.opaabac.mcp.identity` and `…opaabac.mcp.tool`, class names and
   bodies unchanged except as listed): `DelegationChain`, `DelegationChainException`,
   `DelegationChainExtractor`, `ClaimDelegationChainExtractor`, `AgentCapabilityProfile`,
@@ -109,16 +126,25 @@ exactly as before.
   `AgentCapabilityWireContractTest` (its `locate("infra/opa/policies/agent_tools.rego")` still resolves —
   the module sits at the same depth as the example), `TurnScopedCapabilityCacheTest`,
   `ActorClaimWiringCheckTest` (adapted to the new constructor), `ToolDescriptorTest`, `ToolRegistryTest`.
+- **Build-breaker — same commit:** `RosterFilterSmokeCheckTest:96-99` names
+  `dev.dmitriikonovalov.example.mcp.identity.{DelegationChainExtractor,AgentCapabilitySupplier,DelegationChain}`
+  fully qualified — they become the module's package.
 - **Rig + config rename (same commit — the rig must not run a half-renamed config):**
   `example-mcp-server/src/main/resources/application.yml` (`example.mcp.identity` → `opa.abac.mcp.identity`,
   `example.mcp.agents` → `opa.abac.mcp.agents`); `infra/compose.mcp.yaml`'s fifteen
   `EXAMPLE_MCP_AGENTS_PROFILES_*` → `OPA_ABAC_MCP_AGENTS_PROFILES_*` (same index/field suffixes, same
-  `${MCP_READONLY_*}` interpolations the E11 drill drives).
+  `${MCP_READONLY_*}` interpolations the E11 drill drives). `McpServerProperties`' class Javadoc, which names
+  the old `example.mcp.identity` / `example.mcp.authz` homes, is updated. `run-agent-tool-matrix.sh`'s E5
+  operator check (`grep … x-(agent|actor|…)` over `example-mcp-server/src/main/java`, `:322`) also scans
+  `opa-abac-mcp/src/main/java`, so the moved gate code stays covered.
 - **Documentation delta (this commit):** a new `opa-abac-mcp/README.md` (what it is, **incubating** — may
   change in a minor until an external consumer adopts it, ADR 0036 §1) and `package-info.java` saying the
   same; the root `README.md` module table gains the row; [[AGENT-TOOL-AUTHORIZATION]]'s identity/capability
   property names updated; root `CLAUDE.md` *Layout* gains the module line and the MCP-server section's
-  "no library module changes" sentence is replaced by a pointer to the module.
+  "no library module changes" sentence is replaced by a pointer to the module; `CHANGELOG.md` gains the
+  module's entry **under the existing `## [Unreleased] — 1.5.0` heading** (1.5.0 ships ADR 0038 together with
+  this slice — never a second 1.5.0 heading): the new incubating module, its coordinates, and the property
+  rename for anyone who copied the example. Every later ticket appends its own user-visible line there.
 
 **Acceptance.** **U1**, **U2**, **U3**, **U4**. `./gradlew :opa-abac-mcp:test :example-mcp-server:test`
 green; `./gradlew build` green. Non-happy paths: U2 (wiring-check failures), U3 (the re-parented outage still
@@ -166,8 +192,9 @@ and still wires the beans itself.
   `MemoizingRoleDefinitionSupplier`'s single-lookup semantics (key `(subject, resourceType)`; resolved, empty
   and the family outage memoized and replayed; any other exception un-memoized; no request context ⇒
   pass-through; bookkeeping failure ⇒ pass-through). The example wraps its supplier with it explicitly in
-  this ticket (behavior-preserving — the starter's memo BPP decorated the old `RoleDefinitionSupplier` bean);
-  T3 moves the decoration into the auto-configuration.
+  this ticket — **honoring `opa.abac.resolve-memo.enabled`** (default true; `false` ⇒ the raw supplier), so
+  behavior is preserved in both states (the starter's memo BPP decorated the old `RoleDefinitionSupplier`
+  bean under that flag); T3 moves the decoration into the auto-configuration.
 - **The example:** `TypeLevelRoleDefinitionSupplier` → **`TypeLevelPrincipalCeilingSupplier`** implementing
   `PrincipalCeilingSupplier` (no longer a `RoleDefinitionSupplier` — keeping the old name would invite the
   confusion ADR 0036 §6 rejects); its `RoleResolutionException` outage signal stays (a family member).
@@ -175,12 +202,26 @@ and still wires the beans itself.
   `@ConditionalOnMissingBean` `NoOpRoleDefinitionSupplier` (`OpaAbacAutoConfiguration:93`) appears in its
   context; nothing in the example injects it (verified: the only consumer was the gate).
   `ToolAuthorizationConfiguration` → **`ExampleAuthzConfiguration`**, still wiring every bean for now.
-- **Build-breakers — same commit:** `ToolCallGateTest` and `ToolRosterFilterTest` move to the module and
-  their ceiling stubs change from `RoleDefinitionSupplier` lambdas `(userId, type, id) -> …` to
-  `PrincipalCeilingSupplier` lambdas `(subject, type) -> …` (`ToolCallGateTest:160,236,365`;
-  `ToolRosterFilterTest:84,413,460`); `TypeLevelRoleDefinitionSupplierTest` →
-  `TypeLevelPrincipalCeilingSupplierTest`; `RosterFilterSmokeCheckTest:131` builds the module's
-  `ToolAuthorizationProperties`.
+- **Build-breakers — same commit:**
+  - `ToolRosterFilterTest` moves to the module; `ToolCallGateTest` **splits** (it builds the example's
+    `CatalogApiClient` / `CatalogApiErrorTranslator` / `CallerBearerSupplier` in its fixture, `:13-15`,
+    `:175-181`, and the module must not depend on the example): every case moves to the module **except** the
+    two target-gate relabel cases (`namesTheTargetGateWhenTheCatalogDenies`,
+    `namesTheTargetGateEvenWhenTheDelegateSwallowsTheException`), which stay in the example as
+    `CatalogToolGateTest` with the real catalog client and unchanged assertions. In the moved class the
+    fixture's tool body calls the same `HttpServer` catalog stub through a small test-local
+    `java.net.http.HttpClient` call instead of `CatalogApiClient`, so every `catalogCalls` / `opaCalls`
+    assertion stays literally the same. The context-building cases (`buildsAHumanContextWithoutAgentAttributes`,
+    `buildsAnAgentContextWithTheDualIdentity`) must move — they call the package-private `buildContext`.
+  - Ceiling stubs change from `RoleDefinitionSupplier` lambdas `(userId, type, id) -> …` to
+    `PrincipalCeilingSupplier` lambdas `(subject, type) -> …` (`ToolCallGateTest:160,236,365`;
+    `ToolRosterFilterTest:84,413,460`).
+  - `ToolRosterFilterTest:213` calls `properties.getRosterFilter().setEnabled(false)` — that setting moves to
+    `ExampleAuthzProperties`; drop the line (the roster filter object never read it) and record it in
+    STATUS-02 *Decisions*; the case's assertions are unchanged.
+  - `TypeLevelRoleDefinitionSupplierTest` → `TypeLevelPrincipalCeilingSupplierTest`;
+    `RosterFilterSmokeCheckTest:131` builds the module's `ToolAuthorizationProperties`;
+    `RosterFilterSmokeCheckTest:91` names `ToolAuthorizationConfiguration.class` → `ExampleAuthzConfiguration`.
 - **Rig + config rename (same commit):** `application.yml` `example.mcp.authz.{policy-path,agent-gate}` →
   `opa.abac.mcp.{policy-path,agent-gate}`; `infra/compose.mcp.yaml`
   `EXAMPLE_MCP_AUTHZ_AGENT_GATE_ENABLED` → `OPA_ABAC_MCP_AGENT_GATE_ENABLED` (still interpolating
@@ -188,7 +229,8 @@ and still wires the beans itself.
   `run-agent-tool-matrix.sh` header comment that names the old variable.
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] — the kill-switch table's
   `agent-gate` row renamed; a short *The principal ceiling* subsection stating the
-  `PrincipalCeilingSupplier` contract (the Javadoc's, in prose) and why it is not `RoleDefinitionSupplier`.
+  `PrincipalCeilingSupplier` contract (the Javadoc's, in prose) and why it is not `RoleDefinitionSupplier`;
+  the CHANGELOG line for the new SPI.
 
 **Acceptance.** **U5**, **U6**, **U7**, **U8**. `./gradlew :opa-abac-mcp:test :example-mcp-server:test` and
 `./gradlew build` green. Non-happy paths: U5's ceiling-outage cases (a `RoleResolutionException` **and** an
@@ -219,15 +261,18 @@ source and the reflective installer.
   verified in `spring-ai-autoconfigure-mcp-server-common-2.0.0.jar`)*. The starter adds
   `compileOnly(project(":opa-abac-mcp"))` (the keycloak-directory pattern) plus `testImplementation` of the
   module and of the Spring AI MCP server starter for its context-runner tests; Spring AI itself is
-  `compileOnly` only if the configuration references a Spring AI type (a `name =` string needs none).
+  `compileOnly` only if the configuration references a Spring AI type (a `name =` string needs none). Verify
+  with `./gradlew :opa-abac-spring-boot-starter:dependencies --configuration compileClasspath` that
+  `mcp-core` resolves to T1's explicit version through the module edge.
 - **Beans** (each `@ConditionalOnMissingBean` unless stated — an adopter's bean wins):
   `ToolCallAuthorizer`, `ToolRosterFilter`, `DelegationChainExtractor` (`ClaimDelegationChainExtractor` over a
-  **private** `JsonMapper` — the `OpaClient` precedent at `OpaAbacAutoConfiguration:72-87`: a claim parser must
+  **private** `JsonMapper` — the `OpaClient` precedent at `OpaAbacAutoConfiguration:71-85`: a claim parser must
   not change with the application's Jackson customizations), `AgentCapabilitySupplier`
   (`ConfigAgentCapabilitySupplier` — the YAML default, ADR 0036 §6), `ActorClaimWiringCheck` (always; it reads
   `opa.abac.subject.attribute-claims` through `Binder.get(environment)` — the `OpaAbacDisabledAutoConfiguration`
   precedent — so it never depends on the starter's properties bean), and `@EnableConfigurationProperties` for
-  the module's three properties classes.
+  the module's three properties classes. `ActorClaimWiringCheck` becomes a `SmartInitializingSingleton` (today
+  an `InitializingBean` — under lazy initialization it would never run).
 - **Three static `BeanPostProcessor`s** (bean-level, the `OpaResolveMemoAutoConfiguration` idiom, so adopter
   beans are decorated too and every consumer shares one instance):
   1. **memo** — any `PrincipalCeilingSupplier` → `MemoizingPrincipalCeilingSupplier`, honoring
@@ -240,13 +285,22 @@ source and the reflective installer.
      answer unchanged. The type name `tool` is therefore reserved (ADR 0036 §13). This is the one behavior
      change in part 0, and it is invisible to the example (it decides `tool` only): `ToolPolicyPathResolver`
      becomes this decorator; the throw-for-other-types branch goes, because in a library the application's
-     other gates share the `OpaClient` *(seam verified: `OpaAbacAutoConfiguration:65-70` builds the one
-     `OpaClient` from the context's `PolicyPathResolver` bean; post-processing reaches it whatever the
-     auto-configuration order)*;
+     other gates share the `OpaClient` *(seam verified: `OpaAbacAutoConfiguration:71-85` builds the one
+     `OpaClient` from the context's `PolicyPathResolver` bean, the parameter at `:77`; post-processing
+     reaches it whatever the auto-configuration order)*. **Build-breaker — same commit:** the decorator takes a
+     delegate, so the moved tests' `new ToolPolicyPathResolver(properties)` (`ToolCallGateTest:163,223,399`,
+     `ToolRosterFilterTest:473`) gain a delegate that throws (those tests decide `tool` contexts only — a
+     non-`tool` context reaching it is a test failure, the old behavior); no assertion changes;
   3. **the gate** — today's `toolSpecificationGateDecorator` moved: every `List` bean whose elements are
      `McpServerFeatures.SyncToolSpecification` is replaced by a list of `ToolCallGate.gate(…)`-wrapped
      specifications. Two corrections ride along: **every element** is checked (today: element 0 only), and
-     the authorizer is fetched lazily through an `ObjectProvider` as today. The context holds two such lists
+     the authorizer is fetched lazily through an `ObjectProvider` as today; an element whose handler is
+     already a `ToolCallGate` is recorded but not wrapped again. **Every other element that exposes a public
+     no-arg `tool()` accessor returning `io.modelcontextprotocol.spec.McpSchema.Tool` ⇒ startup failure**,
+     naming its type and "supported: `McpServerFeatures.SyncToolSpecification`" — the three other SDK types
+     included, until T5 wraps them, so part 0 alone can never serve an async or stateless tool ungated (an
+     `ASYNC` server with an empty registry would otherwise pass T4's check with zero wrapped names). The
+     context holds two such lists
      (`toolSpecs` from the annotation scanner and `syncTools` from `ToolCallbackConverterAutoConfiguration` —
      both verified by `javap` of the Spring AI configurations; `ToolGateInstallationTest` already asserts
      over both). The other three specification types are T5's.
@@ -255,7 +309,8 @@ source and the reflective installer.
   `opa.abac.enabled=false` + `opa.abac.allow-ungated-methods=true` (fork 16); no `PrincipalCeilingSupplier`
   bean ⇒ fails naming the SPI. Fetch both through `ObjectProvider` and throw an `IllegalStateException`
   with that text — a bare constructor dependency would fail with a generic
-  `NoSuchBeanDefinitionException` that names neither the property nor the fix.
+  `NoSuchBeanDefinitionException` that names neither the property nor the fix. The check is a
+  `SmartInitializingSingleton` (eager under lazy initialization).
 - **The example shrinks:** `IdentityConfiguration` and `AgentCapabilityConfiguration` are deleted;
   `ExampleAuthzConfiguration` keeps only the `TypeLevelPrincipalCeilingSupplier` bean (now un-wrapped — the
   memo BPP decorates it) and the `RosterFilterInstaller` bean with its `example.mcp.authz.roster-filter`
@@ -264,10 +319,12 @@ source and the reflective installer.
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] gains *Installing the module* — the
   dependency, the auto-configuration, what an adopter must provide (`PrincipalCeilingSupplier`, a
   `ToolRegistry`), what is defaulted (YAML capabilities, the extractor), the reserved `tool` type, and the
-  startup-failure rows that exist after this ticket.
+  startup-failure rows that exist after this ticket; the CHANGELOG line (the starter's new
+  auto-configuration, its prerequisites, and that `opa.abac.enabled=false` does not turn it off).
 
-**Acceptance.** **U9**, **U10**, **U11**, **U12**, **U13**, **U14**, **U15**, **U16** · **I1**. Starter tests
-via `ApplicationContextRunner` (the I3a–I3c slice-test idiom of `OpaDirectoryAutoConfiguration`). Non-happy
+**Acceptance.** **U9**, **U10**, **U11**, **U12**, **U13**, **U14**, **U15**, **U16**, **U35**, **U36** ·
+**I1**. Starter tests via `ApplicationContextRunner` (the I3a–I3c slice-test idiom of
+`OpaDirectoryAutoConfiguration`), every fixture starting from the QA doc's baseline. Non-happy
 paths: U10/U11 (the two prerequisite failures, U10 also under the ADR 0038 acknowledgment), U12 (adopter beans
 win), U13 (a non-`tool` context still reaches its own per-type path), U16 (the wiring check fails on a missing
 claim even though the starter's properties bean is never consulted).
@@ -289,30 +346,42 @@ extracted gate is proven on the live rig with the agent matrix's E1–E11 unchan
 **Deliverables.**
 - **Wrap-time validation** (module + starter): the gate post-processor records every tool name it wraps
   (across **all** specification lists — the union), and a `SmartInitializingSingleton` in
-  `OpaMcpAutoConfiguration` compares that set with the `ToolRegistry` after all singletons exist:
+  `OpaMcpAutoConfiguration` compares that set with the `ToolRegistry` after all singletons exist — first
+  resolving every specification-list bean through the bean factory, so a lazily-initialized list is wrapped
+  and counted rather than missed:
   advertised-but-undeclared ⇒ startup failure; declared-but-never-wrapped ⇒ startup failure; the message
   carries both sorted lists (ADR 0036 §9). No `ToolRegistry` bean ⇒ startup failure naming it (a gate with no
   declarations would deny every call as `tool-undeclared` — fail-closed, but a misconfiguration to name at
   boot). An empty registry and zero wrapped tools ⇒ starts (a server with no tools).
 - The call-time `tool-undeclared` deny stays (moved test, U18). ADR 0036 §13 corrects [[00-DESIGN]] §6's
-  "backstop for anything registered after startup": a specification added **after** startup
-  (`McpSyncServer.addTool`, or through an `McpSyncServerCustomizer`) is never wrapped, so no gate runs for it
-  at all — that is a documented limit of the wrapping path, and the direct API (`ToolCallGate.gate`) is what
-  such code must use. The call-time deny remains the backstop for a wrapped specification whose name the
-  registry lost.
+  "backstop for anything registered after startup": **with the auto-configuration, supported registrations
+  are the startup specification-list beans** — a hand-built specification is supported by contributing it
+  as such a bean (un-gated; the post-processor wraps and records it). A specification registered any other
+  way — `addTool` at runtime, or one a customizer adds to the server builder (customizers run before the
+  server is built, but outside the list beans) — is not wrapped and not in the wrapped set: unsupported,
+  ungated, and documented as such; declaring it would fail the startup check. The direct API
+  (`ToolCallGate.gate`) stays public for wiring without the auto-configuration. The call-time deny remains
+  the backstop for a wrapped specification whose name the registry lost.
+- **Build-breaker — same commit:** T3's context-runner fixtures that declare tools without a matching
+  specification list now fail the check — they move to the QA baseline (an empty registry unless the case
+  declares tools *and* contributes their list).
 - **Deleted:** the example's `ToolRegistryValidator` + `ToolRegistryValidatorTest` (replaced by U17);
   `ToolCallClassifier` (ADR 0036 §11: not in v1) and `McpToolSurfaceTest`'s classifier case
   (`shipsTheClassifierSeamWithNoImplementation`) — **retired, not replaced**: the seam it pinned no longer
   exists. `McpToolSurfaceTest`'s other cases stay.
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] — the declarations paragraph
   (registry, both-directions startup check, the call-time backstop and the post-startup `addTool` limit);
-  the fail-closed table's tool-metadata row reworded from "the `@McpTool` surface" to "the wrapped surface".
+  the fail-closed table's tool-metadata row ("deny at registration time — startup fails, the tool is never
+  exposed") gains "…checked against the specifications actually wrapped, both directions".
 - **Part-0 close:** the layer-2 review record in this STATUS (flow guide §4a).
 
-**Acceptance.** **U17**, **U18**, **U19** · **E1**. Non-happy paths: U17's two mismatch directions and the
+**Acceptance.** **U17**, **U18**, **U19**, **U37** · **E1**. Non-happy paths: U17's two mismatch directions and the
 missing-registry failure; E1 runs the agent matrix through the gateway against an image **rebuilt** from this
 commit (`ENABLE_MCP=1 ./deploy.sh build`, then `up` — `up` builds the MCP image only when it is absent,
-`deploy.sh:411-416`), with the collection file **unchanged** (`git diff --exit-code` on it).
+`deploy.sh:411-416`), with the collection file **unchanged since the slice began**
+(`git diff --exit-code "$(git merge-base main HEAD)" HEAD -- scripts/postman/agent-tool-matrix.postman_collection.json`).
+The runner's advisory NOTE about `opa-abac-spring-boot-starter` changing (`:327-337`) is **expected** from T3
+on — the change is additive — and STATUS-04 says so.
 
 **NOT to touch.** `scripts/postman/agent-tool-matrix.postman_collection.json` and the runner's cells — part 0's
 bar is "unchanged". No new specification type, no new denial code, no policy change.
@@ -334,34 +403,53 @@ ungated.
   `McpStatelessServerFeatures.AsyncToolSpecification(Tool, BiFunction<McpTransportContext, CallToolRequest,
   Mono<CallToolResult>>)`. Each **decides when its `BiFunction` is invoked** — on the calling thread, before
   any `Mono` exists — then returns the denial (`Mono.just(advisory)` for the async ones) or the delegate's
-  result; the decision is never re-taken inside the `Mono`. The structured-failure relabel
-  (`ToolFailureRecord`, request attributes) applies where the record is visible; on a path where it is not, the
-  delegate's error result passes through unrelabelled — it can never become a success (state it in the
-  wrapper's Javadoc and the guide).
+  result; the decision is never re-taken inside the `Mono`. **The async result contract, pinned:** on allow the
+  wrapper returns the delegate's `Mono` **decorated**, not replaced — an emitted `ToolInvocationException`
+  becomes the same advisory a synchronous throw produces; an error result is relabelled from
+  `ToolFailureRecord` read **at emission** (the tool body runs at subscription — Spring AI's
+  `AsyncMcpToolMethodCallback` defers it — so the record cannot exist at `apply`); request attributes absent at
+  emission ⇒ the result passes through unrelabelled; any other emitted error and an empty completion pass
+  through **unchanged**, exactly as without the gate (authorization already happened; the gate is not a result
+  validator). Nothing in the decoration can turn an error into a success. Only the *authorization* reads of
+  thread-bound state are confined to `apply`.
 - **The gate post-processor covers all four** element types (a `List` bean of any of them), with the T4
-  name-collection spanning all of them.
-- **Unwrappable ⇒ startup failure:** a `List` bean any of whose elements exposes a public no-arg `tool()`
-  accessor returning `io.modelcontextprotocol.spec.McpSchema.Tool` but is **not** one of the four records ⇒
-  fails, naming the element type (the rule is the accessor, because every SDK specification record has it —
-  a future fifth type is caught without knowing its name). Checked on **every** element.
+  name-collection spanning all of them. T3's unsupported-type rule narrows to "not one of the four"; its
+  three SDK-type cases in U35 are rewritten into this ticket's wrapping assertions (same commit — by design).
+- **Unwrappable ⇒ startup failure** (T3's rule, now with all four supported): a `List` bean any of whose
+  elements exposes a public no-arg `tool()` accessor returning `io.modelcontextprotocol.spec.McpSchema.Tool`
+  but is **not** one of the four records ⇒ fails, naming the element type (the rule is the accessor, because
+  every SDK specification record has it — a future fifth type is caught without knowing its name). Checked
+  on **every** element.
 - **Reactive web application ⇒ startup failure** naming WebFlux as out of scope for v1 (ADR 0036 §4): a nested
-  configuration under `@ConditionalOnWebApplication(type = REACTIVE)` registering a bean that throws on
-  initialization (the shape [[00-DESIGN]] measure item 2 named).
+  configuration under `@ConditionalOnWebApplication(type = REACTIVE)` registering a `SmartInitializingSingleton`
+  that throws (eager under lazy initialization; the shape [[00-DESIGN]] measure item 2 named). **Test
+  prerequisite:** Boot matches `REACTIVE` only when `org.springframework.web.reactive.HandlerResult`
+  (`spring-webflux`) is loadable (`OnWebApplicationCondition`, verified by `javap -c`), so U24 needs
+  `testImplementation("org.springframework:spring-webflux")` (Boot-managed) on the starter's tests — and that
+  artifact is **not** in the Gradle cache, which a sandboxed Gradle cannot fill on this host (PKIX, see T8).
+  Same protocol as T8: try; if the fetch fails on certificate validation, record
+  `**LOCAL PROOF DEFERRED:** PKIX — spring-webflux` in STATUS-05 with the exact command for the maintainer and
+  continue — a known host limit, **not** a blocker. The proof is then the maintainer's out-of-sandbox run or
+  CI on the PR to `main`; the main code ships regardless.
 - **Non-web (no servlet) application** — e.g. an stdio MCP server: starts; with no authenticated principal on
   the thread every call is denied `tool-gate-unauthenticated`. Deny-all, never inert (ADR 0036 §13).
 - **Per-type integration tests on Spring MVC** (`@SpringBootTest(webEnvironment = RANDOM_PORT)`, a real
   `POST /mcp` over HTTP — never MockMvc, the AGENT-TOOL-AUTHZ T5 lesson: only a real request exposes the
   async re-dispatch), one per configuration `spring.ai.mcp.server.type` ∈ {`SYNC`,`ASYNC`} ×
   `spring.ai.mcp.server.protocol` ∈ {`STREAMABLE`,`STATELESS`}, each with a test-scoped tool bean of the right
-  shape (an `ASYNC` server only scans `Mono`-returning `@McpTool` methods — measured) and
+  shape (an `ASYNC` server only scans reactive-returning `@McpTool` methods — `Mono`, `Flux` or a `Publisher`,
+  per `McpPredicates.isReactiveReturnType`; the ITs use `Mono`) and
   an in-process `HttpServer` OPA stub recording the input: the identity is visible **where the gate decides**
   (the recorded input carries the caller's subject id), a stub deny returns the structured
   `{layer: tool-gate, code: tool-gate-denied}` with the tool body never invoked, and a stub allow reaches it.
   **The proof obligation is binding** (ADR 0036 §4): a type whose IT cannot show the identity at the decision
   point is **not shipped as supported** — it moves to the unwrappable row (startup failure for that
   configuration), the IT asserts that failure instead, and STATUS + ADR 0036 §13 record which type and why.
-  These ITs live in the module's test sources (a minimal test application — the module must not depend on the
-  example).
+  **These ITs live in `opa-abac-spring-boot-starter/src/test`** beside U9–U17 — the gate is installed by the
+  starter's auto-configuration and the bearer read by its `AbacFilter`, so that is where a real wired server
+  exists (the `opa-abac-keycloak-directory` precedent: an optional module's wiring tests live in the starter).
+  A minimal test application there; the starter gains `testImplementation` of the Spring AI MCP webmvc
+  starter. The module's own tests stay free of Spring AI and of the starter.
 - **Pre-measured at decomposition (2026-10-09 spike, real `POST /mcp`, throwaway code deleted):** in all four
   configurations the specification's handler was invoked on the Tomcat request thread with the
   `AbacAuthentication` in `SecurityContextHolder` and the request attributes bound — for the async types also
@@ -372,9 +460,10 @@ ungated.
   `ASYNC` server's scanner ignores the example's sync `@McpTool` methods (`toolSpecs` size 0), and the
   example's `RosterFilterInstaller` fails startup on `STATELESS` (no streamable transport provider) — neither
   is changed here; both go into the guide.
+- **CHANGELOG** line: all four types gated; WebFlux and unwrappable types fail startup; stdio is deny-all.
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] *Supported configurations* — the four
   types and which are supported (from the ITs), WebFlux out, stdio deny-all, the post-startup `addTool` limit,
-  `ASYNC` servers needing `Mono`-returning tools, and the customizer trap: `mcpSyncServer` injects a single
+  `ASYNC` servers needing reactive-returning tools, the registration paths T4 pinned, and the customizer trap: `mcpSyncServer` injects a single
   `Optional<McpSyncServerCustomizer>` and Spring AI's `servletMcpSyncServerCustomizer` (the one that sets
   `immediateExecution(true)`) is **not** `@ConditionalOnMissingBean` — a second customizer fails startup with
   `NoUniqueBeanDefinitionException`, and a `@Primary` one that does not set `immediateExecution(true)` moves
@@ -406,7 +495,10 @@ actor claim is denied as a misconfigured agent client instead of being evaluated
   deterministic deny, not "could not decide") ⇒ `ToolCallAuthorizer` denies with **`tool-gate-actor-required`**
   (layer `tool-gate`), logged at WARN with its own line. A malformed claim still lands on
   `tool-gate-identity-unreadable` (the extractor runs first). An empty list ⇒ the check never runs —
-  byte-identical contexts to today.
+  byte-identical contexts to today. **The guard runs regardless of `opa.abac.mcp.agent-gate.enabled`**: it
+  is an identity check (does this client's token carry the actor it must?), like the malformed-claim deny the
+  extractor keeps under OFF (`ToolCallAuthorizer:161-163`), not an agent-narrowing conjunct — so with the
+  agent gate OFF a listed client without an actor is still `tool-gate-actor-required`.
 - **The roster:** the same exception at list time ⇒ **unfiltered + WARN** — the identity-edge class the design's
   fail-closed table already assigns to edges outside the batch; the call-time gate denies every tool.
 - **`ActorClaimWiringCheck` extended:** `agent-clients` non-empty and `azp` absent from
@@ -423,7 +515,8 @@ actor claim is denied as a misconfigured agent client instead of being evaluated
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] — the claim-state table gains the
   "`azp` listed, no actor" row; the codes list gains `tool-gate-actor-required`; the residual ("a user handing
   their own token to an agent is a human call, bounded by the human's ceiling", ADR 0036 §8); the matrix
-  section gains E12; `scripts/postman/README.md` registers the drill.
+  section gains E12; `scripts/postman/README.md` registers the drill; the CHANGELOG line for
+  `opa.abac.mcp.identity.agent-clients`.
 
 **Acceptance.** **U26**, **U27**, **U28**, **U29** · **E2**. Non-happy paths: U27 (the deny and its precedence
 below the malformed-claim deny), U28 (the wiring-check failure), U29 (roster degradation), E2 (the live deny).
@@ -436,9 +529,12 @@ stay clean on the touched collection and runner.
 
 ## T7 — input schema v1: the jar marks every tool-gate input, the policy refuses what it does not know
 
-**Goal.** A policy older (or newer) than the jar denies instead of misreading a moved field: every tool-gate
-input carries `environment.schema = "opa-abac.mcp.tool-gate/v1"`, and `agent_tools.rego` grants nothing
-without a version it knows.
+**Goal.** From v1 on, a policy and a jar that disagree on the input version deny instead of misreading a moved
+field: every tool-gate input carries `environment.schema = "opa-abac.mcp.tool-gate/v1"`, and `agent_tools.rego`
+grants nothing without a version it knows. **What this cannot do:** a policy written *before* v1 ignores the
+marker — the guarantee starts with v1-aware policies. That pairing is safe for 1.5.0 because v1 *is* today's
+field layout (nothing moved), and the upgrade note says to deploy the v1-aware policy with the 1.5.0 jar, so
+the first incompatible change (v2) meets a policy that refuses it (ADR 0036 §7, clarified in §13).
 
 **Deliverables.**
 - `ToolCallAuthorizer.buildContext` sets `environment = {"schema": "opa-abac.mcp.tool-gate/v1"}` on every
@@ -458,8 +554,10 @@ without a version it knows.
   list (subject id/roles; `subject.attributes.{actor, chain, agent_capability}`; `role_definition`;
   `resource.type = tool`, `resource.id` = the tool name, `resource.attributes.{category, risk_tags,
   target_type}`; `action`; `environment.schema`), the rule that an incompatible change bumps the version, and
-  that the actor stays at `subject.attributes.actor` in v1 (ADR 0036 §7); the fail-closed table gains the
-  schema row.
+  that the actor stays at `subject.attributes.actor` in v1 (ADR 0036 §7), and that the guarantee holds for
+  v1-aware policies only; the fail-closed table gains the schema row; the CHANGELOG line with the **upgrade
+  note**: deploy the v1-aware `agent_tools.rego` together with the 1.5.0 jar (an older copy of the policy keeps
+  working with v1 input, but cannot refuse a future version).
 
 **Acceptance.** **U30**, **U31**, **U32** · **E3**. Non-happy paths: U31 (unknown / missing / absent ⇒ deny),
 U32 (deleting the guard fails a named test — run the mutation, record the failing test in STATUS-07),
@@ -483,22 +581,32 @@ the example's tests on the newest Boot 4.1.x; and the slice's living docs say wh
   `opa-abac-spring-data`, `opa-abac-keycloak-directory`, `opa-abac-spring-boot-starter`, `opa-abac-mcp`) and
   by an explicit import in `example-mcp-server` (its Boot plugin's own BOM import is the plugin version,
   4.0.8). Default build byte-identical in resolution (proved by `dependencyInsight`).
-- `.github/workflows/ci.yml`: a **step inside the existing build job** (after "Build and test") running
-  `./gradlew :opa-abac-mcp:test :example-mcp-server:test -PspringBootLine=compat --no-daemon`. No new job, no
-  renamed job — the `main` ruleset's five required checks are unchanged.
+- `.github/workflows/ci.yml`: a **step inside the existing `build` job** (after "Build and test (unit +
+  Testcontainers integration)") running `./gradlew :opa-abac-mcp:test :opa-abac-spring-boot-starter:test
+  :example-mcp-server:test -PspringBootLine=compat --no-daemon` — the starter's tests carry the
+  auto-configuration's startup-failure cases and T5's per-type ITs. No new job, no renamed job id — the
+  `main` ruleset's five required checks are unchanged. The workflow triggers on pushes to `main` and on pull
+  requests targeting `main` only (`ci.yml:3-7`) — a feature-branch push runs nothing.
 - **Local proof and the PKIX gotcha:** the 4.1.x artifacts are not in the Gradle cache (measured: cached
   `spring-boot-dependencies` = 4.0.5/4.0.7/4.0.8), and a sandboxed Gradle cannot fetch new artifacts on this
   host (the host JDK's truststore; `RELEASING.md` §4, Mulch `opa-abac-publish`). If the in-sandbox run fails
   on certificate validation, record `**BOOT-4.1 LOCAL PROOF DEFERRED:** PKIX` in STATUS-08 with the exact
   command for the maintainer (outside the sandbox, keychain `JAVA_TOOL_OPTIONS` + `--no-daemon`) — this is a
-  known host limit, **not** a blocker; the CI step on the pushed branch is the gate. A **test** failure on 4.1
-  is a real finding and is fixed in this ticket.
+  known host limit, **not** a blocker; the proof is then the maintainer's out-of-sandbox run or the CI step on
+  the PR to `main`, and the docs this ticket writes say the line is *tested in CI* — never that a local run
+  passed unless STATUS-08 records one. A **test** failure on 4.1 is a real finding and is fixed in this ticket.
 - **Close-out docs:** [[POC-ROADMAP]] (Phase 9's exit criterion delivered: `opa-abac-mcp`, incubating);
   [[USER-STORIES]] Epic J — J5's roster wording reconciled with ADR 0037 (an engine outage now yields the
   **empty** roster), J7–J9 ticked; ADR 0036 status → *Accepted (implemented)* and the ADR index row;
   [[AGENT-TOOL-AUTHORIZATION]] *Supported versions* (MCP SDK 2.0.x + Spring AI 2.0.x on Boot 4.0.x and 4.1.x,
   both tested; Spring AI 2.1 out until GA); `example-mcp-server` build-file comment updated (it now consumes
-  the module); `CLAUDE.md` gains the `-PspringBootLine=compat` command.
+  the module); `CLAUDE.md` gains the `-PspringBootLine=compat` command; the CHANGELOG `## [Unreleased] —
+  1.5.0` section reconciled (one coherent entry for the module beside ADR 0038's; the supported range; the
+  heading itself is changed only by the release PR); follow-ups the slice leaves (a supported `tools/list`
+  installer when java-sdk #578 ships, the transport-context identity carrier, any finding deferred by the run)
+  become `ENGINEERING-BACKLOG` items **from 21** (item 20 is taken). Releasing 1.5.0 — ADR 0038 plus this
+  slice, one cut (maintainer decision 2026-10-09; no 1.4.1) — is the maintainer's step after merge, on the
+  `RELEASE-1.4.0` package's shape.
 
 **Acceptance.** **U33**, **U34**. Non-happy path: U34 (the default line still resolves 4.0.8 — the compat
 property cannot leak into the default build).
@@ -516,6 +624,10 @@ Releasing 1.5.0 (a separate maintainer step after merge).
 - `scripts/planning/verify-package.sh MCP-AUTH-LIBRARY` stays green as STATUS notes fill in.
 - **Every reader of a switch agrees** (the AGENT-TOOL-AUTHZ QA lesson): `opa.abac.mcp.agent-gate.enabled` is
   read once per decision path and threaded to both the call path and the roster (unchanged mechanism — T2
-  keeps it); `agent-clients` is read by the authorizer and the wiring check, and U28 + U27 cover both.
-- No `example.mcp.(identity|agents)` key and no `EXAMPLE_MCP_(IDENTITY|AGENTS|AUTHZ_AGENT_GATE|AUTHZ_POLICY_PATH)`
-  reference remains outside `docs/to-do/implemented/` and `.mulch/` (`git grep -nE` returns nothing).
+  keeps it); `agent-clients` is read by the authorizer, the roster and the wiring check, and U27–U29 cover all
+  three — including that the agent-gate switch does not turn the guard off; `opa.abac.resolve-memo.enabled` is
+  read by the role-definition memo and the ceiling memo alike (U14).
+- No active binding, configuration or living doc uses a retired name:
+  `git grep -nE 'example\.mcp\.(identity|agents)|example\.mcp\.authz\.(agent-gate|policy-path)|EXAMPLE_MCP_(IDENTITY|AGENTS|AUTHZ_AGENT_GATE|AUTHZ_POLICY_PATH)' -- ':!docs/to-do/implemented' ':!docs/to-do/planning/MCP-AUTH-LIBRARY' ':!docs/architecture/adr' ':!.mulch' ':!CHANGELOG.md' ':!*BindingTest.java'`
+  returns nothing (the exclusions are history, this package's own migration text, the changelog's rename note,
+  and U4's deliberate old-prefix binding test — name that test class `*BindingTest`).
