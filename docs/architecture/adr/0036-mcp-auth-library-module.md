@@ -157,8 +157,9 @@ specifications the annotation scan never saw. The gate also denies an undeclared
 ### 10. Supported versions
 
 MCP Java SDK 2.0.x and Spring AI 2.0.x, on Spring Boot **4.0.x and 4.1.x** — both tested: the repo stays on
-its 4.0.x pin and the build job re-runs the module's and the example's tests with Boot 4.1.x. The module's
-Spring AI / MCP dependencies take versions from the Spring AI BOM, so an adopter's BOM wins. Spring AI 2.1
+its 4.0.x pin and the build job re-runs the module's, the starter's and the example's tests with Boot 4.1.x. The module pins
+`mcp-core` to the version its supported Spring AI line depends on (§13); an adopter's dependency management
+still wins in their build. Spring AI 2.1
 is out of scope until it is GA.
 
 ### 11. Conventions
@@ -202,12 +203,14 @@ the code contradicted.
   the auto-configuration. The call-time `tool-undeclared` deny is the backstop for a wrapped specification
   whose name the registry lost, not for an unwrapped one. An element exposing an `McpSchema.Tool tool()`
   accessor that is not a supported type ⇒ startup failure — the module never serves a type it does not wrap.
-- **Startup guards are eager**: each is a `SmartInitializingSingleton` (or runs in the post-processor), so
-  `spring.main.lazy-initialization=true` cannot skip one.
+- **Startup guards are eager**: each is a `SmartInitializingSingleton` (a post-processor alone is not — it
+  sees only beans that get created), and one of them resolves every `List` bean so lazily-defined
+  specification lists are still post-processed; `spring.main.lazy-initialization=true` cannot skip a guard.
 - **Schema v1 and older policies.** The marker protects a v1-aware policy from a jar sending a version it does
   not know. A policy written before v1 ignores it — safe with v1 because v1 changes no field, and the reason the
   1.5.0 upgrade note ships the v1-aware policy with the jar.
-- **The module's dependencies.** `mcp-core` at an explicit version (equal to the Spring AI BOM's), no Spring AI
+- **The module's dependencies.** `mcp-core` at an explicit version (the one Spring AI 2.0.0's MCP modules depend on — the Spring AI BOM
+  manages only `org.springframework.ai`), no Spring AI
   artifact; Spring AI enters only through the starter's `@ConditionalOnClass(name = …)`.
 - **The `agent-clients` guard runs whether or not `agent-gate.enabled` is on** — an identity check, like the
   malformed-claim deny, not an agent-narrowing conjunct.

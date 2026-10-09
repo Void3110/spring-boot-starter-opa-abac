@@ -34,8 +34,8 @@ tool-specification types, and pairs with a policy that recognizes an agent call 
 slice extracts the gate into a published, **incubating** module `opa-abac-mcp`, auto-configured by the
 starter, and turns every edge that is safe in the example but fail-open elsewhere — an unwrapped
 specification type, a disabled starter, a missing ceiling source, an agent client without its actor mapper,
-a v1-aware policy meeting a later input version — into a startup failure or a deny. **Part 0 (T1–T4) moves code and changes no
-behavior; part 1 (T5–T8) adds the new edges.** NOT in scope: a supported `tools/list` installer (waits for
+a v1-aware policy meeting a later input version — into a startup failure or a deny. **Part 0 (T1–T4) moves code and changes no behavior the example can observe; part 1 (T5–T8) adds the new
+edges.** NOT in scope: a supported `tools/list` installer (waits for
 java-sdk #578 — the reflective one stays in the example), a thread-independent identity carrier, a Java
 decision path (OPA stays required), WebFlux, Spring AI 2.1, and releasing 1.5.0.
 
@@ -246,7 +246,8 @@ For each ticket do ALL of the following, in order, and **STOP at the checkpoint 
   through); T3's policy-path decorator (a `tool` decision routed to the wrong document denies everything —
   loud — but a non-`tool` decision routed to the tool document would decide a catalog call with the agent
   policy); T6's guard precedence (a malformed actor must stay `identity-unreadable`).
-- **Standalone-value subset** — part 0 (T1–T4): the example's exact behavior as an incubating dependency.
+- **Standalone-value subset** — part 0 (T1–T4): the example's behavior as an incubating dependency, refusing
+  to start on any specification type it does not yet wrap.
 - **Rig / e2e specifics** — rebuild the MCP image every time (`ENABLE_MCP=1 ./deploy.sh build`); the
   runner's E6/E7/E11 drills (and T6's E12) recreate the MCP pod and an EXIT trap restores it; restart OPA
   after T7's rego edit; the in-network token caveat applies (issuer `http://keycloak:8888`). T8's Boot 4.1 run

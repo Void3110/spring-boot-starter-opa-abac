@@ -62,7 +62,8 @@ releasing 1.5.0 (a separate step after merge).
 
 - New Gradle module `opa-abac-mcp`, package `dev.dmitriikonovalov.opaabac.mcp`, depending on
   `opa-abac-core` + `opa-abac-spring-security` and the MCP SDK (`mcp-core`, `api` — its types are in public
-  signatures — at an explicit catalog version equal to Spring AI's BOM). **No Spring AI artifact** *(corrected
+  signatures — at an explicit catalog version — the one Spring AI 2.0.0's MCP modules depend on; the Spring AI BOM does
+  not manage it). **No Spring AI artifact** *(corrected
   at decomposition, measure item 5: the annotation-scanning validator that needed `@McpTool` is replaced)*.
 - Added to `opa-abac-bom` and to the publishing allow-list (`RELEASING.md`). Incubating: `package-info`,
   module README, root README module table.
@@ -70,7 +71,8 @@ releasing 1.5.0 (a separate step after merge).
   an `OpaMcpAutoConfiguration` activated by `@ConditionalOnClass` on both, by name — **not** gated on
   `opa.abac.enabled` (§3).
 - Supported: MCP SDK 2.0.x + Spring AI 2.0.x on Boot 4.0.x and 4.1.x. The `build` CI job gains a step that
-  re-runs `:opa-abac-mcp:test` and `:example-mcp-server:test` with Boot overridden to the newest 4.1.x — a
+  re-runs `:opa-abac-mcp:test`, `:opa-abac-spring-boot-starter:test` and `:example-mcp-server:test` with Boot
+  overridden to the newest 4.1.x — a
   step inside the existing job, so the `main` ruleset's five required checks are unchanged.
 
 What moves (from `example-mcp-server`):
@@ -133,9 +135,10 @@ it falls into §3's "cannot wrap" row. ADR 0036 records the `McpTransportContext
 `ToolRegistry` / `ToolDescriptor` move unchanged. The wrapping step collects the tool names it wrapped and
 compares them with the registry in both directions; a mismatch fails startup with both lists in the message.
 At call time the gate still denies a tool missing from the registry (`tool-undeclared`) — the backstop for
-a wrapped specification whose name the registry lost. *(Corrected at decomposition, ADR 0036 §13: a
-specification added after startup — `addTool`, a server customizer — is never wrapped, so no gate runs for it;
-that is a documented limit, and the direct API is what such code uses.)*
+a wrapped specification whose name the registry lost. *(Corrected at decomposition, ADR 0036 §13: supported registrations are the startup specification-list
+beans; one registered any other way — `addTool`, a server customizer — is never wrapped and never in the
+wrapped set: unsupported, ungated, documented, and declaring it fails the startup check. The direct API
+stays public for wiring without the auto-configuration.)*
 
 ### 7. The agent-clients guard (ADR 0036 §8)
 
@@ -183,8 +186,8 @@ structured `{layer, code}`; the codes (`tool-gate-denied`, `tool-undeclared`, `t
 ## Validation: what proves it
 
 - **Part 0 bar (behavior-preserving):** E1–E11 green with no collection change; every moved test green in
-  its new module; the `opa test` suite unchanged and green (451/451 at the time of writing); the only new behavior is startup failures for
-  misconfigurations, each with a context-runner test.
+  its new module; the `opa test` suite unchanged and green (451/451 at the time of writing); the only new behavior is startup failures for misconfigurations, each with a context-runner test, plus T3's
+  three named corrections (invisible to the example).
 - **Part 1:** the four per-type ITs; the WebFlux startup test; the guard's unit cases + one e2e cell (an
   agent-client token without the actor mapper ⇒ `tool-gate-actor-required`); the schema `opa test` cases and
   E1–E11 still green with the marker in place (proving jar ↔ policy pairing); the Boot 4.1 step green.
