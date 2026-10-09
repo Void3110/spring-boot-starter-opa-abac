@@ -331,15 +331,20 @@ source and the reflective installer.
   prototype and request/session-scoped lists, and scoped targets, are never touched; skip any name for which
   `ScopedProxyUtils.isScopedTarget` holds or that has a `scopedTarget.` sibling), then `getBean` on each, so under
   lazy initialization each specification list is still created — and therefore post-processed: wrapped,
-  recorded, or refused as an unsupported type; (3) T4 adds the declarations check as the third step. The steps
+  recorded, or refused as an unsupported type; then **asserts the result**: every element of every resolved list
+  that exposes an `McpSchema.Tool tool()` accessor must carry one of the module's gate handlers, else startup
+  fails naming the bean — the backstop for a list that never passed the post-processor (one added with
+  `registerSingleton` is returned by the lookup but is never post-processed — measured), so no route serves a
+  tool ungated; (3) T4 adds the declarations check as the third step. The steps
   never live in separate `SmartInitializingSingleton` beans: Spring runs those callbacks in bean-registration
   order (`DefaultListableBeanFactory.preInstantiateSingletons` iterates `beanDefinitionNames`; `@Order` does not
   apply — verified by `javap -c`), so a separate declarations check could run before resolution and fail a valid
   context. Without step (2) a lazy list escapes the post-processor entirely (Spring AI's MCP server configuration
-  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton specification-list beans declared by `@Bean` methods (or
-  as plain singletons) with a `List` type — Spring AI's own are; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported registrations (under lazy
-  initialization a `FactoryBean` product is not found by the singleton lookup even when its type is predictable
-  — measured; a request-scoped proxy's `scopedTarget.` sibling is skipped) — documented with the `addTool`
+  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton specification-list beans declared by `@Bean` methods (or as
+  singleton bean definitions) with a `List` type (singleton **bean definitions** — a list added with `registerSingleton` is never
+  post-processed, so step 2's assertion fails startup if it carries tools) — Spring AI's own are; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported registrations (under lazy initialization an adopter `FactoryBean`'s product is not found by the singleton lookup even when
+  its type is predictable — measured; a scoped proxy is skipped because it has a `scopedTarget.` sibling, and the
+  scoped target itself because it is not a singleton) — documented with the `addTool`
   limit (T4).
 - **The example shrinks:** `IdentityConfiguration` and `AgentCapabilityConfiguration` are deleted;
   `ExampleAuthzConfiguration` keeps only the `TypeLevelPrincipalCeilingSupplier` bean (now un-wrapped — the
