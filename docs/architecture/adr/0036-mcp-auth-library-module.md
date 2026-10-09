@@ -204,8 +204,11 @@ the code contradicted.
   whose name the registry lost, not for an unwrapped one. An element exposing an `McpSchema.Tool tool()`
   accessor that is not a supported type ⇒ startup failure — the module never serves a type it does not wrap.
 - **Startup guards are eager**: each is a `SmartInitializingSingleton` (a post-processor alone is not — it
-  sees only beans that get created), and one of them resolves every `List` bean so lazily-defined
-  specification lists are still post-processed; `spring.main.lazy-initialization=true` cannot skip a guard.
+  sees only beans that get created), and the prerequisite check, the resolution of every singleton `List` bean (so lazily-defined specification
+  lists are still post-processed) and the declarations check run as ordered steps of **one** such callback —
+  Spring orders separate callbacks only by registration; `spring.main.lazy-initialization=true` cannot skip a
+  guard. Supported registrations are therefore singleton specification lists with a predictable type; a
+  prototype- or scope-bound list is unsupported, documented with the `addTool` limit.
 - **Schema v1 and older policies.** The marker protects a v1-aware policy from a jar sending a version it does
   not know. A policy written before v1 ignores it — safe with v1 because v1 changes no field, and the reason the
   1.5.0 upgrade note ships the v1-aware policy with the jar.

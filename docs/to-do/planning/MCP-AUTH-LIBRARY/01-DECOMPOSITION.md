@@ -60,9 +60,11 @@ part 1:                        ──► T5 ──► T6 ──► T7 ──► 
   misconfigurations (incl. any tool-specification type part 0 does not yet wrap, T3) plus T3's three named
   corrections — the policy-path fall-through for non-`tool` types, the private claim mapper, every-element
   wrapping — each invisible to the example.
-- **Startup guards run eagerly.** Every startup check (prerequisites, wiring, unsupported types, declarations,
-  reactive) is a `SmartInitializingSingleton` — a check living only in a post-processor is not eager, because a
-  post-processor sees only beans that get created — so
+- **Startup guards run eagerly.** Every startup check runs from a `SmartInitializingSingleton` callback: the
+  wiring check and the reactive guard are their own; prerequisites, list resolution and declarations are ordered
+  steps of T3's one `McpStartupVerifier`; the unsupported-type rule fires in the gate post-processor, which the
+  verifier's list resolution forces every singleton list through (a check living only in a post-processor is
+  not eager — a post-processor sees only beans that get created) — so
   `spring.main.lazy-initialization=true` cannot skip it (Boot's `LazyInitializationBeanFactoryPostProcessor`
   exempts `SmartInitializingSingleton` beans — verified by `javap -c`).
 - **The published module never depends on the starter, the example or Spring AI.** Test scopes may differ
@@ -100,8 +102,9 @@ exactly as before.
   `POM_NAME`, `POM_DESCRIPTION` (the keycloak module's file is the template — every allow-listed module has
   one); every coordinate-count site moves from six to **seven** (library modules from five to six):
   `RELEASING.md` `:9`, `:14` and the `:16-23` coordinate block (a new line), `:147`, `:160`, `:163`, `:169`,
-  `:186`, `:266`; `build.gradle.kts:35` ("The five publishable library modules"); `settings.gradle.kts:10`
-  ("the 6th published coordinate"). Verify with
+  `:186`, `:266`; `build.gradle.kts:35` ("The five publishable library modules"); `settings.gradle.kts:10` ("the 6th published
+  coordinate"); `README.md:61` (the count **and** the module brace list); `gradle/libs.versions.toml:12` ("the
+  five library modules + the BOM"); `opa-abac-bom/build.gradle.kts:23` ("the 6th coordinate"). Verify with
   `./gradlew :opa-abac-mcp:generatePomFileForMavenPublication` that the POM lists `mcp-core` with version
   `2.0.0` at compile scope and no Spring AI artifact. PIT wiring is **not** changed in this slice.
 - **Moves** (package `dev.dmitriikonovalov.opaabac.mcp.identity` and `…opaabac.mcp.tool`, class names and
@@ -213,8 +216,7 @@ and still wires the beans itself.
     `:175-181`, and the module must not depend on the example): every case moves to the module **except the three that need the example's catalog translator** (a 403 ⇒
     `ToolInvocationException(TARGET_GATE, <errorCode>)` comes only from `CatalogApiClient` →
     `CatalogApiErrorTranslator`): the two target-gate relabel cases (`namesTheTargetGateWhenTheCatalogDenies`,
-    `namesTheTargetGateEvenWhenTheDelegateSwallowsTheException`) **and `offIsNeverWiderThanOn`** (it asserts
-    `target-gate` / `ACCESS_DENIED`, `:445-446`). They stay in the example as `CatalogToolGateTest` with the real
+    `namesTheTargetGateEvenWhenTheDelegateSwallowsTheException`) **and `offIsNeverWiderThanOn`** (it asserts `target-gate` / `ACCESS_DENIED`, `:446-447`). They stay in the example as `CatalogToolGateTest` with the real
     catalog client and unchanged assertions. In the moved class the
     fixture's tool body calls the same `HttpServer` catalog stub through a small test-local
     `java.net.http.HttpClient` call instead of `CatalogApiClient`, so every `catalogCalls` / `opaCalls`
@@ -315,15 +317,26 @@ source and the reflective installer.
   `opa.abac.enabled=false` + `opa.abac.allow-ungated-methods=true` (fork 16); no `PrincipalCeilingSupplier`
   bean ⇒ fails naming the SPI. Fetch both through `ObjectProvider` and throw an `IllegalStateException`
   with that text — a bare constructor dependency would fail with a generic
-  `NoSuchBeanDefinitionException` that names neither the property nor the fix. The check is a `SmartInitializingSingleton` (eager under lazy initialization), and the gate beans
+  `NoSuchBeanDefinitionException` that names neither the property nor the fix. The check is step 1 of the startup verifier below (eager under lazy initialization), and the gate beans
   (`ToolCallAuthorizer`, `ToolRosterFilter`) receive `OpaClient` / `PrincipalCeilingSupplier` through
   `ObjectProvider.getIfAvailable()`, never as a hard constructor dependency of an eagerly created bean, so this
   check is the first failure an adopter sees.
-- **Lists are resolved eagerly (T3, reused by T4).** A `SmartInitializingSingleton` resolves every bean whose
-  type is assignable to `java.util.List` (`getBeanNamesForType(List.class, true, false)` then `getBean`), so
-  under lazy initialization each specification list is still created — and therefore post-processed: wrapped,
-  recorded, or refused as an unsupported type. Without it a lazy list escapes the post-processor entirely (Spring
-  AI's MCP server configuration declares no lazy-init exclusion — verified).
+- **One startup verifier, steps in a fixed order.** A single `SmartInitializingSingleton` in
+  `OpaMcpAutoConfiguration` (call it `McpStartupVerifier`) runs, in sequence inside **one** callback: (1) the
+  prerequisite check above; (2) **eager list resolution** — every **singleton** bean whose type is assignable to
+  `java.util.List` (`getBeanNamesForType(List.class, false, false)` — `includeNonSingletons=false`, so
+  prototype and request/session-scoped lists, and scoped targets, are never touched; skip any name for which
+  `ScopedProxyUtils.isScopedTarget` holds or that has a `scopedTarget.` sibling), then `getBean` on each, so under
+  lazy initialization each specification list is still created — and therefore post-processed: wrapped,
+  recorded, or refused as an unsupported type; (3) T4 adds the declarations check as the third step. The steps
+  never live in separate `SmartInitializingSingleton` beans: Spring runs those callbacks in bean-registration
+  order (`DefaultListableBeanFactory.preInstantiateSingletons` iterates `beanDefinitionNames`; `@Order` does not
+  apply — verified by `javap -c`), so a separate declarations check could run before resolution and fail a valid
+  context. Without step (2) a lazy list escapes the post-processor entirely (Spring AI's MCP server configuration
+  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton
+  specification-list beans whose type is predictable without initializing a `FactoryBean` (Spring AI's own
+  `@Bean` methods are); a prototype- or scope-bound list, or a `FactoryBean` whose product type is not
+  predictable, is an unsupported registration — documented with the `addTool` limit (T4).
 - **The example shrinks:** `IdentityConfiguration` and `AgentCapabilityConfiguration` are deleted;
   `ExampleAuthzConfiguration` keeps only the `TypeLevelPrincipalCeilingSupplier` bean (now un-wrapped — the
   memo BPP decorates it) and the `RosterFilterInstaller` bean with its `example.mcp.authz.roster-filter`
@@ -359,7 +372,9 @@ extracted gate is proven on the live rig with the agent matrix's E1–E11 unchan
 **Deliverables.**
 - **Wrap-time validation** (module + starter): the gate post-processor records every tool name it wraps
   (across **all** specification lists — the union), and a `SmartInitializingSingleton` in
-  `OpaMcpAutoConfiguration` compares that set with the `ToolRegistry` after all singletons exist — after T3's eager list resolution, so a lazily-initialized list is wrapped and counted rather than missed:
+  `OpaMcpAutoConfiguration` compares that set with the `ToolRegistry` as **step 3 of T3's
+  `McpStartupVerifier`** — after its own step 2 resolved every singleton list, in the same callback, so a
+  lazily-initialized list is wrapped and counted rather than missed and no callback ordering is relied on:
   advertised-but-undeclared ⇒ startup failure; declared-but-never-wrapped ⇒ startup failure; the message
   carries both sorted lists (ADR 0036 §9). No `ToolRegistry` bean ⇒ startup failure naming it (a gate with no
   declarations would deny every call as `tool-undeclared` — fail-closed, but a misconfiguration to name at
@@ -373,10 +388,10 @@ extracted gate is proven on the live rig with the agent matrix's E1–E11 unchan
   ungated, and documented as such; declaring it would fail the startup check. The direct API
   (`ToolCallGate.gate`) stays public for wiring without the auto-configuration. The call-time deny remains
   the backstop for a wrapped specification whose name the registry lost.
-- **Build-breaker — same commit:** T3's context-runner fixtures whose registry and specification lists
-  differ in either direction now fail the check — e.g. U15 contributes two non-empty sync lists over the
-  baseline's empty registry; they gain matching declarations (the QA baseline: lists only together with
-  their declarations). T4 reuses T3's eager list resolution rather than resolving lists a second way.
+- **Build-breaker — same commit:** none if T3's fixtures followed the QA baseline (lists only together with
+  their declarations, from T3 on); any T3 fixture whose registry and specification lists differ in either
+  direction now fails the check and is paired in this commit. T4 extends T3's verifier rather than adding a
+  second startup bean.
 - **Deleted:** the example's `ToolRegistryValidator` + `ToolRegistryValidatorTest` (replaced by U17);
   `ToolCallClassifier` (ADR 0036 §11: not in v1) and `McpToolSurfaceTest`'s classifier case
   (`shipsTheClassifierSeamWithNoImplementation`) — **retired, not replaced**: the seam it pinned no longer
@@ -433,8 +448,8 @@ ungated.
   every SDK specification record has it — a future fifth type is caught without knowing its name). Checked
   on **every** element.
 - **Reactive web application ⇒ startup failure** naming WebFlux as out of scope for v1 (ADR 0036 §4): a nested
-  configuration under `@ConditionalOnWebApplication(type = REACTIVE)` registering a `SmartInitializingSingleton`
-  that throws (eager under lazy initialization; the shape [[00-DESIGN]] measure item 2 named). **Test
+  configuration under `@ConditionalOnWebApplication(type = REACTIVE)` registering a `SmartInitializingSingleton` that throws (eager under lazy initialization — its order relative to the
+  verifier is irrelevant because U24's fixture is otherwise complete, so it is the only check that can fail; the shape [[00-DESIGN]] measure item 2 named). **Test
   prerequisite:** Boot matches `REACTIVE` only when `org.springframework.web.reactive.HandlerResult`
   (`spring-webflux`) is loadable (`OnWebApplicationCondition`, verified by `javap -c`), so U24 needs
   `testImplementation("org.springframework:spring-webflux")` (Boot-managed) on the starter's tests — and that
