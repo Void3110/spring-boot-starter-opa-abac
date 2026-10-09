@@ -131,7 +131,9 @@ it falls into §3's "cannot wrap" row. ADR 0036 records the `McpTransportContext
 `ToolRegistry` / `ToolDescriptor` move unchanged. The wrapping step collects the tool names it wrapped and
 compares them with the registry in both directions; a mismatch fails startup with both lists in the message.
 At call time the gate still denies a tool missing from the registry (`tool-undeclared`) — the backstop for
-anything registered after startup.
+a wrapped specification whose name the registry lost. *(Corrected at decomposition, ADR 0036 §13: a
+specification added after startup — `addTool`, a server customizer — is never wrapped, so no gate runs for it;
+that is a documented limit, and the direct API is what such code uses.)*
 
 ### 7. The agent-clients guard (ADR 0036 §8)
 
@@ -152,9 +154,11 @@ attributes, `environment.schema`) is published in [[AGENT-TOOL-AUTHORIZATION]]. 
 
 ### 9. Conventions (ADR 0036 §11)
 
-Properties `opa.abac.mcp.{agent-gate.enabled, policy-path, identity.*, agents.<id>}`; the example's
+Properties `opa.abac.mcp.{agent-gate.enabled, policy-path, identity.*, agents.profiles[]}`; the example's
 `example.mcp.{authz,identity,agents}` keys move (≈20 references across `deploy.sh`, compose, `infra/`,
-`scripts/`), except `example.mcp.authz.roster-filter.enabled`. Denial = `CallToolResult{isError}` with
+`scripts/`), except `example.mcp.authz.roster-filter.enabled` and `example.mcp.authz.role-source.*` (the
+example's own installer and ceiling source). *(Pinned at decomposition, ADR 0036 §13: the capability
+profiles keep their list shape — `agents.<id>` was shorthand.)* Denial = `CallToolResult{isError}` with
 structured `{layer, code}`; the codes (`tool-gate-denied`, `tool-undeclared`, `tool-gate-unauthenticated`,
 `tool-gate-identity-unreadable`, `tool-gate-capability-unavailable`, `tool-gate-ceiling-unavailable`,
 `tool-gate-policy-unavailable` (ADR 0037), `tool-gate-actor-required`, and the `target-gate` layer) are documented in the guide.
@@ -187,7 +191,10 @@ structured `{layer, code}`; the codes (`tool-gate-denied`, `tool-undeclared`, `t
 
 ## Execution parts
 
-Two execution parts; the exact declaration line is written at decomposition, once the ticket count exists.
+Two execution parts (declared at decomposition, 2026-10-09 — [[01-DECOMPOSITION]]):
+
+**Parts:** part 0 = T1–T4 · part 1 = T5–T8
+
 **Part 0 — the behavior-preserving extraction** (module, packaging, auto-configuration, the moves, the
 ceiling SPI + the example's implementation, the YAML default, wrap-time validation, the startup checks,
 the property rename), held to the Part 0 bar above. **Part 1 — the new behavior and the docs** (four
@@ -196,6 +203,25 @@ the Boot 4.1 step, ADR/guide/READMEs/roadmap). Separating "moved" from "changed"
 regression introduced while extracting would otherwise hide among intended changes.
 
 ## For the decomposer to measure (not design forks)
+
+> **Measured 2026-10-09** — the answers, each carried into a ticket ([[01-DECOMPOSITION]]):
+> 1. A throwaway spike over a real `POST /mcp` in all four configurations: the handler ran on the Tomcat
+>    request thread with the `AbacAuthentication` and the request attributes visible (async: also at
+>    subscription). The sync servers get there through Spring AI's servlet-only `immediateExecution(true)`.
+>    All four are expected supported; T5's ITs make it a shipped claim. Also measured: an `ASYNC` server
+>    only scans `Mono`-returning tools, and a `@Primary` `McpSyncServerCustomizer` that drops
+>    `immediateExecution` moves handlers off-thread (⇒ every call denied, I6).
+> 2. A nested `@ConditionalOnWebApplication(type = REACTIVE)` configuration whose bean throws (T5).
+> 3. A catalog entry `springBootCompat = "4.1.1"` selected by `-PspringBootLine=compat` at every Boot-BOM
+>    import, plus an explicit import in the example (T8). 4.1.x is not in the Gradle cache (PKIX on download).
+> 4. A static BPP in `OpaMcpAutoConfiguration` wrapping any `PrincipalCeilingSupplier` in a module-side
+>    `MemoizingPrincipalCeilingSupplier`, under the same `opa.abac.resolve-memo.enabled` flag (T2/T3).
+> 5. `api` for `io.modelcontextprotocol.sdk:mcp-core` (its types are in public signatures); Spring Web +
+>    Security declared by the module (not transitive from `opa-abac-spring-security`'s `implementation`);
+>    no Spring AI artifact on the module's classpath (the validator that needed `@McpTool` is replaced) (T1).
+> 6. Twenty references: nineteen `EXAMPLE_MCP_*` variables in `infra/compose.mcp.yaml` (fifteen agent-profile
+>    lines, the agent-gate and roster switches, the catalog and role-source URLs) and one comment in
+>    `run-agent-tool-matrix.sh`; `deploy.sh` reads only its own `MCP_*` interpolation variables (T1/T2).
 
 1. Whether each async / stateless handler can be wrapped and sees the identity on Spring MVC — the answer
    decides which per-type IT is "supported" vs "startup failure", never whether to skip.

@@ -258,6 +258,15 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   couldn't do while healthy. — **Phase 9** ✅ (the fail-closed drill)
 - **J6** *As a person signing in normally*, nothing changes: a token with no agent actor is an ordinary
   human call, decided exactly as before. — **Phase 9** ✅
+- **J7** *As a developer of an MCP server*, I add one dependency and every tool my server advertises is gated
+  — whichever tool-specification type my configuration produces — and a setup that would leave a tool ungated
+  (no policy engine, no ceiling source, an unsupported server type, declarations that do not match the tools)
+  refuses to start instead of serving tools unguarded. — **[[MCP-AUTH-LIBRARY]]** 📋
+- **J8** *As an operator*, I can name the client ids that are agents; a token from one of them that carries no
+  actor is refused as a misconfigured agent, never treated as a person. — **[[MCP-AUTH-LIBRARY]]** 📋
+- **J9** *As an operator upgrading the library*, a policy written for a different input version denies instead
+  of misreading the request — a version mismatch can never quietly route an agent call down the human branch.
+  — **[[MCP-AUTH-LIBRARY]]** 📋
 
 ### Epic K — "I can see what my people are working on, without joining their teams" (supervised read scope)
 

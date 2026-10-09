@@ -10,7 +10,7 @@ tags:
 
 # MCP-AUTH-LIBRARY — the agent tool-gate as a library module (`opa-abac-mcp`)
 
-> **Status: 📋 designed 2026-10-03 — not yet decomposed.** Grill-me settled fifteen forks the same day
+> **Status: 📋 decomposed 2026-10-09 — eight tickets, two parts; not yet implemented.** Designed 2026-10-03. Grill-me settled fifteen forks the same day
 > ([[00-DESIGN]] §Considered and rejected); the contract is
 > [[0036-mcp-auth-library-module|ADR 0036]], which **supersedes** the 2026-08-01 decision to defer this
 > extraction to a second consumer and **amends** [[0028-agent-tool-call-authorization|ADR 0028]]'s
@@ -18,14 +18,15 @@ tags:
 > **Amended 2026-10-09** (before decomposition) for ADRs 0037 and 0038, which landed in between: the
 > "could not decide" family and `tool-gate-policy-unavailable`; ADR 0038's `allow-ungated-methods` does not
 > extend to MCP tools ([[0036-mcp-auth-library-module|ADR 0036]] §12, [[00-DESIGN]] fork 16).
-> **Execution:** autonomous, two parts (ORCHESTRATOR) — part 0 the behavior-preserving extraction, part 1
-> the new behavior + docs; the declaration line is written at decomposition.
+> **Execution:** autonomous, two parts (ORCHESTRATOR) — part 0 = T1–T4, the behavior-preserving extraction;
+> part 1 = T5–T8, the new behavior (declared in [[00-DESIGN]] §Execution parts). The decomposition pinned seven
+> seams the design named but did not specify ([[0036-mcp-auth-library-module|ADR 0036]] §13).
 > **Branch:** `feature/void3110/mcp-auth-library`.
 > **Review routing (the repo's standing rule):** one multi-lens `/deep-review` workflow pass when both
 > parts are in; any follow-up round on the same branch is a Fable + Opus pair. State the remaining usage
 > pool and the expected cost before the decompose validation, the run and the review.
-> **Next:** `/decompose MCP-AUTH-LIBRARY` after the usage-pool reset (2026-10-08) → gates (6a mechanical,
-> 6b adversarial) → `/autonomous-implement` → review → merge → release 1.5.0.
+> **Next:** the decomposition gates (6a mechanical, 6b adversarial) → `/autonomous-implement MCP-AUTH-LIBRARY`
+> on the maintainer's go → one multi-lens `/deep-review` → merge → release 1.5.0.
 
 ## Why this slice exists
 
@@ -70,7 +71,25 @@ field, an agent client whose IdP mapper is missing — each turned into a startu
 |---|---|
 | [[00-DESIGN]] | ✅ written 2026-10-03 |
 | [[0036-mcp-auth-library-module|ADR 0036]] | ✅ Accepted (planned) |
-| `01-DECOMPOSITION.md`, `10-QA-TEST-CASES.md`, `AUTONOMOUS-IMPLEMENTATION-PROMPT.md`, `STATUS-*.md` | ☐ `/decompose` |
+| [[01-DECOMPOSITION]] | ✅ written 2026-10-09 — T1–T8, critical path, slice-wide invariants |
+| [[10-QA-TEST-CASES]] | ✅ U1–U34 · I1–I6 · E1–E3 |
+| [[AUTONOMOUS-IMPLEMENTATION-PROMPT]] | ✅ the flow guide's §4 template, slots filled |
+| `STATUS-01.md` … `STATUS-08.md` | stubs, filled at each checkpoint |
+
+## Tickets
+
+| # | Ticket | Part | Status |
+|---|---|---|---|
+| T1 | The `opa-abac-mcp` module; the identity kernel + tool declarations move | 0 | ☐ |
+| T2 | The decision moves, onto `PrincipalCeilingSupplier` | 0 | ☐ |
+| T3 | `OpaMcpAutoConfiguration` + the prerequisite startup failures | 0 | ☐ |
+| T4 | Wrap-time declaration check; part 0 closes on the rig (matrix E1–E11 unchanged) | 0 | ☐ |
+| T5 | All four specification types; reactive / unwrappable ⇒ startup failure; per-type ITs | 1 | ☐ |
+| T6 | The `agent-clients` guard (`tool-gate-actor-required`) + matrix cell E12 | 1 | ☐ |
+| T7 | Input schema v1 — jar marker + policy guard, one commit | 1 | ☐ |
+| T8 | Boot 4.1.x tested in CI; slice close-out | 1 | ☐ |
+
+**Critical path:** strictly T1 → T8 (see [[01-DECOMPOSITION]]); T1–T4 is the independently landable subset.
 
 ## Related
 

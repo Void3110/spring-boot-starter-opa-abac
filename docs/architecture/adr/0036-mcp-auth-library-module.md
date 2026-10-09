@@ -179,6 +179,38 @@ implementation) does **not** ship in v1.
   an `OpaClient`. An ungated tool surface in front of agents is the worst form of the posture ADR 0038 makes
   explicit, and §3 already rules out a module that is present but not enforcing.
 
+### 13. Decomposition pins (2026-10-09): what grounding the tickets in the jars and the code settled
+
+None of these reopens a fork; each pins a seam the design named but did not specify, or corrects a sentence
+the code contradicted.
+
+- **The policy path is decorated, not replaced.** The starter builds one `OpaClient` from the context's
+  `PolicyPathResolver`; the example replaced that resolver outright, which in a library would reroute every
+  other gate in the application. The module decorates it: resource type `tool` ⇒ `opa.abac.mcp.policy-path`,
+  every other type ⇒ the application's own resolver. The type name **`tool` is reserved**.
+- **What the wrapping covers.** Every specification in the server's startup lists (any `List` bean of the
+  four types, whichever Spring AI configuration produced it), checked element by element. A specification
+  added **after** startup (`addTool`, or a server customizer) is never wrapped, so no gate runs for it at
+  all — a documented limit; such code uses the direct API. The call-time `tool-undeclared` deny is the
+  backstop for a wrapped specification whose name the registry lost, not for an unwrapped one. An element
+  exposing an `McpSchema.Tool tool()` accessor that is none of the four types ⇒ startup failure.
+- **A non-web application** (e.g. stdio) starts, and every call is denied `tool-gate-unauthenticated` —
+  there is no request identity to read. Deny-all, not inert.
+- **The capability profiles keep their list shape**, `opa.abac.mcp.agents.profiles[].actor-id` (§11's
+  `agents.<id>` was shorthand): a map keyed by agent id would mangle client ids containing dots under relaxed
+  binding. `example.mcp.authz.role-source.*` stays with the example's ceiling source, beside the roster
+  switch.
+- **A ceiling outage is attributed by call site.** Any `DecisionIndeterminateException` the
+  `PrincipalCeilingSupplier` throws ⇒ `tool-gate-ceiling-unavailable`, not only `RoleResolutionException`.
+- **The roster under the `agent-clients` guard** is unfiltered + WARN — the identity-edge class of the
+  existing table; the call-time gate denies every tool with `tool-gate-actor-required`.
+- **Measured threading** (a throwaway spike over a real `POST /mcp`): in all four configurations on Spring MVC
+  the handler is invoked on the request thread with the identity bound; the sync servers rely on Spring AI's
+  servlet-only `immediateExecution(true)`. An application `@Primary` `McpSyncServerCustomizer` that drops it
+  moves handlers off-thread — every call is then denied, never allowed without identity. The per-type
+  integration tests are what make "supported" a shipped claim; a type that fails its test moves to the
+  startup-failure row and is recorded here.
+
 ## Considered options
 
 | Option | Why not |
