@@ -59,7 +59,7 @@ What changed by 2026-10-03, each measured:
 
 ### 1. Ship it, incubating
 
-A new published module, **`opa-abac-mcp`**, in the BOM at the project version (first: 1.4.0). Its API is
+A new published module, **`opa-abac-mcp`**, in the BOM at the project version (first: 1.5.0). Its API is
 **incubating**: it may change in a minor release until an external consumer adopts it — stated in its
 `package-info`, its README and the root README's module table. No `@Incubating` annotation type: that
 would itself be API to keep.

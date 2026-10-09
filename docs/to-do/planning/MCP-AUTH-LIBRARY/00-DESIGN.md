@@ -51,7 +51,7 @@ its tests); the Boot 4.1 test step; the property rename (incl. rig references); 
 **Out:** a supported `tools/list` installer (waits for java-sdk #578); a thread-independent identity carrier
 (waits for a Spring AI context-extractor hook); a PDP-optional / Java decision path; a host-side
 `ToolCallingManager` gate; an `@ToolAuthorization` annotation; `ToolCallClassifier`; Spring AI 2.1;
-releasing 1.4.0 (a separate step after merge); the starter's `opa.abac.enabled` fix.
+releasing 1.5.0 (a separate step after merge); the starter's `opa.abac.enabled` fix.
 
 ## The design
 

@@ -22,7 +22,7 @@ tags:
 > parts are in; any follow-up round on the same branch is a Fable + Opus pair. State the remaining usage
 > pool and the expected cost before the decompose validation, the run and the review.
 > **Next:** `/decompose MCP-AUTH-LIBRARY` after the usage-pool reset (2026-10-08) → gates (6a mechanical,
-> 6b adversarial) → `/autonomous-implement` → review → merge → release 1.4.0.
+> 6b adversarial) → `/autonomous-implement` → review → merge → release 1.5.0.
 
 ## Why this slice exists
 
@@ -58,7 +58,7 @@ field, an agent client whose IdP mapper is missing — each turned into a startu
 12. Conventions: `opa.abac.mcp.*`, package `…opaabac.mcp`, documented denial codes, `ToolCallClassifier` out.
 13. One slice, two parts, autonomous.
 14. **OPA required** — no Java decision path.
-15. Schedule: decompose after the usage-pool reset; release 1.4.0 after merge.
+15. Schedule: decompose after the usage-pool reset; release 1.5.0 after merge (1.4.0 carries the engine-error slice).
 
 ## Files
 
