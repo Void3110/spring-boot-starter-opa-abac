@@ -157,6 +157,34 @@ What that means today:
   emitted pair; its equivalence on every value shape (non-string scalars, objects) is **not** established,
   and a mistranslated predicate is a silent leak — so this stays a measured candidate until it is proven.
 
+#### What it costs at volume (measured 2026-10-08)
+
+`scripts/bench/list-filter-sql-volume.sh` reproduces this in about ten seconds with nothing but Docker: a
+throwaway Postgres seeded with 999,200 product rows (999 categories × 800, plus one category of 200,000)
+under the example's index layout, timing the library's exact predicate shapes paged the way Spring Data
+pages a list — the `LIMIT 20` page **and** the separate `count(*)` behind the exact total. Postgres 16.14 on
+a laptop, warm cache, median of five `EXPLAIN ANALYZE` runs; the ranges span three independent runs. An
+order of magnitude for one machine, not a benchmark.
+
+| Rows in the scope · predicate | Page (`LIMIT 20`) | `count(*)` | Scans used |
+|---|---|---|---|
+| 800 · emitted residual | 1.6–2.3 ms | 1.4–2.4 ms | `idx_product_category` |
+| 200,000 · emitted residual, 20 % / 1 % match | 17–19 ms | 17–19 ms | `idx_product_category` |
+| 200,000 · no residual (allow-all; only the deny mirror) | — | 10.5–11.3 ms | `idx_product_category` |
+| 200,000 · containment, 1 % match | 7.4–8.9 ms | 7.3–8.6 ms | `idx_product_category` + `idx_product_tags` |
+| 200,000 · containment, 20 % match | — | 23.3–23.6 ms | `idx_product_category` + `idx_product_tags` |
+
+Three readings:
+
+- **The cost follows the scope, not the table**, and the selectivity of the tag barely matters for the
+  emitted form (17–19 ms at both 1 % and 20 %): every scoped row is read and filtered. A paged list pays it
+  twice — the page and the count — which is the price of a total that does not lie.
+- **The tag residual itself is the smaller part:** against the same scope with no residual (10.5–11.3 ms),
+  it adds roughly 5–8 ms at 200,000 rows.
+- **Containment is not a free win.** It is about twice as fast on a selective tag and **slower** on a
+  common one (23 ms vs 17–19 ms), where the GIN bitmap costs more than it saves. Any switch to `@>` is
+  therefore a measured trade-off per workload on top of the equivalence proof above, not a default.
+
 ## The rego `filter` rule (the fail-closed boundary)
 
 `category.rego` gains a **`filter`** entrypoint (and a `bulk` rule), additive — `allow` is untouched. Two
