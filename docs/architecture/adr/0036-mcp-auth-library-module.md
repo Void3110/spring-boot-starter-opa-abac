@@ -80,7 +80,7 @@ gate) is **not** split out: it has no consumer, and the incubating status allows
   skip.
 - It is **not** gated on `opa.abac.enabled`. On the classpath with a prerequisite missing (no `OpaClient`,
   no `PrincipalCeilingSupplier`) it **fails startup** naming the missing piece — there is no
-  "present but not enforcing" state.
+  "present but not enforcing" state — including under ADR 0038's `opa.abac.allow-ungated-methods=true` (§12).
 - **OPA is required.** There is no Java decision path: the intersection, the risk ordering and the
   category integrity check stay in `agent_tools.rego`, where `opa test` covers them. A pluggable decider
   may come later if a real consumer needs a PDP-optional mode.
@@ -162,9 +162,22 @@ Properties under `opa.abac.mcp.*` (`agent-gate.enabled`, `policy-path`,
 `identity.{actor-claim,max-chain-depth,max-claim-length,agent-clients}`, `agents.<id>`); the example's
 `example.mcp.*` keys move there, except `example.mcp.authz.roster-filter.enabled`, which stays with the
 installer. Denials are a `CallToolResult` with `isError` and a structured `{layer, code}`; the codes are
-documented API. `ToolInvocationException` + `ToolFailureRecord` (a tool body reporting a target-gate
+documented API (including `tool-gate-policy-unavailable`, §12). `ToolInvocationException` + `ToolFailureRecord` (a tool body reporting a target-gate
 denial with its layer intact) ship in the module. `ToolCallClassifier` (a contract-only SPI with no
 implementation) does **not** ship in v1.
+
+### 12. Amendment (2026-10-09): ADRs 0037 and 0038 landed between the grill and the decomposition
+
+- **"Could not decide" is ADR 0037's family.** The tool-gate maps a `PolicyEngineException` to a deny with the
+  code **`tool-gate-policy-unavailable`** and the roster to an **empty** list (both already true of the
+  example on `main`, and carried over by the move). `PrincipalCeilingSupplier` signals an outage by throwing
+  a `DecisionIndeterminateException` subtype (⇒ `tool-gate-ceiling-unavailable`); **`AgentCapabilityUnavailableException`
+  joins the family**, so one catch covers every "could not decide" for an adopter while the gate, which
+  catches the specific types first, keeps the codes distinct.
+- **ADR 0038's acknowledgment does not extend to tools.** `opa.abac.allow-ungated-methods=true` lets a
+  disabled starter boot with ungated `@OpaPreAuthorize` methods; `opa-abac-mcp` still fails startup without
+  an `OpaClient`. An ungated tool surface in front of agents is the worst form of the posture ADR 0038 makes
+  explicit, and §3 already rules out a module that is present but not enforcing.
 
 ## Considered options
 

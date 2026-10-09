@@ -30,16 +30,19 @@ This slice packages the gate as **`opa-abac-mcp`** and closes those edges.
 - **Builds on:** the starter's `OpaClient` (`allow`, `allowAll`), `AbacContext` (its existing
   `environment` map carries the schema marker), the subject extraction (`opa.abac.subject.attribute-claims`),
   the request-scoped memo ([[0023-request-scoped-resolution-memoization|ADR 0023]]), and the optional-module
-  packaging of `opa-abac-keycloak-directory` ([[0020-user-directory-port|ADR 0020]]).
+  packaging of `opa-abac-keycloak-directory` ([[0020-user-directory-port|ADR 0020]]); the "could not decide"
+  exception family `DecisionIndeterminateException` ([[0037-indeterminate-decision-distinct-from-deny|ADR 0037]],
+  1.4.0 — the example already maps a policy-engine failure to `tool-gate-policy-unavailable` and an empty
+  roster); the disabled-starter guard ([[0038-disabled-starter-never-ungates-declared-gates|ADR 0038]], 1.5.0).
 - **Must not change:** `opa-abac-core`'s API; any existing module's public API; the per-type catalog
   policies; `infra/opa/policies/*` other than `agent_tools.rego` (+ its test); the catalog service. The
   two-layer model itself (composition, nothing asserted downstream) is ADR 0028's and is not reopened.
 - **Must stay green, unchanged:** `run-agent-tool-matrix.sh` E1–E11 (the matrix's requests and assertions;
   only rig configuration may change, for the property rename) and every existing `example-mcp-server` test
   (tests move with their classes; none is deleted without a named replacement).
-- **Related, out of scope:** the starter's `opa.abac.enabled=false` currently removes the
-  `@OpaPreAuthorize` advisor and leaves annotated methods running ungated. That is a starter fix tracked
-  separately; this module must simply not reproduce it (§3).
+- **Resolved since the grill:** the starter's `opa.abac.enabled=false` used to leave `@OpaPreAuthorize`
+  methods silently ungated; ADR 0038 (1.5.0) now fails startup unless `opa.abac.allow-ungated-methods=true`
+  acknowledges it. That acknowledgment does **not** extend to MCP tools (§3).
 
 ## The slice boundary
 
@@ -51,7 +54,7 @@ its tests); the Boot 4.1 test step; the property rename (incl. rig references); 
 **Out:** a supported `tools/list` installer (waits for java-sdk #578); a thread-independent identity carrier
 (waits for a Spring AI context-extractor hook); a PDP-optional / Java decision path; a host-side
 `ToolCallingManager` gate; an `@ToolAuthorization` annotation; `ToolCallClassifier`; Spring AI 2.1;
-releasing 1.5.0 (a separate step after merge); the starter's `opa.abac.enabled` fix.
+releasing 1.5.0 (a separate step after merge).
 
 ## The design
 
@@ -87,7 +90,7 @@ type ⇒ **startup failure**. The direct API (`ToolCallAuthorizer`) is public fo
 
 | Condition at startup | Outcome |
 |---|---|
-| module + Spring AI on the classpath, no `OpaClient` bean (incl. `opa.abac.enabled=false`) | **fails**, naming `opa.abac.enabled` and the missing bean |
+| module + Spring AI on the classpath, no `OpaClient` bean (incl. `opa.abac.enabled=false`) | **fails**, naming `opa.abac.enabled` and the missing bean — **even with** `opa.abac.allow-ungated-methods=true`: ADR 0038's acknowledgment covers `@OpaPreAuthorize` methods, never an ungated agent tool surface |
 | no `PrincipalCeilingSupplier` bean | **fails** (there is no default) |
 | a tool-specification type the module cannot wrap | **fails** |
 | a reactive (WebFlux) web application | **fails** — out of scope for v1 |
@@ -109,11 +112,15 @@ it falls into §3's "cannot wrap" row. ADR 0036 records the `McpTransportContext
 
 - **`PrincipalCeilingSupplier`** — `Optional<RoleDefinition> lookup(String subject, String resourceType)`.
   Javadoc carries the full contract: union of grants, denial only if universal, over-approximation allowed /
-  under-approximation forbidden, empty = authoritative no-role, failure throws. Plus the rig finding as an
+  under-approximation forbidden, empty = authoritative no-role, an outage **throws a `DecisionIndeterminateException`
+  subtype** (ADR 0037's family — e.g. `RoleResolutionException`) ⇒ `tool-gate-ceiling-unavailable`. Plus the rig finding as an
   implementer's note: roles recorded on a governing root must be found when the requested type is a
   descendant (`TypeLevelRoleDefinitionSupplier.scopeTypesFor`). The request-scoped memo decorates it like
   the role-definition supplier.
-- **`AgentCapabilitySupplier`** — unchanged tri-state; YAML default `ConfigAgentCapabilitySupplier` reading
+- **`AgentCapabilitySupplier`** — unchanged tri-state, except that **`AgentCapabilityUnavailableException` joins
+  ADR 0037's family** (extends `DecisionIndeterminateException`): one catch covers "could not decide" for an
+  adopter, whichever source failed. The gate and the roster already catch the specific types first, so the
+  codes stay distinct; it lands with the move (part 0) and changes no outcome. YAML default `ConfigAgentCapabilitySupplier` reading
   `opa.abac.mcp.agents.<id>`, `@ConditionalOnMissingBean`. The library's tests drive the gate with a stub
   supplier that **throws**, proving an outage denies and is never read as empty (what the waived I6 case
   was for).
@@ -150,7 +157,7 @@ Properties `opa.abac.mcp.{agent-gate.enabled, policy-path, identity.*, agents.<i
 `scripts/`), except `example.mcp.authz.roster-filter.enabled`. Denial = `CallToolResult{isError}` with
 structured `{layer, code}`; the codes (`tool-gate-denied`, `tool-undeclared`, `tool-gate-unauthenticated`,
 `tool-gate-identity-unreadable`, `tool-gate-capability-unavailable`, `tool-gate-ceiling-unavailable`,
-`tool-gate-actor-required`, and the `target-gate` layer) are documented in the guide.
+`tool-gate-policy-unavailable` (ADR 0037), `tool-gate-actor-required`, and the `target-gate` layer) are documented in the guide.
 
 ## Fail-closed posture — every new edge
 
@@ -160,16 +167,17 @@ structured `{layer, code}`; the codes (`tool-gate-denied`, `tool-undeclared`, `t
 | identity not visible where an async/stateless gate decides | deny (`tool-gate-identity-unreadable`); type unsupported ⇒ startup failure | the per-type ITs |
 | ceiling supplier throws / returns empty | deny (`…-ceiling-unavailable` / policy default) | unit + `opa test` |
 | capability supplier throws | deny (`…-capability-unavailable`), never empty | unit (throwing stub) |
+| the policy engine could not decide (`PolicyEngineException`: transport, timeout, non-200, malformed, undefined) | deny (`tool-gate-policy-unavailable`); roster ⇒ **empty** | unit (moved from the example, ADR 0037) |
 | unconfigured agent (YAML default) | empty profile ⇒ every tool denied | unit + `opa test` |
 | listed agent client without an actor claim | deny (`tool-gate-actor-required`) | unit + e2e cell |
 | schema marker unknown or missing | deny | `opa test` |
 | tool not in the registry at call time | deny (`tool-undeclared`) | unit |
-| roster (unchanged): batch all-false ⇒ empty; edges outside the batch ⇒ unfiltered + WARN; wrong-length ⇒ empty | as today | existing tests, moved |
+| roster (as on `main` since 1.4.0): engine could not decide ⇒ empty; all-false ⇒ empty; edges outside the batch (identity, capability, ceiling) ⇒ unfiltered + WARN; wrong-length ⇒ empty | as today | existing tests, moved |
 
 ## Validation: what proves it
 
 - **Part 0 bar (behavior-preserving):** E1–E11 green with no collection change; every moved test green in
-  its new module; `opa test` 451/451 unchanged; the only new behavior is startup failures for
+  its new module; the `opa test` suite unchanged and green (451/451 at the time of writing); the only new behavior is startup failures for
   misconfigurations, each with a context-runner test.
 - **Part 1:** the four per-type ITs; the WebFlux startup test; the guard's unit cases + one e2e cell (an
   agent-client token without the actor mapper ⇒ `tool-gate-actor-required`); the schema `opa test` cases and
@@ -225,3 +233,4 @@ index.
 | 13 | Slice shape | **one slice, two parts**, autonomous (ORCHESTRATOR) | two slices (two first reviews, later Part 3); one part (~10 tickets in one head) |
 | 14 | OPA optional? | **required** | decider SPI / Java fallback (second source of truth outside `opa test`) |
 | 15 | Schedule | design now → decompose after the 2026-10-08 usage-pool reset → run → review → release | decompose before the reset (risk of running out mid-validation) |
+| 16 | *(amendment 2026-10-09)* Does ADR 0038's `allow-ungated-methods` let an MCP server boot with OPA off? | **no** — startup fails regardless | extend the acknowledgment to tools (an ungated tool surface in front of agents is the worst form of the posture ADR 0038 makes explicit) |

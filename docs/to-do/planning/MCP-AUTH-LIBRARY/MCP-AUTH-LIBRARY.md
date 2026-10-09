@@ -15,6 +15,9 @@ tags:
 > [[0036-mcp-auth-library-module|ADR 0036]], which **supersedes** the 2026-08-01 decision to defer this
 > extraction to a second consumer and **amends** [[0028-agent-tool-call-authorization|ADR 0028]]'s
 > packaging line (`opa-abac-agent` → `opa-abac-mcp`).
+> **Amended 2026-10-09** (before decomposition) for ADRs 0037 and 0038, which landed in between: the
+> "could not decide" family and `tool-gate-policy-unavailable`; ADR 0038's `allow-ungated-methods` does not
+> extend to MCP tools ([[0036-mcp-auth-library-module|ADR 0036]] §12, [[00-DESIGN]] fork 16).
 > **Execution:** autonomous, two parts (ORCHESTRATOR) — part 0 the behavior-preserving extraction, part 1
 > the new behavior + docs; the declaration line is written at decomposition.
 > **Branch:** `feature/void3110/mcp-auth-library`.
@@ -59,6 +62,7 @@ field, an agent client whose IdP mapper is missing — each turned into a startu
 13. One slice, two parts, autonomous.
 14. **OPA required** — no Java decision path.
 15. Schedule: decompose after the usage-pool reset; release 1.5.0 after merge (1.4.0 carries the engine-error slice).
+16. *(amendment)* ADR 0038's acknowledgment does **not** let an MCP server boot without OPA.
 
 ## Files
 
