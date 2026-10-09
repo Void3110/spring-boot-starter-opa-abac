@@ -27,8 +27,14 @@ tags:
 > **Release:** 1.5.0 ships ADR 0038 (already on `main`) **together with** this slice, as one cut after merge
 > (maintainer decision 2026-10-09; no 1.4.1). The module's CHANGELOG entry goes under the existing
 > `## [Unreleased] — 1.5.0` heading; the cut follows the `RELEASE-1.4.0` package's shape.
-> **Next:** the decomposition gates (6a mechanical, 6b adversarial) → `/autonomous-implement MCP-AUTH-LIBRARY`
-> on the maintainer's go → one multi-lens `/deep-review` → merge → release 1.5.0.
+> **Validated:** 2026-10-09 — mechanical + adversarial clean; 6 delta checks after 6 amendments. The adversarial
+> pass was one full round by four independent reviewers given an identical read-only brief (two Claude models,
+> two Codex models — in place of the four-angle workflow, maintainer's choice); every amendment was then
+> delta-checked, and the loop ended on two consecutive checks with no blocking defect (the last with no finding
+> at all). Known run inputs, not open defects: two proofs may defer on this host's PKIX gap (`spring-webflux` for
+> U24, Boot 4.1.1 for U33) under the `**LOCAL PROOF DEFERRED:**` protocol in T5/T8.
+> **Next:** `/autonomous-implement MCP-AUTH-LIBRARY` on the maintainer's go → one multi-lens `/deep-review` →
+> merge → release 1.5.0.
 
 ## Why this slice exists
 
