@@ -334,15 +334,14 @@ source and the reflective installer.
   recorded, or refused as an unsupported type; then **asserts the result**: every element of every resolved list
   that exposes an `McpSchema.Tool tool()` accessor must carry one of the module's gate handlers, else startup
   fails naming the bean — the backstop for a list that never passed the post-processor (one added with
-  `registerSingleton` is returned by the lookup but is never post-processed — measured), so no route serves a
-  tool ungated; (3) T4 adds the declarations check as the third step. The steps
+  `registerSingleton` is returned by the lookup but is never post-processed — measured), so no startup specification list serves a tool ungated; (3) T4 adds the declarations check as the third step. The steps
   never live in separate `SmartInitializingSingleton` beans: Spring runs those callbacks in bean-registration
   order (`DefaultListableBeanFactory.preInstantiateSingletons` iterates `beanDefinitionNames`; `@Order` does not
   apply — verified by `javap -c`), so a separate declarations check could run before resolution and fail a valid
   context. Without step (2) a lazy list escapes the post-processor entirely (Spring AI's MCP server configuration
-  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton specification-list beans declared by `@Bean` methods (or as
-  singleton bean definitions) with a `List` type (singleton **bean definitions** — a list added with `registerSingleton` is never
-  post-processed, so step 2's assertion fails startup if it carries tools) — Spring AI's own are; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported registrations (under lazy initialization an adopter `FactoryBean`'s product is not found by the singleton lookup even when
+  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton specification-list **bean definitions** (`@Bean` methods or registered definitions) with a `List`
+  type (a list added with `registerSingleton` is not a definition and is never post-processed, so step 2's
+  assertion fails startup if it carries tools without a gate handler) — Spring AI's own are; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported registrations (under lazy initialization an adopter `FactoryBean`'s product is not found by the singleton lookup even when
   its type is predictable — measured; a scoped proxy is skipped because it has a `scopedTarget.` sibling, and the
   scoped target itself because it is not a singleton) — documented with the `addTool`
   limit (T4).
@@ -405,7 +404,8 @@ extracted gate is proven on the live rig with the agent matrix's E1–E11 unchan
   exists. `McpToolSurfaceTest`'s other cases stay.
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] — the declarations paragraph
   (registry, both-directions startup check, the call-time backstop, the post-startup `addTool` limit, and
-  T3's unsupported list registrations — prototype- or scope-bound lists, and lists produced by a `FactoryBean`);
+  T3's unsupported list registrations — prototype- or scope-bound lists, lists produced by a `FactoryBean`, and
+  lists added with `registerSingleton`);
   the fail-closed table's tool-metadata row ("deny at registration time — startup fails, the tool is never
   exposed") gains "…checked against the specifications actually wrapped, both directions".
 - **Part-0 close:** the layer-2 review record in this STATUS (flow guide §4a).
@@ -448,7 +448,8 @@ ungated.
   validator). Nothing in the decoration can turn an error into a success. Only the *authorization* reads of
   thread-bound state are confined to `apply`.
 - **The gate post-processor covers all four** element types (a `List` bean of any of them), with the T4
-  name-collection spanning all of them. T3's unsupported-type rule narrows to "not one of the four"; its
+  name-collection spanning all of them. T3's unsupported-type rule narrows to "not one of the four", and step 2's gated-element assertion accepts all
+  four wrappers as gate handlers; its
   three SDK-type cases in U35 are rewritten into this ticket's wrapping assertions (same commit — by design).
 - **Unwrappable ⇒ startup failure** (T3's rule, now with all four supported): a `List` bean any of whose
   elements exposes a public no-arg `tool()` accessor returning `io.modelcontextprotocol.spec.McpSchema.Tool`

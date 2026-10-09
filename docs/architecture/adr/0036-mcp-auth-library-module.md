@@ -194,7 +194,7 @@ the code contradicted.
   `PolicyPathResolver`; the example replaced that resolver outright, which in a library would reroute every
   other gate in the application. The module decorates it: resource type `tool` ⇒ `opa.abac.mcp.policy-path`,
   every other type ⇒ the application's own resolver. The type name **`tool` is reserved**.
-- **What the wrapping covers.** Every specification in the server's startup lists (any **singleton** `List` bean of the four types,
+- **What the wrapping covers.** Every specification in the server's startup lists (any **singleton** `List` bean definition of the four types,
   whichever Spring AI configuration produced it; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported), checked element by element; a hand-built
   specification is supported by contributing it as such a bean. A specification registered any other way —
   `addTool` at runtime, or added by a server customizer (customizers run before the server is built, but
@@ -208,7 +208,7 @@ the code contradicted.
   lists are still post-processed) and the declarations check run as ordered steps of **one** such callback —
   Spring orders separate callbacks only by registration; `spring.main.lazy-initialization=true` cannot skip a
   guard. Supported registrations are therefore singleton specification lists declared as `@Bean` methods or other singleton bean definitions (a list added
-  with `registerSingleton` is never post-processed — the verifier fails startup if it carries tools, since every
+  with `registerSingleton` is never post-processed — the verifier fails startup if it carries tools without a gate handler, since every
   tool-bearing element of every resolved list must carry a gate handler); prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported (under lazy initialization the singleton lookup cannot see an adopter `FactoryBean`'s product; a scoped proxy is
   skipped by its `scopedTarget.` sibling), documented with the `addTool` limit.
 - **Schema v1 and older policies.** The marker protects a v1-aware policy from a jar sending a version it does
