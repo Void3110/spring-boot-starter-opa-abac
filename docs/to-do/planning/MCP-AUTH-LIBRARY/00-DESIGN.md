@@ -135,8 +135,8 @@ it falls into §3's "cannot wrap" row. ADR 0036 records the `McpTransportContext
 `ToolRegistry` / `ToolDescriptor` move unchanged. The wrapping step collects the tool names it wrapped and
 compares them with the registry in both directions; a mismatch fails startup with both lists in the message.
 At call time the gate still denies a tool missing from the registry (`tool-undeclared`) — the backstop for
-a wrapped specification whose name the registry lost. *(Corrected at decomposition, ADR 0036 §13: supported registrations are the startup specification-list
-beans; one registered any other way — `addTool`, a server customizer — is never wrapped and never in the
+a wrapped specification whose name the registry lost. *(Corrected at decomposition, ADR 0036 §13: supported registrations are the startup **singleton** specification-list beans (prototype- or
+scope-bound and `FactoryBean`-produced lists are unsupported); one registered any other way — `addTool`, a server customizer — is never wrapped and never in the
 wrapped set: unsupported, ungated, documented, and declaring it fails the startup check. The direct API
 stays public for wiring without the auto-configuration.)*
 

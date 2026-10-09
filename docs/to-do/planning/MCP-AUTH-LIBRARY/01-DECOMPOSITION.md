@@ -303,7 +303,9 @@ source and the reflective installer.
      `McpServerFeatures.SyncToolSpecification` is replaced by a list of `ToolCallGate.gate(…)`-wrapped
      specifications. Two corrections ride along: **every element** is checked (today: element 0 only), and
      the authorizer is fetched lazily through an `ObjectProvider` as today; an element whose handler is
-     already a `ToolCallGate` is recorded but not wrapped again. **Every other element that exposes a public
+     already a `ToolCallGate` is recorded but not wrapped again. A scoped proxy (a bean with a `scopedTarget.` sibling) is passed
+     through untouched — inspecting it outside a request would resolve its target and fail startup; it is an
+     unsupported registration either way. **Every other element that exposes a public
      no-arg `tool()` accessor returning `io.modelcontextprotocol.spec.McpSchema.Tool` ⇒ startup failure**,
      naming its type and "supported: `McpServerFeatures.SyncToolSpecification`" — the three other SDK types
      included, until T5 wraps them, so part 0 alone can never serve an async or stateless tool ungated (an
@@ -318,9 +320,10 @@ source and the reflective installer.
   bean ⇒ fails naming the SPI. Fetch both through `ObjectProvider` and throw an `IllegalStateException`
   with that text — a bare constructor dependency would fail with a generic
   `NoSuchBeanDefinitionException` that names neither the property nor the fix. The check is step 1 of the startup verifier below (eager under lazy initialization), and the gate beans
-  (`ToolCallAuthorizer`, `ToolRosterFilter`) receive `OpaClient` / `PrincipalCeilingSupplier` through
-  `ObjectProvider.getIfAvailable()`, never as a hard constructor dependency of an eagerly created bean, so this
-  check is the first failure an adopter sees.
+  (`ToolCallAuthorizer`, `ToolRosterFilter`) receive `OpaClient` / `PrincipalCeilingSupplier` — and the `ToolRegistry` — through
+  `ObjectProvider.getIfAvailable()` in the auto-configuration's bean methods, never as a hard dependency of an
+  eagerly created bean, so the verifier's named failure (prerequisites in step 1, a missing registry in T4's
+  step 3) is the first failure an adopter sees, not Spring's `UnsatisfiedDependencyException`.
 - **One startup verifier, steps in a fixed order.** A single `SmartInitializingSingleton` in
   `OpaMcpAutoConfiguration` (call it `McpStartupVerifier`) runs, in sequence inside **one** callback: (1) the
   prerequisite check above; (2) **eager list resolution** — every **singleton** bean whose type is assignable to
@@ -333,10 +336,11 @@ source and the reflective installer.
   order (`DefaultListableBeanFactory.preInstantiateSingletons` iterates `beanDefinitionNames`; `@Order` does not
   apply — verified by `javap -c`), so a separate declarations check could run before resolution and fail a valid
   context. Without step (2) a lazy list escapes the post-processor entirely (Spring AI's MCP server configuration
-  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton
-  specification-list beans whose type is predictable without initializing a `FactoryBean` (Spring AI's own
-  `@Bean` methods are); a prototype- or scope-bound list, or a `FactoryBean` whose product type is not
-  predictable, is an unsupported registration — documented with the `addTool` limit (T4).
+  declares no lazy-init exclusion — verified). **Supported registrations, therefore:** singleton specification-list beans declared by `@Bean` methods (or
+  as plain singletons) with a `List` type — Spring AI's own are; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported registrations (under lazy
+  initialization a `FactoryBean` product is not found by the singleton lookup even when its type is predictable
+  — measured; a request-scoped proxy's `scopedTarget.` sibling is skipped) — documented with the `addTool`
+  limit (T4).
 - **The example shrinks:** `IdentityConfiguration` and `AgentCapabilityConfiguration` are deleted;
   `ExampleAuthzConfiguration` keeps only the `TypeLevelPrincipalCeilingSupplier` bean (now un-wrapped — the
   memo BPP decorates it) and the `RosterFilterInstaller` bean with its `example.mcp.authz.roster-filter`
@@ -371,17 +375,15 @@ extracted gate is proven on the live rig with the agent matrix's E1–E11 unchan
 
 **Deliverables.**
 - **Wrap-time validation** (module + starter): the gate post-processor records every tool name it wraps
-  (across **all** specification lists — the union), and a `SmartInitializingSingleton` in
-  `OpaMcpAutoConfiguration` compares that set with the `ToolRegistry` as **step 3 of T3's
-  `McpStartupVerifier`** — after its own step 2 resolved every singleton list, in the same callback, so a
+  (across **all** specification lists — the union), and T3's `McpStartupVerifier` compares that set with the `ToolRegistry` as its **step 3** — after its own step 2 resolved every singleton list, in the same callback, so a
   lazily-initialized list is wrapped and counted rather than missed and no callback ordering is relied on:
   advertised-but-undeclared ⇒ startup failure; declared-but-never-wrapped ⇒ startup failure; the message
   carries both sorted lists (ADR 0036 §9). No `ToolRegistry` bean ⇒ startup failure naming it (a gate with no
   declarations would deny every call as `tool-undeclared` — fail-closed, but a misconfiguration to name at
   boot). An empty registry and zero wrapped tools ⇒ starts (a server with no tools).
 - The call-time `tool-undeclared` deny stays (moved test, U18). ADR 0036 §13 corrects [[00-DESIGN]] §6's
-  "backstop for anything registered after startup": **with the auto-configuration, supported registrations
-  are the startup specification-list beans** — a hand-built specification is supported by contributing it
+  "backstop for anything registered after startup": **with the auto-configuration, supported registrations are the startup singleton specification-list beans**
+  (T3: prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported) — a hand-built specification is supported by contributing it
   as such a bean (un-gated; the post-processor wraps and records it). A specification registered any other
   way — `addTool` at runtime, or one a customizer adds to the server builder (customizers run before the
   server is built, but outside the list beans) — is not wrapped and not in the wrapped set: unsupported,
@@ -397,7 +399,8 @@ extracted gate is proven on the live rig with the agent matrix's E1–E11 unchan
   (`shipsTheClassifierSeamWithNoImplementation`) — **retired, not replaced**: the seam it pinned no longer
   exists. `McpToolSurfaceTest`'s other cases stay.
 - **Documentation delta (this commit):** [[AGENT-TOOL-AUTHORIZATION]] — the declarations paragraph
-  (registry, both-directions startup check, the call-time backstop and the post-startup `addTool` limit);
+  (registry, both-directions startup check, the call-time backstop, the post-startup `addTool` limit, and
+  T3's unsupported list registrations — prototype- or scope-bound lists, and lists produced by a `FactoryBean`);
   the fail-closed table's tool-metadata row ("deny at registration time — startup fails, the tool is never
   exposed") gains "…checked against the specifications actually wrapped, both directions".
 - **Part-0 close:** the layer-2 review record in this STATUS (flow guide §4a).

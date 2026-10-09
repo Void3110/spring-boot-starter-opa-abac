@@ -194,8 +194,8 @@ the code contradicted.
   `PolicyPathResolver`; the example replaced that resolver outright, which in a library would reroute every
   other gate in the application. The module decorates it: resource type `tool` ⇒ `opa.abac.mcp.policy-path`,
   every other type ⇒ the application's own resolver. The type name **`tool` is reserved**.
-- **What the wrapping covers.** Every specification in the server's startup lists (any `List` bean of the
-  four types, whichever Spring AI configuration produced it), checked element by element; a hand-built
+- **What the wrapping covers.** Every specification in the server's startup lists (any **singleton** `List` bean of the four types,
+  whichever Spring AI configuration produced it; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported), checked element by element; a hand-built
   specification is supported by contributing it as such a bean. A specification registered any other way —
   `addTool` at runtime, or added by a server customizer (customizers run before the server is built, but
   outside the list beans) — is never wrapped and never in the wrapped set: unsupported, ungated, documented;
@@ -203,12 +203,13 @@ the code contradicted.
   the auto-configuration. The call-time `tool-undeclared` deny is the backstop for a wrapped specification
   whose name the registry lost, not for an unwrapped one. An element exposing an `McpSchema.Tool tool()`
   accessor that is not a supported type ⇒ startup failure — the module never serves a type it does not wrap.
-- **Startup guards are eager**: each is a `SmartInitializingSingleton` (a post-processor alone is not — it
+- **Startup guards are eager**: each runs from a `SmartInitializingSingleton` callback (a post-processor alone is not — it
   sees only beans that get created), and the prerequisite check, the resolution of every singleton `List` bean (so lazily-defined specification
   lists are still post-processed) and the declarations check run as ordered steps of **one** such callback —
   Spring orders separate callbacks only by registration; `spring.main.lazy-initialization=true` cannot skip a
-  guard. Supported registrations are therefore singleton specification lists with a predictable type; a
-  prototype- or scope-bound list is unsupported, documented with the `addTool` limit.
+  guard. Supported registrations are therefore singleton specification lists declared as `@Bean` methods or plain
+  singletons; prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported (under lazy initialization the singleton lookup cannot see a `FactoryBean`'s
+  product), documented with the `addTool` limit.
 - **Schema v1 and older policies.** The marker protects a v1-aware policy from a jar sending a version it does
   not know. A policy written before v1 ignores it — safe with v1 because v1 changes no field, and the reason the
   1.5.0 upgrade note ships the v1-aware policy with the jar.
