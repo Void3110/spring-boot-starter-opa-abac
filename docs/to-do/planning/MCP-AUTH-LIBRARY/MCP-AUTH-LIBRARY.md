@@ -10,7 +10,7 @@ tags:
 
 # MCP-AUTH-LIBRARY — the agent tool-gate as a library module (`opa-abac-mcp`)
 
-> **Status: 🔍 implemented 2026-10-10 (autonomous, ORCHESTRATOR — two parts; layer-3 review pending).** Decomposed 2026-10-09 — eight tickets, two parts. Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
+> **Status: ✅ implemented + reviewed 2026-10-10 (autonomous, ORCHESTRATOR — two parts; layer-3 review in three rounds, [[MCP-AUTH-LIBRARY-REVIEW]]) — awaiting push · PR · merge.** Decomposed 2026-10-09 — eight tickets, two parts. Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
 > ([[00-DESIGN]] §Considered and rejected); the contract is
 > [[0036-mcp-auth-library-module|ADR 0036]], which **supersedes** the 2026-08-01 decision to defer this
 > extraction to a second consumer and **amends** [[0028-agent-tool-call-authorization|ADR 0028]]'s
