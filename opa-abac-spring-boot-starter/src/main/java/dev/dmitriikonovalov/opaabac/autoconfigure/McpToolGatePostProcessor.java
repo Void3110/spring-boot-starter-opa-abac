@@ -10,7 +10,6 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
@@ -110,8 +109,6 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
 
     /** A scoped proxy's target lives under {@code scopedTarget.<name>}; never iterate the proxy. */
     private boolean isScopedProxy(String beanName) {
-        return beanFactory != null
-                && beanName != null
-                && beanFactory.containsBeanDefinition(ScopedProxyUtils.getTargetBeanName(beanName));
+        return McpToolSpecifications.isScopedProxy(beanFactory, beanName);
     }
 }

@@ -76,6 +76,16 @@ class TurnScopedCapabilityCacheTest {
         assertThat(calls).hasValue(2);
     }
 
+    @Test // layer-2 — two decorated capability sources in one turn never serve each other's answers
+    void twoCachesInOneTurnKeepSeparateMemos() {
+        beginTurn();
+        TurnScopedCapabilityCache low = new TurnScopedCapabilityCache(actorId -> profile("low"));
+        TurnScopedCapabilityCache high = new TurnScopedCapabilityCache(actorId -> profile("high"));
+
+        assertThat(low.lookup("agent-a").maxRiskTag()).isEqualTo("low");
+        assertThat(high.lookup("agent-a").maxRiskTag()).isEqualTo("high");
+    }
+
     @Test // U17 — no cross-actor bleed inside one turn
     void keepsActorsSeparateWithinATurn() {
         AtomicReference<String> lastActor = new AtomicReference<>();

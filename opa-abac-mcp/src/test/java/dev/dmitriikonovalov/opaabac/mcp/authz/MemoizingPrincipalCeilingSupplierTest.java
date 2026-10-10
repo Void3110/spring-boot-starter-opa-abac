@@ -109,6 +109,17 @@ class MemoizingPrincipalCeilingSupplierTest {
         assertThat(calls).hasValue(2);
     }
 
+    @Test // layer-2 — two decorated suppliers in one request never serve each other's answers
+    void twoDecoratorsInOneRequestKeepSeparateMemos() {
+        RoleDefinition other = new RoleDefinition(
+                "other", Map.of(), Map.of("product", List.of("WRITE")), Map.of(), Map.of(), null);
+        PrincipalCeilingSupplier first = new MemoizingPrincipalCeilingSupplier((subject, type) -> Optional.of(CEILING));
+        PrincipalCeilingSupplier second = new MemoizingPrincipalCeilingSupplier((subject, type) -> Optional.of(other));
+
+        assertThat(first.lookup("alice", "product")).contains(CEILING);
+        assertThat(second.lookup("alice", "product")).contains(other);
+    }
+
     @Test // the memo dies with the request: a new request asks again (a revocation lands next request)
     void aNewRequestAsksAgain() {
         PrincipalCeilingSupplier memo =

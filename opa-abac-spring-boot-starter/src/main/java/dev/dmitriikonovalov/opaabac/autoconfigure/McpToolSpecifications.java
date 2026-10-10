@@ -5,6 +5,10 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import org.springframework.aop.scope.ScopedProxyUtils;
+import org.springframework.beans.factory.config.BeanDefinitionHolder;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 
 /**
  * What the tool-gate's post-processor and startup verifier agree a tool specification <em>is</em>.
@@ -34,6 +38,27 @@ final class McpToolSpecifications {
         } catch (NoSuchMethodException _) {
             return false;
         }
+    }
+
+    /**
+     * True when {@code beanName} is a <em>scoped proxy</em>: its definition decorates the
+     * {@code scopedTarget.<name>} definition, exactly as {@link ScopedProxyUtils} registers one. Judged by the
+     * definition's structure, not by the name alone — an unrelated bean that merely happens to be called
+     * {@code scopedTarget.<name>} must not exempt a singleton tool list from the gate.
+     */
+    static boolean isScopedProxy(ConfigurableListableBeanFactory beanFactory, String beanName) {
+        if (beanFactory == null || beanName == null) {
+            return false;
+        }
+        String targetName = ScopedProxyUtils.getTargetBeanName(beanName);
+        if (!beanFactory.containsBeanDefinition(targetName) || !beanFactory.containsBeanDefinition(beanName)) {
+            return false;
+        }
+        if (!(beanFactory.getMergedBeanDefinition(beanName) instanceof RootBeanDefinition proxyDefinition)) {
+            return false;
+        }
+        BeanDefinitionHolder decorated = proxyDefinition.getDecoratedDefinition();
+        return decorated != null && targetName.equals(decorated.getBeanName());
     }
 
     /** True when {@code element} is a specification whose handler is one of this module's gates. */

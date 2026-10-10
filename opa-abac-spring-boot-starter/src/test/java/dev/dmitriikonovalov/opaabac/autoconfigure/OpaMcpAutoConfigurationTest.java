@@ -495,6 +495,18 @@ class OpaMcpAutoConfigurationTest {
         });
     }
 
+    @Test // layer-2 — only a REAL scoped proxy is exempt: a singleton list whose name merely has a
+    // 'scopedTarget.' namesake is still gated and counted, never passed through
+    void aScopedTargetNamesakeDoesNotExemptASingletonToolList() {
+        baselineWithRegistry(ScopedTargetNamesake.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> lookalike = (List<SyncToolSpecification>) context.getBean("lookalike");
+            assertThat(lookalike).singleElement()
+                    .satisfies(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+        });
+    }
+
     // --- U17 / U37 : declarations checked against what was wrapped (T4) ---------------------------
 
     @Test // U17 — wrapped ⊋ registry: an advertised tool with no declaration fails, the message names it
@@ -564,6 +576,24 @@ class OpaMcpAutoConfigurationTest {
     }
 
     // --- fixtures ----------------------------------------------------------------------------------
+
+    @Configuration(proxyBeanMethods = false)
+    static class ScopedTargetNamesake {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("look")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> lookalike() {
+            return new ArrayList<>(List.of(syncSpec("look")));
+        }
+
+        @Bean(name = "scopedTarget.lookalike")
+        Object unrelatedNamesake() {
+            return new Object();
+        }
+    }
 
     @Configuration(proxyBeanMethods = false)
     static class UndeclaredTool {

@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.mcp.identity;
 
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.request.RequestAttributes;
@@ -37,9 +38,18 @@ public class TurnScopedCapabilityCache implements AgentCapabilitySupplier {
     private static final String ATTRIBUTE_PREFIX =
             TurnScopedCapabilityCache.class.getName() + ".capability.";
 
+    private static final AtomicLong INSTANCES = new AtomicLong();
+
     private static final Logger log = LoggerFactory.getLogger(TurnScopedCapabilityCache.class);
 
     private final AgentCapabilitySupplier delegate;
+
+    /**
+     * Per-instance key prefix: two decorated capability sources never read each other's answers within a
+     * turn. Every consumer of one bean still shares one memo — the roster and the gate inject the same
+     * instance.
+     */
+    private final String keyPrefix = ATTRIBUTE_PREFIX + INSTANCES.incrementAndGet() + ".";
 
     public TurnScopedCapabilityCache(AgentCapabilitySupplier delegate) {
         this.delegate = delegate;
@@ -52,7 +62,7 @@ public class TurnScopedCapabilityCache implements AgentCapabilitySupplier {
             return delegate.lookup(actorId);
         }
 
-        String key = ATTRIBUTE_PREFIX + actorId;
+        String key = keyPrefix + actorId;
         Object memoized = read(attributes, key);
         if (memoized instanceof AgentCapabilityProfile profile) {
             return profile;

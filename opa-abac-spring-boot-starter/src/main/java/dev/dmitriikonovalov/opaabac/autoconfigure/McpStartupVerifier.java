@@ -140,8 +140,7 @@ final class McpStartupVerifier implements SmartInitializingSingleton {
     private List<String> singletonListBeanNames() {
         List<String> names = new ArrayList<>();
         for (String name : beanFactory.getBeanNamesForType(List.class, false, false)) {
-            if (ScopedProxyUtils.isScopedTarget(name)
-                    || beanFactory.containsBeanDefinition(ScopedProxyUtils.getTargetBeanName(name))) {
+            if (ScopedProxyUtils.isScopedTarget(name) || McpToolSpecifications.isScopedProxy(beanFactory, name)) {
                 continue;
             }
             names.add(name);

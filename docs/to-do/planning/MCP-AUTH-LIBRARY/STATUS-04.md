@@ -86,8 +86,53 @@ auto-configuration, one `.imports` line, test-only dependencies).
 
 ## Part review (layer 2)
 
-Recorded in the part-review commit that follows T4 (see below — this section is completed there).
+**Path:** the 2A lens set applied **inline** in this part-runner's own context (the deep-review path table's
+inside-a-subagent row — no review sub-agent, 2B unreachable). **Downgrade recorded:** T3 is a headline ticket
+and got inline-2A instead of the multi-lens path; the whole-delivery layer-3 `/deep-review` re-covers it.
+**Scope:** part 0 as one diff, `338baa8..` (T1–T4 + the Mulch sync) — the new module, the starter's
+auto-configuration, the example's shrink, rig/config renames, docs.
+
+**Lenses run:** fail-closed · security (widening, cross-subject caches, routing, log/body leaks) · concurrency /
+threading · wiring (every new seam has a consumer and a non-happy-path test) · core boundary · additivity ·
+rego (none touched) · autonomous-run (laziness, self-preferential bias, goal drift).
+
+**Findings — two, both fixed in the part-review commit (re-tested: the three modules' tests, `./gradlew build`,
+Sonar, and the agent-tool matrix again on a rebuilt image — 8 runs, 53 requests, 78 assertions, 0 failures):**
+
+1. **Medium (fail-closed edge) — the scoped-proxy exemption trusted the bean *name*.** Both the gate
+   post-processor and the verifier's step 2 skipped any `List` bean that had a `scopedTarget.<name>` bean
+   definition. A *singleton* tool list whose name merely had such a namesake would have been passed through
+   un-iterated and skipped by the verifier — served without the gate (the declarations check would then fail
+   only if the tool was declared). Fix: `McpToolSpecifications.isScopedProxy` now requires the structure
+   `ScopedProxyUtils` registers — the bean's merged definition must *decorate* the `scopedTarget.<name>`
+   definition — shared by both sites (sibling sweep: both readers of the rule changed together). New case
+   `aScopedTargetNamesakeDoesNotExemptASingletonToolList` (mutation-checked: a name-only rule fails it); the
+   real `@RequestScope` proxy case (U36) still starts.
+2. **Low (cache isolation) — the two request memos keyed their request attribute per class, not per
+   instance.** Two decorated ceiling (or capability) sources in one application would have read each other's
+   answers for the same `(subject, type)` / actor within a request — cross-*supplier*, never cross-caller. Fix:
+   a per-instance attribute in `MemoizingPrincipalCeilingSupplier` and (sibling sweep) in
+   `TurnScopedCapabilityCache`; one bean's consumers (the roster and the gate) still share one memo. New
+   cases `twoDecoratorsInOneRequestKeepSeparateMemos` / `twoCachesInOneTurnKeepSeparateMemos`. The same
+   per-class key exists in `opa-abac-spring-security`'s `MemoizingRoleDefinitionSupplier` — pre-existing
+   library code outside this slice's boundary (no existing module changes), left as is and noted here for
+   layer 3.
+
+**Checked and clean:** `opa-abac-core`, `opa-abac-spring-security`, `opa-abac-spring-data`,
+`opa-abac-keycloak-directory` and `infra/opa/policies/` untouched since the part began; the starter's main
+diff is additive only (four new package-private/public classes + one `.imports` line); the module's POM has
+`mcp-core:2.0.0` compile and no Spring AI; the package index and STATUS-05..08 untouched; the CHANGELOG entry
+sits under the existing `[Unreleased] — 1.5.0` heading. Fail-closed: every request-time path keeps its
+code (call-site attribution pinned by an adopter-subtype case), every misconfiguration that could serve a
+tool ungated in part 0 fails startup, eagerly (U36/U37, three verifier steps mutation-checked). Threading:
+no new code decides off the calling thread (the gate is the moved `ToolCallGate`). Wiring: every new seam
+(`PrincipalCeilingSupplier`, the memo, the decorator, the verifier, the post-processors, `ExampleAuthzProperties`,
+the `opa.abac.mcp.*` properties) has a named consumer and a non-happy-path test. Autonomous-run lens: each
+STATUS note's review section names what it changed (T2: two Sonar-driven reverts; T3: the switch-reader
+alignment) — no ritual "nothing found" over a diff that says otherwise; no ticket's acceptance left partial.
+No finding reaches an earlier part (none exists — part 0).
 
 ## Commit
 
-This commit — `feat(mcp): declarations are checked against what the gate wrapped; part 0 closes on the rig (MCP-AUTH-LIBRARY T4)`.
+`5464c21` — `feat(mcp): declarations are checked against what the gate wrapped; part 0 closes on the rig (MCP-AUTH-LIBRARY T4)`;
+the layer-2 fixes and this record: `fix(mcp): part-0 review — scoped-proxy exemption by structure, per-instance memos (MCP-AUTH-LIBRARY part 0)`.
