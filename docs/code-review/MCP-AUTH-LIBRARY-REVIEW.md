@@ -159,7 +159,11 @@ starter, the example nor Spring AI.
 - sonar-local: no new finding; the remainder are the standing by-design classes recorded in Mulch
   `quality-gate-sonar` (moved-test S5778/S5853/S2925/S125/S5976 — mx-302e78; S1168 tri-state memo, S3011 the
   example's reflective installer, S1075).
-- Agent-tool matrix (E1–E12) on images rebuilt from the fix: green — 10 newman runs, 92 assertions, 0 failures; the new up-front OPA reload passed its `known_schemas` poll before any token was minted.
+- Agent-tool matrix (E1–E12): green on images rebuilt from the round-1 fix **and again from the round-2 fix
+  (`013e295`, the reviewed state)** — each time 10 newman runs, 92 assertions, 0 failures; the up-front OPA reload
+  passed its `known_schemas` poll before any token was minted.
+- After round 2: `./gradlew build` green; `:opa-abac-mcp:test` 152, `:opa-abac-spring-boot-starter:test` 159
+  (2 skipped — the PKIX-deferred reactive half), 0 failures; sonar-local back to the standing by-design set.
 - Deferred (PKIX on this host — the maintainer's command or CI on the PR): U24 `spring-webflux`, U33 Boot 4.1.1
   (commands in STATUS-05/STATUS-08).
 
