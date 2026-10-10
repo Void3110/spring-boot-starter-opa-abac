@@ -64,6 +64,14 @@ dependencies {
     testImplementation(libs.spring.ai.starter.mcp.server.webmvc)
     testImplementation("org.springframework.boot:spring-boot-starter-security")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc")
+    // spring-webflux (Boot-managed) for U24 only: Boot's REACTIVE condition matches only when
+    // org.springframework.web.reactive.HandlerResult is loadable, so the reactive-guard test needs it. It is
+    // added on CI (GitHub Actions sets CI) and with -PwithWebflux — NOT unconditionally, so the default build
+    // never REQUIRES an artifact a host without network access to Maven Central cannot resolve.
+    // OpaMcpReactiveGuardTest skips itself without it, and fails (never skips) on CI.
+    if (providers.environmentVariable("CI").isPresent || providers.gradleProperty("withWebflux").isPresent) {
+        testImplementation("org.springframework:spring-webflux")
+    }
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     // Explicit launcher (aligned with the engine via the BOM) — Gradle 9 drops auto-loading.

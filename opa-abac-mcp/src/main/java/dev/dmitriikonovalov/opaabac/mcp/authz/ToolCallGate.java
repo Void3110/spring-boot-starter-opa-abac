@@ -1,18 +1,10 @@
 package dev.dmitriikonovalov.opaabac.mcp.authz;
 
-import dev.dmitriikonovalov.opaabac.mcp.tool.ToolErrorLayer;
-import dev.dmitriikonovalov.opaabac.mcp.tool.ToolFailureRecord;
-import dev.dmitriikonovalov.opaabac.mcp.tool.ToolInvocationException;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
-import io.modelcontextprotocol.spec.McpSchema.TextContent;
-import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Wraps a tool's call handler so the tool-gate runs <strong>before</strong> the tool body, and a denial
@@ -33,11 +25,14 @@ import org.slf4j.LoggerFactory;
  * denying layer and a stable code. That is the protocol's own way of telling a model something went
  * wrong in a way it can act on — pick another tool, ask the human to escalate — rather than a transport
  * fault it can only retry. Never a stack trace, never a silent empty result.
+ *
+ * <h2>The other three specification types</h2>
+ * This wraps the stateful synchronous type. {@link AsyncToolCallGate}, {@link StatelessToolCallGate} and
+ * {@link StatelessAsyncToolCallGate} wrap the other three under the same rule
+ * ({@link ToolGateInvocation}): decide when the handler is invoked, on the invoking thread.
  */
 public class ToolCallGate
         implements BiFunction<McpSyncServerExchange, CallToolRequest, CallToolResult> {
-
-    private static final Logger log = LoggerFactory.getLogger(ToolCallGate.class);
 
     private final String toolName;
     private final BiFunction<McpSyncServerExchange, CallToolRequest, CallToolResult> delegate;
@@ -63,62 +58,6 @@ public class ToolCallGate
 
     @Override
     public CallToolResult apply(McpSyncServerExchange exchange, CallToolRequest request) {
-        ToolAuthorizationDecision decision = authorizer.authorize(toolName);
-        if (!decision.allowed()) {
-            log.info("Tool call '{}' denied at {} ({})",
-                    toolName, decision.layer().label(), decision.code());
-            return advisory(decision.layer(), decision.code(), decision.message());
-        }
-
-        ToolFailureRecord.clear();
-        try {
-            CallToolResult result = delegate.apply(exchange, request);
-            return relabelIfStructured(result);
-        } catch (ToolInvocationException e) {
-            // The tool body's own structured failure, thrown straight through — the shape a
-            // hand-built specification produces, and the one the unit tests drive.
-            return advisory(e.layer(), e.code(), e.getMessage());
-        }
-    }
-
-    /**
-     * Restore the layer and code on an error result the tool body actually produced structurally.
-     *
-     * <h2>Why the catch above is not enough</h2>
-     * In the real invocation path the delegate is Spring AI's annotation-scanned handler, and it catches
-     * whatever the {@code @McpTool} method throws, flattening it into a {@code CallToolResult} with
-     * {@code isError} set and a plain-text message. The exception never reaches this class, so a
-     * <strong>target-gate denial arrived looking exactly like a transport fault</strong> — no layer, no
-     * code — which is precisely the distinction this slice exists to make. {@link ToolFailureRecord}
-     * carries the detail across that seam; here it is put back on the result.
-     *
-     * <p>Strictly a labelling step: it only ever rewrites a result that is <em>already</em> an error, and
-     * only when the tool body recorded structured detail for this very request. A missing record leaves
-     * the delegate's result untouched. It can never turn an error into a success.
-     */
-    private CallToolResult relabelIfStructured(CallToolResult result) {
-        if (result == null || !Boolean.TRUE.equals(result.isError())) {
-            ToolFailureRecord.clear();
-            return result;
-        }
-        ToolInvocationException recorded = ToolFailureRecord.take();
-        if (recorded == null) {
-            return result;
-        }
-        if (log.isInfoEnabled()) {
-            log.info("Tool call '{}' failed at {} ({})",
-                    toolName, recorded.layerLabel(), recorded.code());
-        }
-        return advisory(recorded.layer(), recorded.code(), recorded.getMessage());
-    }
-
-    /** A structured, model-readable error: the layer, a stable code, and a safe message. */
-    private static CallToolResult advisory(ToolErrorLayer layer, String code, String message) {
-        String label = layer == null ? null : layer.label();
-        return new CallToolResult(
-                List.of(new TextContent(null, message, null)),
-                Boolean.TRUE,
-                null,
-                Map.of("layer", String.valueOf(label), "code", String.valueOf(code)));
+        return ToolGateInvocation.invokeSync(toolName, authorizer, delegate, exchange, request);
     }
 }

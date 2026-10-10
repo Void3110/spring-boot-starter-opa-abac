@@ -17,6 +17,12 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
  * in a fixed order inside a single callback (ADR 0036 §13).
  *
  * <ol>
+ *   <li><strong>Not a reactive application.</strong> Spring WebFlux is out of scope for v1 (ADR 0036 §4): the
+ *       gate reads the caller from thread-bound state, which a reactive server does not keep on the thread
+ *       that invokes a handler. Detected by {@code OpaMcpAutoConfiguration}'s nested
+ *       {@code @ConditionalOnWebApplication(type = REACTIVE)} configuration, which contributes a
+ *       {@link ReactiveWebApplication} marker; its presence fails startup first, before any other step can
+ *       report a less relevant cause.</li>
  *   <li><strong>Prerequisites.</strong> No {@link OpaClient} ⇒ fail, naming {@code opa.abac.enabled} — also
  *       when the starter was switched off with {@code opa.abac.allow-ungated-methods=true}: that
  *       acknowledgment covers {@code @OpaPreAuthorize} methods, never an ungated tool surface (§12). No
@@ -44,7 +50,16 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
  */
 final class McpStartupVerifier implements SmartInitializingSingleton {
 
+    /**
+     * Present only in a reactive web application — contributed by a configuration conditional on
+     * {@code @ConditionalOnWebApplication(type = REACTIVE)}, so the detection is Boot's own.
+     */
+    enum ReactiveWebApplication {
+        DETECTED
+    }
+
     private final ConfigurableListableBeanFactory beanFactory;
+    private final ObjectProvider<ReactiveWebApplication> reactive;
     private final ObjectProvider<OpaClient> opaClient;
     private final ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier;
     private final ObjectProvider<ToolRegistry> registry;
@@ -52,11 +67,13 @@ final class McpStartupVerifier implements SmartInitializingSingleton {
 
     McpStartupVerifier(
             ConfigurableListableBeanFactory beanFactory,
+            ObjectProvider<ReactiveWebApplication> reactive,
             ObjectProvider<OpaClient> opaClient,
             ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier,
             ObjectProvider<ToolRegistry> registry,
             McpToolGatePostProcessor gate) {
         this.beanFactory = beanFactory;
+        this.reactive = reactive;
         this.opaClient = opaClient;
         this.ceilingSupplier = ceilingSupplier;
         this.registry = registry;
@@ -65,9 +82,21 @@ final class McpStartupVerifier implements SmartInitializingSingleton {
 
     @Override
     public void afterSingletonsInstantiated() {
+        verifyNotReactive();
         verifyPrerequisites();
         resolveAndAssertEveryListIsGated();
         verifyDeclarationsMatchWhatWasGated();
+    }
+
+    /** Step 0 — a reactive (WebFlux) application is refused: the gate could not see the caller there. */
+    void verifyNotReactive() {
+        if (reactive.getIfAvailable() != null) {
+            throw new IllegalStateException(
+                    "opa-abac-mcp does not support a reactive (Spring WebFlux) web application — it is not "
+                            + "supported in v1 (ADR 0036 §4). The tool-gate reads the caller from the thread "
+                            + "that invokes a tool handler, which a reactive server does not keep, so it could "
+                            + "not decide any call. Run the MCP server on Spring MVC (servlet).");
+        }
     }
 
     /** Step 1 — the beans the gate cannot decide without, each named with its fix. */

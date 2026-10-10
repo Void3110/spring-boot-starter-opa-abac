@@ -11,8 +11,11 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PerTypePolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
+import dev.dmitriikonovalov.opaabac.mcp.authz.AsyncToolCallGate;
 import dev.dmitriikonovalov.opaabac.mcp.authz.MemoizingPrincipalCeilingSupplier;
 import dev.dmitriikonovalov.opaabac.mcp.authz.PrincipalCeilingSupplier;
+import dev.dmitriikonovalov.opaabac.mcp.authz.StatelessAsyncToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.StatelessToolCallGate;
 import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallAuthorizer;
 import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
 import dev.dmitriikonovalov.opaabac.mcp.authz.ToolPolicyPathResolver;
@@ -26,6 +29,7 @@ import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor;
 import dev.dmitriikonovalov.opaabac.mcp.identity.TurnScopedCapabilityCache;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
@@ -53,12 +57,13 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.annotation.RequestScope;
 import reactor.core.publisher.Mono;
 
 /**
  * {@link ApplicationContextRunner} slice tests for {@link OpaMcpAutoConfiguration} (MCP-AUTH-LIBRARY T3/T4,
- * U9–U17, U35–U37).
+ * U9–U17, U35–U37; T5: U23, U25).
  *
  * <h2>The baseline</h2>
  * Every fixture starts from {@code opa.abac.subject.attribute-claims=act_chain} + an {@code OpaClient}
@@ -371,45 +376,113 @@ class OpaMcpAutoConfigurationTest {
                 });
     }
 
-    // --- U35 : part 0 never serves an unwrapped type -----------------------------------------------
+    // --- U23 (T5; U35's three SDK-type cases rewritten) : all four types wrapped, any other refused --
 
-    @Test // U35 — the stateful async type is refused, naming it and the supported one
-    void refusesAnAsyncStatefulSpecificationList() {
+    @Test // U23 — the stateful async type now starts, and every element carries ITS type's gate
+    void wrapsAnAsyncStatefulSpecificationList() {
         baselineWithRegistry(AsyncStatefulDeclared.class).run(context -> {
-            assertThat(context).hasFailed();
-            assertThat(failureMessages(context))
-                    .contains(McpServerFeatures.AsyncToolSpecification.class.getName())
-                    .contains("supported: McpServerFeatures.SyncToolSpecification");
+            assertThat(context).hasNotFailed();
+            List<?> tools = context.getBean("asyncTools", List.class);
+            assertThat(tools).singleElement()
+                    .isInstanceOfSatisfying(McpServerFeatures.AsyncToolSpecification.class,
+                            spec -> assertThat(spec.callHandler()).isInstanceOf(AsyncToolCallGate.class));
         });
     }
 
-    @Test // U35 — the stateless sync type is refused
-    void refusesAStatelessSyncSpecificationList() {
+    @Test // U23 — the stateless sync type now starts and wraps
+    void wrapsAStatelessSyncSpecificationList() {
         baselineWithRegistry(StatelessSyncDeclared.class).run(context -> {
-            assertThat(context).hasFailed();
-            assertThat(failureMessages(context))
-                    .contains(McpStatelessServerFeatures.SyncToolSpecification.class.getName())
-                    .contains("supported: McpServerFeatures.SyncToolSpecification");
+            assertThat(context).hasNotFailed();
+            List<?> tools = context.getBean("statelessTools", List.class);
+            assertThat(tools).singleElement()
+                    .isInstanceOfSatisfying(McpStatelessServerFeatures.SyncToolSpecification.class,
+                            spec -> assertThat(spec.callHandler()).isInstanceOf(StatelessToolCallGate.class));
         });
     }
 
-    @Test // U35 — the stateless async type is refused
-    void refusesAStatelessAsyncSpecificationList() {
+    @Test // U23 — the stateless async type now starts and wraps
+    void wrapsAStatelessAsyncSpecificationList() {
         baselineWithRegistry(StatelessAsyncDeclared.class).run(context -> {
-            assertThat(context).hasFailed();
-            assertThat(failureMessages(context))
-                    .contains(McpStatelessServerFeatures.AsyncToolSpecification.class.getName())
-                    .contains("supported: McpServerFeatures.SyncToolSpecification");
+            assertThat(context).hasNotFailed();
+            List<?> tools = context.getBean("statelessAsyncTools", List.class);
+            assertThat(tools).singleElement()
+                    .isInstanceOfSatisfying(McpStatelessServerFeatures.AsyncToolSpecification.class,
+                            spec -> assertThat(spec.callHandler()).isInstanceOf(StatelessAsyncToolCallGate.class));
         });
     }
 
-    @Test // U35 — a type nobody has heard of (a future fifth) is recognized by its tool() accessor and refused
+    @Test // U23 — a type nobody has heard of (a future fifth) is recognized by its tool() accessor and refused
     void refusesAnUnknownToolBearingType() {
         baselineWithRegistry(FutureSpecificationDeclared.class).run(context -> {
             assertThat(context).hasFailed();
             assertThat(failureMessages(context))
                     .contains(FutureSpecification.class.getName())
-                    .contains("supported: McpServerFeatures.SyncToolSpecification");
+                    .contains("cannot wrap")
+                    .contains("supported: " + McpToolSpecifications.SUPPORTED);
+        });
+    }
+
+    @Test // U23 — one known and one unknown element in ONE list: every element is checked, the list is refused
+    void refusesAListMixingAKnownAndAnUnknownElement() {
+        baselineWithRegistry(MixedKnownAndUnknownDeclared.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("mixedTools")
+                    .contains(FutureSpecification.class.getName());
+        });
+    }
+
+    @Test // U23 — a list of elements WITHOUT a tool() accessor is not a tool list: untouched, and starts
+    void leavesAListWithoutToolAccessorsUntouched() {
+        baseline().withUserConfiguration(NotToolBearing.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean("notTools", List.class)).isSameAs(NotToolBearing.NOT_TOOLS);
+        });
+    }
+
+    @Test // U23 — all four types in one context: the declarations check counts the union across the four
+    void theFourTypesTogetherAreCountedAgainstTheRegistry() {
+        baselineWithRegistry(AllFourTypesDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            for (String name : List.of("syncOfFour", "asyncOfFour", "statelessOfFour", "statelessAsyncOfFour")) {
+                assertThat(context.getBean(name, List.class))
+                        .allSatisfy(element -> assertThat(McpToolSpecifications.isGated(element)).isTrue());
+            }
+        });
+    }
+
+    // --- U25 : a non-web application starts, and every call is denied (no caller on the thread) ------
+
+    @Test // U25 — the plain (non-web) context starts; each of the four wrapped handlers denies unauthenticated
+    void aNonWebApplicationStartsAndDeniesEveryCallUnauthenticated() {
+        baselineWithRegistry(AllFourTypesDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getSourceApplicationContext())
+                    .as("the runner's context is not a web application context")
+                    .isNotInstanceOf(org.springframework.web.context.WebApplicationContext.class);
+            SecurityContextHolder.clearContext();
+            AllFourTypesDeclared.BODY_RUNS.set(0);
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("x", Map.of());
+
+            List<CallToolResult> results = new ArrayList<>();
+            results.add(((SyncToolSpecification) context.getBean("syncOfFour", List.class).get(0))
+                    .callHandler().apply(null, request));
+            results.add(((McpServerFeatures.AsyncToolSpecification) context.getBean("asyncOfFour", List.class).get(0))
+                    .callHandler().apply(null, request).block());
+            results.add(((McpStatelessServerFeatures.SyncToolSpecification)
+                    context.getBean("statelessOfFour", List.class).get(0))
+                    .callHandler().apply(McpTransportContext.EMPTY, request));
+            results.add(((McpStatelessServerFeatures.AsyncToolSpecification)
+                    context.getBean("statelessAsyncOfFour", List.class).get(0))
+                    .callHandler().apply(McpTransportContext.EMPTY, request).block());
+
+            assertThat(results).hasSize(4).allSatisfy(result -> {
+                assertThat(result.isError()).isTrue();
+                assertThat(result.meta()).containsEntry("layer", "tool-gate")
+                        .containsEntry("code", "tool-gate-unauthenticated");
+            });
+            assertThat(AllFourTypesDeclared.BODY_RUNS).as("no tool body ever ran").hasValue(0);
+            assertThat(opaPaths).as("an unauthenticated call never reaches the policy").isEmpty();
         });
     }
 
@@ -470,11 +543,11 @@ class OpaMcpAutoConfigurationTest {
 
     @Test // U36 — U35 under lazy initialization: the unsupported list is resolved by the verifier, not injected
     void anUnsupportedListNothingInjectsIsStillRefusedUnderLazyInitialization() {
-        lazy(baselineWithRegistry(AsyncStatefulDeclared.class)).run(context -> {
+        lazy(baselineWithRegistry(FutureSpecificationDeclared.class)).run(context -> {
             assertThat(Counters.PROBE.get()).isZero();
             assertThat(context).hasFailed();
             assertThat(failureMessages(context))
-                    .contains(McpServerFeatures.AsyncToolSpecification.class.getName());
+                    .contains(FutureSpecification.class.getName());
         });
     }
 
@@ -809,6 +882,76 @@ class OpaMcpAutoConfigurationTest {
         @Bean
         List<FutureSpecification> futureTools() {
             return List.of(new FutureSpecification(tool("future")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MixedKnownAndUnknownDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("known"), declared("future")));
+        }
+
+        @Bean
+        List<Object> mixedTools() {
+            return List.of(syncSpec("known"), new FutureSpecification(tool("future")));
+        }
+    }
+
+    /** Elements with a {@code tool()} method that does not return {@code McpSchema.Tool}: not tool-bearing. */
+    record NotASpecification(String tool) {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NotToolBearing {
+        static final List<NotASpecification> NOT_TOOLS = List.of(new NotASpecification("a"));
+
+        @Bean
+        List<NotASpecification> notTools() {
+            return NOT_TOOLS;
+        }
+    }
+
+    /** One tool of each of the four SDK types, all declared; every body counts its runs. */
+    @Configuration(proxyBeanMethods = false)
+    static class AllFourTypesDeclared {
+        static final AtomicInteger BODY_RUNS = new AtomicInteger();
+
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("s"), declared("a"), declared("ss"), declared("sa")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> syncOfFour() {
+            return List.of(new SyncToolSpecification(tool("s"), (exchange, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return CallToolResult.builder().build();
+            }));
+        }
+
+        @Bean
+        List<McpServerFeatures.AsyncToolSpecification> asyncOfFour() {
+            return List.of(new McpServerFeatures.AsyncToolSpecification(tool("a"), (exchange, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return Mono.just(CallToolResult.builder().build());
+            }));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.SyncToolSpecification> statelessOfFour() {
+            return List.of(new McpStatelessServerFeatures.SyncToolSpecification(tool("ss"), (transport, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return CallToolResult.builder().build();
+            }));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.AsyncToolSpecification> statelessAsyncOfFour() {
+            return List.of(new McpStatelessServerFeatures.AsyncToolSpecification(tool("sa"), (transport, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return Mono.just(CallToolResult.builder().build());
+            }));
         }
     }
 

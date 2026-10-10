@@ -52,7 +52,11 @@ runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a l
   `opa-abac-mcp` and Spring AI's MCP server are both on the classpath. It builds the gate's beans (each
   overridable), memoizes the ceiling and the capability per request, decorates the application's
   `PolicyPathResolver` (resource type `tool` ⇒ `opa.abac.mcp.policy-path`; every other type unchanged — `tool`
-  is reserved) and wraps every stateful synchronous tool specification. It is **not** switched off by
+  is reserved) and gates every tool specification of **all four** MCP SDK types — sync and async, stateful
+  and stateless (`ToolCallGate`, `AsyncToolCallGate`, `StatelessToolCallGate`, `StatelessAsyncToolCallGate`,
+  each deciding when its handler is invoked, never inside a `Mono`; each proven over a real `POST /mcp`). A
+  reactive (WebFlux) application and a tool-bearing type it cannot wrap **fail at startup**; a non-web
+  (e.g. stdio) server starts and denies every call `tool-gate-unauthenticated`. It is **not** switched off by
   `opa.abac.enabled=false`: without an `OpaClient`, without a `PrincipalCeilingSupplier`, with a tool
   specification type it cannot wrap, or with an actor claim the subject never receives, the application
   **fails at startup** — `opa.abac.allow-ungated-methods=true` does not change that.

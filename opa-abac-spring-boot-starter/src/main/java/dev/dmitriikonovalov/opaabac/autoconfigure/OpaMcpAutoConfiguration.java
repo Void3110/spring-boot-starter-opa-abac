@@ -24,10 +24,12 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -56,7 +58,13 @@ import tools.jackson.databind.json.JsonMapper;
  * and every consumer shares one instance: the memos (ceiling — under {@code opa.abac.resolve-memo.enabled};
  * capability — always, so the roster and the gate share one answer per turn), the policy-path decorator
  * (resource type {@code tool} ⇒ {@code opa.abac.mcp.policy-path}, every other type ⇒ the application's own
- * resolver — the type {@code tool} is reserved), and the gate itself.
+ * resolver — the type {@code tool} is reserved), and the gate itself — on every tool specification of all four
+ * MCP SDK types.
+ *
+ * <h2>Spring MVC only</h2>
+ * A reactive (WebFlux) application fails startup (ADR 0036 §4 — out of scope for v1): the gate reads the caller
+ * from the thread a handler is invoked on. A non-web application starts, and every call is denied
+ * {@code tool-gate-unauthenticated}.
  */
 @AutoConfiguration(after = OpaAbacAutoConfiguration.class)
 @ConditionalOnClass(name = {
@@ -140,11 +148,27 @@ public class OpaMcpAutoConfiguration {
     @Bean
     McpStartupVerifier opaMcpStartupVerifier(
             ConfigurableListableBeanFactory beanFactory,
+            ObjectProvider<McpStartupVerifier.ReactiveWebApplication> reactive,
             ObjectProvider<OpaClient> opaClient,
             ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier,
             ObjectProvider<ToolRegistry> registry,
             McpToolGatePostProcessor opaMcpToolGate) {
-        return new McpStartupVerifier(beanFactory, opaClient, ceilingSupplier, registry, opaMcpToolGate);
+        return new McpStartupVerifier(beanFactory, reactive, opaClient, ceilingSupplier, registry, opaMcpToolGate);
+    }
+
+    /**
+     * WebFlux detection (ADR 0036 §4 — out of scope for v1): Boot's own {@code REACTIVE} condition contributes
+     * the marker the verifier refuses as its first step. Detection only — the failure is the verifier's, so it
+     * runs in its single eager callback, ahead of every other step.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
+    static class ReactiveWebApplicationDetection {
+
+        @Bean
+        McpStartupVerifier.ReactiveWebApplication opaMcpReactiveWebApplication() {
+            return McpStartupVerifier.ReactiveWebApplication.DETECTED;
+        }
     }
 
     /**

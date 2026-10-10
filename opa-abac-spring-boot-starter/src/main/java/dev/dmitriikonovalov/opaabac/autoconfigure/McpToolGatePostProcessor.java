@@ -1,8 +1,6 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
 import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallAuthorizer;
-import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
-import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -22,11 +20,11 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
  * <strong>element by element</strong>, as it is created.
  *
  * <ul>
- *   <li>a {@link SyncToolSpecification} is wrapped with {@link ToolCallGate} (one already gated is kept,
- *       never wrapped twice);</li>
- *   <li>any other <em>tool-bearing</em> element ({@link McpToolSpecifications#isToolBearing}) — the three
- *       other SDK specification types included, until they are supported — <strong>fails startup</strong>,
- *       naming its type: the module never serves a type it does not gate;</li>
+ *   <li>an element of any of the four SDK tool-specification types — sync or async, stateful or
+ *       stateless — is wrapped with its type's gate (one already gated is kept, never wrapped twice);</li>
+ *   <li>any other <em>tool-bearing</em> element ({@link McpToolSpecifications#isToolBearing}) — a type the
+ *       module does not know, e.g. one a future SDK adds — <strong>fails startup</strong>, naming its type:
+ *       the module never serves a type it does not gate. Every element is checked, not only the first;</li>
  *   <li>a list with no tool-bearing element ({@code List<String>}, resource specifications) is returned
  *       untouched.</li>
  * </ul>
@@ -71,7 +69,7 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
         }
         boolean carriesTools = false;
         for (Object element : list) {
-            if (element instanceof SyncToolSpecification) {
+            if (McpToolSpecifications.isSupported(element)) {
                 carriesTools = true;
             } else if (McpToolSpecifications.isToolBearing(element)) {
                 throw new IllegalStateException("Bean '" + beanName + "' holds a tool specification of type "
@@ -88,15 +86,16 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
         List<Object> gated = new ArrayList<>(list.size());
         int wrapped = 0;
         for (Object element : list) {
-            if (element instanceof SyncToolSpecification specification) {
-                gatedToolNames.add(specification.tool().name());
-                if (!(specification.callHandler() instanceof ToolCallGate)) {
-                    gated.add(ToolCallGate.gate(specification, authorizer));
-                    wrapped++;
-                    continue;
-                }
+            if (!McpToolSpecifications.isSupported(element)) {
+                gated.add(element);
+                continue;
             }
-            gated.add(element);
+            gatedToolNames.add(McpToolSpecifications.toolName(element));
+            Object withGate = McpToolSpecifications.gate(element, authorizer);
+            if (withGate != element) {
+                wrapped++;
+            }
+            gated.add(withGate);
         }
         log.info("Tool-gate installed on {} tool specification(s) in '{}'", wrapped, beanName);
         return gated;

@@ -204,6 +204,7 @@ Every edge lands on **deny, or the smaller result**.
 
 | Edge | Failure | Lands on |
 |---|---|---|
+| caller identity | no authenticated caller on the thread the gate decides on (a non-web server; a customizer that moved handlers off the request thread) | **deny** every call (`tool-gate-unauthenticated`) |
 | delegation chain | claim absent | principal-only (an ordinary human call) |
 | delegation chain | malformed / oversized / cyclic | **deny** |
 | capability supplier | authoritative-empty | **deny** every tool |
@@ -262,7 +263,7 @@ implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
 parse never changes with your Jackson customizations); the YAML `AgentCapabilitySupplier`
 (`opa.abac.mcp.agents.profiles[]`). The starter decorates, bean-level, whatever ended up in the context:
 the ceiling memo (under `opa.abac.resolve-memo.enabled`), the turn-scoped capability memo (always), the
-gate on every stateful synchronous tool specification (every element of every specification list), and
+gate on every tool specification of all four SDK types (every element of every specification list), and
 your `PolicyPathResolver` — **decorated, not replaced**: resource type `tool` goes to
 `opa.abac.mcp.policy-path` (default `agent_tools`), every other type keeps your resolver's answer, so the
 application's other gates are unaffected. The resource type **`tool` is reserved** for the tool-gate.
@@ -274,7 +275,8 @@ message naming the fix, when:
 |---|---|
 | no `OpaClient` bean (incl. `opa.abac.enabled=false`) | fails, naming `opa.abac.enabled` and `OpaClient` — **even with** `opa.abac.allow-ungated-methods=true`: that acknowledgment covers `@OpaPreAuthorize` methods, never an ungated tool surface |
 | no `PrincipalCeilingSupplier` bean | fails (there is no default) |
-| a tool specification the module cannot wrap — in this release every type but `McpServerFeatures.SyncToolSpecification`, and any element exposing an `McpSchema.Tool tool()` accessor | fails, naming the type |
+| a tool specification the module cannot wrap — any element exposing an `McpSchema.Tool tool()` accessor that is not one of the four SDK specification types (e.g. a type a future SDK adds) | fails, naming the type |
+| a reactive (Spring WebFlux) web application | fails — not supported in v1 ([[#Supported configurations]]) |
 | a specification list that never passed the gate (e.g. added with `registerSingleton`) | fails, naming the bean |
 | `opa.abac.mcp.identity.actor-claim` not listed in `opa.abac.subject.attribute-claims` | fails (the wiring check — read from the environment, so it holds with the starter off) |
 | no `ToolRegistry` bean, or its declarations ≠ the tools the gate wrapped (either direction) | fails, with both sorted lists |
@@ -299,8 +301,53 @@ and therefore never wrapped:** a specification added at runtime with `addTool`, 
 to the builder, a prototype- or scope-bound list, a list produced by a `FactoryBean`, and a list added with
 `registerSingleton` (that one is caught: it fails startup if it carries a tool without the gate). Declaring
 an unwrapped tool fails the startup check, so an unsupported registration cannot pass silently as declared.
-The direct API (`ToolCallGate.gate`, `ToolCallAuthorizer`) stays public for wiring without the
-auto-configuration.
+The direct API (`ToolCallGate.gate` and its three siblings, `ToolCallAuthorizer`) stays public for wiring
+without the auto-configuration.
+
+## Supported configurations
+
+The gate wraps **all four** MCP SDK tool-specification types, each with its own wrapper in
+`…mcp.authz`:
+
+| `spring.ai.mcp.server.type` × `protocol` | Specification type | Wrapper | Status |
+|---|---|---|---|
+| `SYNC` × `STREAMABLE` | `McpServerFeatures.SyncToolSpecification` | `ToolCallGate` | supported — proven over a real `POST /mcp` |
+| `ASYNC` × `STREAMABLE` | `McpServerFeatures.AsyncToolSpecification` | `AsyncToolCallGate` | supported — proven over a real `POST /mcp` |
+| `SYNC` × `STATELESS` | `McpStatelessServerFeatures.SyncToolSpecification` | `StatelessToolCallGate` | supported — proven over a real `POST /mcp` |
+| `ASYNC` × `STATELESS` | `McpStatelessServerFeatures.AsyncToolSpecification` | `StatelessAsyncToolCallGate` | supported — proven over a real `POST /mcp` |
+
+"Proven" is a test per row in the starter (`*ToolGateIT`): on Spring MVC, a real HTTP `tools/call` with a
+forwarded bearer reaches the gate with the caller's identity on the deciding thread, a policy deny returns
+the tool-gate advisory without running the body, and a policy allow runs it once. A type that could not show
+the identity where the gate decides would not be shipped as supported — it would fail startup instead.
+
+**Every wrapper decides when its handler is invoked**, on the transport's calling thread, where the caller's
+`SecurityContextHolder` and request attributes are bound — never inside a `Mono`. An async wrapper then
+returns the denial, or the delegate's `Mono` *decorated, not replaced*: an emitted `ToolInvocationException`
+becomes the same advisory a thrown one does; an error result is relabelled from the tool body's recorded
+failure, read when the result is emitted (an async tool body runs at subscription); any other emitted error,
+and an empty completion, pass through unchanged. A resubscription never asks the policy again.
+
+- **Spring WebFlux is out of scope for v1** ([[0036-mcp-auth-library-module|ADR 0036]] §4): a reactive web
+  application **fails at startup**. The gate reads the caller from the thread a handler is invoked on, which a
+  reactive server does not keep; the planned successor is identity carried in the SDK's transport context.
+- **A non-web application** (e.g. an stdio server) starts, and **every call is denied**
+  `tool-gate-unauthenticated` — there is no request identity to read. Deny-all, never inert.
+- **An `ASYNC` server only scans reactive-returning tools.** Spring AI's annotation scanner registers only
+  `@McpTool` methods returning `Mono`, `Flux` or a `Publisher` on an `ASYNC` server; a synchronous method is
+  silently not served (and, if declared, fails the declarations check above).
+- **The synchronous servers rely on Spring AI's servlet-only `immediateExecution(true)`** to invoke handlers
+  on the request thread: the stateful one through `servletMcpSyncServerCustomizer`, the stateless one inside
+  its server bean whenever the environment is a servlet one. **The customizer trap:** the stateful server
+  injects a *single* `McpSyncServerCustomizer`, and Spring AI's is **not** `@ConditionalOnMissingBean` — a second
+  customizer fails startup with `NoUniqueBeanDefinitionException`, and a `@Primary` one that does not itself set
+  `immediateExecution(true)` moves every handler to `boundedElastic`, where no caller is bound: **every call is
+  then denied** `tool-gate-unauthenticated` (pinned by a test). If you need your own customizer, make it
+  `@Primary` and call `immediateExecution(true)` in it.
+- **Registered after startup is ungated.** A tool added with `addTool` (or by a customizer) never passes the
+  gate — see *Supported registrations* above.
+- The example's reflective `tools/list` installer (`RosterFilterInstaller`) needs the streamable transport and
+  fails startup on `STATELESS`; it stays an example-only adapter.
 
 ## Running it
 

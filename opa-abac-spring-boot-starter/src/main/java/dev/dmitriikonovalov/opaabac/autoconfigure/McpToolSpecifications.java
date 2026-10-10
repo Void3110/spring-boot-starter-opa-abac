@@ -1,7 +1,12 @@
 package dev.dmitriikonovalov.opaabac.autoconfigure;
 
+import dev.dmitriikonovalov.opaabac.mcp.authz.AsyncToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.StatelessAsyncToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.StatelessToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallAuthorizer;
 import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
-import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -17,11 +22,18 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
  * returning {@link McpSchema.Tool} carries a tool — every MCP SDK specification record has one — so a
  * specification type this module has never heard of (a future SDK's fifth) is recognized as tool-bearing
  * and refused, rather than passed through ungated because its name was not on a list.
+ *
+ * <p>The four SDK specification types are <em>supported</em>: each is wrapped by its own gate
+ * ({@link ToolCallGate}, {@link AsyncToolCallGate}, {@link StatelessToolCallGate},
+ * {@link StatelessAsyncToolCallGate}), and an element of one of them counts as gated only when its handler
+ * is <em>that type's</em> gate.
  */
 final class McpToolSpecifications {
 
-    /** The one type part 0 wraps; every other tool-bearing type fails startup (ADR 0036 §3). */
-    static final String SUPPORTED = "McpServerFeatures.SyncToolSpecification";
+    /** The four types the gate wraps; every other tool-bearing type fails startup (ADR 0036 §3). */
+    static final String SUPPORTED = "McpServerFeatures.SyncToolSpecification, "
+            + "McpServerFeatures.AsyncToolSpecification, McpStatelessServerFeatures.SyncToolSpecification, "
+            + "McpStatelessServerFeatures.AsyncToolSpecification";
 
     private McpToolSpecifications() {
     }
@@ -61,8 +73,52 @@ final class McpToolSpecifications {
         return decorated != null && targetName.equals(decorated.getBeanName());
     }
 
-    /** True when {@code element} is a specification whose handler is one of this module's gates. */
+    /** True when {@code element} is one of the four SDK tool-specification types the gate wraps. */
+    static boolean isSupported(Object element) {
+        return element instanceof McpServerFeatures.SyncToolSpecification
+                || element instanceof McpServerFeatures.AsyncToolSpecification
+                || element instanceof McpStatelessServerFeatures.SyncToolSpecification
+                || element instanceof McpStatelessServerFeatures.AsyncToolSpecification;
+    }
+
+    /** True when {@code element} is a supported specification whose handler is <em>its type's</em> gate. */
     static boolean isGated(Object element) {
-        return element instanceof SyncToolSpecification sync && sync.callHandler() instanceof ToolCallGate;
+        return switch (element) {
+            case McpServerFeatures.SyncToolSpecification s -> s.callHandler() instanceof ToolCallGate;
+            case McpServerFeatures.AsyncToolSpecification s -> s.callHandler() instanceof AsyncToolCallGate;
+            case McpStatelessServerFeatures.SyncToolSpecification s ->
+                    s.callHandler() instanceof StatelessToolCallGate;
+            case McpStatelessServerFeatures.AsyncToolSpecification s ->
+                    s.callHandler() instanceof StatelessAsyncToolCallGate;
+            case null, default -> false;
+        };
+    }
+
+    /** The advertised tool name of a supported specification. */
+    static String toolName(Object element) {
+        return switch (element) {
+            case McpServerFeatures.SyncToolSpecification s -> s.tool().name();
+            case McpServerFeatures.AsyncToolSpecification s -> s.tool().name();
+            case McpStatelessServerFeatures.SyncToolSpecification s -> s.tool().name();
+            case McpStatelessServerFeatures.AsyncToolSpecification s -> s.tool().name();
+            default -> throw new IllegalArgumentException("not a supported tool specification: " + element);
+        };
+    }
+
+    /**
+     * {@code element} with its type's gate installed — the element itself when it is already gated (never
+     * wrapped twice). Only ever called with a supported element.
+     */
+    static Object gate(Object element, ToolCallAuthorizer authorizer) {
+        if (isGated(element)) {
+            return element;
+        }
+        return switch (element) {
+            case McpServerFeatures.SyncToolSpecification s -> ToolCallGate.gate(s, authorizer);
+            case McpServerFeatures.AsyncToolSpecification s -> AsyncToolCallGate.gate(s, authorizer);
+            case McpStatelessServerFeatures.SyncToolSpecification s -> StatelessToolCallGate.gate(s, authorizer);
+            case McpStatelessServerFeatures.AsyncToolSpecification s -> StatelessAsyncToolCallGate.gate(s, authorizer);
+            default -> throw new IllegalArgumentException("not a supported tool specification: " + element);
+        };
     }
 }

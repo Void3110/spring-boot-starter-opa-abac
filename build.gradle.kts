@@ -160,12 +160,15 @@ val mutationTargets = mapOf(
 
 // Suites that mix Docker-backed `*IT` classes with plain unit tests. PIT re-runs the selected tests
 // once per mutant, so leaving a Testcontainers IT in the loop turns a one-minute analysis into an
-// unusable one. Restricting to `*Test` keeps the run interactive — at the cost that a class
-// exercised ONLY by an IT reports as NO_COVERAGE rather than as genuinely untested. In these two
-// modules read SURVIVED (a test ran and did not notice) as the signal, not NO_COVERAGE.
+// unusable one (the starter's `*ToolGateIT` classes each boot a real server). Restricting to `*Test`
+// keeps the run interactive — at the cost that a class exercised ONLY by an IT reports as NO_COVERAGE
+// rather than as genuinely untested. In these modules read SURVIVED (a test ran and did not notice) as
+// the signal, not NO_COVERAGE.
 val mutationUnitTestOnlyModules = setOf(
     "opa-abac-spring-data",
     "example-catalog-management-service",
+    // The tool-gate's per-type `*ToolGateIT` classes each boot a real MCP server on a random port.
+    "opa-abac-spring-boot-starter",
 )
 
 // OpenAPI codegen lands inside the app's own package tree, so the target glob would otherwise sweep
