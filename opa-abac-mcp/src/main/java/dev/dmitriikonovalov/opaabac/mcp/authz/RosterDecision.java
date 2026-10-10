@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.example.mcp.authz;
+package dev.dmitriikonovalov.opaabac.mcp.authz;
 
 import java.util.LinkedHashSet;
 import java.util.Set;

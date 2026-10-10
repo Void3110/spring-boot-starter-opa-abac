@@ -30,18 +30,9 @@ example:
       base-url: http://localhost:8080
       connect-timeout: 2s
       read-timeout: 5s
+    # The example's own authorization pieces: the reflective roster installer's escape hatch and the
+    # ceiling source. The gate's settings live with the module under opa.abac.mcp below.
     authz:
-      # The OPA document the tool-gate asks — the PACKAGE path. The shipped client POSTs
-      # /v1/data/<policy-path> for one decision and /v1/data/<policy-path>/bulk for a batch, so
-      # 'agent_tools/allow' here would make the batch resolve a path that does not exist.
-      policy-path: agent_tools
-      agent-gate:
-        # OFF removes the agent NARROWING only: the call is then evaluated as an ordinary human
-        # principal's would be, and the catalog service still enforces that principal's ceiling on
-        # every resource. There is deliberately no switch that disables call-time enforcement.
-        # The roster reads the SAME switch, so with it off the advertised list is the ceiling-only cut
-        # the call path would allow — a roster must never hide a tool the caller can successfully call.
-        enabled: true
       roster-filter:
         # The tools/list filter. OFF skips the reflective adapter AND its startup smoke check — the
         # deliberate escape hatch for the day an SDK bump moves the pinned internals. At runtime OFF is
@@ -69,6 +60,17 @@ opa:
     # The tool-gate library module (opa-abac-mcp, ADR 0036): how the delegation claim is read and the
     # YAML default capability source. The example's own settings stay under example.mcp.*.
     mcp:
+      # The OPA document the tool-gate asks — the PACKAGE path. The shipped client POSTs
+      # /v1/data/<policy-path> for one decision and /v1/data/<policy-path>/bulk for a batch, so
+      # 'agent_tools/allow' here would make the batch resolve a path that does not exist.
+      policy-path: agent_tools
+      agent-gate:
+        # OFF removes the agent NARROWING only: the call is then evaluated as an ordinary human
+        # principal's would be, and the catalog service still enforces that principal's ceiling on
+        # every resource. There is deliberately no switch that disables call-time enforcement.
+        # The roster reads the SAME switch, so with it off the advertised list is the ceiling-only cut
+        # the call path would allow — a roster must never hide a tool the caller can successfully call.
+        enabled: true
       identity:
         # The claim carrying RFC 8693 `act` semantics. It MUST also appear in
         # opa.abac.subject.attribute-claims above — ActorClaimWiringCheck fails startup if it does not,

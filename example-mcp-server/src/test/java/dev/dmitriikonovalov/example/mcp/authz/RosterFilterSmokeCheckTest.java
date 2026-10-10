@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolRosterFilter;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolAuthorizationProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
@@ -88,7 +90,7 @@ class RosterFilterSmokeCheckTest {
                 .withPropertyValues("example.mcp.authz.roster-filter.enabled=false")
                 // The REAL @Configuration, so the @ConditionalOnProperty under test is the shipped one.
                 .withUserConfiguration(
-                        ToolAuthorizationConfiguration.class, ProviderWithoutSessionFactory.class)
+                        ExampleAuthzConfiguration.class, ProviderWithoutSessionFactory.class)
                 .withBean(ToolRegistry.class, () -> new ToolRegistry(List.of()))
                 .withBean(OpaClient.class, DenyAllOpaClient::new)
                 .withBean(tools.jackson.databind.ObjectMapper.class,

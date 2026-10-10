@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
+import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
+import dev.dmitriikonovalov.opaabac.mcp.authz.PrincipalCeilingSupplier;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +31,7 @@ import tools.jackson.databind.ObjectMapper;
  * calls, with a stub standing in for the service, so a regression shows up as a wrong ceiling rather
  * than as a mystifying policy denial three layers away.
  */
-class TypeLevelRoleDefinitionSupplierTest {
+class TypeLevelPrincipalCeilingSupplierTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String USER = "user-alice";
@@ -42,6 +44,15 @@ class TypeLevelRoleDefinitionSupplierTest {
         if (stub != null) {
             stub.stop(0);
         }
+    }
+
+    @Test // U8 — a type-level ceiling source, never a per-resource RoleDefinitionSupplier (ADR 0036 §6)
+    void isAPrincipalCeilingSupplierAndNotARoleDefinitionSupplier() {
+        assertThat(PrincipalCeilingSupplier.class)
+                .isAssignableFrom(TypeLevelPrincipalCeilingSupplier.class);
+        assertThat(RoleDefinitionSupplier.class.isAssignableFrom(TypeLevelPrincipalCeilingSupplier.class))
+                .as("keeping the core SPI would invite a null-id reading of every adopter's supplier")
+                .isFalse();
     }
 
     /**
@@ -59,7 +70,7 @@ class TypeLevelRoleDefinitionSupplierTest {
                 "catalog", List.of("cat-1")));
 
         Optional<RoleDefinition> ceiling = supplier(base, List.of("catalog"))
-                .lookup(USER, "product", null);
+                .lookup(USER, "product");
 
         assertThat(ceiling).isPresent();
         assertThat(ceiling.get().permissions().get("product")).containsExactly("READ", "WRITE");
@@ -76,7 +87,7 @@ class TypeLevelRoleDefinitionSupplierTest {
                 "product", List.of(),
                 "catalog", List.of("cat-1")));
 
-        assertThat(supplier(base, List.of()).lookup(USER, "product", null))
+        assertThat(supplier(base, List.of()).lookup(USER, "product"))
                 .as("this is what the tool surface saw before the grant-scope fix")
                 .isEmpty();
     }
@@ -86,7 +97,7 @@ class TypeLevelRoleDefinitionSupplierTest {
     void aPrincipalGoverningNothingResolvesToAnAuthoritativeEmpty() throws IOException {
         String base = startStub(Map.of("product", List.of(), "catalog", List.of()));
 
-        assertThat(supplier(base, List.of("catalog")).lookup(USER, "product", null)).isEmpty();
+        assertThat(supplier(base, List.of("catalog")).lookup(USER, "product")).isEmpty();
     }
 
     /**
@@ -106,7 +117,7 @@ class TypeLevelRoleDefinitionSupplierTest {
         stub.start();
         String base = "http://127.0.0.1:" + stub.getAddress().getPort();
 
-        assertThatThrownBy(() -> supplier(base, List.of("catalog")).lookup(USER, "product", null))
+        assertThatThrownBy(() -> supplier(base, List.of("catalog")).lookup(USER, "product"))
                 .isInstanceOf(RoleResolutionException.class);
     }
 
@@ -115,8 +126,8 @@ class TypeLevelRoleDefinitionSupplierTest {
     void missingCoordinatesResolveToEmptyWithoutCallingTheService() throws IOException {
         String base = startStub(Map.of("product", List.of("p-1")));
 
-        assertThat(supplier(base, List.of("catalog")).lookup(null, "product", null)).isEmpty();
-        assertThat(supplier(base, List.of("catalog")).lookup(USER, null, null)).isEmpty();
+        assertThat(supplier(base, List.of("catalog")).lookup(null, "product")).isEmpty();
+        assertThat(supplier(base, List.of("catalog")).lookup(USER, null)).isEmpty();
         assertThat(requested).isEmpty();
     }
 
@@ -147,7 +158,7 @@ class TypeLevelRoleDefinitionSupplierTest {
         stub.start();
         String base = "http://127.0.0.1:" + stub.getAddress().getPort();
 
-        RoleDefinition ceiling = supplier(base, List.of()).lookup(USER, "catalog", null).orElseThrow();
+        RoleDefinition ceiling = supplier(base, List.of()).lookup(USER, "catalog").orElseThrow();
 
         assertThat(ceiling.permissions().get("catalog")).containsExactlyInAnyOrder("READ", "WRITE");
         assertThat(ceiling.deniedActions().get("catalog"))
@@ -196,7 +207,7 @@ class TypeLevelRoleDefinitionSupplierTest {
         stub.start();
         String base = "http://127.0.0.1:" + stub.getAddress().getPort();
 
-        RoleDefinition ceiling = supplier(base, List.of()).lookup(USER, "catalog", null).orElseThrow();
+        RoleDefinition ceiling = supplier(base, List.of()).lookup(USER, "catalog").orElseThrow();
 
         assertThat(ceiling.permissions().get("catalog")).containsExactly("READ");
         assertThat(targetsPerRequest)
@@ -237,7 +248,7 @@ class TypeLevelRoleDefinitionSupplierTest {
         stub.start();
         String base = "http://127.0.0.1:" + stub.getAddress().getPort();
 
-        RoleDefinition ceiling = supplier(base, List.of()).lookup(USER, "catalog", null).orElseThrow();
+        RoleDefinition ceiling = supplier(base, List.of()).lookup(USER, "catalog").orElseThrow();
 
         assertThat(ceiling.requiredTags()).isEmpty();
         assertThat(ceiling.permissions().get("catalog")).containsExactly("READ");
@@ -245,8 +256,8 @@ class TypeLevelRoleDefinitionSupplierTest {
 
     // --- helpers ------------------------------------------------------------------------------
 
-    private TypeLevelRoleDefinitionSupplier supplier(String baseUrl, List<String> grantScopeTypes) {
-        return new TypeLevelRoleDefinitionSupplier(
+    private TypeLevelPrincipalCeilingSupplier supplier(String baseUrl, List<String> grantScopeTypes) {
+        return new TypeLevelPrincipalCeilingSupplier(
                 MAPPER, baseUrl, Duration.ofSeconds(2), grantScopeTypes);
     }
 

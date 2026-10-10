@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.example.mcp.authz;
+package dev.dmitriikonovalov.opaabac.mcp.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,7 +17,6 @@ import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaClientConfig;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
-import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import io.modelcontextprotocol.spec.McpSchema.ListToolsResult;
@@ -81,8 +80,8 @@ class ToolRosterFilterTest {
             Map.of("catalog", List.of("READ"), "category", List.of("READ"), "product", List.of("READ")),
             Map.of(), Map.of(), null);
 
-    private static final RoleDefinitionSupplier CEILING_SUPPLIER =
-            (userId, resourceType, resourceId) -> Optional.of(CEILING);
+    private static final PrincipalCeilingSupplier CEILING_SUPPLIER =
+            (subject, resourceType) -> Optional.of(CEILING);
 
     private static final AgentCapabilitySupplier CAPABILITY_SUPPLIER = actorId ->
             new AgentCapabilityProfile(Set.of("READ"), CAPABLE_OF, Set.of("view", "list"), "low");
@@ -210,7 +209,6 @@ class ToolRosterFilterTest {
     void theRosterKillSwitchOffServesTheUnfilteredListWithTheGateUntouched() throws IOException {
         String opa = startPolicyStub(CAPABLE_OF);
         agentCaller();
-        properties.getRosterFilter().setEnabled(false);
         ToolCallAuthorizer authorizer = authorizer(opa, CAPABILITY_SUPPLIER, CEILING_SUPPLIER);
 
         // OFF means the installer never runs, so the served list is the delegate's, untouched — the
@@ -410,7 +408,7 @@ class ToolRosterFilterTest {
 
         newTurn();
         agentCaller();
-        RoleDefinitionSupplier ceilingOutage = (userId, type, id) -> {
+        PrincipalCeilingSupplier ceilingOutage = (subject, type) -> {
             throw new RoleResolutionException("the ceiling could not be resolved");
         };
         assertThat(filter(authorizer(opa, CAPABILITY_SUPPLIER, ceilingOutage), opa).decide().isUnfiltered())
@@ -457,7 +455,7 @@ class ToolRosterFilterTest {
     }
 
     private ToolCallAuthorizer authorizer(
-            String opaBaseUrl, AgentCapabilitySupplier capabilities, RoleDefinitionSupplier ceiling) {
+            String opaBaseUrl, AgentCapabilitySupplier capabilities, PrincipalCeilingSupplier ceiling) {
         return new ToolCallAuthorizer(
                 registry,
                 new ClaimDelegationChainExtractor(MAPPER, new IdentityProperties()),

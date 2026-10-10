@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;

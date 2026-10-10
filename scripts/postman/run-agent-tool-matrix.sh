@@ -38,7 +38,7 @@
 #
 # THREE CELLS ARE RIG DRILLS, NOT COLLECTION STEPS, and this runner orchestrates them: it stops and
 # restarts the OPA container around the E6 folders, recreates the MCP pod with
-# EXAMPLE_MCP_AUTHZ_AGENT_GATE_ENABLED=false around E7, and recreates it with the readonly actor's
+# OPA_ABAC_MCP_AGENT_GATE_ENABLED=false around E7, and recreates it with the readonly actor's
 # capability emptied around E11. An EXIT trap restores the rig (OPA up, MCP pod on its default
 # profile) however the run ends — a failed drill never leaves the rig switched off.
 #

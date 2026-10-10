@@ -80,7 +80,7 @@ services:
       # --- kill-switches, interpolated by deploy.sh for the E6/E7 drills -------------------------
       # Defaults are ON. E7 replays a denied call with the agent gate OFF to show the catalog's own
       # target-gate still denies it — i.e. OFF is not wider than ON.
-      EXAMPLE_MCP_AUTHZ_AGENT_GATE_ENABLED: "${MCP_AGENT_GATE_ENABLED:-true}"
+      OPA_ABAC_MCP_AGENT_GATE_ENABLED: "${MCP_AGENT_GATE_ENABLED:-true}"
       EXAMPLE_MCP_AUTHZ_ROSTER_FILTER_ENABLED: "${MCP_ROSTER_FILTER_ENABLED:-true}"
     ports:
       # Published for diagnosis only. The e2e enters through the GATEWAY (localhost:9085/mcp), the

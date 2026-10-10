@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.example.mcp.authz;
+package dev.dmitriikonovalov.opaabac.mcp.authz;
 
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityProfile;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier;
@@ -12,8 +12,6 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
-import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
-import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,7 +55,7 @@ public class ToolCallAuthorizer {
     private final ToolRegistry registry;
     private final DelegationChainExtractor delegationChainExtractor;
     private final AgentCapabilitySupplier capabilitySupplier;
-    private final RoleDefinitionSupplier roleDefinitionSupplier;
+    private final PrincipalCeilingSupplier ceilingSupplier;
     private final OpaClient opaClient;
     private final ToolAuthorizationProperties properties;
 
@@ -65,13 +63,13 @@ public class ToolCallAuthorizer {
             ToolRegistry registry,
             DelegationChainExtractor delegationChainExtractor,
             AgentCapabilitySupplier capabilitySupplier,
-            RoleDefinitionSupplier roleDefinitionSupplier,
+            PrincipalCeilingSupplier ceilingSupplier,
             OpaClient opaClient,
             ToolAuthorizationProperties properties) {
         this.registry = registry;
         this.delegationChainExtractor = delegationChainExtractor;
         this.capabilitySupplier = capabilitySupplier;
-        this.roleDefinitionSupplier = roleDefinitionSupplier;
+        this.ceilingSupplier = ceilingSupplier;
         this.opaClient = opaClient;
         this.properties = properties;
     }
@@ -121,10 +119,13 @@ public class ToolCallAuthorizer {
                     toolName, e.getMessage());
             log.debug("Capability source failure for '{}'", toolName, e);
             return ToolAuthorizationDecision.denied(CODE_CAPABILITY_UNAVAILABLE);
-        } catch (RoleResolutionException e) {
-            log.warn("Tool-gate denied '{}': the principal's role could not be resolved ({})",
+        } catch (CeilingUnavailableException e) {
+            // Attributed by CALL SITE, not by type: whatever "could not decide" family member the
+            // PrincipalCeilingSupplier threw — the core RoleResolutionException or an adopter's own
+            // subtype — it is the ceiling that is unknown, not the policy engine.
+            log.warn("Tool-gate denied '{}': the principal's ceiling could not be resolved ({})",
                     toolName, e.getMessage());
-            log.debug("Role resolution failure for '{}'", toolName, e);
+            log.debug("Ceiling resolution failure for '{}'", toolName, e.getCause());
             return ToolAuthorizationDecision.denied(CODE_CEILING_UNAVAILABLE);
         } catch (DecisionIndeterminateException e) {
             // Still a denial — the tool body never runs — but a distinct, caller-visible "not now".
@@ -170,11 +171,9 @@ public class ToolCallAuthorizer {
             subjectAttributes.put("agent_capability", capability);
         }
 
-        // The ceiling: resolved for the type this tool reads, by the same supplier and the same
-        // coordinates the catalog service would use — which is what makes the two layers agree.
-        RoleDefinition roleDefinition = roleDefinitionSupplier
-                .lookup(caller.id(), descriptor.targetType(), null)
-                .orElse(null);
+        // The ceiling: the principal's type-level authority for the type this tool reads — the union the
+        // target service's own per-resource decisions sit inside, which is what makes the two layers agree.
+        RoleDefinition roleDefinition = resolveCeiling(caller.id(), descriptor.targetType());
 
         return new AbacContext(
                 new AbacContext.Subject(caller.id(), caller.roles(), subjectAttributes),
@@ -189,6 +188,33 @@ public class ToolCallAuthorizer {
                         List.of()),
                 roleDefinition,
                 Map.of());
+    }
+
+    /**
+     * The principal's type-level ceiling, with an outage re-labelled by its call site: any
+     * {@link DecisionIndeterminateException} from the ceiling source becomes a
+     * {@link CeilingUnavailableException} (itself a family member, so a caller that only knows the family
+     * — the roster — still reads it as "could not decide").
+     */
+    private RoleDefinition resolveCeiling(String subject, String resourceType) {
+        try {
+            return ceilingSupplier.lookup(subject, resourceType).orElse(null);
+        } catch (DecisionIndeterminateException e) {
+            throw new CeilingUnavailableException(e);
+        }
+    }
+
+    /**
+     * The ceiling could not be resolved — the {@link PrincipalCeilingSupplier}'s outage, labelled by where
+     * it was thrown so the gate's code does not depend on which family member the supplier chose.
+     */
+    static final class CeilingUnavailableException extends DecisionIndeterminateException {
+
+        private static final long serialVersionUID = 1L;
+
+        CeilingUnavailableException(DecisionIndeterminateException cause) {
+            super(cause.getMessage(), cause);
+        }
     }
 
     /** The caller the starter's filter established, or null when nobody is authenticated. */

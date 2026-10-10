@@ -121,6 +121,36 @@ roster and the gate must see one capability answer or they could disagree; acros
 die, or revoking an agent's capability mid-session would not take effect until the client reconnected
 and "the list said I could" would quietly become an authorization.
 
+## The principal ceiling
+
+The human half of the intersection arrives through a dedicated SPI, **`PrincipalCeilingSupplier`** —
+`Optional<RoleDefinition> lookup(subject, resourceType)`: what the principal may do to *some* resource
+of a type. The tool-gate resolves no target (it asks "may this caller invoke this tool at all?" before
+any row is known), so it cannot use the per-resource question the core `RoleDefinitionSupplier` answers.
+The contract:
+
+- **grants are unioned** across every resource the principal governs; a **denial is kept only if it
+  applies to all of them**;
+- **over-approximation is allowed, under-approximation forbidden** — the gate is not the authority on
+  resources (the target service decides each one with the caller's own bearer), while a ceiling that is
+  too narrow removes access the caller has over REST and hides the agent narrowing behind a principal
+  denial;
+- **empty = an authoritative no-role** (the policy default-denies); an **outage throws** a member of the
+  "could not decide" family (`DecisionIndeterminateException` — the core `RoleResolutionException`, or
+  the implementation's own subtype), and the gate denies with `tool-gate-ceiling-unavailable` — any
+  family member thrown by the ceiling lookup gets that code, whichever subtype it is;
+- **no default implementation** — the gate has no honest fallback;
+- an implementer's note from the rig: when roles are recorded on a **governing root**, include the root's
+  type when the asked type is a descendant (the example's `TypeLevelPrincipalCeilingSupplier` does this via
+  `example.mcp.authz.role-source.grant-scope-types`).
+
+**Why not `RoleDefinitionSupplier` with a `null` id?** That would silently reinterpret every adopter's
+existing supplier: one that resolves exactly the role on exactly one resource would be read as a type-level
+union it never computed. A separate SPI is something an implementation opts into. The request memo of
+ADR [[0023-request-scoped-resolution-memoization|0023]] decorates it (`MemoizingPrincipalCeilingSupplier`,
+keyed `(subject, resourceType)`, under the same `opa.abac.resolve-memo.enabled` switch), so the roster and the
+call in one request see one ceiling.
+
 ## The intersection is computed in Rego
 
 `infra/opa/policies/agent_tools.rego` (package `agent_tools`, `default allow := false`) consumes the
@@ -200,7 +230,7 @@ capability, ceiling — where showing more is safe because the gate keeps denyin
 
 | Switch | OFF behaviour |
 |---|---|
-| `example.mcp.authz.agent-gate.enabled` | The tool-gate stops **narrowing**. The call is evaluated exactly as an ordinary human principal's, and the catalog service still enforces that principal's ceiling on every resource — so OFF **cannot grant an agent more than its principal already has**. The roster reads the same switch and shows the same ceiling-only cut. |
+| `opa.abac.mcp.agent-gate.enabled` | The tool-gate stops **narrowing**. The call is evaluated exactly as an ordinary human principal's, and the catalog service still enforces that principal's ceiling on every resource — so OFF **cannot grant an agent more than its principal already has**. The roster reads the same switch and shows the same ceiling-only cut. |
 | `example.mcp.authz.roster-filter.enabled` | The adapter **and its smoke check** are not installed at all — the deliberate escape hatch for the day an SDK bump moves the pinned internals. The served list is the unfiltered one, byte-identical to the outside-the-batch degradation path, with call-time enforcement unchanged. |
 
 There is **no** switch that disables call-time enforcement. The authoritative gate is not optional.

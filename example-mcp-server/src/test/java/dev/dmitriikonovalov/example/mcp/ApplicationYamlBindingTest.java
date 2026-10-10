@@ -2,6 +2,8 @@ package dev.dmitriikonovalov.example.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.dmitriikonovalov.example.mcp.authz.ExampleAuthzProperties;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolAuthorizationProperties;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityProperties;
 import dev.dmitriikonovalov.opaabac.mcp.identity.IdentityProperties;
 import java.io.IOException;
@@ -18,7 +20,7 @@ import org.springframework.core.io.ClassPathResource;
 /**
  * U4 — the example's own {@code application.yml} carries the tool-gate's settings under the module's
  * {@code opa.abac.mcp.*} prefixes, and nothing under the retired {@code example.mcp.identity} /
- * {@code example.mcp.agents} homes. Nested YAML is invisible to a text grep for the dotted key, so this is
+ * {@code example.mcp.agents} / {@code example.mcp.authz.{agent-gate,policy-path}} homes (U4, U38). Nested YAML is invisible to a text grep for the dotted key, so this is
  * the check that sees it.
  */
 class ApplicationYamlBindingTest {
@@ -50,5 +52,25 @@ class ApplicationYamlBindingTest {
                 binder.bind("opa.abac.mcp.agents", Bindable.of(AgentCapabilityProperties.class)).get();
         assertThat(agents.getProfiles()).extracting(AgentCapabilityProperties.Profile::getActorId)
                 .containsExactly("agent-readonly", "agent-overreach", "agent-revoked");
+    }
+
+    @Test // U38 — the authz rename is complete, and the example-owned keys stay where they were
+    void theGateSettingsBindUnderTheModuleAndTheExampleKeepsItsOwn() {
+        assertThat(binder.bind("example.mcp.authz.agent-gate", Bindable.mapOf(String.class, Object.class))
+                .isBound()).isFalse();
+        assertThat(binder.bind("example.mcp.authz.policy-path", String.class).isBound()).isFalse();
+
+        assertThat(binder.bind("opa.abac.mcp.agent-gate.enabled", Boolean.class).isBound()).isTrue();
+        assertThat(binder.bind("opa.abac.mcp.policy-path", String.class).get()).isEqualTo("agent_tools");
+        ToolAuthorizationProperties gate =
+                binder.bind("opa.abac.mcp", Bindable.of(ToolAuthorizationProperties.class)).get();
+        assertThat(gate.getAgentGate().isEnabled()).isTrue();
+
+        ExampleAuthzProperties example =
+                binder.bind("example.mcp.authz", Bindable.of(ExampleAuthzProperties.class)).get();
+        assertThat(binder.bind("example.mcp.authz.role-source.base-url", String.class).isBound()).isTrue();
+        assertThat(binder.bind("example.mcp.authz.roster-filter.enabled", Boolean.class).isBound()).isTrue();
+        assertThat(example.getRoleSource().getBaseUrl()).isEqualTo("http://localhost:8081");
+        assertThat(example.getRosterFilter().isEnabled()).isTrue();
     }
 }

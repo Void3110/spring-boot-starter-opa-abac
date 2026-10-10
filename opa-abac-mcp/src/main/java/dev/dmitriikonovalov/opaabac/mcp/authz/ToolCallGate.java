@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.example.mcp.authz;
+package dev.dmitriikonovalov.opaabac.mcp.authz;
 
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolErrorLayer;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolFailureRecord;

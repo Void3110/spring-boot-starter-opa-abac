@@ -1,8 +1,8 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
-import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
+import dev.dmitriikonovalov.opaabac.mcp.authz.PrincipalCeilingSupplier;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -26,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Resolves the principal's <strong>type-level</strong> authority — what they may do to <em>some</em>
- * resource of a type — for the tool-gate.
+ * resource of a type — for the tool-gate: this example's {@link PrincipalCeilingSupplier}.
  *
  * <h2>Why a type-level ceiling exists at all</h2>
  * Since slice B4, authority in this repo is membership-scoped: a role definition is resolved for a
@@ -55,12 +55,12 @@ import tools.jackson.databind.ObjectMapper;
  * {@link RoleResolutionException}, because an unknown ceiling must never be read as "no ceiling" and
  * certainly never as "any ceiling".
  */
-public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
+public class TypeLevelPrincipalCeilingSupplier implements PrincipalCeilingSupplier {
 
     private static final TypeReference<List<String>> ID_LIST = new TypeReference<>() {};
     private static final TypeReference<List<EffectiveRoleEntry>> ROLE_ENTRIES = new TypeReference<>() {};
 
-    private static final Logger log = LoggerFactory.getLogger(TypeLevelRoleDefinitionSupplier.class);
+    private static final Logger log = LoggerFactory.getLogger(TypeLevelPrincipalCeilingSupplier.class);
 
     /**
      * Governed targets per {@code /internal/effective-roles} request. At roughly 50 bytes per
@@ -75,7 +75,7 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
     private final Duration timeout;
     private final List<String> grantScopeTypes;
 
-    public TypeLevelRoleDefinitionSupplier(
+    public TypeLevelPrincipalCeilingSupplier(
             ObjectMapper objectMapper, String baseUrl, Duration timeout, List<String> grantScopeTypes) {
         this.objectMapper = objectMapper;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
@@ -110,7 +110,7 @@ public class TypeLevelRoleDefinitionSupplier implements RoleDefinitionSupplier {
     }
 
     @Override
-    public Optional<RoleDefinition> lookup(String userId, String resourceType, String resourceId) {
+    public Optional<RoleDefinition> lookup(String userId, String resourceType) {
         if (userId == null || resourceType == null) {
             return Optional.empty(); // no coordinates to resolve — authoritative no-role, not an outage
         }

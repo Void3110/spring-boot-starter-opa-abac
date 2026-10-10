@@ -40,10 +40,18 @@ runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a l
   `mcp-core` 2.0.0 (the version Spring AI 2.0.x uses) and on no Spring AI artifact.
 - `AgentCapabilityUnavailableException` is now a `DecisionIndeterminateException` (ADR 0037's "could not
   decide" family). The gate catches it first, so its denial code is unchanged.
+- **`PrincipalCeilingSupplier`** (new SPI, `…mcp.authz`): the principal's type-level ceiling —
+  `Optional<RoleDefinition> lookup(subject, resourceType)`, grants unioned across governed resources,
+  over-approximation allowed, empty = no role, an outage throws a `DecisionIndeterminateException` subtype
+  (⇒ `tool-gate-ceiling-unavailable`, whichever subtype). No default implementation. It replaces the
+  `RoleDefinitionSupplier` the example's gate used with a `null` resource id. `MemoizingPrincipalCeilingSupplier`
+  is its request memo (ADR 0023). The decision itself — `ToolCallAuthorizer`, `ToolCallGate`, `ToolRosterFilter`
+  — moves into the module unchanged.
 
 **Property rename, for anyone who copied the example.** The example's identity and capability settings move
 to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` and `example.mcp.agents.profiles[]`
-→ `opa.abac.mcp.agents.profiles[]` (same list shape). The old keys no longer bind.
+→ `opa.abac.mcp.agents.profiles[]` (same list shape), and `example.mcp.authz.{agent-gate.enabled, policy-path}`
+→ `opa.abac.mcp.{agent-gate.enabled, policy-path}`. The old keys no longer bind.
 
 ## [1.4.0] — 2026-10-05
 

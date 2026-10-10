@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.example.mcp.authz;
+package dev.dmitriikonovalov.opaabac.mcp.authz;
 
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;

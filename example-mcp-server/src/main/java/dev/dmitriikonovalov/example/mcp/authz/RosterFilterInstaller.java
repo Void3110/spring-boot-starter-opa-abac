@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolRosterFilter;
+import dev.dmitriikonovalov.opaabac.mcp.authz.RosterDecision;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.server.McpRequestHandler;
 import io.modelcontextprotocol.spec.McpSchema;

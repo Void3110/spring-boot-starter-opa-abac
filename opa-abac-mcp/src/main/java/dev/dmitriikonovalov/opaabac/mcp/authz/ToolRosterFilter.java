@@ -1,4 +1,4 @@
-package dev.dmitriikonovalov.example.mcp.authz;
+package dev.dmitriikonovalov.opaabac.mcp.authz;
 
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityUnavailableException;
 import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainException;
@@ -22,8 +22,9 @@ import org.slf4j.LoggerFactory;
  * advertises only what that caller can actually call.
  *
  * <p>This is the <strong>durable core</strong> of the roster mechanism — it owns every semantic and every
- * test, and it survives the SDK upgrade that will delete {@link RosterFilterInstaller}. Nothing here knows
- * how the filter is reached; it takes the caller's ambient identity and a delegate's result and answers.
+ * test, and it survives the SDK upgrade that will retire the example's reflective installer (MCP SDK 2.0.x
+ * has no supported per-caller {@code tools/list} seam; java-sdk #578). Nothing here knows how the filter is
+ * reached; it takes the caller's ambient identity and a delegate's result and answers.
  *
  * <h2>The list is a hint, never a grant</h2>
  * Omitting a tool from the roster does not disable it: {@code ToolCallGate} still runs on every
