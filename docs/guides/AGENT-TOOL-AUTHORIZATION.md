@@ -86,11 +86,30 @@ nightly build.
 | **absent** | an ordinary **human** call — principal-only evaluation | Honest, not a bypass: principal-only is the widest the tool-gate ever goes, and it is still exactly the principal's own ceiling. Agent narrowing only ever restricts. |
 | **present, well-formed** | an agent call — the intersection applies | |
 | **malformed / oversized / cyclic** | **deny** | A broken agent claim is not a human. Never downgrade malformed to principal-only. |
+| **absent, but `azp` is listed in `agent-clients`** | **deny** — `tool-gate-actor-required` | The token comes from a client the operator declared an agent, yet carries no actor: a misconfigured agent client (its IdP mapper is missing), never a human call. Opt-in — see below. |
 
 The claim is configured under **`opa.abac.mcp.identity.*`** — `actor-claim` (default `act_chain`),
 `max-chain-depth` (4), `max-claim-length` (2048) — and the claim name must also be listed in
 `opa.abac.subject.attribute-claims`, or startup fails (`ActorClaimWiringCheck`): a claim that never
 reaches the subject would read every agent call as a human one.
+
+**The `agent-clients` guard** (ADR 0036 §8). `opa.abac.mcp.identity.agent-clients` (default empty) lists the
+OAuth client ids that are agents. A token whose `azp` is listed but which carries no valid actor claim is
+**denied `tool-gate-actor-required`** (layer `tool-gate`, its own WARN naming the client) instead of being
+evaluated as a human call — and before any policy call is spent. Three rules pin it:
+
+- **Precedence.** The claim is read first, so a listed client with a *malformed* actor is still
+  `tool-gate-identity-unreadable`; the guard only ever sees a well-formed absent actor.
+- **It runs whether or not `opa.abac.mcp.agent-gate.enabled` is on.** It asks whether this client's token
+  carries the actor it must — an identity check, like the malformed-claim deny — not an agent-narrowing
+  conjunct.
+- **`azp` must reach the subject.** A non-empty list requires `azp` in `opa.abac.subject.attribute-claims`,
+  or startup fails naming both properties (the same wiring check as the actor claim): without it the guard
+  could never fire. An empty list never runs the check — the policy input is byte-identical to before.
+
+At list time the guard is an identity edge outside the batch: the roster is **unfiltered** (+ WARN) while the
+call-time gate denies every tool. **Residual, by design:** a user handing their *own* token to an agent is a
+human call — the token is the human's, bounded by the human's ceiling; nothing in it says an agent holds it.
 
 ## The capability seam is tri-state
 
@@ -205,6 +224,7 @@ Every edge lands on **deny, or the smaller result**.
 | Edge | Failure | Lands on |
 |---|---|---|
 | caller identity | no authenticated caller on the thread the gate decides on (a non-web server; a customizer that moved handlers off the request thread) | **deny** every call (`tool-gate-unauthenticated`) |
+| caller identity | a client listed in `opa.abac.mcp.identity.agent-clients` with no actor claim | **deny** (`tool-gate-actor-required`); the roster is **unfiltered** + WARN |
 | delegation chain | claim absent | principal-only (an ordinary human call) |
 | delegation chain | malformed / oversized / cyclic | **deny** |
 | capability supplier | authoritative-empty | **deny** every tool |
@@ -243,6 +263,23 @@ the denying layer** — `tool-gate` or `target-gate`. That is the protocol's own
 something went wrong in a way it can act on: pick another tool, ask the human to escalate. Never a
 stack trace, never a bare 5xx, never a silent empty result. The two layers being distinguishable is
 what lets a model react instead of retrying blindly.
+
+On the wire the layer and code ride in the result's **`_meta`** (`{"layer": …, "code": …}`); the text
+content is one safe, uniform message. The tool-gate's codes are documented API:
+
+| Code (layer `tool-gate`) | Meaning |
+|---|---|
+| `tool-gate-denied` | the policy said no (including an undefined `allow` for this input) |
+| `tool-undeclared` | the tool is missing from the `ToolRegistry` — unclassifiable is never unrestricted |
+| `tool-gate-unauthenticated` | no authenticated caller on the thread the gate decided on |
+| `tool-gate-identity-unreadable` | the actor claim is malformed, oversized or cyclic |
+| `tool-gate-actor-required` | the client (`azp`) is listed in `opa.abac.mcp.identity.agent-clients` but the token carries no actor claim |
+| `tool-gate-capability-unavailable` | the agent-capability source could not answer |
+| `tool-gate-ceiling-unavailable` | the principal's ceiling could not be resolved |
+| `tool-gate-policy-unavailable` | the policy engine could not decide (ADR 0037) — retryable later |
+
+Layer `target-gate` carries the target service's own codes (e.g. `ACCESS_DENIED`), relabelled from what the
+tool body recorded.
 
 ## Installing the module
 
@@ -422,11 +459,14 @@ apart end to end; a tool omitted from the roster is still *denied*, not merely h
 OPA mid-suite empties the roster **and** denies every call, with the pre-kill vector — same allows,
 same denies — returning exactly on restart.
 
-Three cells are rig **drills** the runner orchestrates rather than collection steps: it stops and
+Four cells are rig **drills** the runner orchestrates rather than collection steps: it stops and
 restarts the PDP around the outage folders, recreates the pod with `agent-gate` OFF (proving the
-catalog's own gate still refuses what the tool-gate no longer does), and recreates it with the
+catalog's own gate still refuses what the tool-gate no longer does), recreates it with the
 readonly actor's capability emptied — a revocation that removes the tool from the roster *and* denies
-it at call time.
+it at call time — and, for **E12**, recreates it with `catalog-gateway` listed in
+`opa.abac.mcp.identity.agent-clients` (and `azp` copied): the human token, minted by that actor-less
+client, is refused `tool-gate-actor-required` by value, an `agent-readonly` token on the same pod keeps
+its normal outcome, and the default pod then answers the human token normally again.
 
 ### Two things only the rig could show
 

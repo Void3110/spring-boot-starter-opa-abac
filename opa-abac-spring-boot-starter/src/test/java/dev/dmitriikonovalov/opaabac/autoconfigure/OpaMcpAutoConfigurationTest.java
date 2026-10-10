@@ -29,6 +29,7 @@ import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor;
 import dev.dmitriikonovalov.opaabac.mcp.identity.TurnScopedCapabilityCache;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
@@ -449,6 +450,39 @@ class OpaMcpAutoConfigurationTest {
                         .allSatisfy(element -> assertThat(McpToolSpecifications.isGated(element)).isTrue());
             }
         });
+    }
+
+    // --- U28 (T6) : the agent-clients guard is wired, and its wiring check runs at startup --------------
+
+    @Test // U28 — agent-clients set without azp among the copied claims ⇒ startup fails naming azp
+    void agentClientsWithoutAzpCopiedFailsStartup() {
+        baseline().withPropertyValues("opa.abac.mcp.identity.agent-clients=catalog-gateway").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("'azp'")
+                    .contains("opa.abac.mcp.identity.agent-clients")
+                    .contains("opa.abac.subject.attribute-claims");
+        });
+    }
+
+    @Test // U28/U27 — with azp copied it starts, and the context's authorizer denies a listed client w/o actor
+    void theContextsAuthorizerCarriesTheAgentClientsGuard() {
+        baselineWithRegistry(AllFourTypesDeclared.class)
+                .withPropertyValues(
+                        "opa.abac.mcp.identity.agent-clients=catalog-gateway",
+                        "opa.abac.subject.attribute-claims=act_chain,azp")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    SecurityContextHolder.getContext().setAuthentication(new AbacAuthentication(
+                            new AbacContext.Subject("user-alice", List.of(), Map.of("azp", "catalog-gateway"))));
+                    try {
+                        assertThat(context.getBean(ToolCallAuthorizer.class).authorize("s").code())
+                                .isEqualTo("tool-gate-actor-required");
+                    } finally {
+                        SecurityContextHolder.clearContext();
+                    }
+                    assertThat(opaPaths).as("a deterministic deny spends no policy call").isEmpty();
+                });
     }
 
     // --- U25 : a non-web application starts, and every call is denied (no caller on the thread) ------

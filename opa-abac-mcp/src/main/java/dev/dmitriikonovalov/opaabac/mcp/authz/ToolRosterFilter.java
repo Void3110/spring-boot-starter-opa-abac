@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.mcp.authz;
 
+import dev.dmitriikonovalov.opaabac.mcp.identity.ActorRequiredException;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityUnavailableException;
 import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainException;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
@@ -122,6 +123,13 @@ public class ToolRosterFilter {
             log.warn("Roster unfiltered: the caller's identity could not be read ({}). "
                     + "The call-time gate still denies every tool for the same reason.", e.getMessage());
             return RosterDecision.unfiltered();
+        } catch (ActorRequiredException e) {
+            // An identity edge outside the batch (ADR 0036 §13): the hint shows everything, the call-time
+            // gate denies every tool with tool-gate-actor-required.
+            log.warn("Roster unfiltered: OAuth client '{}' is listed in opa.abac.mcp.identity.agent-clients but "
+                    + "its token carries no actor claim. The call-time gate denies every tool for it.",
+                    e.clientId());
+            return RosterDecision.unfiltered();
         } catch (AgentCapabilityUnavailableException e) {
             // The message only at WARN: a cause can be a parser exception quoting the source's body.
             log.warn("Roster unfiltered: the agent capability source was unavailable ({}). "
@@ -136,7 +144,11 @@ public class ToolRosterFilter {
             log.debug("Ceiling resolution failure", e);
             return RosterDecision.unfiltered();
         }
+        return decideInOneBatch(declared, contexts);
+    }
 
+    /** The batch half of {@link #decide()}: one round-trip, then the vector paired with the declarations. */
+    private RosterDecision decideInOneBatch(List<ToolDescriptor> declared, List<AbacContext> contexts) {
         // ONE round-trip for the whole roster — the batch primitive, not N single calls.
         List<Boolean> decisions;
         try {

@@ -95,14 +95,16 @@ public class OpaMcpAutoConfiguration {
             AgentCapabilitySupplier capabilitySupplier,
             ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier,
             ObjectProvider<OpaClient> opaClient,
-            ToolAuthorizationProperties properties) {
+            ToolAuthorizationProperties properties,
+            IdentityProperties identityProperties) {
         return new ToolCallAuthorizer(
                 registry.getIfAvailable(),
                 delegationChainExtractor,
                 capabilitySupplier,
                 ceilingSupplier.getIfAvailable(),
                 opaClient.getIfAvailable(),
-                properties);
+                properties,
+                identityProperties.getAgentClients());
     }
 
     @Bean

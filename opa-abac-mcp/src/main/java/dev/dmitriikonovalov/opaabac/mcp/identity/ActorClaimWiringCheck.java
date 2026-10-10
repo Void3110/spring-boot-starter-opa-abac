@@ -23,8 +23,15 @@ import org.springframework.beans.factory.SmartInitializingSingleton;
  * This module cannot see the starter's properties type, and must not: the claim list is passed in by
  * whoever wires the check — read from the environment, so the check never depends on the starter's
  * properties bean.
+ *
+ * <h2>The agent-clients guard has the same dependency</h2>
+ * A non-empty {@code opa.abac.mcp.identity.agent-clients} is only enforceable if {@code azp} reaches the
+ * subject too; otherwise the guard would silently never fire. So that coupling is checked here as well.
  */
 public class ActorClaimWiringCheck implements SmartInitializingSingleton {
+
+    /** The OAuth client-id claim the agent-clients guard reads (ADR 0036 §8). */
+    static final String AZP_CLAIM = "azp";
 
     private final IdentityProperties identityProperties;
     private final List<String> copiedClaims;
@@ -58,6 +65,16 @@ public class ActorClaimWiringCheck implements SmartInitializingSingleton {
                             + "opa.abac.subject.attribute-claims=" + copiedClaims
                             + ". The claim would never reach the subject, so every agent call would be "
                             + "read as an ordinary human call — a silent widening. Add it to both.");
+        }
+        List<String> agentClients = identityProperties.getAgentClients();
+        if (agentClients != null && !agentClients.isEmpty() && !copiedClaims.contains(AZP_CLAIM)) {
+            throw new IllegalStateException(
+                    "opa.abac.mcp.identity.agent-clients=" + agentClients + " needs the '" + AZP_CLAIM
+                            + "' claim, but it is not listed in opa.abac.subject.attribute-claims=" + copiedClaims
+                            + ". Without it the client id never reaches the subject and the agent-clients guard "
+                            + "could never fire — a listed agent client without its actor mapper would be read "
+                            + "as an ordinary human call. Add '" + AZP_CLAIM
+                            + "' to opa.abac.subject.attribute-claims.");
         }
     }
 }

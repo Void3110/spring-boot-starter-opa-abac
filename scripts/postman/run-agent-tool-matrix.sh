@@ -3,7 +3,7 @@
 # Run the agent tool-call authorization matrix (agent-tool-matrix.postman_collection.json) through
 # the local rig — the live proof of Phase 9 (AGENT-TOOL-AUTHZ, ADR 0028).
 #
-# What it proves (10-QA-TEST-CASES E1-E11): an MCP tool surface in front of the catalog service
+# What it proves (10-QA-TEST-CASES E1-E11, plus E12): an MCP tool surface in front of the catalog service
 # authorizes agent calls at TWO independent layers and propagates NOTHING between them. The tool-gate
 # (this server, agent_tools.rego) intersects the principal's ceiling with the acting agent's declared
 # capability; the target-gate (the catalog service's own, unchanged per-type policies) then decides the
@@ -29,6 +29,10 @@
 #           roster AND denies at call time. E11-b adds the other shape in the same pass: the
 #           `agent-revoked` actor, DECLARED with zero capability from the start, so its empty roster is
 #           an authoritative answer rather than the all-false vector a dead PDP produces
+#   E12     the agent-clients guard (MCP-AUTH-LIBRARY): with catalog-gateway listed as an agent client, the
+#           ordinary human token (that client has no actor mapper) is refused `tool-gate-actor-required`,
+#           an actor-carrying agent token on the same pod keeps its normal outcome, and the default pod
+#           answers the human token normally again (E12-restore)
 # E9 (every pre-existing runner still green) is a suite-level acceptance, not a cell here.
 #
 # Prereq: the full rig is up WITH the MCP server (the flag force-enables OIDC + OPA + the user-service):
@@ -36,10 +40,11 @@
 #   (EXPORT the flag — `export ENABLE_MCP=1` — if another matrix will re-up the rig afterwards:
 #   a flag-less `deploy.sh up` now positively tears the MCP route + container down, by design.)
 #
-# THREE CELLS ARE RIG DRILLS, NOT COLLECTION STEPS, and this runner orchestrates them: it stops and
+# FOUR CELLS ARE RIG DRILLS, NOT COLLECTION STEPS, and this runner orchestrates them: it stops and
 # restarts the OPA container around the E6 folders, recreates the MCP pod with
-# OPA_ABAC_MCP_AGENT_GATE_ENABLED=false around E7, and recreates it with the readonly actor's
-# capability emptied around E11. An EXIT trap restores the rig (OPA up, MCP pod on its default
+# OPA_ABAC_MCP_AGENT_GATE_ENABLED=false around E7, recreates it with the readonly actor's
+# capability emptied around E11, and recreates it with OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS=catalog-gateway
+# (+ azp copied) around E12, then on its default profile for E12-restore. An EXIT trap restores the rig (OPA up, MCP pod on its default
 # profile) however the run ends — a failed drill never leaves the rig switched off.
 #
 # Fixture set (registered in scripts/postman/README.md — dedicated, no shared fixtures touched):
@@ -378,6 +383,20 @@ MCP_READONLY_CATEGORIES= MCP_READONLY_TOOLS= MCP_READONLY_ACTIONS= MCP_READONLY_
 wait_mcp "the revoked-profile recreate"
 run_folder "E11 — revocation is visible end to end" e11
 
+# --- E12: the agent-clients guard --------------------------------------------------
+# catalog-gateway — the client the HUMAN token comes from, with no actor mapper — is listed as an agent
+# client, and azp is copied into the subject (the startup wiring check requires it). No realm change.
+# (This also restores the readonly profile E11 emptied: its variables are unset here.)
+echo "==> E12 drill: recreating the MCP pod with catalog-gateway listed as an agent client ..."
+MCP_AGENT_CLIENTS=catalog-gateway MCP_SUBJECT_ATTRIBUTE_CLAIMS=act_chain,azp \
+  mcp_compose up -d --force-recreate mcp >/dev/null
+wait_mcp "the agent-clients recreate"
+run_folder "E12 — the agent-clients guard: a listed client without an actor is refused" e12
+echo "==> E12 drill: recreating the MCP pod on its default profile ..."
+mcp_compose up -d --force-recreate mcp >/dev/null
+wait_mcp "the default-profile recreate"
+run_folder "E12-restore — the default pod answers the human token normally again" e12-restore
+
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --
 # KEEP_FIXTURES=1 skips it. The DELETEs ride the FK cascades: team -> memberships + custom roles;
 # catalog -> categories -> products. The rig itself is restored by the EXIT trap either way.
@@ -391,4 +410,4 @@ DELETE FROM catalog WHERE id IN ('$AGENT_CATALOG_ID', '$FOREIGN_CATALOG_ID');
 SQL
 fi
 
-echo "==> Agent tool-call authorization matrix: E1-E8, E10 and E11 green through the gateway."
+echo "==> Agent tool-call authorization matrix: E1-E8, E10, E11 and E12 green through the gateway."

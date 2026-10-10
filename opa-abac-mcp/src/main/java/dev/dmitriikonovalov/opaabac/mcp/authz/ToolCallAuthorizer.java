@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.opaabac.mcp.authz;
 
+import dev.dmitriikonovalov.opaabac.mcp.identity.ActorRequiredException;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityProfile;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityUnavailableException;
@@ -17,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -49,6 +51,14 @@ public class ToolCallAuthorizer {
      */
     static final String CODE_POLICY_UNAVAILABLE = "tool-gate-policy-unavailable";
     static final String CODE_UNAUTHENTICATED = "tool-gate-unauthenticated";
+    /**
+     * A token from a listed agent client carries no actor claim (ADR 0036 §8): a misconfigured agent client,
+     * never a human call. Deterministic — not a "could not decide".
+     */
+    static final String CODE_ACTOR_REQUIRED = "tool-gate-actor-required";
+
+    /** The subject attribute the starter copies the OAuth client id into (via {@code attribute-claims}). */
+    static final String AZP_ATTRIBUTE = "azp";
 
     private static final Logger log = LoggerFactory.getLogger(ToolCallAuthorizer.class);
 
@@ -58,7 +68,11 @@ public class ToolCallAuthorizer {
     private final PrincipalCeilingSupplier ceilingSupplier;
     private final OpaClient opaClient;
     private final ToolAuthorizationProperties properties;
+    private final Set<String> agentClients;
 
+    /** No agent-client guard — as {@link #ToolCallAuthorizer(ToolRegistry, DelegationChainExtractor,
+     * AgentCapabilitySupplier, PrincipalCeilingSupplier, OpaClient, ToolAuthorizationProperties, List)} with an
+     * empty list. */
     public ToolCallAuthorizer(
             ToolRegistry registry,
             DelegationChainExtractor delegationChainExtractor,
@@ -66,12 +80,30 @@ public class ToolCallAuthorizer {
             PrincipalCeilingSupplier ceilingSupplier,
             OpaClient opaClient,
             ToolAuthorizationProperties properties) {
+        this(registry, delegationChainExtractor, capabilitySupplier, ceilingSupplier, opaClient, properties,
+                List.of());
+    }
+
+    /**
+     * @param agentClients the OAuth client ids that are agents ({@code opa.abac.mcp.identity.agent-clients}): a
+     *                     token whose {@code azp} is listed but which carries no actor claim is denied
+     *                     {@code tool-gate-actor-required}; empty ⇒ the check never runs
+     */
+    public ToolCallAuthorizer(
+            ToolRegistry registry,
+            DelegationChainExtractor delegationChainExtractor,
+            AgentCapabilitySupplier capabilitySupplier,
+            PrincipalCeilingSupplier ceilingSupplier,
+            OpaClient opaClient,
+            ToolAuthorizationProperties properties,
+            List<String> agentClients) {
         this.registry = registry;
         this.delegationChainExtractor = delegationChainExtractor;
         this.capabilitySupplier = capabilitySupplier;
         this.ceilingSupplier = ceilingSupplier;
         this.opaClient = opaClient;
         this.properties = properties;
+        this.agentClients = agentClients == null ? Set.of() : Set.copyOf(agentClients);
     }
 
     /** Decide one tool call. Never throws for an authorization failure — it returns a denial. */
@@ -113,6 +145,11 @@ public class ToolCallAuthorizer {
             log.warn("Tool-gate denied '{}': the caller's identity could not be read ({})",
                     toolName, e.getMessage());
             return ToolAuthorizationDecision.denied(CODE_IDENTITY_UNREADABLE);
+        } catch (ActorRequiredException e) {
+            log.warn("Tool-gate denied '{}': OAuth client '{}' is listed in opa.abac.mcp.identity.agent-clients, "
+                    + "but its token carries no actor claim — a misconfigured agent client, not a human call",
+                    toolName, e.clientId());
+            return ToolAuthorizationDecision.denied(CODE_ACTOR_REQUIRED);
         } catch (AgentCapabilityUnavailableException e) {
             // The message only at WARN: a cause can be a parser exception quoting the source's body.
             log.warn("Tool-gate denied '{}': the agent capability source was unavailable ({})",
@@ -163,6 +200,12 @@ public class ToolCallAuthorizer {
         // and that distinction is the extractor's, not the switch's.
         DelegationChain chain = delegationChainExtractor.extract(caller);
 
+        // The agent-clients guard (ADR 0036 §8): AFTER the extractor, so a malformed actor stays
+        // identity-unreadable; and regardless of the agent-gate switch — it asks whether this client's
+        // token carries the actor it must, an identity check like the malformed-claim deny above, not an
+        // agent-narrowing conjunct. An empty list never runs it: the context is byte-identical to before.
+        requireActorForAgentClients(caller, chain);
+
         Map<String, Object> subjectAttributes = new LinkedHashMap<>(caller.attributes());
         if (applyAgentNarrowing && chain.isAgentCall()) {
             subjectAttributes.put("actor", chain.actor());
@@ -188,6 +231,17 @@ public class ToolCallAuthorizer {
                         List.of()),
                 roleDefinition,
                 Map.of());
+    }
+
+    /** A listed agent client ({@code azp}) without an actor claim ⇒ {@link ActorRequiredException}. */
+    private void requireActorForAgentClients(AbacContext.Subject caller, DelegationChain chain) {
+        if (agentClients.isEmpty() || chain.isAgentCall()) {
+            return;
+        }
+        Object azp = caller.attributes() == null ? null : caller.attributes().get(AZP_ATTRIBUTE);
+        if (azp instanceof String clientId && agentClients.contains(clientId)) {
+            throw new ActorRequiredException(clientId);
+        }
     }
 
     /**

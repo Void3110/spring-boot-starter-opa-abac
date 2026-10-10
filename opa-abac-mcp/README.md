@@ -32,6 +32,7 @@ reactive (WebFlux) application **fails startup** — the module is never present
 | `opa.abac.mcp.identity.actor-claim` | `act_chain` | the claim carrying RFC 8693 `act` semantics; must also be listed in `opa.abac.subject.attribute-claims` |
 | `opa.abac.mcp.identity.max-chain-depth` | `4` | deeper chains deny |
 | `opa.abac.mcp.identity.max-claim-length` | `2048` | larger claims deny, before any traversal |
+| `opa.abac.mcp.identity.agent-clients` | empty | OAuth client ids (`azp`) that are agents: a listed client's token without an actor claim is denied `tool-gate-actor-required`; non-empty requires `azp` in `opa.abac.subject.attribute-claims` |
 | `opa.abac.mcp.agent-gate.enabled` | `true` | `false` drops the agent conjunct only — the call is the principal's, still ceiling-bounded; nothing turns the gate off |
 | `opa.abac.mcp.policy-path` | `agent_tools` | the OPA **package** the tool-gate asks (`/bulk` is appended for the roster batch) |
 | `opa.abac.mcp.agents.profiles[]` | none | the YAML capability default: `actor-id`, `allowed-categories`, `allowed-tools` (mandatory — empty denies every tool), `allowed-actions`, `max-risk-tag`; an unconfigured agent is authoritative-empty |

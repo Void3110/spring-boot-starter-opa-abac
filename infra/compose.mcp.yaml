@@ -82,6 +82,14 @@ services:
       # target-gate still denies it — i.e. OFF is not wider than ON.
       OPA_ABAC_MCP_AGENT_GATE_ENABLED: "${MCP_AGENT_GATE_ENABLED:-true}"
       EXAMPLE_MCP_AUTHZ_ROSTER_FILTER_ENABLED: "${MCP_ROSTER_FILTER_ENABLED:-true}"
+
+      # --- the agent-clients guard (opa.abac.mcp.identity.agent-clients), interpolated for the E12 drill ---
+      # Defaults leave today's pod unchanged: an EMPTY list (the guard never runs — an empty env value binds
+      # to an empty list, pinned by a binder test) and the one claim application.yml already copies. E12
+      # lists catalog-gateway (the human client — it has NO actor mapper) and copies azp, which the guard
+      # reads and the startup wiring check requires whenever the list is non-empty.
+      OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS: "${MCP_AGENT_CLIENTS:-}"
+      OPA_ABAC_SUBJECT_ATTRIBUTE_CLAIMS: "${MCP_SUBJECT_ATTRIBUTE_CLAIMS:-act_chain}"
     ports:
       # Published for diagnosis only. The e2e enters through the GATEWAY (localhost:9085/mcp), the
       # way every other matrix in this repo does — the service trusts the forwarded JWT precisely

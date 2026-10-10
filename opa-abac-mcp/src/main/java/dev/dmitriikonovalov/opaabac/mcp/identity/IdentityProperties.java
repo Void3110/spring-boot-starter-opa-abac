@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.opaabac.mcp.identity;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -25,6 +27,14 @@ public class IdentityProperties {
     /** Maximum serialized size of the claim, in characters. Larger → deny, before any deep traversal. */
     private int maxClaimLength = 2048;
 
+    /**
+     * OAuth client ids ({@code azp}) that are agents. A token from a listed client that carries no valid
+     * actor claim is <strong>denied</strong> ({@code tool-gate-actor-required}) — a misconfigured agent
+     * client, never evaluated as a human call. Empty (the default) ⇒ the check never runs. A non-empty list
+     * requires {@code azp} in {@code opa.abac.subject.attribute-claims} (checked at startup).
+     */
+    private List<String> agentClients = new ArrayList<>();
+
     public String getActorClaim() {
         return actorClaim;
     }
@@ -47,5 +57,13 @@ public class IdentityProperties {
 
     public void setMaxClaimLength(int maxClaimLength) {
         this.maxClaimLength = maxClaimLength;
+    }
+
+    public List<String> getAgentClients() {
+        return agentClients;
+    }
+
+    public void setAgentClients(List<String> agentClients) {
+        this.agentClients = agentClients;
     }
 }

@@ -43,5 +43,6 @@ dependencies {
     // MockHttpServletRequest + RequestContextHolder binding for the turn-scoped memo tests.
     testImplementation("org.springframework:spring-test")
     testImplementation("jakarta.servlet:jakarta.servlet-api")
-    testRuntimeOnly("ch.qos.logback:logback-classic")
+    // logback on the test COMPILE path too: the agent-clients guard asserts its own WARN (a ListAppender).
+    testImplementation("ch.qos.logback:logback-classic")
 }

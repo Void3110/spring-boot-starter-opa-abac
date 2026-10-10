@@ -70,4 +70,37 @@ class ActorClaimWiringCheckTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("blank");
     }
+
+    // --- U28 : the wiring check covers azp when agent-clients is set -------------------------------
+
+    @Test // U28 — agent-clients without azp copied ⇒ fails naming azp and both properties
+    void failsWhenAgentClientsAreListedButAzpIsNotCopied() {
+        identity.setActorClaim("act_chain");
+        identity.setAgentClients(List.of("catalog-gateway"));
+        copiedClaims = List.of("act_chain");
+        ActorClaimWiringCheck check = check();
+
+        assertThatThrownBy(check::afterSingletonsInstantiated)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("'azp'")
+                .hasMessageContaining("opa.abac.mcp.identity.agent-clients")
+                .hasMessageContaining("opa.abac.subject.attribute-claims");
+    }
+
+    @Test // U28 — with azp copied ⇒ starts
+    void passesWhenAgentClientsAreListedAndAzpIsCopied() {
+        identity.setActorClaim("act_chain");
+        identity.setAgentClients(List.of("catalog-gateway"));
+        copiedClaims = List.of("act_chain", "azp");
+
+        assertThatCode(() -> check().afterSingletonsInstantiated()).doesNotThrowAnyException();
+    }
+
+    @Test // U28 — agent-clients empty ⇒ azp is not required
+    void azpIsNotRequiredWithoutAgentClients() {
+        identity.setAgentClients(List.of());
+        copiedClaims = List.of(identity.getActorClaim());
+
+        assertThatCode(() -> check().afterSingletonsInstantiated()).doesNotThrowAnyException();
+    }
 }

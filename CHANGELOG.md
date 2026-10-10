@@ -61,6 +61,12 @@ runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a l
   specification type it cannot wrap, or with an actor claim the subject never receives, the application
   **fails at startup** — `opa.abac.allow-ungated-methods=true` does not change that.
 
+  **`opa.abac.mcp.identity.agent-clients`** (new, default empty) lists the OAuth client ids (`azp`) that are
+  agents: a token from a listed client that carries no actor claim is denied **`tool-gate-actor-required`**
+  — a misconfigured agent client, never a human call — whether or not the agent gate is on; a malformed actor
+  stays `tool-gate-identity-unreadable`; the roster is unfiltered for it. A non-empty list requires `azp` in
+  `opa.abac.subject.attribute-claims` (startup fails otherwise). Empty = unchanged behavior.
+
   The `ToolRegistry` is checked at startup against the tools the gate actually wrapped, in both directions
   (advertised-but-undeclared and declared-but-never-wrapped both fail, as does a missing registry); a tool
   registered some way the gate never sees (`addTool`, a server customizer) is unsupported.
