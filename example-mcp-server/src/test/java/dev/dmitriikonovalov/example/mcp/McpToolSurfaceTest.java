@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.dmitriikonovalov.example.mcp.tool.CatalogTools;
 import dev.dmitriikonovalov.example.mcp.tool.ToolCallClassifier;
-import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Objects;

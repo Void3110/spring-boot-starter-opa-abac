@@ -1,9 +1,9 @@
 package dev.dmitriikonovalov.example.mcp.config;
 
-import dev.dmitriikonovalov.example.mcp.identity.AgentCapabilityProperties;
-import dev.dmitriikonovalov.example.mcp.identity.AgentCapabilitySupplier;
-import dev.dmitriikonovalov.example.mcp.identity.ConfigAgentCapabilitySupplier;
-import dev.dmitriikonovalov.example.mcp.identity.TurnScopedCapabilityCache;
+import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityProperties;
+import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier;
+import dev.dmitriikonovalov.opaabac.mcp.identity.ConfigAgentCapabilitySupplier;
+import dev.dmitriikonovalov.opaabac.mcp.identity.TurnScopedCapabilityCache;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

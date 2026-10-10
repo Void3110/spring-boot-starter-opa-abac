@@ -6,18 +6,19 @@ This is the **maintainer runbook** for publishing the `opa-abac-*` library modul
 
 The build wiring is already in place (see [ADR&nbsp;0027](docs/architecture/adr/0027-maven-central-release-engineering.md)):
 the [`com.vanniktech.maven.publish`](https://vanniktech.github.io/gradle-maven-publish-plugin/) plugin
-is applied to the five library modules **and** the `opa-abac-bom` platform (never the `example-*` apps),
+is applied to the six library modules **and** the `opa-abac-bom` platform (never the `example-*` apps),
 signing is wired into every publish task, and the POM metadata is complete. What remains — namespace
 verification, key custody, and pressing **Publish** — is **out-of-band** and manual, by design: it needs
 credentials and a DNS record that must never live in the repo.
 
-Six coordinates are published, all under **`dev.dmitriikonovalov`**:
+Seven coordinates are published, all under **`dev.dmitriikonovalov`**:
 
 ```
 dev.dmitriikonovalov:opa-abac-core:<version>
 dev.dmitriikonovalov:opa-abac-spring-security:<version>
 dev.dmitriikonovalov:opa-abac-spring-data:<version>
 dev.dmitriikonovalov:opa-abac-keycloak-directory:<version>
+dev.dmitriikonovalov:opa-abac-mcp:<version>          # incubating (ADR 0036)
 dev.dmitriikonovalov:opa-abac-spring-boot-starter:<version>
 dev.dmitriikonovalov:opa-abac-bom:<version>          # java-platform (POM only)
 ```
@@ -144,7 +145,7 @@ allprojects {
 }
 ```
 
-Then verify the full six-coordinate signed set builds **into your local Maven repo**, without touching Central:
+Then verify the full seven-coordinate signed set builds **into your local Maven repo**, without touching Central:
 
 ```bash
 ./gradlew clean build                                              # green baseline
@@ -157,16 +158,16 @@ gpg --list-packets ~/.m2/repository/dev/dmitriikonovalov/opa-abac-core/1.0.0/opa
 
 Inspect `~/.m2/repository/dev/dmitriikonovalov/`:
 
-- Each of the **5 libraries** →  `…-<version>.jar`, `…-<version>-sources.jar`, `…-<version>-javadoc.jar`,
+- Each of the **6 libraries** →  `…-<version>.jar`, `…-<version>-sources.jar`, `…-<version>-javadoc.jar`,
   `…-<version>.pom`, and a `.asc` signature next to each.
 - **`opa-abac-bom`** →  a `.pom` (with `<packaging>pom</packaging>` and `<dependencyManagement>` listing
-  all five modules) + its `.asc`; **no jar**.
+  all six modules) + its `.asc`; **no jar**.
 - The **`example-*` apps** publish **nothing** (they have no publish tasks).
 
 ```bash
 # quick check that the examples produced nothing under the namespace:
 find ~/.m2/repository/dev/dmitriikonovalov -maxdepth 1 -type d
-# → exactly the 6 opa-abac-* coordinates, no example-* anywhere
+# → exactly the 7 opa-abac-* coordinates, no example-* anywhere
 ```
 
 If signing is not configured, the publish task **fails at signing** — it never emits an unsigned or
@@ -183,7 +184,7 @@ With the namespace **Verified** (§1), the key on both keyservers (§2a), and cr
 ```
 
 The `-I` init script is **required** (gpg-command signing — see §2c); without it the deployment fails
-validation with *"Could not find a public key by the key fingerprint."* This uploads all six signed
+validation with *"Could not find a public key by the key fingerprint."* This uploads all seven signed
 coordinates to the Central Portal and (because the wiring uses the automatic-release path) triggers
 validation and release — a successful run ends with **"Deployment is being published to Maven Central."**
 Watch the **Deployments** tab on the Portal; a failed deployment leaves a droppable FAILED entry and
@@ -263,6 +264,6 @@ git commit -am "build: open <next>-SNAPSHOT development version"
 
 - [ ] Namespace `dev.dmitriikonovalov` shows **Verified** on the Portal (§1)
 - [ ] GPG public key uploaded to a keyserver; private key + token in `~/.gradle/gradle.properties` (§2)
-- [ ] `./gradlew publishToMavenLocal` yields 6 signed, POM-complete coordinates; examples none (§3)
+- [ ] `./gradlew publishToMavenLocal` yields 7 signed, POM-complete coordinates; examples none (§3)
 - [ ] `./gradlew publishAndReleaseToMavenCentral` succeeds; Portal shows the deployment (§4)
 - [ ] `v<version>` tagged; `main` bumped to the next `-SNAPSHOT` (§5)

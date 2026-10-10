@@ -27,6 +27,24 @@ running ungated. 1.5.0 refuses to start until you choose one of three fixes: rem
 enforce them, set `opa.abac.allow-ungated-methods=true` if ungated is what you want (a load-test baseline, a
 local run with no policy engine), or remove the annotations.
 
+### New incubating module: `opa-abac-mcp` — the agent tool-gate for MCP servers ([ADR 0036](docs/architecture/adr/0036-mcp-auth-library-module.md))
+
+Agent tool-call authorization (principal ceiling ∩ agent capability, decided by OPA before a tool body
+runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a library module.
+
+- **`opa-abac-mcp`** (new coordinate `dev.dmitriikonovalov:opa-abac-mcp`, in the BOM): the identity kernel
+  (`DelegationChain`, `DelegationChainExtractor` + `ClaimDelegationChainExtractor`, `ActorClaimWiringCheck`),
+  the agent-capability seam (`AgentCapabilitySupplier`, the YAML default `ConfigAgentCapabilitySupplier`, the
+  turn-scoped memo) and the tool declarations (`ToolDescriptor`, `ToolRegistry`, the structured tool failure).
+  **Incubating:** its API may change in a minor release until an external consumer adopts it. It depends on
+  `mcp-core` 2.0.0 (the version Spring AI 2.0.x uses) and on no Spring AI artifact.
+- `AgentCapabilityUnavailableException` is now a `DecisionIndeterminateException` (ADR 0037's "could not
+  decide" family). The gate catches it first, so its denial code is unchanged.
+
+**Property rename, for anyone who copied the example.** The example's identity and capability settings move
+to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` and `example.mcp.agents.profiles[]`
+→ `opa.abac.mcp.agents.profiles[]` (same list shape). The old keys no longer bind.
+
 ## [1.4.0] — 2026-10-05
 
 ### "Could not decide" is no longer reported as "no" ([ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md))

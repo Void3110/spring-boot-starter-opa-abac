@@ -1,8 +1,8 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
-import dev.dmitriikonovalov.example.mcp.identity.AgentCapabilitySupplier;
-import dev.dmitriikonovalov.example.mcp.identity.DelegationChainExtractor;
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier;
+import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinitionSupplier;

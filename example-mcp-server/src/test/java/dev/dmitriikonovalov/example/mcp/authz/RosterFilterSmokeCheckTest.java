@@ -2,8 +2,8 @@ package dev.dmitriikonovalov.example.mcp.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -93,10 +93,10 @@ class RosterFilterSmokeCheckTest {
                 .withBean(OpaClient.class, DenyAllOpaClient::new)
                 .withBean(tools.jackson.databind.ObjectMapper.class,
                         tools.jackson.databind.ObjectMapper::new)
-                .withBean(dev.dmitriikonovalov.example.mcp.identity.DelegationChainExtractor.class,
-                        () -> subject -> new dev.dmitriikonovalov.example.mcp.identity.DelegationChain(
+                .withBean(dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor.class,
+                        () -> subject -> new dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChain(
                                 subject.id(), null, List.of()))
-                .withBean(dev.dmitriikonovalov.example.mcp.identity.AgentCapabilitySupplier.class,
+                .withBean(dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier.class,
                         () -> actorId -> null)
                 .run(context -> {
                     assertThat(context)

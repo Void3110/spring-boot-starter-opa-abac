@@ -1,6 +1,6 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
-import dev.dmitriikonovalov.example.mcp.tool.ToolErrorLayer;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolErrorLayer;
 
 /**
  * The tool-gate's answer: allowed, or denied with a stable code and the layer responsible.

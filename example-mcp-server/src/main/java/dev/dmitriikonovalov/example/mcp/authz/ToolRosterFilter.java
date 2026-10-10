@@ -1,9 +1,9 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
-import dev.dmitriikonovalov.example.mcp.identity.AgentCapabilityUnavailableException;
-import dev.dmitriikonovalov.example.mcp.identity.DelegationChainException;
-import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityUnavailableException;
+import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainException;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;

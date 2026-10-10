@@ -1,9 +1,9 @@
 package dev.dmitriikonovalov.example.mcp.config;
 
-import dev.dmitriikonovalov.example.mcp.identity.ActorClaimWiringCheck;
-import dev.dmitriikonovalov.example.mcp.identity.ClaimDelegationChainExtractor;
-import dev.dmitriikonovalov.example.mcp.identity.DelegationChainExtractor;
-import dev.dmitriikonovalov.example.mcp.identity.IdentityProperties;
+import dev.dmitriikonovalov.opaabac.mcp.identity.ActorClaimWiringCheck;
+import dev.dmitriikonovalov.opaabac.mcp.identity.ClaimDelegationChainExtractor;
+import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor;
+import dev.dmitriikonovalov.opaabac.mcp.identity.IdentityProperties;
 import dev.dmitriikonovalov.opaabac.autoconfigure.OpaAbacProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +27,7 @@ public class IdentityConfiguration {
     @Bean
     ActorClaimWiringCheck actorClaimWiringCheck(
             IdentityProperties identityProperties, OpaAbacProperties starterProperties) {
-        return new ActorClaimWiringCheck(identityProperties, starterProperties);
+        return new ActorClaimWiringCheck(
+                identityProperties, starterProperties.getSubject().getAttributeClaims());
     }
 }

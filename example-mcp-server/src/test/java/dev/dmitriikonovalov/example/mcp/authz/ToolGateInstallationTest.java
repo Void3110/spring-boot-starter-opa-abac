@@ -2,7 +2,7 @@ package dev.dmitriikonovalov.example.mcp.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import java.util.List;
 import java.util.Map;

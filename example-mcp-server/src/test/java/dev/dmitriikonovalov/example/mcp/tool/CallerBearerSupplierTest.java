@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolInvocationException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 

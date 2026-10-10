@@ -45,7 +45,7 @@ services:
       # fronts the catalog. Never enable this gateway-less.
       OPA_ABAC_SUBJECT_TRUST_FORWARDED_JWT: "true"
 
-      # --- the demo agent registry ----------------------------------------------------------------
+      # --- the demo agent registry (opa.abac.mcp.agents.profiles[], the opa-abac-mcp YAML default) -----
       # One profile per demo actor, matching the three realm clients whose protocol mappers mint the
       # matching act_chain. Every dimension NARROWS: the tool-gate intersects these with the
       # principal's ceiling in Rego, so nothing here can grant an agent what its principal lacks —
@@ -59,23 +59,23 @@ services:
       # (E11): `MCP_READONLY_TOOLS= MCP_READONLY_CATEGORIES= MCP_READONLY_ACTIONS= … up -d
       # --force-recreate` leaves the actor DECLARED but with zero capability — a known agent whose
       # answer is authoritative-empty, not an outage. The defaults below are the shipped demo profile.
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ACTOR_ID: "agent-readonly"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_CATEGORIES: "${MCP_READONLY_CATEGORIES-READ}"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_TOOLS: "${MCP_READONLY_TOOLS-list_catalogs,get_catalog}"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_ALLOWED_ACTIONS: "${MCP_READONLY_ACTIONS-view,list}"
-      EXAMPLE_MCP_AGENTS_PROFILES_0_MAX_RISK_TAG: "${MCP_READONLY_MAX_RISK-low}"
+      OPA_ABAC_MCP_AGENTS_PROFILES_0_ACTOR_ID: "agent-readonly"
+      OPA_ABAC_MCP_AGENTS_PROFILES_0_ALLOWED_CATEGORIES: "${MCP_READONLY_CATEGORIES-READ}"
+      OPA_ABAC_MCP_AGENTS_PROFILES_0_ALLOWED_TOOLS: "${MCP_READONLY_TOOLS-list_catalogs,get_catalog}"
+      OPA_ABAC_MCP_AGENTS_PROFILES_0_ALLOWED_ACTIONS: "${MCP_READONLY_ACTIONS-view,list}"
+      OPA_ABAC_MCP_AGENTS_PROFILES_0_MAX_RISK_TAG: "${MCP_READONLY_MAX_RISK-low}"
 
-      EXAMPLE_MCP_AGENTS_PROFILES_1_ACTOR_ID: "agent-overreach"
-      EXAMPLE_MCP_AGENTS_PROFILES_1_ALLOWED_CATEGORIES: "READ,WRITE,TAG,GRANT"
-      EXAMPLE_MCP_AGENTS_PROFILES_1_ALLOWED_TOOLS: "list_catalogs,get_catalog,list_categories,get_product"
-      EXAMPLE_MCP_AGENTS_PROFILES_1_ALLOWED_ACTIONS: "view,list,create,update,delete"
-      EXAMPLE_MCP_AGENTS_PROFILES_1_MAX_RISK_TAG: "high"
+      OPA_ABAC_MCP_AGENTS_PROFILES_1_ACTOR_ID: "agent-overreach"
+      OPA_ABAC_MCP_AGENTS_PROFILES_1_ALLOWED_CATEGORIES: "READ,WRITE,TAG,GRANT"
+      OPA_ABAC_MCP_AGENTS_PROFILES_1_ALLOWED_TOOLS: "list_catalogs,get_catalog,list_categories,get_product"
+      OPA_ABAC_MCP_AGENTS_PROFILES_1_ALLOWED_ACTIONS: "view,list,create,update,delete"
+      OPA_ABAC_MCP_AGENTS_PROFILES_1_MAX_RISK_TAG: "high"
 
-      EXAMPLE_MCP_AGENTS_PROFILES_2_ACTOR_ID: "agent-revoked"
-      EXAMPLE_MCP_AGENTS_PROFILES_2_ALLOWED_CATEGORIES: ""
-      EXAMPLE_MCP_AGENTS_PROFILES_2_ALLOWED_TOOLS: ""
-      EXAMPLE_MCP_AGENTS_PROFILES_2_ALLOWED_ACTIONS: ""
-      EXAMPLE_MCP_AGENTS_PROFILES_2_MAX_RISK_TAG: ""
+      OPA_ABAC_MCP_AGENTS_PROFILES_2_ACTOR_ID: "agent-revoked"
+      OPA_ABAC_MCP_AGENTS_PROFILES_2_ALLOWED_CATEGORIES: ""
+      OPA_ABAC_MCP_AGENTS_PROFILES_2_ALLOWED_TOOLS: ""
+      OPA_ABAC_MCP_AGENTS_PROFILES_2_ALLOWED_ACTIONS: ""
+      OPA_ABAC_MCP_AGENTS_PROFILES_2_MAX_RISK_TAG: ""
 
       # --- kill-switches, interpolated by deploy.sh for the E6/E7 drills -------------------------
       # Defaults are ON. E7 replays a denied call with the agent gate OFF to show the catalog's own

@@ -1,8 +1,8 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
-import dev.dmitriikonovalov.example.mcp.tool.ToolErrorLayer;
-import dev.dmitriikonovalov.example.mcp.tool.ToolFailureRecord;
-import dev.dmitriikonovalov.example.mcp.tool.ToolInvocationException;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolErrorLayer;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolFailureRecord;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolInvocationException;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;

@@ -11,6 +11,10 @@ tasks.named("bootJar") { enabled = true }
 tasks.named("jar") { enabled = false }
 
 dependencies {
+    // The tool-gate library module (ADR 0036): the identity kernel, the capability seam and the tool
+    // declarations live there; the example keeps only its catalog-specific pieces.
+    implementation(project(":opa-abac-mcp"))
+
     // Spring AI's MCP server BOM + starter. The starter's POM declares spring-boot 4.1.0, but the
     // dependency-management plugin imports THIS repo's Boot BOM (the 4.0.x pin in libs.versions.toml)
     // first, so every spring-boot-* artifact resolves to it — the module builds and runs on the repo's

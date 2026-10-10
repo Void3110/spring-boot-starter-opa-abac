@@ -19,10 +19,13 @@ tags:
 > API and are authorized **before** they run, by a policy that computes **principal ceiling ∩ agent
 > capability in Rego**.
 >
-> **Nothing in the library changes.** No `opa-abac-*` module, no existing service, no existing
-> `.rego` document. The MCP server consumes the published starter exactly as an adopter would —
-> which is also what makes [[#On the local rig|the e2e]] meaningful: the target layer it denies at is
-> the shipped one, byte-for-byte.
+> **Packaged as a library module since 1.5.0 (incubating).** Phase 9 shipped the gate inside the
+> example and changed no library module. ADR [[0036-mcp-auth-library-module|0036]] (slice
+> MCP-AUTH-LIBRARY) moves its reusable half into the new **`opa-abac-mcp`** module — the identity
+> kernel, the capability seam and the tool declarations first — under `opa.abac.mcp.*` properties;
+> the example keeps its catalog tools, its ceiling source and the reflective roster installer. The
+> catalog service and its per-type policies are still the shipped ones, byte-for-byte, which is what
+> makes [[#On the local rig|the e2e]] meaningful: the target layer it denies at is unchanged.
 
 ## Why the MCP specification does not cover this
 
@@ -84,6 +87,11 @@ nightly build.
 | **present, well-formed** | an agent call — the intersection applies | |
 | **malformed / oversized / cyclic** | **deny** | A broken agent claim is not a human. Never downgrade malformed to principal-only. |
 
+The claim is configured under **`opa.abac.mcp.identity.*`** — `actor-claim` (default `act_chain`),
+`max-chain-depth` (4), `max-claim-length` (2048) — and the claim name must also be listed in
+`opa.abac.subject.attribute-claims`, or startup fails (`ActorClaimWiringCheck`): a claim that never
+reaches the subject would read every agent call as a human one.
+
 ## The capability seam is tri-state
 
 `AgentCapabilitySupplier` resolves the actor's profile — allowed categories, an allowed-tool list,
@@ -99,6 +107,14 @@ allowed actions, a max risk tag. It follows the repo's supplier doctrine (ADR
 The profile's `allowed-tools` list is **mandatory**: an empty list denies every tool. Reading it as
 "unrestricted" would turn a profile someone trimmed to nothing into a profile that permits
 everything.
+
+The YAML default (`ConfigAgentCapabilitySupplier`) reads a **list** of profiles under
+**`opa.abac.mcp.agents.profiles[]`** (`actor-id`, `allowed-categories`, `allowed-tools`,
+`allowed-actions`, `max-risk-tag`) — a list rather than a map keyed by actor id, because relaxed
+binding would mangle an id containing dots. An actor with no profile is authoritative-empty. The outage
+signal, `AgentCapabilityUnavailableException`, is a member of the core library's "could not decide"
+family (`DecisionIndeterminateException`, ADR [[0037-indeterminate-decision-distinct-from-deny|0037]]);
+the gate catches it before the family, so its denial code stays distinct.
 
 The lookup is memoized **per turn** — a turn is *one MCP request*, never a session. Within a turn the
 roster and the gate must see one capability answer or they could disagree; across turns the memo must

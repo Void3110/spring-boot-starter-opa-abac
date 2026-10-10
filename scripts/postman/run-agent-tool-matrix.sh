@@ -319,8 +319,10 @@ if [ "${SKIP_OPERATOR_CHECK:-0}" != "1" ]; then
     echo "ERROR: the outbound catalog client sets headers [$OUTBOUND_HEADERS] — expected exactly Accept + Authorization." >&2
     exit 1
   }
-  if grep -rniE 'x-(agent|actor|acting-as|capability|role|on-behalf)' "$REPO_ROOT/example-mcp-server/src/main/java" >/dev/null 2>&1; then
-    echo "ERROR: the MCP module names an agent/role/acting-as header — the tool surface must assert nothing downstream." >&2
+  # Both trees: the example's tools AND the opa-abac-mcp library the gate code moved into (ADR 0036).
+  if grep -rniE 'x-(agent|actor|acting-as|capability|role|on-behalf)' \
+      "$REPO_ROOT/example-mcp-server/src/main/java" "$REPO_ROOT/opa-abac-mcp/src/main/java" >/dev/null 2>&1; then
+    echo "ERROR: the MCP module or the opa-abac-mcp library names an agent/role/acting-as header — the tool surface must assert nothing downstream." >&2
     exit 1
   fi
   # Advisory from here down — a VCS fact about the branch, not a rig fact about the run.

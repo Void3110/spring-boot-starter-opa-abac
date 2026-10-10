@@ -7,9 +7,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Configuration for the example MCP server's own concerns, under {@code example.mcp}.
  *
  * <p>Deliberately narrow: where the catalog REST API lives and how long this server is willing to wait
- * for it. Authorization settings arrive in T4 under {@code example.mcp.authz} and identity settings in T2
- * under {@code example.mcp.identity}, each with their own properties type, so no single class becomes the
- * grab-bag that hides which switch belongs to which layer.
+ * for it. The tool-gate's own settings live with the {@code opa-abac-mcp} module under
+ * {@code opa.abac.mcp.*} (identity under {@code opa.abac.mcp.identity}, the capability profiles under
+ * {@code opa.abac.mcp.agents}), and the example's authorization settings under {@code example.mcp.authz},
+ * each with their own properties type, so no single class becomes the grab-bag that hides which switch
+ * belongs to which layer.
  */
 @ConfigurationProperties("example.mcp")
 public class McpServerProperties {

@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;

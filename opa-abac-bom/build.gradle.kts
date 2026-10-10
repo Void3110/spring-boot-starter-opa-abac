@@ -16,11 +16,12 @@ dependencies {
         api(project(":opa-abac-spring-security"))
         api(project(":opa-abac-spring-data"))
         api(project(":opa-abac-keycloak-directory"))
+        api(project(":opa-abac-mcp"))
         api(project(":opa-abac-spring-boot-starter"))
     }
 }
 
-// Publish wiring for the 6th coordinate. A java-platform publishes a POM-only artifact — no jar,
+// Publish wiring for the 7th coordinate. A java-platform publishes a POM-only artifact — no jar,
 // no sources/javadoc — so configure(JavaPlatform()) rather than JavaLibrary(...). The plugin is
 // applied here (in the module) rather than via the root allow-list, which is jar-only.
 mavenPublishing {

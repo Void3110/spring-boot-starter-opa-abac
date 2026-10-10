@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolInvocationException;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolFailureRecord;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;

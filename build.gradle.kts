@@ -32,7 +32,7 @@ allprojects {
 }
 
 // --- Publishing: the explicit library allow-list ---------------------------------------------
-// The five publishable library modules. The BOM (opa-abac-bom) applies the plugin in its own
+// The six publishable library modules. The BOM (opa-abac-bom) applies the plugin in its own
 // build with the JavaPlatform variant, so it is intentionally NOT in this jar-producing list.
 // NEVER add an example-* module here.
 val publishableJarModules = setOf(
@@ -40,6 +40,7 @@ val publishableJarModules = setOf(
     "opa-abac-spring-security",
     "opa-abac-spring-data",
     "opa-abac-keycloak-directory",
+    "opa-abac-mcp",
     "opa-abac-spring-boot-starter",
 )
 

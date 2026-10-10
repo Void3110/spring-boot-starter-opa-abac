@@ -121,7 +121,9 @@ starter wires the always-empty `NoOpUserDirectory` — fail-closed by default. O
 
 `example-mcp-server` is the **third** example app: a Spring AI **2.0.0** MCP server whose `@McpTool`
 methods proxy the catalog service's REST API with the caller's own bearer, gated by a tool-gate policy
-(`agent_tools.rego`). It consumes the shipped starter like any adopter — **no library module changes**.
+(`agent_tools.rego`). Since MCP-AUTH-LIBRARY (ADR 0036) the reusable gate lives in the incubating
+**`opa-abac-mcp`** library module (properties under `opa.abac.mcp.*`), which the example consumes like
+any adopter; the example keeps its catalog tools, its ceiling source and the reflective roster installer.
 
 Two things about its build are non-obvious:
 
@@ -157,6 +159,7 @@ opa-abac-core/                  # framework-agnostic ABAC model + OPA client (no
 opa-abac-spring-security/       # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
 opa-abac-spring-data/           # partial-eval → JPA Specification data filtering
 opa-abac-keycloak-directory/    # OPTIONAL: Keycloak-admin impl of the UserDirectory port (ADR 0020)
+opa-abac-mcp/                   # INCUBATING: the agent tool-gate for MCP servers (ADR 0036; no Spring AI dep)
 opa-abac-spring-boot-starter/   # auto-configuration (the published starter)
 example-catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
 example-mcp-server/             # Spring AI MCP server: @McpTool catalog proxies behind an OPA tool-gate

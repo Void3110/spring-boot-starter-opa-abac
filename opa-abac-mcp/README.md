@@ -1,0 +1,41 @@
+# opa-abac-mcp — the agent tool-gate for MCP servers (incubating)
+
+Agent tool-call authorization for a [Model Context Protocol](https://modelcontextprotocol.io) server
+built on Spring AI. Every `tools/call` is decided by OPA **before the tool body runs**, as
+*principal ceiling ∩ agent capability*, computed in Rego — in front of the target service's own,
+unchanged per-resource policies. The contract is
+[ADR 0036](../docs/architecture/adr/0036-mcp-auth-library-module.md); the two-layer model it packages is
+[ADR 0028](../docs/architecture/adr/0028-agent-tool-call-authorization.md); the full guide is
+[AGENT-TOOL-AUTHORIZATION](../docs/guides/AGENT-TOOL-AUTHORIZATION.md).
+
+> **Incubating.** This module's API may change in a **minor** release until an external consumer
+> adopts it (ADR 0036 §1). Pin the version you build against.
+
+## What is in it
+
+| Package | Holds |
+|---|---|
+| `dev.dmitriikonovalov.opaabac.mcp.identity` | the dual identity behind one token (`DelegationChain`, `DelegationChainExtractor` + the claim-based default), the agent-capability seam (`AgentCapabilitySupplier`, tri-state, with a YAML default), the turn-scoped capability memo, and the startup check that the actor claim reaches the subject |
+| `dev.dmitriikonovalov.opaabac.mcp.tool` | the static tool declarations (`ToolDescriptor`, `ToolRegistry`) and the structured, layer-labelled tool failure (`ToolInvocationException`, `ToolFailureRecord`, `ToolErrorLayer`) |
+
+The module holds types and logic and **declares no beans**; wiring belongs to the starter.
+
+## Properties
+
+| Property | Default | Meaning |
+|---|---|---|
+| `opa.abac.mcp.identity.actor-claim` | `act_chain` | the claim carrying RFC 8693 `act` semantics; must also be listed in `opa.abac.subject.attribute-claims` |
+| `opa.abac.mcp.identity.max-chain-depth` | `4` | deeper chains deny |
+| `opa.abac.mcp.identity.max-claim-length` | `2048` | larger claims deny, before any traversal |
+| `opa.abac.mcp.agents.profiles[]` | none | the YAML capability default: `actor-id`, `allowed-categories`, `allowed-tools` (mandatory — empty denies every tool), `allowed-actions`, `max-risk-tag`; an unconfigured agent is authoritative-empty |
+
+## Dependencies
+
+`opa-abac-spring-security` (and through it `opa-abac-core`) and the MCP Java SDK's `mcp-core`, pinned
+to the version Spring AI 2.0.x depends on. **No Spring AI artifact** is a dependency of this module.
+
+```kotlin
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:<version>"))
+implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
+implementation("dev.dmitriikonovalov:opa-abac-mcp")
+```

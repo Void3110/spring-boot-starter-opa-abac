@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
 import java.util.Optional;
 
 /**

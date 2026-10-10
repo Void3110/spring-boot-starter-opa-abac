@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
 import java.util.List;

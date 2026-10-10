@@ -9,7 +9,7 @@
 springBoot = "4.0.8"
 springDependencyManagement = "1.1.7"
 openapiGenerator = "7.14.0"
-# Central-Portal-native publishing (ADR 0027). Applied only to the five library modules + the BOM
+# Central-Portal-native publishing (ADR 0027). Applied only to the six library modules + the BOM
 # via an explicit allow-list in the root build — never the example apps. 0.37.0 is the current
 # stable line; publishToMavenCentral() is argument-less (Portal host is the default).
 vanniktechMavenPublish = "0.37.0"
@@ -57,6 +57,11 @@ commonsIo = "2.19.0"
 # wins for every spring-boot-* artifact, so the example builds and runs on the repo's 4.0.x baseline.
 # See docs/to-do/.../AGENT-TOOL-AUTHZ/STATUS-01.md; a repo-wide 4.1.x bump is a separate slice.
 springAi = "2.0.0"
+# MCP Java SDK — the version Spring AI 2.0.0's own MCP modules depend on (mcp-spring-webmvc-2.0.0.pom).
+# opa-abac-mcp pins mcp-core to it EXPLICITLY (api scope: its types are in the module's public
+# signatures): the Spring AI BOM manages only org.springframework.ai artifacts and the Boot BOM not this
+# one at all. It moves WITH springAi — bump both together (ADR 0036 §10, §13).
+mcpSdk = "2.0.0"
 
 # Example-app deps (managed by the Spring BOM where possible; pinned here when not)
 # springdoc 3.x is the Boot-4 line (2.x targets Boot 3).
@@ -89,6 +94,8 @@ commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
 # --- Example app: the MCP server (Phase 9) ---
 spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "springAi" }
 spring-ai-starter-mcp-server-webmvc = { module = "org.springframework.ai:spring-ai-starter-mcp-server-webmvc", version.ref = "springAi" }
+# --- Library: opa-abac-mcp (the MCP tool-gate module, incubating) ---
+mcp-core = { module = "io.modelcontextprotocol.sdk:mcp-core", version.ref = "mcpSdk" }
 
 # --- Example app (codegen support deps the spring generator references) ---
 springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdocOpenApi" }
