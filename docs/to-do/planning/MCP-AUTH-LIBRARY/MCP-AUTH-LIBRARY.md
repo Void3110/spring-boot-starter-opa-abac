@@ -10,7 +10,7 @@ tags:
 
 # MCP-AUTH-LIBRARY — the agent tool-gate as a library module (`opa-abac-mcp`)
 
-> **Status: 📋 decomposed 2026-10-09 — eight tickets, two parts; not yet implemented.** Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
+> **Status: 🔍 implemented 2026-10-10 (autonomous, ORCHESTRATOR — two parts; layer-3 review pending).** Decomposed 2026-10-09 — eight tickets, two parts. Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
 > ([[00-DESIGN]] §Considered and rejected); the contract is
 > [[0036-mcp-auth-library-module|ADR 0036]], which **supersedes** the 2026-08-01 decision to defer this
 > extraction to a second consumer and **amends** [[0028-agent-tool-call-authorization|ADR 0028]]'s
@@ -92,10 +92,10 @@ version, an agent client whose IdP mapper is missing — each turned into a star
 | T2 | The decision moves, onto `PrincipalCeilingSupplier` | 0 | ✅ 2026-10-10 |
 | T3 | `OpaMcpAutoConfiguration` + the prerequisite startup failures | 0 | ✅ 2026-10-10 |
 | T4 | Wrap-time declaration check; part 0 closes on the rig (matrix E1–E11 unchanged) | 0 | ✅ 2026-10-10 |
-| T5 | All four specification types; reactive / unwrappable ⇒ startup failure; per-type ITs | 1 | ☐ |
-| T6 | The `agent-clients` guard (`tool-gate-actor-required`) + matrix cell E12 | 1 | ☐ |
-| T7 | Input schema v1 — jar marker + policy guard, one commit | 1 | ☐ |
-| T8 | Boot 4.1.x tested in CI; slice close-out | 1 | ☐ |
+| T5 | All four specification types; reactive / unwrappable ⇒ startup failure; per-type ITs | 1 | ✅ 2026-10-10 |
+| T6 | The `agent-clients` guard (`tool-gate-actor-required`) + matrix cell E12 | 1 | ✅ 2026-10-10 |
+| T7 | Input schema v1 — jar marker + policy guard, one commit | 1 | ✅ 2026-10-10 |
+| T8 | Boot 4.1.x tested in CI; slice close-out | 1 | ✅ 2026-10-10 |
 
 **Critical path:** strictly T1 → T8 (see [[01-DECOMPOSITION]]); T1–T4 is the independently landable subset.
 
