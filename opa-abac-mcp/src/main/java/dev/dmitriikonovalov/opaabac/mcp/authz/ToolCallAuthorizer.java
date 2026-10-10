@@ -78,9 +78,9 @@ public class ToolCallAuthorizer {
     public ToolAuthorizationDecision authorize(String toolName) {
         Optional<ToolDescriptor> declared = registry.find(toolName);
         if (declared.isEmpty()) {
-            // An undeclared tool has no action, category or risk to authorize against. The registry
-            // validator makes this unreachable for this server's own tools; it is still a deny, not a
-            // gap, because "unclassifiable" must never mean "unrestricted".
+            // An undeclared tool has no action, category or risk to authorize against. With the
+            // auto-configuration the startup check makes this unreachable for every wrapped tool; it is
+            // still a deny, not a gap, because "unclassifiable" must never mean "unrestricted".
             log.warn("Tool-gate denied: '{}' is not declared", toolName);
             return ToolAuthorizationDecision.denied(CODE_UNDECLARED_TOOL);
         }

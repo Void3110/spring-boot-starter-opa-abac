@@ -57,6 +57,11 @@ runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a l
   specification type it cannot wrap, or with an actor claim the subject never receives, the application
   **fails at startup** — `opa.abac.allow-ungated-methods=true` does not change that.
 
+  The `ToolRegistry` is checked at startup against the tools the gate actually wrapped, in both directions
+  (advertised-but-undeclared and declared-but-never-wrapped both fail, as does a missing registry); a tool
+  registered some way the gate never sees (`addTool`, a server customizer) is unsupported.
+  `ToolCallClassifier`, a contract-only SPI in the example, is not shipped.
+
 **Property rename, for anyone who copied the example.** The example's identity and capability settings move
 to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` and `example.mcp.agents.profiles[]`
 → `opa.abac.mcp.agents.profiles[]` (same list shape), and `example.mcp.authz.{agent-gate.enabled, policy-path}`

@@ -3,10 +3,8 @@ package dev.dmitriikonovalov.example.mcp.config;
 import dev.dmitriikonovalov.example.mcp.tool.CatalogTools;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistryValidator;
 import java.util.List;
 import java.util.Set;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,6 +21,11 @@ import org.springframework.context.annotation.Configuration;
  * lives in the policy (T3), not here: an agent capability's max risk tag is compared against a tool's tags
  * in Rego, where the comparison is auditable and {@code opa test}-able. A Java-side ordering would be a
  * second source of truth free to drift from the one that actually decides.
+ *
+ * <h2>Checked against what is actually served</h2>
+ * The starter's startup verifier compares this registry with the tool specifications the gate wrapped,
+ * in both directions — a tool added to {@code CatalogTools} without a declaration here, or a declaration
+ * with no tool behind it, fails startup (ADR 0036 §9).
  *
  * <p>{@code get_product} is the {@code medium}-risk read — a product carries commercial detail the others
  * do not. That is what gives the slice its allow/deny contrast without gating a mutation: an agent capped
@@ -56,16 +59,5 @@ public class ToolRegistrationConfiguration {
                 new ToolDescriptor(
                         CatalogTools.GET_PRODUCT, ACTION_VIEW, CATEGORY_READ, TYPE_PRODUCT,
                         Set.of(RISK_MEDIUM))));
-    }
-
-    /**
-     * The {@link ApplicationContext} is injected as the {@code ListableBeanFactory} the validator scans:
-     * only {@code BeanFactory} and {@code ApplicationContext} are registered as resolvable dependencies,
-     * and the context is the one of those that can enumerate bean definitions.
-     */
-    @Bean
-    ToolRegistryValidator toolRegistryValidator(
-            ApplicationContext applicationContext, ToolRegistry toolRegistry) {
-        return new ToolRegistryValidator(applicationContext, toolRegistry);
     }
 }

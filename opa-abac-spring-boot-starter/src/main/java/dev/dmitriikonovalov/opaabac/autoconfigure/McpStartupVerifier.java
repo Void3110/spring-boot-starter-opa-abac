@@ -2,8 +2,11 @@ package dev.dmitriikonovalov.opaabac.autoconfigure;
 
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.mcp.authz.PrincipalCeilingSupplier;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
@@ -26,6 +29,12 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
  *       element of every resolved list must carry the gate — the backstop for a list that never passed the
  *       post-processor (one added with {@code registerSingleton} is returned by the lookup but never
  *       post-processed).</li>
+ *   <li><strong>Declarations ⇔ what was wrapped</strong> (ADR 0036 §9). The names the gate post-processor
+ *       gated (the union across every list) are compared with the {@link ToolRegistry}, both directions:
+ *       advertised-but-undeclared ⇒ fail (a tool with nothing to authorize against); declared-but-never-wrapped
+ *       ⇒ fail (the registry describes a tool the server does not gate — one registered with {@code addTool}
+ *       or a customizer, or a phantom). Both sorted lists are in the message. No {@code ToolRegistry} bean ⇒
+ *       fail, naming it. An empty registry and no tools ⇒ starts.</li>
  * </ol>
  *
  * <p>The steps share one callback because Spring runs separate {@code SmartInitializingSingleton}
@@ -38,20 +47,27 @@ final class McpStartupVerifier implements SmartInitializingSingleton {
     private final ConfigurableListableBeanFactory beanFactory;
     private final ObjectProvider<OpaClient> opaClient;
     private final ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier;
+    private final ObjectProvider<ToolRegistry> registry;
+    private final McpToolGatePostProcessor gate;
 
     McpStartupVerifier(
             ConfigurableListableBeanFactory beanFactory,
             ObjectProvider<OpaClient> opaClient,
-            ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier) {
+            ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier,
+            ObjectProvider<ToolRegistry> registry,
+            McpToolGatePostProcessor gate) {
         this.beanFactory = beanFactory;
         this.opaClient = opaClient;
         this.ceilingSupplier = ceilingSupplier;
+        this.registry = registry;
+        this.gate = gate;
     }
 
     @Override
     public void afterSingletonsInstantiated() {
         verifyPrerequisites();
         resolveAndAssertEveryListIsGated();
+        verifyDeclarationsMatchWhatWasGated();
     }
 
     /** Step 1 — the beans the gate cannot decide without, each named with its fix. */
@@ -88,6 +104,35 @@ final class McpStartupVerifier implements SmartInitializingSingleton {
                             + "bean definitions of " + McpToolSpecifications.SUPPORTED + ".");
                 }
             }
+        }
+    }
+
+    /**
+     * Step 3 — the registry against the names the gate actually gated. Runs after step 2 in the same
+     * callback, so every lazily-defined list has been resolved — wrapped and counted, never missed.
+     */
+    void verifyDeclarationsMatchWhatWasGated() {
+        ToolRegistry declarations = registry.getIfAvailable();
+        if (declarations == null) {
+            throw new IllegalStateException(
+                    "opa-abac-mcp needs a ToolRegistry bean declaring every tool's action, category, target type "
+                            + "and risk tags. Without one the gate has nothing to authorize against — every call "
+                            + "would be denied as tool-undeclared — so startup stops here. Define one (an empty "
+                            + "registry is valid for a server with no tools).");
+        }
+        Set<String> gated = gate.gatedToolNames();
+        Set<String> declared = new TreeSet<>(declarations.names());
+
+        Set<String> undeclared = new TreeSet<>(gated);
+        undeclared.removeAll(declared);
+        Set<String> neverGated = new TreeSet<>(declared);
+        neverGated.removeAll(gated);
+        if (!undeclared.isEmpty() || !neverGated.isEmpty()) {
+            throw new IllegalStateException("The ToolRegistry does not match the tools the gate wrapped. "
+                    + "Advertised but undeclared (a tool with no action/category/risk to authorize against): "
+                    + undeclared + ". Declared but never wrapped (not in any singleton specification-list bean — "
+                    + "e.g. registered with addTool or a server customizer, which the gate never sees): "
+                    + neverGated + ". Declared: " + declared + ". Wrapped: " + gated + ".");
         }
     }
 

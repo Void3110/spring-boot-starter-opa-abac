@@ -133,13 +133,18 @@ public class OpaMcpAutoConfiguration {
         return new ActorClaimWiringCheck(properties, copiedClaims);
     }
 
-    /** The single startup guard — prerequisites, then every singleton list resolved and asserted gated. */
+    /**
+     * The single startup guard — prerequisites, then every singleton list resolved and asserted gated, then
+     * the declarations checked against what the gate wrapped (both directions).
+     */
     @Bean
     McpStartupVerifier opaMcpStartupVerifier(
             ConfigurableListableBeanFactory beanFactory,
             ObjectProvider<OpaClient> opaClient,
-            ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier) {
-        return new McpStartupVerifier(beanFactory, opaClient, ceilingSupplier);
+            ObjectProvider<PrincipalCeilingSupplier> ceilingSupplier,
+            ObjectProvider<ToolRegistry> registry,
+            McpToolGatePostProcessor opaMcpToolGate) {
+        return new McpStartupVerifier(beanFactory, opaClient, ceilingSupplier, registry, opaMcpToolGate);
     }
 
     /**

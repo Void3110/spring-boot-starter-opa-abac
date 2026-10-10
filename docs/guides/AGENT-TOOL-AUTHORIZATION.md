@@ -211,7 +211,7 @@ Every edge lands on **deny, or the smaller result**.
 | principal ceiling | outage at **call** time | **deny** (`tool-gate-ceiling-unavailable`) |
 | tool-gate OPA call | down / timeout / non-200 / malformed / package not loaded | **deny** with `tool-gate-policy-unavailable` — "could not decide", retryable later (since 1.4.0, ADR 0037; it was `tool-gate-denied` before) |
 | tool-gate OPA call | the package is loaded but `allow` is undefined for this input | **deny** with `tool-gate-denied` (undefined-means-deny is a policy answer) |
-| tool metadata | a tool with no declared action/category/risk/target-type | **deny at registration time** — startup fails, the tool is never exposed |
+| tool metadata | a tool with no declared action/category/risk/target-type | **deny at registration time** — startup fails, the tool is never exposed; checked against the specifications actually wrapped, both directions |
 | roster batch | dead PDP, **or** a genuinely zero-capability agent | the **empty roster**, treated as authoritative (see below) |
 | roster identity / capability / ceiling at **list** time | unreadable or throwing | the **unfiltered** list + WARN, with the gate still denying per call |
 | roster adapter | pinned SDK internals moved by an upgrade | **startup failure**, naming the pins |
@@ -277,10 +277,30 @@ message naming the fix, when:
 | a tool specification the module cannot wrap — in this release every type but `McpServerFeatures.SyncToolSpecification`, and any element exposing an `McpSchema.Tool tool()` accessor | fails, naming the type |
 | a specification list that never passed the gate (e.g. added with `registerSingleton`) | fails, naming the bean |
 | `opa.abac.mcp.identity.actor-claim` not listed in `opa.abac.subject.attribute-claims` | fails (the wiring check — read from the environment, so it holds with the starter off) |
+| no `ToolRegistry` bean, or its declarations ≠ the tools the gate wrapped (either direction) | fails, with both sorted lists |
 
 Every check runs from one startup callback that resolves every singleton `List` bean first, so
 `spring.main.lazy-initialization=true` cannot skip a guard. No property turns the gate off;
 `opa.abac.mcp.agent-gate.enabled=false` drops the agent conjunct only.
+
+**Declarations are checked against what was actually wrapped.** Every tool is declared in the
+`ToolRegistry`. At startup the names the gate wrapped — the union across every specification list — are
+compared with the registry **in both directions**: a tool that is advertised but undeclared (nothing to
+authorize it against) and a declaration the gate never wrapped (a phantom, or a tool registered some way
+the gate never sees) both fail startup, with both sorted lists in the message; a missing `ToolRegistry`
+fails too, naming it; an empty registry with no tools starts. At call time a tool missing from the
+registry is still denied `tool-undeclared` — the backstop for a wrapped specification whose name the
+registry lost.
+
+**Supported registrations** are the singleton specification-list **bean definitions** (`@Bean` methods or
+registered definitions — Spring AI's own lists are), checked element by element; a hand-built specification
+is supported by contributing it as such a bean (un-gated — the starter wraps and records it). **Unsupported,
+and therefore never wrapped:** a specification added at runtime with `addTool`, one a server customizer adds
+to the builder, a prototype- or scope-bound list, a list produced by a `FactoryBean`, and a list added with
+`registerSingleton` (that one is caught: it fails startup if it carries a tool without the gate). Declaring
+an unwrapped tool fails the startup check, so an unsupported registration cannot pass silently as declared.
+The direct API (`ToolCallGate.gate`, `ToolCallAuthorizer`) stays public for wiring without the
+auto-configuration.
 
 ## Running it
 

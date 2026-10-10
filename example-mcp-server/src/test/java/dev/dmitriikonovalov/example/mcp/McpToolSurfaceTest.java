@@ -3,10 +3,8 @@ package dev.dmitriikonovalov.example.mcp;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.dmitriikonovalov.example.mcp.tool.CatalogTools;
-import dev.dmitriikonovalov.example.mcp.tool.ToolCallClassifier;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
@@ -15,20 +13,18 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 
 /**
- * U1 + U3 against the <strong>real</strong> application context: every tool this server actually advertises
- * is fully classified, and the classifier SPI ships without an implementation on purpose.
+ * U1 against the <strong>real</strong> application context: every tool this server actually advertises
+ * is fully classified.
  *
- * <p>That the context starts at all is itself part of U2 — {@code ToolRegistryValidator} runs during
- * startup, so a surface/registry mismatch would fail this test before a single assertion executed.
+ * <p>That the context starts at all is itself part of the proof — the starter's startup verifier checks the
+ * registry against the specifications the gate wrapped, both directions, so a surface/registry mismatch
+ * would fail this test before a single assertion executed. (The contract-only classifier SPI this class
+ * used to pin is not shipped — ADR 0036 §11.)
  */
 @SpringBootTest
 class McpToolSurfaceTest {
-
-    @Autowired
-    ApplicationContext context;
 
     @Autowired
     ToolRegistry registry;
@@ -84,14 +80,5 @@ class McpToolSurfaceTest {
     @Test // U1 — an undeclared tool name resolves to nothing, never to a permissive default
     void doesNotInventDeclarationsForUnknownTools() {
         assertThat(registry.find("delete_everything")).isEmpty();
-    }
-
-    @Test // U3 — the seam ships contract-only; a stub implementation would be untestable churn
-    void shipsTheClassifierSeamWithNoImplementation() {
-        assertThat(ToolCallClassifier.class.isInterface()).isTrue();
-        assertThat(context.getBeanNamesForType(ToolCallClassifier.class)).isEmpty();
-
-        Method classify = ToolCallClassifier.class.getDeclaredMethods()[0];
-        assertThat(classify.getName()).isEqualTo("classify");
     }
 }

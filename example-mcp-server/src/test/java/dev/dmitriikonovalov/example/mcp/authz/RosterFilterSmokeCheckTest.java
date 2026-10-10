@@ -35,8 +35,8 @@ import reactor.core.publisher.Mono;
  * and {@code roster-filter.enabled=false} is the deliberate way to override it.
  *
  * <p>Asserted with {@code .getFailure()} rather than {@code .rootCause()}: a
- * {@code SmartInitializingSingleton} throws un-wrapped, the same idiom {@code ToolRegistryValidatorTest}
- * uses for the registry validator.
+ * {@code SmartInitializingSingleton} throws un-wrapped — the same idiom the starter's tool-gate startup
+ * verifier tests use.
  */
 class RosterFilterSmokeCheckTest {
 

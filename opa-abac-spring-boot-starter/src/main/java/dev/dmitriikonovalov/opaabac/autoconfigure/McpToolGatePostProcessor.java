@@ -5,6 +5,9 @@ import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentSkipListSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.scope.ScopedProxyUtils;
@@ -36,6 +39,11 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
  * <p>The authorizer is fetched lazily, on the first list that carries a tool — so this post-processor
  * forces nothing at registration time.
  *
+ * <p>It <strong>records the name of every tool it gated</strong> (wrapped, or found already gated), across
+ * all lists — the set {@code McpStartupVerifier} checks against the {@code ToolRegistry} in both directions.
+ * Only what passed through here is in the set: a specification registered any other way ({@code addTool},
+ * a server customizer) is never wrapped, never counted, and declaring it fails startup.
+ *
  * <p>A post-processor only sees beans that get created: under lazy initialization a list nothing injects
  * would escape it. {@code McpStartupVerifier} closes that by resolving every singleton list at startup and
  * asserting that every tool-bearing element ended up gated.
@@ -45,6 +53,7 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
     private static final Logger log = LoggerFactory.getLogger(McpToolGatePostProcessor.class);
 
     private final ObjectProvider<ToolCallAuthorizer> authorizerProvider;
+    private final Set<String> gatedToolNames = new ConcurrentSkipListSet<>();
     private ConfigurableListableBeanFactory beanFactory;
 
     McpToolGatePostProcessor(ObjectProvider<ToolCallAuthorizer> authorizerProvider) {
@@ -80,16 +89,23 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
         List<Object> gated = new ArrayList<>(list.size());
         int wrapped = 0;
         for (Object element : list) {
-            if (element instanceof SyncToolSpecification specification
-                    && !(specification.callHandler() instanceof ToolCallGate)) {
-                gated.add(ToolCallGate.gate(specification, authorizer));
-                wrapped++;
-            } else {
-                gated.add(element);
+            if (element instanceof SyncToolSpecification specification) {
+                gatedToolNames.add(specification.tool().name());
+                if (!(specification.callHandler() instanceof ToolCallGate)) {
+                    gated.add(ToolCallGate.gate(specification, authorizer));
+                    wrapped++;
+                    continue;
+                }
             }
+            gated.add(element);
         }
         log.info("Tool-gate installed on {} tool specification(s) in '{}'", wrapped, beanName);
         return gated;
+    }
+
+    /** Every tool name gated so far, sorted — a snapshot; the startup verifier compares it with the registry. */
+    Set<String> gatedToolNames() {
+        return new TreeSet<>(gatedToolNames);
     }
 
     /** A scoped proxy's target lives under {@code scopedTarget.<name>}; never iterate the proxy. */

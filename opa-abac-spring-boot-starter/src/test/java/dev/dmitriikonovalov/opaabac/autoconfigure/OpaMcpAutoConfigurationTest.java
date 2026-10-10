@@ -57,8 +57,8 @@ import org.springframework.web.context.annotation.RequestScope;
 import reactor.core.publisher.Mono;
 
 /**
- * {@link ApplicationContextRunner} slice tests for {@link OpaMcpAutoConfiguration} (MCP-AUTH-LIBRARY T3,
- * U9–U16, U35, U36).
+ * {@link ApplicationContextRunner} slice tests for {@link OpaMcpAutoConfiguration} (MCP-AUTH-LIBRARY T3/T4,
+ * U9–U17, U35–U37).
  *
  * <h2>The baseline</h2>
  * Every fixture starts from {@code opa.abac.subject.attribute-claims=act_chain} + an {@code OpaClient}
@@ -495,7 +495,127 @@ class OpaMcpAutoConfigurationTest {
         });
     }
 
+    // --- U17 / U37 : declarations checked against what was wrapped (T4) ---------------------------
+
+    @Test // U17 — wrapped ⊋ registry: an advertised tool with no declaration fails, the message names it
+    void failsWhenAWrappedToolIsUndeclared() {
+        baselineWithRegistry(UndeclaredTool.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("Advertised but undeclared (a tool with no action/category/risk to authorize against): [b]")
+                    .contains("Declared but never wrapped")
+                    .contains(": [].");
+        });
+    }
+
+    @Test // U17 — registry ⊋ wrapped: a declaration the gate never wrapped fails, the message names it
+    void failsWhenADeclaredToolWasNeverWrapped() {
+        baselineWithRegistry(PhantomDeclaration.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("Advertised but undeclared (a tool with no action/category/risk to authorize against): []")
+                    .contains("Declared but never wrapped")
+                    .contains("[phantom]");
+        });
+    }
+
+    @Test // U17 — names spread over two lists that together equal the registry start
+    void startsWhenTheUnionOfAllListsEqualsTheRegistry() {
+        baselineWithRegistry(TwoSyncListsDeclared.class).run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test // U17 — no ToolRegistry bean fails, naming it
+    void failsWithoutAToolRegistry() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.subject.attribute-claims=act_chain", "opa.abac.base-url=" + opaUrl())
+                .withUserConfiguration(CeilingSource.class)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context)).contains("needs a ToolRegistry bean");
+                });
+    }
+
+    @Test // U17 — an empty registry and no tools: a server with no tools starts
+    void startsWithAnEmptyRegistryAndNoTools() {
+        baseline().run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test // U37 — under lazy initialization a matching list nothing injects is still wrapped and counted
+    void aLazyListNothingInjectsIsWrappedAndCounted() {
+        lazy(baselineWithRegistry(LazyPairDeclared.class)).run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasNotFailed();
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> pair = (List<SyncToolSpecification>) context.getBean("lazyPair");
+            assertThat(pair).hasSize(2)
+                    .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+        });
+    }
+
+    @Test // U37 — and a third declaration with no tool behind it still fails, naming it
+    void aLazyContextStillFailsOnADeclarationNothingServes() {
+        lazy(baselineWithRegistry(LazyPairWithAThirdDeclaration.class)).run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context)).contains("Declared but never wrapped").contains("[third]");
+        });
+    }
+
     // --- fixtures ----------------------------------------------------------------------------------
+
+    @Configuration(proxyBeanMethods = false)
+    static class UndeclaredTool {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("a")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> tools() {
+            return new ArrayList<>(List.of(syncSpec("a"), syncSpec("b")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PhantomDeclaration {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("a"), declared("phantom")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> tools() {
+            return new ArrayList<>(List.of(syncSpec("a")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class LazyPairDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("first"), declared("second")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> lazyPair() {
+            return new ArrayList<>(List.of(syncSpec("first"), syncSpec("second")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class LazyPairWithAThirdDeclaration {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("first"), declared("second"), declared("third")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> lazyPair() {
+            return new ArrayList<>(List.of(syncSpec("first"), syncSpec("second")));
+        }
+    }
 
     static SyncToolSpecification syncSpec(String name) {
         return new SyncToolSpecification(tool(name), (exchange, request) -> CallToolResult.builder().build());
