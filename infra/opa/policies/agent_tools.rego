@@ -38,6 +38,8 @@
 #   input.subject.attributes.chain              the ordered delegation chain (audit only; not a grant)
 #   input.subject.attributes.agent_capability   {allowed_categories, allowed_tools, allowed_actions,
 #                                                max_risk_tag} — ABSENT on an agent call means DENY
+#   input.environment.schema                    the INPUT VERSION the PEP wrote — "opa-abac.mcp.tool-gate/v1".
+#                                               Required: an unknown or missing version decides nothing.
 #
 # OPA 1.x: `if`/`in`/`every`/`some` are built-in keywords — no imports needed. Default deny.
 
@@ -49,9 +51,24 @@ default allow := false
 
 # --- guards -------------------------------------------------------------------
 
+# The input versions this document knows (ADR 0036 §7). The PEP marks every tool-gate input — single
+# decisions and every bulk item — with input.environment.schema; this document grants NOTHING for a version
+# it does not know, human calls included. That is what turns a jar/policy mismatch into a DENY instead of a
+# silent misread: v1 pins the layout above (notably the actor at input.subject.attributes.actor — moving it
+# without a version bump would turn every agent call into an unnarrowed human call with every test green),
+# so any incompatible input change ships as v2, and a v1-aware policy refuses it.
+# A non-string, absent or unknown marker is simply not `in` the set -> undefined -> deny.
+known_schemas := {"opa-abac.mcp.tool-gate/v1"}
+
+known_schema if {
+	input.environment.schema in known_schemas
+}
+
 # This document decides tool calls and nothing else. A context for any other resource type has no
-# business reaching here, and if one does it decides nothing.
+# business reaching here, and if one does it decides nothing. Nor does a context in an input version
+# this document does not know: both `allow` rules, and through them every `bulk` position, require it.
 is_tool_request if {
+	known_schema
 	input.resource.type == "tool"
 }
 

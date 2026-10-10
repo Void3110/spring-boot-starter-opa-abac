@@ -73,13 +73,20 @@ agent_subject_without_capability := {
 	"attributes": {"actor": "agent-a", "chain": ["agent-a"]},
 }
 
+# The v1 input marker (ADR 0036 §7). EVERY fixture carries it, so each deny test below still denies for its
+# OWN reason — an unmarked input would make every negative test pass vacuously on the schema guard.
+v1_environment := {"schema": "opa-abac.mcp.tool-gate/v1"}
+
 request(subject, action, resource, role_def) := {
 	"subject": subject,
 	"action": action,
 	"resource": resource,
 	"role_definition": role_def,
-	"environment": {},
+	"environment": v1_environment,
 }
+
+# The same request with its environment replaced wholesale (object.union would merge the marker back in).
+with_environment(req, environment) := object.union(object.remove(req, {"environment"}), {"environment": environment})
 
 # --- U18: the explicit floor ---------------------------------------------------
 
@@ -315,7 +322,7 @@ test_missing_role_definition_denies_for_a_human if {
 		"subject": human_subject,
 		"action": "view",
 		"resource": product_tool,
-		"environment": {},
+		"environment": v1_environment,
 	}
 }
 
@@ -324,7 +331,7 @@ test_missing_role_definition_denies_for_an_agent if {
 		"subject": agent_subject(read_capability),
 		"action": "view",
 		"resource": product_tool,
-		"environment": {},
+		"environment": v1_environment,
 	}
 }
 
@@ -434,4 +441,75 @@ test_malformed_denial_in_principal_role_denies_the_human_call if {
 		human_subject, "view", product_tool,
 		object.union(principal_role_def, {"denied_actions": {"*": ["delete"], "product": false}}),
 	)
+}
+
+# --- U31: input schema v1 — an unknown or missing version decides nothing ------
+
+# Positive controls first: the marked requests these cases mutate are allowed, so each deny below is the
+# schema guard's and nothing else's.
+test_v1_marked_requests_are_decided_as_before if {
+	agent_tools.allow with input as request(human_subject, "view", product_tool, principal_role_def)
+	agent_tools.allow with input as request(agent_subject(read_capability), "view", product_tool, principal_role_def)
+}
+
+test_an_unknown_schema_version_denies_a_human if {
+	not agent_tools.allow with input as with_environment(
+		request(human_subject, "view", product_tool, principal_role_def),
+		{"schema": "opa-abac.mcp.tool-gate/v2"},
+	)
+}
+
+test_an_unknown_schema_version_denies_an_agent if {
+	not agent_tools.allow with input as with_environment(
+		request(agent_subject(read_capability), "view", product_tool, principal_role_def),
+		{"schema": "opa-abac.mcp.tool-gate/v2"},
+	)
+}
+
+test_a_missing_marker_denies_a_human if {
+	not agent_tools.allow with input as with_environment(
+		request(human_subject, "view", product_tool, principal_role_def),
+		{},
+	)
+}
+
+test_a_missing_marker_denies_an_agent if {
+	not agent_tools.allow with input as with_environment(
+		request(agent_subject(read_capability), "view", product_tool, principal_role_def),
+		{},
+	)
+}
+
+test_an_absent_environment_denies if {
+	not agent_tools.allow with input as object.remove(
+		request(human_subject, "view", product_tool, principal_role_def),
+		{"environment"},
+	)
+	not agent_tools.allow with input as object.remove(
+		request(agent_subject(read_capability), "view", product_tool, principal_role_def),
+		{"environment"},
+	)
+}
+
+# Truthiness and shape: only the exact known STRING passes — not true, not a list holding it, not a
+# differently-cased copy, not an environment that is itself not an object.
+test_a_non_string_or_near_miss_marker_denies if {
+	req := request(human_subject, "view", product_tool, principal_role_def)
+	not agent_tools.allow with input as with_environment(req, {"schema": true})
+	not agent_tools.allow with input as with_environment(req, {"schema": ["opa-abac.mcp.tool-gate/v1"]})
+	not agent_tools.allow with input as with_environment(req, {"schema": "OPA-ABAC.MCP.TOOL-GATE/V1"})
+	not agent_tools.allow with input as with_environment(req, "opa-abac.mcp.tool-gate/v1")
+}
+
+# The batch path: one unmarked item is that position's false, and the others are unchanged.
+test_bulk_with_one_unmarked_item if {
+	subject := agent_subject(read_capability)
+	marked := request(subject, "view", product_tool, principal_role_def)
+	decisions := agent_tools.bulk with input as {"items": [
+		marked,
+		with_environment(marked, {}),
+		marked,
+	]}
+
+	decisions == [true, false, true]
 }

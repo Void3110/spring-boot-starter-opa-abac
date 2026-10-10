@@ -72,6 +72,16 @@ runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a l
   registered some way the gate never sees (`addTool`, a server customizer) is unsupported.
   `ToolCallClassifier`, a contract-only SPI in the example, is not shipped.
 
+- **Tool-gate input schema v1:** every tool-gate input — single decisions and every roster batch item — now
+  carries `input.environment.schema = "opa-abac.mcp.tool-gate/v1"` (`ToolGateInput.SCHEMA_V1`), and the shipped
+  `agent_tools.rego` grants nothing for a version it does not know (unknown, missing or absent ⇒ deny, human
+  calls included). v1 is today's field layout — the actor stays at `input.subject.attributes.actor`; an
+  incompatible change will ship as a new version.
+
+**Upgrade note — deploy the v1-aware policy with the 1.5.0 jar.** Ship the updated `agent_tools.rego` together
+with `opa-abac-mcp` 1.5.0. An older copy of the policy keeps working with v1 input (nothing moved), but it ignores
+the marker and so cannot refuse a future version; the v1-aware one can.
+
 **Property rename, for anyone who copied the example.** The example's identity and capability settings move
 to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` and `example.mcp.agents.profiles[]`
 → `opa.abac.mcp.agents.profiles[]` (same list shape), and `example.mcp.authz.{agent-gate.enabled, policy-path}`

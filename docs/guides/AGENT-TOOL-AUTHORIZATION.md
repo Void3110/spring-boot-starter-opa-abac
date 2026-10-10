@@ -190,6 +190,40 @@ to own it.
 Category, tool allow-list and risk-tag checks are independent `AND`s on top, so satisfying one never
 compensates for failing another. The risk ranking is a table **in the policy** for the same reason.
 
+## The input contract (v1)
+
+Every tool-gate input — each single decision and **every item** of a roster batch — is versioned:
+`input.environment.schema = "opa-abac.mcp.tool-gate/v1"` (`ToolGateInput.SCHEMA_V1`, set by the PEP). The
+shipped `agent_tools.rego` grants **nothing** for a version it does not know (`known_schema`, required by
+`is_tool_request`, so both `allow` rules and every `bulk` position refuse it) — human calls included. An
+unknown version, a missing marker, an absent `environment`, a non-string marker: all deny.
+
+| Field | v1 content |
+|---|---|
+| `subject.id` | the principal (the token `sub`) |
+| `subject.roles` | the principal's roles, as the starter extracts them |
+| `subject.attributes.actor` | the agent id — **absent for a human call**; its *presence* is what makes a call an agent call |
+| `subject.attributes.chain` | the ordered delegation chain (audit only, never a grant) |
+| `subject.attributes.agent_capability` | `{allowed_categories, allowed_tools, allowed_actions, max_risk_tag}` — absent on an agent call ⇒ deny |
+| `subject.attributes.*` | any other claim copied by `opa.abac.subject.attribute-claims` (e.g. `azp`) |
+| `role_definition` | the principal's type-level ceiling (`PrincipalCeilingSupplier`) |
+| `action` | the tool's declared fine verb (`view`, `list`) — a bare verb |
+| `resource.type` | `tool` (reserved) |
+| `resource.id` | the MCP tool name |
+| `resource.attributes.{category, risk_tags, target_type}` | the tool's declaration in the `ToolRegistry` |
+| `environment.schema` | `opa-abac.mcp.tool-gate/v1` |
+
+**The rule:** any incompatible change to this layout ships as a **new version**, never under v1. In
+particular the actor stays at `input.subject.attributes.actor` in v1 — the policy recognizes an agent call by
+that key's presence, so moving it without a version bump would turn every agent call into an unnarrowed human
+call with every test still green. With the version bumped, a v1-aware policy meeting a later jar **denies**
+instead of misreading.
+
+**What it cannot do:** a policy written *before* v1 ignores the marker — the guarantee starts with v1-aware
+policies. v1 *is* the pre-existing field layout (nothing moved), so an older copy of the policy keeps working
+with v1 input; it just cannot refuse a future version. Deploy the v1-aware `agent_tools.rego` together with the
+1.5.0 jar.
+
 ## The roster: a hint, never a grant
 
 `tools/list` advertises only the tools the caller may actually call — one batch `allowAll`
@@ -232,6 +266,7 @@ Every edge lands on **deny, or the smaller result**.
 | principal ceiling | outage at **call** time | **deny** (`tool-gate-ceiling-unavailable`) |
 | tool-gate OPA call | down / timeout / non-200 / malformed / package not loaded | **deny** with `tool-gate-policy-unavailable` — "could not decide", retryable later (since 1.4.0, ADR 0037; it was `tool-gate-denied` before) |
 | tool-gate OPA call | the package is loaded but `allow` is undefined for this input | **deny** with `tool-gate-denied` (undefined-means-deny is a policy answer) |
+| input version | `input.environment.schema` unknown, missing or not a string (a jar and a policy that disagree on the input layout) | **deny** with `tool-gate-denied`, human calls included; the roster position is `false` |
 | tool metadata | a tool with no declared action/category/risk/target-type | **deny at registration time** — startup fails, the tool is never exposed; checked against the specifications actually wrapped, both directions |
 | roster batch | dead PDP, **or** a genuinely zero-capability agent | the **empty roster**, treated as authoritative (see below) |
 | roster identity / capability / ceiling at **list** time | unreadable or throwing | the **unfiltered** list + WARN, with the gate still denying per call |

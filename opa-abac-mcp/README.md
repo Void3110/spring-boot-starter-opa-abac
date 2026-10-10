@@ -37,6 +37,12 @@ reactive (WebFlux) application **fails startup** — the module is never present
 | `opa.abac.mcp.policy-path` | `agent_tools` | the OPA **package** the tool-gate asks (`/bulk` is appended for the roster batch) |
 | `opa.abac.mcp.agents.profiles[]` | none | the YAML capability default: `actor-id`, `allowed-categories`, `allowed-tools` (mandatory — empty denies every tool), `allowed-actions`, `max-risk-tag`; an unconfigured agent is authoritative-empty |
 
+## The input contract
+
+Every tool-gate input carries `input.environment.schema = "opa-abac.mcp.tool-gate/v1"`
+(`ToolGateInput.SCHEMA_V1`); the shipped `agent_tools.rego` grants nothing for a version it does not know.
+Deploy the v1-aware policy with this module. The v1 field list is in the guide's *The input contract (v1)*.
+
 ## Dependencies
 
 `opa-abac-spring-security` (and through it `opa-abac-core`) and the MCP Java SDK's `mcp-core`, pinned

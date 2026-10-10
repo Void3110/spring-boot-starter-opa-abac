@@ -230,7 +230,10 @@ public class ToolCallAuthorizer {
                                 "target_type", descriptor.targetType()),
                         List.of()),
                 roleDefinition,
-                Map.of());
+                // The input version (ADR 0036 §7): the policy refuses a version it does not know, so a
+                // jar/policy mismatch denies instead of misreading. Single decisions and every roster batch
+                // item are built here, so all of them carry it.
+                ToolGateInput.environment());
     }
 
     /** A listed agent client ({@code azp}) without an actor claim ⇒ {@link ActorRequiredException}. */
