@@ -209,7 +209,10 @@ the code contradicted.
   Spring orders separate callbacks only by registration; `spring.main.lazy-initialization=true` cannot skip a
   guard. Supported registrations are therefore singleton specification lists declared as `@Bean` methods or other singleton bean definitions (a list added
   with `registerSingleton` is never post-processed — the verifier fails startup if it carries tools without a gate handler, since every
-  tool-bearing element of every resolved list must carry a gate handler); prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported (under lazy initialization the singleton lookup cannot see an adopter `FactoryBean`'s product; a scoped proxy is
+  tool-bearing element of every resolved list must carry a gate handler); a gate handler counts only when it is bound to
+  its specification's own tool name and to the context's `ToolCallAuthorizer` instance — a hand-built gate bound otherwise
+  is wrapped again (a second gate only narrows), and in a never-post-processed list fails startup (layer-3 review L1);
+  prototype- or scope-bound lists, and lists produced by a `FactoryBean`, are unsupported (under lazy initialization the singleton lookup cannot see an adopter `FactoryBean`'s product; a scoped proxy is
   skipped by its `scopedTarget.` sibling), documented with the `addTool` limit.
 - **Schema v1 and older policies.** The marker protects a v1-aware policy from a jar sending a version it does
   not know. A policy written before v1 ignores it — safe with v1 because v1 changes no field, and the reason the

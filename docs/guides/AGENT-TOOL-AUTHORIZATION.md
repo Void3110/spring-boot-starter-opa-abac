@@ -368,7 +368,9 @@ registry lost.
 
 **Supported registrations** are the singleton specification-list **bean definitions** (`@Bean` methods or
 registered definitions — Spring AI's own lists are), checked element by element; a hand-built specification
-is supported by contributing it as such a bean (un-gated — the starter wraps and records it). **Unsupported,
+is supported by contributing it as such a bean (un-gated — the starter wraps and records it; one already
+gated is kept only when its gate is bound to its own tool name and the application's `ToolCallAuthorizer`,
+and is otherwise wrapped again with a WARN). **Unsupported,
 and therefore never wrapped:** a specification added at runtime with `addTool`, one a server customizer adds
 to the builder, a prototype- or scope-bound list, a list produced by a `FactoryBean`, and a list added with
 `registerSingleton` (that one is caught: it fails startup if it carries a tool without the gate). Declaring

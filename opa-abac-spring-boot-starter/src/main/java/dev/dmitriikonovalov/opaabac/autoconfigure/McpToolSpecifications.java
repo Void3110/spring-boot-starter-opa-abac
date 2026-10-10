@@ -84,6 +84,22 @@ final class McpToolSpecifications {
     }
 
     /**
+     * True when {@code element} is a supported specification whose handler is <em>its type's</em> gate, however
+     * bound — the post-processor's cue to WARN before wrapping a mis-bound gate again.
+     */
+    static boolean hasGateHandler(Object element) {
+        return switch (element) {
+            case McpServerFeatures.SyncToolSpecification(_, var handler) -> handler instanceof ToolCallGate;
+            case McpServerFeatures.AsyncToolSpecification(_, var handler) -> handler instanceof AsyncToolCallGate;
+            case McpStatelessServerFeatures.SyncToolSpecification(_, var handler) ->
+                    handler instanceof StatelessToolCallGate;
+            case McpStatelessServerFeatures.AsyncToolSpecification(_, var handler) ->
+                    handler instanceof StatelessAsyncToolCallGate;
+            case null, default -> false;
+        };
+    }
+
+    /**
      * True when {@code element} is a supported specification whose handler is <em>its type's</em> gate, bound
      * to the element's own tool name and to {@code authorizer} (the same instance). A {@code null} authorizer
      * gates nothing.

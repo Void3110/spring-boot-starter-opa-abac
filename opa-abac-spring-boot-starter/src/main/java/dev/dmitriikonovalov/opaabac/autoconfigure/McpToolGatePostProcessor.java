@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -53,6 +54,8 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
 
     private final ObjectProvider<ToolCallAuthorizer> authorizerProvider;
     private final Set<String> gatedToolNames = new ConcurrentSkipListSet<>();
+    /** The authorizer every gate this post-processor installs is bound to — resolved once, on first use. */
+    private final AtomicReference<ToolCallAuthorizer> installedAuthorizer = new AtomicReference<>();
     private ConfigurableListableBeanFactory beanFactory;
 
     McpToolGatePostProcessor(ObjectProvider<ToolCallAuthorizer> authorizerProvider) {
@@ -84,7 +87,7 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
             return bean;
         }
 
-        ToolCallAuthorizer authorizer = authorizerProvider.getObject();
+        ToolCallAuthorizer authorizer = installedAuthorizer();
         List<Object> gated = new ArrayList<>(list.size());
         int wrapped = 0;
         for (Object element : list) {
@@ -92,7 +95,13 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
                 gated.add(element);
                 continue;
             }
-            gatedToolNames.add(McpToolSpecifications.toolName(element));
+            String toolName = McpToolSpecifications.toolName(element);
+            gatedToolNames.add(toolName);
+            if (McpToolSpecifications.hasGateHandler(element)
+                    && !McpToolSpecifications.isGated(element, authorizer)) {
+                log.warn("Tool '{}' in '{}' carries a tool-gate bound to another tool's name or another authorizer "
+                        + "— wrapped again with the application's gate, which decides first", toolName, beanName);
+            }
             Object withGate = McpToolSpecifications.gate(element, authorizer);
             if (withGate != element) {
                 wrapped++;
@@ -109,7 +118,18 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
      * never disagree on what "gated" means.
      */
     boolean isGated(Object element) {
-        return McpToolSpecifications.isGated(element, authorizerProvider.getIfAvailable());
+        ToolCallAuthorizer installed = installedAuthorizer.get();
+        return McpToolSpecifications.isGated(
+                element, installed != null ? installed : authorizerProvider.getIfAvailable());
+    }
+
+    /**
+     * The one authorizer instance every installed gate is bound to, resolved on the first tool list and kept —
+     * so "gated" means the same instance here and in the verifier even for a non-singleton authorizer bean.
+     */
+    private ToolCallAuthorizer installedAuthorizer() {
+        return installedAuthorizer.updateAndGet(
+                installed -> installed != null ? installed : authorizerProvider.getObject());
     }
 
     /** Every tool name gated so far, sorted — a snapshot; the startup verifier compares it with the registry. */

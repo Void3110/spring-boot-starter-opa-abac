@@ -81,7 +81,8 @@ OPA_CONTAINER="${OPA_CONTAINER:-opa-abac-opa}"
 COMPOSE_PROJECT="${COMPOSE_PROJECT:-opa-abac-example}"
 MCP_COMPOSE="${MCP_COMPOSE:-$REPO_ROOT/infra/compose.mcp.yaml}"
 MCP_HEALTH="${MCP_HEALTH:-http://localhost:28093/actuator/health}"
-OPA_HEALTH="${OPA_HEALTH:-http://localhost:28181/health}"
+OPA_URL="${OPA_URL:-http://localhost:28181}"
+OPA_HEALTH="${OPA_HEALTH:-$OPA_URL/health}"
 GATEWAY="${GATEWAY:-http://localhost:9085}"
 # The ref the "as shipped" advisory compares against; override on a fork without origin/main.
 SHIPPED_BASE="${SHIPPED_BASE:-origin/main}"
@@ -202,13 +203,14 @@ run_folder() { # folder-name report-suffix
 # --- reload the policies (agent_tools.rego's schema-v1 guard is what every cell runs against) ----
 # OPA runs without --watch, so a rig brought up before agent_tools.rego last changed still decides with the
 # old document — and E1-E5 would pass against it, since a policy without the guard ignores the jar's schema
-# marker. Restart, then poll the guard ITSELF (not /health, which answers before the bundle loads).
+# marker. Restart, then poll the guard ITSELF — proof that the loaded document is the v1-aware one, which a
+# health check cannot give.
 echo "==> Restarting OPA ($OPA_CONTAINER) so the current agent_tools.rego is live (--watch is not used) ..."
 "$RUNTIME" restart "$OPA_CONTAINER" >/dev/null
 OPA_GUARD_LIVE=0
 for _ in $(seq 1 60); do
-  if curl -sf "${OPA_HEALTH%/health}/v1/data/agent_tools/known_schemas" 2>/dev/null \
-       | grep -q 'opa-abac.mcp.tool-gate/v1'; then
+  if curl -sf --max-time 5 "$OPA_URL/v1/data/agent_tools/known_schemas" 2>/dev/null \
+       | grep -qF '"opa-abac.mcp.tool-gate/v1"'; then
     OPA_GUARD_LIVE=1; break
   fi
   sleep 1

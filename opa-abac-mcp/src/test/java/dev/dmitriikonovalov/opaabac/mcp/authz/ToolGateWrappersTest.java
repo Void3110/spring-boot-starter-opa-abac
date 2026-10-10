@@ -31,6 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -340,6 +341,39 @@ class ToolGateWrappersTest {
                 (subject, type) -> Optional.empty(),
                 neverAsked,
                 new ToolAuthorizationProperties());
+    }
+
+    /** A gate's binding check, whichever of the four types it is. */
+    interface Binding {
+        boolean isBoundTo(String toolName, ToolCallAuthorizer authorizer);
+    }
+
+    static Stream<Arguments> gatesOfEveryType() {
+        ToolCallAuthorizer bound = allowing();
+        return Stream.of(
+                Arguments.of("ToolCallGate", bound, (Binding) ((ToolCallGate)
+                        ToolCallGate.gate(new McpServerFeatures.SyncToolSpecification(tool(), (e, r) -> OK), bound)
+                                .callHandler())::isBoundTo),
+                Arguments.of("AsyncToolCallGate", bound, (Binding) ((AsyncToolCallGate)
+                        AsyncToolCallGate.gate(new McpServerFeatures.AsyncToolSpecification(
+                                tool(), (e, r) -> Mono.just(OK)), bound).callHandler())::isBoundTo),
+                Arguments.of("StatelessToolCallGate", bound,
+                        (Binding) ((StatelessToolCallGate) StatelessToolCallGate.gate(
+                                new McpStatelessServerFeatures.SyncToolSpecification(tool(), (t, r) -> OK), bound)
+                                .callHandler())::isBoundTo),
+                Arguments.of("StatelessAsyncToolCallGate", bound,
+                        (Binding) ((StatelessAsyncToolCallGate) StatelessAsyncToolCallGate.gate(
+                                new McpStatelessServerFeatures.AsyncToolSpecification(
+                                        tool(), (t, r) -> Mono.just(OK)), bound).callHandler())::isBoundTo));
+    }
+
+    @ParameterizedTest(name = "{0}") // layer-3 review L1 — bound to its own tool name AND the same authorizer instance
+    @MethodSource("gatesOfEveryType")
+    void aGateIsBoundOnlyToItsOwnToolNameAndItsOwnAuthorizer(String type, ToolCallAuthorizer bound, Binding gate) {
+        assertThat(gate.isBoundTo(TOOL, bound)).as("own name, same authorizer").isTrue();
+        assertThat(gate.isBoundTo("another_tool", bound)).as("another tool's name").isFalse();
+        assertThat(gate.isBoundTo(TOOL, allowing())).as("an equal-behaving but different authorizer").isFalse();
+        assertThat(gate.isBoundTo(TOOL, null)).as("no authorizer").isFalse();
     }
 
     @Test // U25 — every one of the four wrappers, with an empty SecurityContextHolder

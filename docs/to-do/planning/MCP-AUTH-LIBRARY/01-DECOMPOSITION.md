@@ -303,7 +303,8 @@ source and the reflective installer.
      `McpServerFeatures.SyncToolSpecification` is replaced by a list of `ToolCallGate.gate(…)`-wrapped
      specifications. Two corrections ride along: **every element** is checked (today: element 0 only), and
      the authorizer is fetched lazily through an `ObjectProvider` as today; an element whose handler is
-     already a `ToolCallGate` is recorded but not wrapped again. A scoped proxy (a bean with a `scopedTarget.` sibling) is passed
+     already a `ToolCallGate` is recorded but not wrapped again *(superseded by the layer-3 review, L1: kept only
+     when that gate is bound to the element's own tool name and the context's authorizer — otherwise wrapped again)*. A scoped proxy (a bean with a `scopedTarget.` sibling) is passed
      through untouched — inspecting it outside a request would resolve its target and fail startup; it is an
      unsupported registration either way. **Every other element that exposes a public
      no-arg `tool()` accessor returning `io.modelcontextprotocol.spec.McpSchema.Tool` ⇒ startup failure**,
