@@ -333,8 +333,8 @@ class OpaMcpAutoConfigurationTest {
                     .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
             assertThat(second).hasSize(2)
                     .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
-            // index 1 of the second list was already gated: kept, never wrapped a second time
-            assertThat(second.get(1).callHandler()).isSameAs(TwoSyncListsDeclared.PRE_GATED_HANDLER);
+            // index 1 of the second list was already gated by the context's authorizer: kept, never wrapped twice
+            assertThat(second.get(1).callHandler()).isSameAs(TwoSyncListsDeclared.preGatedHandler);
 
             assertThat(context.getBean("names")).isEqualTo(List.of("a", "b"));
             @SuppressWarnings("unchecked")
@@ -433,6 +433,38 @@ class OpaMcpAutoConfigurationTest {
         });
     }
 
+    @Test // U15 (layer-3 review) — a hand-built gate bound to another tool's name or another authorizer is wrapped again
+    void wrapsAgainAPreGatedElementBoundToAnotherToolOrAuthorizer() {
+        baselineWithRegistry(MisBoundPreGatesDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            ToolCallAuthorizer authorizer = context.getBean(ToolCallAuthorizer.class);
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> tools = (List<SyncToolSpecification>) context.getBean("misBoundTools");
+
+            assertThat(tools).hasSize(2).allSatisfy(spec -> {
+                assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class);
+                assertThat(((ToolCallGate) spec.callHandler()).isBoundTo(spec.tool().name(), authorizer))
+                        .as("the outer gate decides for the specification's own tool, with the context's authorizer")
+                        .isTrue();
+            });
+            assertThat(tools.get(0).callHandler()).isNotSameAs(MisBoundPreGatesDeclared.wrongNameHandler);
+            assertThat(tools.get(1).callHandler()).isNotSameAs(MisBoundPreGatesDeclared.FOREIGN_AUTHORIZER_HANDLER);
+        });
+    }
+
+    @Test // U35 (layer-3 review) — a never-post-processed list whose element carries a foreign-bound gate is refused
+    void refusesAListWhoseGateIsBoundToAnotherAuthorizer() {
+        baseline()
+                .withInitializer(c -> c.getBeanFactory().registerSingleton("foreignGated", new ArrayList<>(List.of(
+                        new SyncToolSpecification(tool("foreign"), MisBoundPreGatesDeclared.FOREIGN_AUTHORIZER_HANDLER)))))
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context))
+                            .contains("foreignGated")
+                            .contains("bound to another tool's name or another authorizer");
+                });
+    }
+
     @Test // U23 — a list of elements WITHOUT a tool() accessor is not a tool list: untouched, and starts
     void leavesAListWithoutToolAccessorsUntouched() {
         baseline().withUserConfiguration(NotToolBearing.class).run(context -> {
@@ -447,7 +479,8 @@ class OpaMcpAutoConfigurationTest {
             assertThat(context).hasNotFailed();
             for (String name : List.of("syncOfFour", "asyncOfFour", "statelessOfFour", "statelessAsyncOfFour")) {
                 assertThat(context.getBean(name, List.class))
-                        .allSatisfy(element -> assertThat(McpToolSpecifications.isGated(element)).isTrue());
+                        .allSatisfy(element -> assertThat(McpToolSpecifications.isGated(
+                                element, context.getBean(ToolCallAuthorizer.class))).isTrue());
             }
         });
     }
@@ -828,8 +861,7 @@ class OpaMcpAutoConfigurationTest {
     /** Two sync lists whose tools together equal the declarations; plus two non-tool lists. */
     @Configuration(proxyBeanMethods = false)
     static class TwoSyncListsDeclared {
-        static final ToolCallGate PRE_GATED_HANDLER = (ToolCallGate) ToolCallGate.gate(
-                syncSpec("d"), new ToolCallAuthorizer(null, null, null, null, null, null)).callHandler();
+        static volatile ToolCallGate preGatedHandler;
         static final McpServerFeatures.SyncResourceSpecification RESOURCE =
                 new McpServerFeatures.SyncResourceSpecification(
                         McpSchema.Resource.builder().uri("res://x").name("x").build(), (exchange, request) -> null);
@@ -845,8 +877,10 @@ class OpaMcpAutoConfigurationTest {
         }
 
         @Bean
-        List<SyncToolSpecification> secondTools() {
-            return new ArrayList<>(List.of(syncSpec("c"), new SyncToolSpecification(tool("d"), PRE_GATED_HANDLER)));
+        List<SyncToolSpecification> secondTools(ToolCallAuthorizer authorizer) {
+            SyncToolSpecification preGated = ToolCallGate.gate(syncSpec("d"), authorizer);
+            preGatedHandler = (ToolCallGate) preGated.callHandler();
+            return new ArrayList<>(List.of(syncSpec("c"), preGated));
         }
 
         @Bean
@@ -857,6 +891,28 @@ class OpaMcpAutoConfigurationTest {
         @Bean
         List<Object> resources() {
             return List.of(RESOURCE);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MisBoundPreGatesDeclared {
+        /** Gated for "foreign" by an authorizer built inline — never the context's. */
+        static final ToolCallGate FOREIGN_AUTHORIZER_HANDLER = (ToolCallGate) ToolCallGate.gate(
+                syncSpec("foreign"), new ToolCallAuthorizer(null, null, null, null, null, null)).callHandler();
+        static volatile ToolCallGate wrongNameHandler;
+
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("e"), declared("f")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> misBoundTools(ToolCallAuthorizer authorizer) {
+            // "e" carries a gate bound to tool "a" (the context's authorizer, the wrong name)
+            wrongNameHandler = (ToolCallGate) ToolCallGate.gate(syncSpec("a"), authorizer).callHandler();
+            return new ArrayList<>(List.of(
+                    new SyncToolSpecification(tool("e"), wrongNameHandler),
+                    new SyncToolSpecification(tool("f"), FOREIGN_AUTHORIZER_HANDLER)));
         }
     }
 

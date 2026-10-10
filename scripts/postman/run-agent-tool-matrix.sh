@@ -199,6 +199,25 @@ run_folder() { # folder-name report-suffix
     --reporter-json-export "$REPORT_DIR/$RUN_ID/agent-tool-matrix-$2.json"
 }
 
+# --- reload the policies (agent_tools.rego's schema-v1 guard is what every cell runs against) ----
+# OPA runs without --watch, so a rig brought up before agent_tools.rego last changed still decides with the
+# old document — and E1-E5 would pass against it, since a policy without the guard ignores the jar's schema
+# marker. Restart, then poll the guard ITSELF (not /health, which answers before the bundle loads).
+echo "==> Restarting OPA ($OPA_CONTAINER) so the current agent_tools.rego is live (--watch is not used) ..."
+"$RUNTIME" restart "$OPA_CONTAINER" >/dev/null
+OPA_GUARD_LIVE=0
+for _ in $(seq 1 60); do
+  if curl -sf "${OPA_HEALTH%/health}/v1/data/agent_tools/known_schemas" 2>/dev/null \
+       | grep -q 'opa-abac.mcp.tool-gate/v1'; then
+    OPA_GUARD_LIVE=1; break
+  fi
+  sleep 1
+done
+[ "$OPA_GUARD_LIVE" = 1 ] || {
+  echo "ERROR: OPA restarted but agent_tools.known_schemas does not hold the v1 marker — the loaded policy is not the current agent_tools.rego." >&2
+  exit 1
+}
+
 # --- mint tokens -------------------------------------------------------------
 # Four tokens, ONE human principal behind three of them. The actor rides in act_chain, minted by the
 # client's protocol mapper — which is what lets E1/E10 use a no-actor token for the SAME person.

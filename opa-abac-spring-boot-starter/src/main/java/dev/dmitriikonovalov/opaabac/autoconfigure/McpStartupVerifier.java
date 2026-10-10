@@ -125,11 +125,12 @@ final class McpStartupVerifier implements SmartInitializingSingleton {
                 continue;
             }
             for (Object element : elements) {
-                if (McpToolSpecifications.isToolBearing(element) && !McpToolSpecifications.isGated(element)) {
+                if (McpToolSpecifications.isToolBearing(element) && !gate.isGated(element)) {
                     throw new IllegalStateException("Bean '" + name + "' serves a tool specification ("
                             + element.getClass().getName() + ") without the opa-abac-mcp tool-gate — it never "
                             + "passed the gate's post-processor (a list added with registerSingleton, or one "
-                            + "replaced after post-processing). Supported registrations are singleton List "
+                            + "replaced after post-processing), or its gate is bound to another tool's name or "
+                            + "another authorizer. Supported registrations are singleton List "
                             + "bean definitions of " + McpToolSpecifications.SUPPORTED + ".");
                 }
             }

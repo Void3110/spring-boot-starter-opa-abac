@@ -4,6 +4,7 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import java.util.Objects;
 import java.util.function.BiFunction;
 
 /**
@@ -31,7 +32,7 @@ import java.util.function.BiFunction;
  * {@link StatelessAsyncToolCallGate} wrap the other three under the same rule
  * ({@link ToolGateInvocation}): decide when the handler is invoked, on the invoking thread.
  */
-public class ToolCallGate
+public final class ToolCallGate
         implements BiFunction<McpSyncServerExchange, CallToolRequest, CallToolResult> {
 
     private final String toolName;
@@ -54,6 +55,16 @@ public class ToolCallGate
                 specification.tool(),
                 new ToolCallGate(
                         specification.tool().name(), specification.callHandler(), authorizer));
+    }
+
+    /**
+     * True when this gate decides for {@code toolName} with exactly {@code authorizer} (the same instance).
+     * The starter keeps an already-gated specification as is only when its gate is bound to the
+     * specification's own tool name and the application's authorizer; any other gate is wrapped again — a
+     * second gate can only narrow.
+     */
+    public boolean isBoundTo(String toolName, ToolCallAuthorizer authorizer) {
+        return Objects.equals(this.toolName, toolName) && this.authorizer == authorizer;
     }
 
     @Override

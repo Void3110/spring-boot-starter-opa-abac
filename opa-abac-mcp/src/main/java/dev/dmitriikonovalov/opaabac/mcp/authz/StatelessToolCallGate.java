@@ -4,6 +4,7 @@ import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import java.util.Objects;
 import java.util.function.BiFunction;
 
 /**
@@ -15,7 +16,7 @@ import java.util.function.BiFunction;
  * is passed through to the tool body untouched; carrying the identity in it is ADR 0036 §4's planned
  * successor, not this class's job.
  */
-public class StatelessToolCallGate
+public final class StatelessToolCallGate
         implements BiFunction<McpTransportContext, CallToolRequest, CallToolResult> {
 
     private final String toolName;
@@ -36,6 +37,16 @@ public class StatelessToolCallGate
         return new SyncToolSpecification(
                 specification.tool(),
                 new StatelessToolCallGate(specification.tool().name(), specification.callHandler(), authorizer));
+    }
+
+    /**
+     * True when this gate decides for {@code toolName} with exactly {@code authorizer} (the same instance).
+     * The starter keeps an already-gated specification as is only when its gate is bound to the
+     * specification's own tool name and the application's authorizer; any other gate is wrapped again — a
+     * second gate can only narrow.
+     */
+    public boolean isBoundTo(String toolName, ToolCallAuthorizer authorizer) {
+        return Objects.equals(this.toolName, toolName) && this.authorizer == authorizer;
     }
 
     @Override

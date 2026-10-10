@@ -4,6 +4,7 @@ import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.server.McpServerFeatures.AsyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import reactor.core.publisher.Mono;
 
@@ -17,7 +18,7 @@ import reactor.core.publisher.Mono;
  * resubscription never calls the authorizer again (the rule is {@link ToolGateInvocation}'s, shared by all
  * four wrappers).
  */
-public class AsyncToolCallGate
+public final class AsyncToolCallGate
         implements BiFunction<McpAsyncServerExchange, CallToolRequest, Mono<CallToolResult>> {
 
     private final String toolName;
@@ -38,6 +39,16 @@ public class AsyncToolCallGate
         return new AsyncToolSpecification(
                 specification.tool(),
                 new AsyncToolCallGate(specification.tool().name(), specification.callHandler(), authorizer));
+    }
+
+    /**
+     * True when this gate decides for {@code toolName} with exactly {@code authorizer} (the same instance).
+     * The starter keeps an already-gated specification as is only when its gate is bound to the
+     * specification's own tool name and the application's authorizer; any other gate is wrapped again — a
+     * second gate can only narrow.
+     */
+    public boolean isBoundTo(String toolName, ToolCallAuthorizer authorizer) {
+        return Objects.equals(this.toolName, toolName) && this.authorizer == authorizer;
     }
 
     @Override

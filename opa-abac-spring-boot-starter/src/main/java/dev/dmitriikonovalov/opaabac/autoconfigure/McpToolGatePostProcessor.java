@@ -21,7 +21,9 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
  *
  * <ul>
  *   <li>an element of any of the four SDK tool-specification types — sync or async, stateful or
- *       stateless — is wrapped with its type's gate (one already gated is kept, never wrapped twice);</li>
+ *       stateless — is wrapped with its type's gate (one already gated <em>by the context's authorizer for its
+ *       own tool name</em> is kept, never wrapped twice; a gate bound to another name or authorizer is wrapped
+ *       again);</li>
  *   <li>any other <em>tool-bearing</em> element ({@link McpToolSpecifications#isToolBearing}) — a type the
  *       module does not know, e.g. one a future SDK adds — <strong>fails startup</strong>, naming its type:
  *       the module never serves a type it does not gate. Every element is checked, not only the first;</li>
@@ -99,6 +101,15 @@ final class McpToolGatePostProcessor implements BeanPostProcessor, BeanFactoryAw
         }
         log.info("Tool-gate installed on {} tool specification(s) in '{}'", wrapped, beanName);
         return gated;
+    }
+
+    /**
+     * True when {@code element} is gated by the application's authorizer for its own tool name — the same test
+     * this post-processor applies before keeping an element as is, so the verifier and the post-processor
+     * never disagree on what "gated" means.
+     */
+    boolean isGated(Object element) {
+        return McpToolSpecifications.isGated(element, authorizerProvider.getIfAvailable());
     }
 
     /** Every tool name gated so far, sorted — a snapshot; the startup verifier compares it with the registry. */

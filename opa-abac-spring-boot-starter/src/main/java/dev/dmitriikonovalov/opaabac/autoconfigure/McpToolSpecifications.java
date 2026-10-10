@@ -26,7 +26,9 @@ import org.springframework.beans.factory.support.RootBeanDefinition;
  * <p>The four SDK specification types are <em>supported</em>: each is wrapped by its own gate
  * ({@link ToolCallGate}, {@link AsyncToolCallGate}, {@link StatelessToolCallGate},
  * {@link StatelessAsyncToolCallGate}), and an element of one of them counts as gated only when its handler
- * is <em>that type's</em> gate.
+ * is <em>that type's</em> gate, bound to the element's own tool name and to the application's
+ * {@link ToolCallAuthorizer}. A hand-built gate bound to another tool's name, or to another authorizer (one
+ * constructed inline skips the configured agent-clients list), is not trusted: it is wrapped again.
  */
 final class McpToolSpecifications {
 
@@ -81,15 +83,24 @@ final class McpToolSpecifications {
                 || element instanceof McpStatelessServerFeatures.AsyncToolSpecification;
     }
 
-    /** True when {@code element} is a supported specification whose handler is <em>its type's</em> gate. */
-    static boolean isGated(Object element) {
+    /**
+     * True when {@code element} is a supported specification whose handler is <em>its type's</em> gate, bound
+     * to the element's own tool name and to {@code authorizer} (the same instance). A {@code null} authorizer
+     * gates nothing.
+     */
+    static boolean isGated(Object element, ToolCallAuthorizer authorizer) {
+        if (authorizer == null) {
+            return false;
+        }
         return switch (element) {
-            case McpServerFeatures.SyncToolSpecification s -> s.callHandler() instanceof ToolCallGate;
-            case McpServerFeatures.AsyncToolSpecification s -> s.callHandler() instanceof AsyncToolCallGate;
-            case McpStatelessServerFeatures.SyncToolSpecification s ->
-                    s.callHandler() instanceof StatelessToolCallGate;
-            case McpStatelessServerFeatures.AsyncToolSpecification s ->
-                    s.callHandler() instanceof StatelessAsyncToolCallGate;
+            case McpServerFeatures.SyncToolSpecification(var tool, var handler) ->
+                    handler instanceof ToolCallGate g && g.isBoundTo(tool.name(), authorizer);
+            case McpServerFeatures.AsyncToolSpecification(var tool, var handler) ->
+                    handler instanceof AsyncToolCallGate g && g.isBoundTo(tool.name(), authorizer);
+            case McpStatelessServerFeatures.SyncToolSpecification(var tool, var handler) ->
+                    handler instanceof StatelessToolCallGate g && g.isBoundTo(tool.name(), authorizer);
+            case McpStatelessServerFeatures.AsyncToolSpecification(var tool, var handler) ->
+                    handler instanceof StatelessAsyncToolCallGate g && g.isBoundTo(tool.name(), authorizer);
             case null, default -> false;
         };
     }
@@ -106,11 +117,12 @@ final class McpToolSpecifications {
     }
 
     /**
-     * {@code element} with its type's gate installed — the element itself when it is already gated (never
-     * wrapped twice). Only ever called with a supported element.
+     * {@code element} with its type's gate installed — the element itself when it is already gated by this
+     * {@code authorizer} for its own tool name (never wrapped twice); a gate bound otherwise is wrapped again.
+     * Only ever called with a supported element.
      */
     static Object gate(Object element, ToolCallAuthorizer authorizer) {
-        if (isGated(element)) {
+        if (isGated(element, authorizer)) {
             return element;
         }
         return switch (element) {
