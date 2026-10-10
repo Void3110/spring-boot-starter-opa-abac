@@ -458,13 +458,14 @@ Two limits, stated rather than hidden: the roster filter reaches two pinned SDK 
 **reflectively**, because MCP Java SDK 2.0.0 exposes no per-caller `tools/list` seam
 ([java-sdk #578](https://github.com/modelcontextprotocol/java-sdk/issues/578)) — it fails startup by
 design if an upgrade moves them, and carries a kill-switch; and the per-type catalog policies never see
-the actor, so agent-aware *row* filtering is not expressible here. Extracting a reusable
-`opa-abac-agent` library module is the slice's stated **exit criterion** and is deliberately **not**
-shipped — the seams get exercised by a running demo before anything is frozen into published API.
+the actor, so agent-aware *row* filtering is not expressible here. The slice's stated **exit criterion** — a
+reusable library module — is delivered by MCP-AUTH-LIBRARY as the **incubating** `opa-abac-mcp`
+([ADR 0036](docs/architecture/adr/0036-mcp-auth-library-module.md)): the starter auto-configures it, it gates all
+four MCP tool-specification types, and the example now consumes it like any adopter.
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # the tool surface, behind the gateway at /mcp
-scripts/postman/run-agent-tool-matrix.sh  # the E1–E11 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1–E12 matrix, through the gateway
 ```
 
 Full contract: [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) ·

@@ -31,6 +31,21 @@ allprojects {
     version = property("VERSION_NAME") as String
 }
 
+// --- The Spring Boot line every Boot-BOM import resolves against (ADR 0036 §10) ----------------------
+// Default: the repo's pin (libs.versions.springBoot). `-PspringBootLine=compat` selects springBootCompat (the
+// newest 4.1.x) — used ONLY by the CI step that re-runs :opa-abac-mcp, :opa-abac-spring-boot-starter and
+// :example-mcp-server tests on Boot 4.1. Every module's `mavenBom("…spring-boot-dependencies:…")` reads
+// `springBootBomVersion`, so without the property the default build resolves exactly as before. An unknown
+// value FAILS the build: a typo must never quietly run the default line while claiming to test 4.1.
+val springBootBomVersion: String = when (val line = providers.gradleProperty("springBootLine").orNull) {
+    null -> libs.versions.springBoot.get()
+    "compat" -> libs.versions.springBootCompat.get()
+    else -> throw GradleException("Unknown -PspringBootLine=$line (supported: compat)")
+}
+allprojects {
+    extra["springBootBomVersion"] = springBootBomVersion
+}
+
 // --- Publishing: the explicit library allow-list ---------------------------------------------
 // The six publishable library modules. The BOM (opa-abac-bom) applies the plugin in its own
 // build with the JavaPlatform variant, so it is intentionally NOT in this jar-producing list.

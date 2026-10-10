@@ -10,7 +10,7 @@ tags:
 
 # ADR 0036 — `opa-abac-mcp`: the MCP tool-gate as an incubating library module
 
-**Status:** Accepted (planned) — slice **MCP-AUTH-LIBRARY** ([[MCP-AUTH-LIBRARY]], design [[MCP-AUTH-LIBRARY/00-DESIGN|00-DESIGN]])
+**Status:** Accepted (implemented 2026-10-10, release 1.5.0) — slice **MCP-AUTH-LIBRARY** ([[MCP-AUTH-LIBRARY]], design [[MCP-AUTH-LIBRARY/00-DESIGN|00-DESIGN]])
 **Date:** 2026-10-03
 **Context tags:** agent tool-call authorization, MCP, module extraction, incubating API, input-schema versioning, fail-closed wiring
 **Supersedes:** the recorded deferral decision "extract at the second consumer, not at an SDK version"

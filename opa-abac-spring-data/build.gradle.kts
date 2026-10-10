@@ -7,7 +7,8 @@ description = "Spring Data JPA integration for OPA partial-evaluation filtering"
 
 dependencyManagement {
     imports {
-        mavenBom("org.springframework.boot:spring-boot-dependencies:${libs.versions.springBoot.get()}")
+        // The repo's Boot line, or the newest 4.1.x under -PspringBootLine=compat (root build script).
+        mavenBom("org.springframework.boot:spring-boot-dependencies:${rootProject.extra["springBootBomVersion"]}")
     }
 }
 

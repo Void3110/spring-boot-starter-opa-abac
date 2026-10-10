@@ -135,12 +135,18 @@ Two things about its build are non-obvious:
   transitive `spring-boot-starter-data-jpa` would otherwise make Boot auto-configure a `DataSource` and
   fail at startup. Excluding it lets the JPA auto-configurations back off on an absent classpath.
 
+The module is supported on Boot **4.0.x and 4.1.x**, both tested: `-PspringBootLine=compat` switches every
+Boot-BOM import to `springBootCompat` (the newest 4.1.x in the catalog) — a step in the CI `build` job. The
+4.1.x artifacts are not in this host's Gradle cache (PKIX on download), so run it outside the sandbox with the
+keychain `JAVA_TOOL_OPTIONS` + `--no-daemon` (`RELEASING.md` §4), or let CI on the PR be the proof.
+
 ```bash
 ./gradlew :example-mcp-server:test
+./gradlew :opa-abac-mcp:test :opa-abac-spring-boot-starter:test :example-mcp-server:test -PspringBootLine=compat
 
 ENABLE_MCP=1 ./deploy.sh up --pods 2       # the tool surface on the rig, behind the gateway at /mcp
                                            # (force-enables ENABLE_OIDC + ENABLE_OPA + ENABLE_USER_SERVICE)
-scripts/postman/run-agent-tool-matrix.sh   # the E1–E11 agent matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh   # the E1–E12 agent matrix, through the gateway
 ```
 
 ### Container runtime for tests (important)

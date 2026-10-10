@@ -6,13 +6,23 @@ plugins {
 
 description = "Example: MCP server (Spring AI @McpTool catalog proxies behind an OPA tool-gate)"
 
+// The Boot BOM, imported EXPLICITLY although the Boot plugin already imports its own (4.0.8, the plugin
+// version): with -PspringBootLine=compat this later import wins and the example's tests run on the newest
+// 4.1.x (the CI step, ADR 0036 §10); without it, it is the same 4.0.x pin — resolution unchanged.
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.boot:spring-boot-dependencies:${rootProject.extra["springBootBomVersion"]}")
+    }
+}
+
 // This example app is not published.
 tasks.named("bootJar") { enabled = true }
 tasks.named("jar") { enabled = false }
 
 dependencies {
-    // The tool-gate library module (ADR 0036): the identity kernel, the capability seam and the tool
-    // declarations live there; the example keeps only its catalog-specific pieces.
+    // The tool-gate library module (ADR 0036), consumed exactly as an adopter would: the starter
+    // auto-configures the gate on every tool specification; the example keeps only its catalog-specific
+    // pieces — its tools and declarations, its ceiling source, and the reflective roster installer.
     implementation(project(":opa-abac-mcp"))
 
     // Spring AI's MCP server BOM + starter. The starter's POM declares spring-boot 4.1.0, but the
@@ -22,8 +32,8 @@ dependencies {
     implementation(platform(libs.spring.ai.bom))
     implementation(libs.spring.ai.starter.mcp.server.webmvc)
 
-    // The OPA ABAC starter — consumed exactly as an adopter would. This module uses the library's
-    // AbacFilter (bearer -> AbacAuthentication) and, from T3/T4, its OpaClient. No library change.
+    // The OPA ABAC starter — consumed exactly as an adopter would: the AbacFilter (bearer ->
+    // AbacAuthentication), the OpaClient, and OpaMcpAutoConfiguration (the tool-gate's wiring).
     //
     // The data-filtering layer is excluded: this service owns NO persistence (its tools proxy the
     // catalog REST API and it holds no rows), and the starter api-exposes opa-abac-spring-data, which

@@ -7,6 +7,10 @@
 # jackson-databind 2.21.x and log4j-api move past the four MODERATE advisories the 1.2.0 pre-publish
 # sweep deferred (they were BOM-managed versions, never overridden). Re-run the OSV sweep on every bump.
 springBoot = "4.0.8"
+# The newest Boot 4.1.x — its SINGLE purpose is the CI step that re-runs the MCP-related tests on the 4.1 line
+# (ADR 0036 §10: opa-abac-mcp supports Boot 4.0.x AND 4.1.x, both tested). Selected with -PspringBootLine=compat
+# at every Boot-BOM import; the repo's own baseline stays springBoot above. Never referenced otherwise.
+springBootCompat = "4.1.1"
 springDependencyManagement = "1.1.7"
 openapiGenerator = "7.14.0"
 # Central-Portal-native publishing (ADR 0027). Applied only to the six library modules + the BOM

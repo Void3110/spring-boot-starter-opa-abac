@@ -254,19 +254,23 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
   policy) as a structured, advisory error — enough to pick another tool or ask for escalation, never a
   silent failure and never a stack trace. — **Phase 9** ✅
 - **J5** *As an operator*, when the decision service is unreachable the agent path **denies** and the tool
-  list degrades to un-filtered (never empty, never wider): no outage ever grants an agent something it
-  couldn't do while healthy. — **Phase 9** ✅ (the fail-closed drill)
+  list is **empty** — the honest answer while nothing is callable (since 1.4.0, [[0037-indeterminate-decision-distinct-from-deny|ADR 0037]];
+  an outage of an identity, capability or ceiling source *outside* the batch still degrades the list to
+  un-filtered, never wider): no outage ever grants an agent something it couldn't do while healthy. —
+  **Phase 9** ✅ (the fail-closed drill)
 - **J6** *As a person signing in normally*, nothing changes: a token with no agent actor is an ordinary
   human call, decided exactly as before. — **Phase 9** ✅
 - **J7** *As a developer of an MCP server*, I add one dependency and every tool my server advertises is gated
   — whichever tool-specification type my configuration produces — and a setup that would leave a tool ungated
   (no policy engine, no ceiling source, an unsupported server type, declarations that do not match the tools)
-  refuses to start instead of serving tools unguarded. — **[[MCP-AUTH-LIBRARY]]** 📋
+  refuses to start instead of serving tools unguarded. — **[[MCP-AUTH-LIBRARY]]** ✅ (all four types, each
+  proven over a real `POST /mcp`)
 - **J8** *As an operator*, I can name the client ids that are agents; a token from one of them that carries no
-  actor is refused as a misconfigured agent, never treated as a person. — **[[MCP-AUTH-LIBRARY]]** 📋
+  actor is refused as a misconfigured agent, never treated as a person. — **[[MCP-AUTH-LIBRARY]]** ✅ (matrix
+  cell E12)
 - **J9** *As an operator upgrading the library*, a policy written for a different input version denies instead
   of misreading the request — a version mismatch can never quietly route an agent call down the human branch.
-  — **[[MCP-AUTH-LIBRARY]]** 📋
+  — **[[MCP-AUTH-LIBRARY]]** ✅ (input schema v1)
 
 ### Epic K — "I can see what my people are working on, without joining their teams" (supervised read scope)
 

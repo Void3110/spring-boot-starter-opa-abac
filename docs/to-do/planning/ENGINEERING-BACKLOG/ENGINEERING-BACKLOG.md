@@ -14,7 +14,7 @@ tags:
 >
 > Take from the top. Each item is self-contained: no item blocks another.
 >
-> **Status 2026-09-07: items 1–9 are SHIPPED.** Item 10 remains — the same shape item 9 had (a
+> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–23 were opened 2026-10-10 by MCP-AUTH-LIBRARY.) Item 10 remains — the same shape item 9 had (a
 > BOM-managed version, no reachable path), waiting on the next Boot patch line.
 > Each shipped item carries the correction its own estimate needed — read those before trusting a
 > future backlog entry's effort figure: five of the eight were wrong in a way that mattered.
@@ -409,6 +409,35 @@ names them). Detection is the advisor's own pointcut. `OpaAbacDisabledAutoConfig
 `UnguardedBootIT` pins that the real catalog refuses to start unacknowledged and names its controllers and
 `TagDecisionGate`. `deploy.sh`'s unguarded branch and the user-service's standalone default set the
 acknowledgment.
+
+## 21. A supported `tools/list` roster installer — waiting on java-sdk #578 (left by MCP-AUTH-LIBRARY, 2026-10-10)
+
+**Left by** [[MCP-AUTH-LIBRARY]] ([[0036-mcp-auth-library-module|ADR 0036]] §5). `opa-abac-mcp` ships the roster
+**decision** (`ToolRosterFilter`), but the only way to install it on MCP SDK 2.0.x is the example's
+`RosterFilterInstaller`, which reflects into two SDK-private fields — never shipped in a published jar. Adopters copy
+it. **Fix shape:** when java-sdk #578 (a supported per-caller `tools/list` seam, milestone 2.2) ships, add a
+supported installer to the module in a minor release and retire the example's reflective one. Blocked upstream.
+
+## 22. Identity from the MCP transport context, not the thread (left by MCP-AUTH-LIBRARY, 2026-10-10)
+
+**Left by** [[MCP-AUTH-LIBRARY]] (ADR 0036 §4). Every wrapper reads the caller from `SecurityContextHolder` and the
+request attributes on the thread the handler is invoked on — proven for all four server configurations on Spring MVC,
+but it rests on Spring AI invoking handlers on the request thread (`immediateExecution(true)` for the sync servers),
+and it is why WebFlux fails startup. The planned successor carries the identity in the SDK's `McpTransportContext`;
+Spring AI's transport auto-configuration exposes no context-extractor hook for it (2.0.0). **Fix shape:** open the
+upstream Spring AI issue asking for that hook; adopt it in the module when it exists (and lift the WebFlux refusal).
+The async wrappers' **labelling** read is the same class: `ToolFailureRecord` is read from the thread that *emits* the
+result, so a body completing on a thread bound to another request could mislabel that request's error (error to error
+only — never a success). Capturing the request at `apply` would close it once the identity carrier moves.
+
+## 23. `MemoizingRoleDefinitionSupplier` keys its request memo per class, not per instance (noted 2026-10-10)
+
+**Noted by** the MCP-AUTH-LIBRARY part-0 review (layer 2), which fixed the same shape in the slice's own two memos
+(`MemoizingPrincipalCeilingSupplier`, `TurnScopedCapabilityCache` — per-instance attributes since `5c02a4f`) but left
+this one alone: it is pre-existing `opa-abac-spring-security` code outside the slice boundary. Two decorated
+`RoleDefinitionSupplier` beans in one application would read each other's memoized answers for the same key within a
+request — cross-**supplier**, never cross-caller. Low: the starter wires one. **Fix shape:** key the request attribute
+on the decorator instance (the slice's fix), with a two-decorators-one-request test.
 
 ---
 

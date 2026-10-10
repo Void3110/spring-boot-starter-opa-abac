@@ -376,6 +376,14 @@ an unwrapped tool fails the startup check, so an unsupported registration cannot
 The direct API (`ToolCallGate.gate` and its three siblings, `ToolCallAuthorizer`) stays public for wiring
 without the auto-configuration.
 
+## Supported versions
+
+MCP Java SDK **2.0.x** and Spring AI **2.0.x**, on Spring Boot **4.0.x and 4.1.x** — both tested: the repo
+builds on its 4.0.x pin, and the CI `build` job re-runs the module's, the starter's and the example's tests with
+every Boot-BOM import switched to the newest 4.1.x (`-PspringBootLine=compat`, the catalog's `springBootCompat`).
+The module pins `mcp-core` to the version Spring AI 2.0.x depends on; your own dependency management still wins
+in your build. Spring AI 2.1 is out of scope until it is GA. Spring MVC only (see below).
+
 ## Supported configurations
 
 The gate wraps **all four** MCP SDK tool-specification types, each with its own wrapper in
@@ -450,7 +458,7 @@ opa test infra/opa/policies -v
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # force-enables OIDC + OPA + the user-service
-scripts/postman/run-agent-tool-matrix.sh  # the E1-E11 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1-E12 matrix, through the gateway
 ```
 
 The tool surface is **gateway-fronted like every other service here** — the scripted client enters at
@@ -543,7 +551,8 @@ MCP transport / OAuth authorization (the scope fence sits **above** the validate
 the ecosystem's MCP security layer) · the host-side `ToolCallingManager` leg · HITL / approval flows ·
 policy-filtered retrieval · `listChanged` notifications (the SDK offers only a *global* broadcast;
 revocation bites at call time immediately, and at the next re-list for the view) · a real LLM in the
-loop · extracting an `opa-abac-agent` library module (the slice's exit criterion).
+loop. (The slice's exit criterion — a reusable library module — has since shipped as the incubating
+`opa-abac-mcp`, [[0036-mcp-auth-library-module|ADR 0036]].)
 
 **The existence oracle is accepted and documented:** a roster-hidden tool still answers `tools/call`
 with the layer-naming advisory deny, revealing that it exists. All demo tools are publicly
