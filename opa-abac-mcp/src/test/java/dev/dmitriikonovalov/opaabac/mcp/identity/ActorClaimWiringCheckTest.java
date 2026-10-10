@@ -25,7 +25,7 @@ class ActorClaimWiringCheckTest {
         identity.setActorClaim("act_chain");
         copiedClaims = List.of("act_chain");
 
-        assertThatCode(() -> check().afterPropertiesSet()).doesNotThrowAnyException();
+        assertThatCode(() -> check().afterSingletonsInstantiated()).doesNotThrowAnyException();
     }
 
     @Test // the module cannot see the starter: a null list is read as "nothing copied", never as a pass
@@ -33,7 +33,7 @@ class ActorClaimWiringCheckTest {
         identity.setActorClaim("act_chain");
         copiedClaims = null;
 
-        assertThatThrownBy(() -> check().afterPropertiesSet())
+        assertThatThrownBy(() -> check().afterSingletonsInstantiated())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("silent widening");
     }
@@ -43,7 +43,7 @@ class ActorClaimWiringCheckTest {
         identity.setActorClaim("act_chain");
         copiedClaims = List.of();
 
-        assertThatThrownBy(() -> check().afterPropertiesSet())
+        assertThatThrownBy(() -> check().afterSingletonsInstantiated())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("act_chain")
                 .hasMessageContaining("opa.abac.mcp.identity.actor-claim")
@@ -56,7 +56,7 @@ class ActorClaimWiringCheckTest {
         identity.setActorClaim("delegation");
         copiedClaims = List.of("act_chain");
 
-        assertThatThrownBy(() -> check().afterPropertiesSet())
+        assertThatThrownBy(() -> check().afterSingletonsInstantiated())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("delegation");
     }
@@ -66,7 +66,7 @@ class ActorClaimWiringCheckTest {
         identity.setActorClaim("  ");
         copiedClaims = List.of("act_chain");
 
-        assertThatThrownBy(() -> check().afterPropertiesSet())
+        assertThatThrownBy(() -> check().afterSingletonsInstantiated())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("blank");
     }

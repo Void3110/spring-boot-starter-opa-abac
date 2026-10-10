@@ -48,6 +48,15 @@ runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a l
   is its request memo (ADR 0023). The decision itself — `ToolCallAuthorizer`, `ToolCallGate`, `ToolRosterFilter`
   — moves into the module unchanged.
 
+- **`opa-abac-spring-boot-starter`**: a new auto-configuration, `OpaMcpAutoConfiguration`, activates when
+  `opa-abac-mcp` and Spring AI's MCP server are both on the classpath. It builds the gate's beans (each
+  overridable), memoizes the ceiling and the capability per request, decorates the application's
+  `PolicyPathResolver` (resource type `tool` ⇒ `opa.abac.mcp.policy-path`; every other type unchanged — `tool`
+  is reserved) and wraps every stateful synchronous tool specification. It is **not** switched off by
+  `opa.abac.enabled=false`: without an `OpaClient`, without a `PrincipalCeilingSupplier`, with a tool
+  specification type it cannot wrap, or with an actor claim the subject never receives, the application
+  **fails at startup** — `opa.abac.allow-ungated-methods=true` does not change that.
+
 **Property rename, for anyone who copied the example.** The example's identity and capability settings move
 to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` and `example.mcp.agents.profiles[]`
 → `opa.abac.mcp.agents.profiles[]` (same list shape), and `example.mcp.authz.{agent-gate.enabled, policy-path}`

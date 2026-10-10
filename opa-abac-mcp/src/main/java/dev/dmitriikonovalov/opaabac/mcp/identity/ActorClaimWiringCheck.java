@@ -1,7 +1,7 @@
 package dev.dmitriikonovalov.opaabac.mcp.identity;
 
 import java.util.List;
-import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 
 /**
  * Fails startup unless the configured actor claim is one the starter actually copies into the subject.
@@ -24,7 +24,7 @@ import org.springframework.beans.factory.InitializingBean;
  * whoever wires the check — read from the environment, so the check never depends on the starter's
  * properties bean.
  */
-public class ActorClaimWiringCheck implements InitializingBean {
+public class ActorClaimWiringCheck implements SmartInitializingSingleton {
 
     private final IdentityProperties identityProperties;
     private final List<String> copiedClaims;
@@ -39,8 +39,13 @@ public class ActorClaimWiringCheck implements InitializingBean {
         this.copiedClaims = copiedClaims == null ? List.of() : List.copyOf(copiedClaims);
     }
 
+    /**
+     * Runs once every singleton exists — a {@link SmartInitializingSingleton} callback, so the check stays
+     * eager under {@code spring.main.lazy-initialization=true} (Boot exempts these beans from lazy
+     * initialization; an {@code InitializingBean} nobody injects would simply never be created).
+     */
     @Override
-    public void afterPropertiesSet() {
+    public void afterSingletonsInstantiated() {
         String actorClaim = identityProperties.getActorClaim();
 
         if (actorClaim == null || actorClaim.isBlank()) {

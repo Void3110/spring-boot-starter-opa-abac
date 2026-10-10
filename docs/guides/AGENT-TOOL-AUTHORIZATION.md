@@ -243,11 +243,50 @@ something went wrong in a way it can act on: pick another tool, ask the human to
 stack trace, never a bare 5xx, never a silent empty result. The two layers being distinguishable is
 what lets a model react instead of retrying blindly.
 
+## Installing the module
+
+`opa-abac-mcp` is auto-configured by the starter (`OpaMcpAutoConfiguration`) as soon as it sits next to
+Spring AI's MCP server — adding the dependency is the whole installation:
+
+```kotlin
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:<version>"))
+implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
+implementation("dev.dmitriikonovalov:opa-abac-mcp")          // incubating
+implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
+```
+
+**You provide:** a `PrincipalCeilingSupplier` bean (no default — [[#The principal ceiling]]) and a
+`ToolRegistry` bean declaring every tool's action, category, target type and risk tags.
+**Defaulted** (each `@ConditionalOnMissingBean` — your bean wins): the `ToolCallAuthorizer` and
+`ToolRosterFilter`; the claim-based `DelegationChainExtractor` (over a **private** JSON mapper, so a claim
+parse never changes with your Jackson customizations); the YAML `AgentCapabilitySupplier`
+(`opa.abac.mcp.agents.profiles[]`). The starter decorates, bean-level, whatever ended up in the context:
+the ceiling memo (under `opa.abac.resolve-memo.enabled`), the turn-scoped capability memo (always), the
+gate on every stateful synchronous tool specification (every element of every specification list), and
+your `PolicyPathResolver` — **decorated, not replaced**: resource type `tool` goes to
+`opa.abac.mcp.policy-path` (default `agent_tools`), every other type keeps your resolver's answer, so the
+application's other gates are unaffected. The resource type **`tool` is reserved** for the tool-gate.
+
+It is **not** gated on `opa.abac.enabled`, and it never starts half-installed. Startup fails, with a
+message naming the fix, when:
+
+| Condition at startup | Outcome |
+|---|---|
+| no `OpaClient` bean (incl. `opa.abac.enabled=false`) | fails, naming `opa.abac.enabled` and `OpaClient` — **even with** `opa.abac.allow-ungated-methods=true`: that acknowledgment covers `@OpaPreAuthorize` methods, never an ungated tool surface |
+| no `PrincipalCeilingSupplier` bean | fails (there is no default) |
+| a tool specification the module cannot wrap — in this release every type but `McpServerFeatures.SyncToolSpecification`, and any element exposing an `McpSchema.Tool tool()` accessor | fails, naming the type |
+| a specification list that never passed the gate (e.g. added with `registerSingleton`) | fails, naming the bean |
+| `opa.abac.mcp.identity.actor-claim` not listed in `opa.abac.subject.attribute-claims` | fails (the wiring check — read from the environment, so it holds with the starter off) |
+
+Every check runs from one startup callback that resolves every singleton `List` bean first, so
+`spring.main.lazy-initialization=true` cannot skip a guard. No property turns the gate off;
+`opa.abac.mcp.agent-gate.enabled=false` drops the agent conjunct only.
+
 ## Running it
 
 The tool-gate wraps **every** advertised tool's call handler by post-processing the specification
-list Spring AI's scanner produces, so a tool added later cannot be forgotten — nothing enumerates
-tool names.
+lists Spring AI's auto-configuration produces (the starter's `OpaMcpAutoConfiguration`), so a tool added
+later cannot be forgotten — nothing enumerates tool names.
 
 ```bash
 ./gradlew :example-mcp-server:test

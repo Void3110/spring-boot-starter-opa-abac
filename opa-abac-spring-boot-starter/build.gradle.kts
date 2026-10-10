@@ -46,10 +46,22 @@ dependencies {
     // keys off the admin-client type by name; a bare adopter gets the NoOpUserDirectory fallback.
     compileOnly(project(":opa-abac-keycloak-directory"))
 
+    // The MCP tool-gate (ADR 0036): the same optional-module treatment. compileOnly, so the starter drags
+    // neither the module nor the MCP SDK onto every adopter; OpaMcpAutoConfiguration activates by name when
+    // the module AND Spring AI's MCP server are both on the classpath. The configuration references no
+    // Spring AI type (the condition is a name string), so Spring AI is not even compileOnly here. mcp-core
+    // resolves through this edge at the module's explicit catalog version (the Boot BOM does not manage it).
+    compileOnly(project(":opa-abac-mcp"))
+
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(project(":opa-abac-keycloak-directory"))
+    testImplementation(project(":opa-abac-mcp"))
+    // The real Spring AI MCP server starter on the TEST classpath only: the context-runner tests prove the
+    // @ConditionalOnClass activation against the actual class name, and T5's per-type ITs run a real server.
+    testImplementation(platform(libs.spring.ai.bom))
+    testImplementation(libs.spring.ai.starter.mcp.server.webmvc)
     testImplementation("org.springframework.boot:spring-boot-starter-security")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc")
     testImplementation(platform(libs.junit.bom))

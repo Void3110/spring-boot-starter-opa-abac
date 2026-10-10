@@ -15,6 +15,7 @@ import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.HttpOpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaClientConfig;
+import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
@@ -56,6 +57,14 @@ import tools.jackson.databind.ObjectMapper;
  * fixture instead of by construction of the code.
  */
 class ToolRosterFilterTest {
+
+    /**
+     * The decorator's delegate: these cases decide {@code tool} contexts only, so a non-{@code tool}
+     * context reaching the application's resolver is a test failure (the pre-decorator behavior).
+     */
+    private static final PolicyPathResolver TOOL_ONLY = context -> {
+        throw new AssertionError("only tool contexts are decided here; got " + context.resource().type());
+    };
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -468,7 +477,7 @@ class ToolRosterFilterTest {
     private OpaClient opaClient(String baseUrl, Duration timeout) {
         return new HttpOpaClient(
                 MAPPER,
-                new ToolPolicyPathResolver(properties),
+                new ToolPolicyPathResolver(TOOL_ONLY, properties),
                 new OpaClientConfig(baseUrl, timeout, "allow"));
     }
 

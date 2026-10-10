@@ -9,6 +9,7 @@ import dev.dmitriikonovalov.opaabac.core.DecisionIndeterminateException;
 import dev.dmitriikonovalov.opaabac.core.HttpOpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.OpaClientConfig;
+import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
 import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
 import dev.dmitriikonovalov.opaabac.core.RoleResolutionException;
 import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityProfile;
@@ -59,6 +60,14 @@ import tools.jackson.databind.ObjectMapper;
  * that logs rather than a gate that gates.
  */
 class ToolCallGateTest {
+
+    /**
+     * The decorator's delegate: these cases decide {@code tool} contexts only, so a non-{@code tool}
+     * context reaching the application's resolver is a test failure (the pre-decorator behavior).
+     */
+    private static final PolicyPathResolver TOOL_ONLY = context -> {
+        throw new AssertionError("only tool contexts are decided here; got " + context.resource().type());
+    };
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String CALLER_TOKEN = "caller.token.signature";
@@ -163,7 +172,7 @@ class ToolCallGateTest {
             PrincipalCeilingSupplier roles) {
         OpaClient opaClient = new HttpOpaClient(
                 MAPPER,
-                new ToolPolicyPathResolver(properties),
+                new ToolPolicyPathResolver(TOOL_ONLY, properties),
                 new OpaClientConfig(opaBaseUrl, Duration.ofSeconds(2), "allow"));
         DelegationChainExtractor extractor =
                 new ClaimDelegationChainExtractor(MAPPER, new IdentityProperties());
@@ -397,7 +406,7 @@ class ToolCallGateTest {
                 CEILING_SUPPLIER,
                 new HttpOpaClient(
                         MAPPER,
-                        new ToolPolicyPathResolver(properties),
+                        new ToolPolicyPathResolver(TOOL_ONLY, properties),
                         new OpaClientConfig(opa, Duration.ofSeconds(2), "allow")),
                 properties);
 

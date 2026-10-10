@@ -44,8 +44,9 @@ example:
         base-url: http://localhost:8081
         timeout: 2s
 
-# The starter: this service reads the forwarded bearer into an AbacAuthentication. The OPA client is
-# configured from T4, when the tool-gate starts asking policy questions.
+# The starter: this service reads the forwarded bearer into an AbacAuthentication, and its OpaClient is the
+# one the tool-gate asks. Turning it off does NOT turn the tool-gate off: with no OpaClient the MCP server
+# refuses to start (ADR 0036 §3) — opa.abac.allow-ungated-methods does not extend to tools.
 opa:
   abac:
     enabled: true
@@ -57,8 +58,9 @@ opa:
       # Carries the delegation claim into AbacContext.Subject#attributes, where the extractor reads it.
       attribute-claims:
         - act_chain
-    # The tool-gate library module (opa-abac-mcp, ADR 0036): how the delegation claim is read and the
-    # YAML default capability source. The example's own settings stay under example.mcp.*.
+    # The tool-gate library module (opa-abac-mcp, ADR 0036), auto-configured by the starter because the
+    # module sits next to Spring AI's MCP server: these settings feed its gate, its delegation-claim reader
+    # and its YAML default capability source. The example's own settings stay under example.mcp.*.
     mcp:
       # The OPA document the tool-gate asks — the PACKAGE path. The shipped client POSTs
       # /v1/data/<policy-path> for one decision and /v1/data/<policy-path>/bulk for a batch, so
