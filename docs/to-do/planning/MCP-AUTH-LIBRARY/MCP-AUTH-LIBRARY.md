@@ -88,10 +88,10 @@ version, an agent client whose IdP mapper is missing — each turned into a star
 
 | # | Ticket | Part | Status |
 |---|---|---|---|
-| T1 | The `opa-abac-mcp` module; the identity kernel + tool declarations move | 0 | ☐ |
-| T2 | The decision moves, onto `PrincipalCeilingSupplier` | 0 | ☐ |
-| T3 | `OpaMcpAutoConfiguration` + the prerequisite startup failures | 0 | ☐ |
-| T4 | Wrap-time declaration check; part 0 closes on the rig (matrix E1–E11 unchanged) | 0 | ☐ |
+| T1 | The `opa-abac-mcp` module; the identity kernel + tool declarations move | 0 | ✅ 2026-10-10 |
+| T2 | The decision moves, onto `PrincipalCeilingSupplier` | 0 | ✅ 2026-10-10 |
+| T3 | `OpaMcpAutoConfiguration` + the prerequisite startup failures | 0 | ✅ 2026-10-10 |
+| T4 | Wrap-time declaration check; part 0 closes on the rig (matrix E1–E11 unchanged) | 0 | ✅ 2026-10-10 |
 | T5 | All four specification types; reactive / unwrappable ⇒ startup failure; per-type ITs | 1 | ☐ |
 | T6 | The `agent-clients` guard (`tool-gate-actor-required`) + matrix cell E12 | 1 | ☐ |
 | T7 | Input schema v1 — jar marker + policy guard, one commit | 1 | ☐ |
