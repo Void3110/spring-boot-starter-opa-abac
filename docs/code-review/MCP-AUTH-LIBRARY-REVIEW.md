@@ -11,7 +11,8 @@ tags:
 # MCP-AUTH-LIBRARY — Code Review
 
 > **Verdict**: Approved with fixes — round 1 (the multi-lens workflow) found two Low issues, both fixed; round 2
-> (Fable + Opus on the fix commit) found one Low test gap and five nits, fixed; see [Rounds](#rounds).
+> (Fable + Opus on the fix commit) found one Low test gap and five nits, fixed; round 3 (the pair again) was dry
+> and fixed nothing — the terminal round. See [Rounds](#rounds).
 > **Scope**: The whole slice (layer 3 of an ORCHESTRATOR run, two parts): the new published module
 > `opa-abac-mcp`, the starter's `OpaMcpAutoConfiguration` (post-processors, `McpStartupVerifier`), the
 > example's shrink onto the module, the four specification-type gates, the `agent-clients` guard, input
@@ -189,7 +190,34 @@ before commit; the scan is back to the standing by-design set.
 recreates the MCP pod on every exit, even one before any drill (slow, harmless); STATUS-07 still tells the
 operator to restart OPA by hand before the matrix (historical — the runner now does it).
 
+## Round 3 — Fable + Opus on `013e295` (terminal)
+
+Scoped to the round-2 commit (proportionality clamp from round 3 on). **Opus: APPROVE. Fable: APPROVE-WITH-FIXES.**
+Folded fail-closed: no BLOCK. **Zero behavior-changing findings** — both re-verified that the pinned authorizer
+cannot certify anything the post-processor did not install (per-context post-processor, `updateAndGet` returns the
+winner, `@Primary`/ambiguity resolve identically in both lookups, the fallback can only refuse), and that every new
+test kills the mutant it targets. What they did report:
+
+| # | Sev | Finding | Who | Disposition |
+|---|-----|---------|-----|-------------|
+| R3-1 | Low (test strength) | The prototype-authorizer case declares one list, so a "re-resolve on every list" mutant (fails *closed*) survives | Fable | Backlog **24** |
+| R3-2 | Nit | The docs do not say that, with a non-singleton authorizer, a pre-gate can never match the installed instance (always wrapped again with a WARN) | both | Backlog **24** |
+| R3-3 | Nit | Overriding only `OPA_HEALTH` no longer moves the schema probe, and its timeout message then blames the policy | Opus | Backlog **24** |
+
+Pre-existing follow-ups the round surfaced (step 2 certifies the binding, not the passage, for a hand-bound
+`registerSingleton` list of an undeclared tool — call-time deny; a `@Lazy`-proxied authorizer is never "the same
+instance"; the `curl | grep -q` SIGPIPE edge under `pipefail`) are in backlog 24 or recorded here.
+
+**Termination.** Round 3 had all its reviewers run, zero behavior-changing findings, and **fixed nothing** — the
+loop rule's terminal round. Its test-strength and doc nits went to the backlog rather than into the branch, so the
+terminal round stays a no-fix round (a fix there would need a round 4 to verify it).
+
 ## Rounds
 
 **Layer 3 round 1:** multi-lens workflow (2B) — 2 Low, both fixed.
 **Layer 3 round 2:** Fable+Opus pair — 1 Low + 5 nits; 5 fixed, 1 follow-up.
+**Layer 3 round 3:** Fable+Opus pair — dry (0 behavior-changing), no fix; terminal. Nits → backlog 24.
+
+Observed cost (subagent tokens): round 1 ≈1.48M (12 agents); round 2 Fable ≈0.21M + Opus ≈0.22M; round 3 Fable
+≈0.16M + Opus ≈0.17M. The weekly meters moved 86→87 % (all models) and 63→64 % (Fable) across the whole review — too
+coarse to read a Fable multiplier off.

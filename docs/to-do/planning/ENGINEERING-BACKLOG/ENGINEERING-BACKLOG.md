@@ -14,7 +14,7 @@ tags:
 >
 > Take from the top. Each item is self-contained: no item blocks another.
 >
-> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–23 were opened 2026-10-10 by MCP-AUTH-LIBRARY.) Item 10 remains — the same shape item 9 had (a
+> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–24 were opened 2026-10-10 by MCP-AUTH-LIBRARY — 24 by its layer-3 review.) Item 10 remains — the same shape item 9 had (a
 > BOM-managed version, no reachable path), waiting on the next Boot patch line.
 > Each shipped item carries the correction its own estimate needed — read those before trusting a
 > future backlog entry's effort figure: five of the eight were wrong in a way that mattered.
@@ -438,6 +438,29 @@ this one alone: it is pre-existing `opa-abac-spring-security` code outside the s
 `RoleDefinitionSupplier` beans in one application would read each other's memoized answers for the same key within a
 request — cross-**supplier**, never cross-caller. Low: the starter wires one. **Fix shape:** key the request attribute
 on the decorator instance (the slice's fix), with a two-decorators-one-request test.
+
+## 24. Tool-gate startup-verifier and agent-tool runner hardening (left by the MCP-AUTH-LIBRARY layer-3 review, 2026-10-10)
+
+**Left by** the [[MCP-AUTH-LIBRARY-REVIEW|MCP-AUTH-LIBRARY review]] — its terminal round (3) was a no-fix round by the
+loop rule, so these stayed out of the branch. None of them can fail open; each is a message, a test or a doc gap.
+
+- **Step 2 certifies the binding, not the passage.** A `registerSingleton` list (never post-processed) whose element
+  is hand-gated to the application's authorizer for its *own* name, with the tool **undeclared**, passes steps 2 and 3
+  and is served — every call then denies `tool-undeclared`. Fail-closed, but the "a never-post-processed list fails
+  startup" promise holds only for an absent or mis-bound gate. **Fix shape:** step 2 also requires the element's name
+  in the post-processor's gated set.
+- **A `null` `tool` component** in a hand-built specification fails startup with a bare NPE (the post-processor's
+  `toolName`, and the record patterns' `tool.name()`) instead of the verifier's named message. **Fix shape:** a
+  null-tool arm that throws the named `IllegalStateException`.
+- **The prototype-authorizer case pins one list only**, so it cannot observe that the installed instance is kept
+  *across* lists (a "re-resolve on every list" mutant fails closed but survives). **Fix shape:** a second list in
+  `PrototypeAuthorizerDeclared`.
+- **Docs for a non-singleton `ToolCallAuthorizer`:** pre-gating can never match the instance the starter installed, so
+  every pre-gated element is wrapped again with a WARN — true and harmless, but unstated in ADR 0036 §13 and the guide.
+- **`run-agent-tool-matrix.sh`:** an operator who overrides only `OPA_HEALTH` moves the health wait but not the
+  schema probe (`OPA_URL`), and the timeout message then blames the policy — name the probed URL in the error (or
+  default `OPA_URL` from an explicit `OPA_HEALTH`); `wait_opa` / `wait_mcp` call `curl` without `--max-time`;
+  `restore_rig` recreates the MCP pod even on an exit before any drill.
 
 ---
 
