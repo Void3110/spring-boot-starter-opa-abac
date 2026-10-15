@@ -27,6 +27,66 @@ running ungated. 1.5.0 refuses to start until you choose one of three fixes: rem
 enforce them, set `opa.abac.allow-ungated-methods=true` if ungated is what you want (a load-test baseline, a
 local run with no policy engine), or remove the annotations.
 
+### New incubating module: `opa-abac-mcp` — the agent tool-gate for MCP servers ([ADR 0036](docs/architecture/adr/0036-mcp-auth-library-module.md))
+
+Agent tool-call authorization (principal ceiling ∩ agent capability, decided by OPA before a tool body
+runs — ADR 0028) existed only inside `example-mcp-server`. It now ships as a library module, and every edge
+that was safe only in the example's own configuration is a startup failure or a deny.
+
+- **`opa-abac-mcp`** (new coordinate `dev.dmitriikonovalov:opa-abac-mcp`, in the BOM): the identity kernel
+  (`DelegationChain`, `DelegationChainExtractor` + `ClaimDelegationChainExtractor`, `ActorClaimWiringCheck`),
+  the agent-capability seam (`AgentCapabilitySupplier`, the YAML default `ConfigAgentCapabilitySupplier`, the
+  turn-scoped memo), the tool declarations (`ToolDescriptor`, `ToolRegistry`, the structured tool failure) and
+  the decision (`ToolCallAuthorizer`, the `tools/list` roster decision `ToolRosterFilter`, and one gate per MCP
+  SDK tool-specification type — `ToolCallGate`, `AsyncToolCallGate`, `StatelessToolCallGate`,
+  `StatelessAsyncToolCallGate`, each deciding when its handler is invoked, never inside a `Mono`).
+  **Incubating:** its API may change in a minor release until an external consumer adopts it. It depends on
+  `mcp-core` 2.0.0 (the version Spring AI 2.0.x uses) and on no Spring AI artifact.
+- **Supported:** MCP Java SDK 2.0.x and Spring AI 2.0.x, on Spring Boot **4.0.x and 4.1.x** — both tested in CI
+  (the build job re-runs the module's, the starter's and the example's tests on the newest 4.1.x). Spring MVC
+  only; Spring AI 2.1 is out of scope until GA.
+- **`PrincipalCeilingSupplier`** (new SPI, `…mcp.authz`): the principal's type-level ceiling —
+  `Optional<RoleDefinition> lookup(subject, resourceType)`, grants unioned across governed resources,
+  over-approximation allowed, empty = no role, an outage throws a `DecisionIndeterminateException` subtype
+  (⇒ `tool-gate-ceiling-unavailable`, whichever subtype). No default implementation. It replaces the
+  `RoleDefinitionSupplier` the example's gate used with a `null` resource id. `MemoizingPrincipalCeilingSupplier`
+  is its request memo (ADR 0023).
+- `AgentCapabilityUnavailableException` is now a `DecisionIndeterminateException` (ADR 0037's "could not
+  decide" family). The gate catches it first, so its denial code is unchanged.
+- **`opa-abac-spring-boot-starter`**: a new auto-configuration, `OpaMcpAutoConfiguration`, activates when
+  `opa-abac-mcp` and Spring AI's MCP server are both on the classpath — adding the dependency is the whole
+  installation. It builds the gate's beans (each overridable), memoizes the ceiling and the capability per
+  request, decorates the application's `PolicyPathResolver` (resource type `tool` ⇒ `opa.abac.mcp.policy-path`;
+  every other type unchanged — `tool` is reserved) and gates every tool specification of **all four** SDK types
+  (sync and async, stateful and stateless — each proven over a real `POST /mcp`). It is **never present but
+  inert**, and **not** switched off by `opa.abac.enabled=false`: the application **fails at startup** without an
+  `OpaClient` (`opa.abac.allow-ungated-methods=true` does not change that), without a `PrincipalCeilingSupplier`,
+  without a `ToolRegistry`, with a tool-bearing type it cannot wrap, in a reactive (WebFlux) application, or with
+  an actor claim (or, with `agent-clients` set, an `azp`) the subject never receives. A non-web (e.g. stdio)
+  server starts and denies every call `tool-gate-unauthenticated`.
+- **Declarations are checked against what was wrapped:** the `ToolRegistry` is compared at startup with the tools
+  the gate actually wrapped, in both directions (advertised-but-undeclared and declared-but-never-wrapped both
+  fail); a tool registered some way the gate never sees (`addTool`, a server customizer) is unsupported.
+  `ToolCallClassifier`, a contract-only SPI in the example, is not shipped.
+- **`opa.abac.mcp.identity.agent-clients`** (new, default empty) lists the OAuth client ids (`azp`) that are
+  agents: a token from a listed client that carries no actor claim is denied **`tool-gate-actor-required`** — a
+  misconfigured agent client, never a human call — whether or not the agent gate is on; a malformed actor stays
+  `tool-gate-identity-unreadable`; the roster is unfiltered for it. Empty = unchanged behavior.
+- **Tool-gate input schema v1:** every tool-gate input — single decisions and every roster batch item — carries
+  `input.environment.schema = "opa-abac.mcp.tool-gate/v1"` (`ToolGateInput.SCHEMA_V1`), and the shipped
+  `agent_tools.rego` grants nothing for a version it does not know (unknown, missing or absent ⇒ deny, human
+  calls included). v1 is today's field layout — the actor stays at `input.subject.attributes.actor`; an
+  incompatible change will ship as a new version.
+
+**Upgrade note — deploy the v1-aware policy with the 1.5.0 jar.** Ship the updated `agent_tools.rego` together
+with `opa-abac-mcp` 1.5.0. An older copy of the policy keeps working with v1 input (nothing moved), but it ignores
+the marker and so cannot refuse a future version; the v1-aware one can.
+
+**Property rename, for anyone who copied the example.** The example's identity and capability settings move
+to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` and `example.mcp.agents.profiles[]`
+→ `opa.abac.mcp.agents.profiles[]` (same list shape), and `example.mcp.authz.{agent-gate.enabled, policy-path}`
+→ `opa.abac.mcp.{agent-gate.enabled, policy-path}`. The old keys no longer bind.
+
 ## [1.4.0] — 2026-10-05
 
 ### "Could not decide" is no longer reported as "no" ([ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md))

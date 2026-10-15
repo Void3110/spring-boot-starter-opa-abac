@@ -154,6 +154,15 @@ jobs:
       - name: Build and test (unit + Testcontainers integration)
         run: ./gradlew build --no-daemon
 
+      # ADR 0036 §10: opa-abac-mcp supports Spring Boot 4.0.x AND 4.1.x, both TESTED. This re-runs the
+      # module's, the starter's (the MCP auto-configuration's startup-failure cases and the per-type ITs over
+      # a real POST /mcp) and the example MCP server's tests with every Boot-BOM import switched to the
+      # newest 4.1.x (springBootCompat in gradle/libs.versions.toml). A step inside this job, not a new job,
+      # so the main ruleset's required checks are unchanged. CI sets CI=true, which also puts spring-webflux
+      # on the starter's test classpath (the reactive-guard test) on both lines.
+      - name: Boot 4.1.x line (opa-abac-mcp, starter, example-mcp-server)
+        run: ./gradlew :opa-abac-mcp:test :opa-abac-spring-boot-starter:test :example-mcp-server:test -PspringBootLine=compat --no-daemon
+
       # Always publish reports — on success too, so a green run is auditable, not just
       # failures. Includes the integration-test results.
       - name: Upload test reports

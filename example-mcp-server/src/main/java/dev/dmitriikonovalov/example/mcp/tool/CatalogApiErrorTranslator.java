@@ -1,5 +1,7 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolErrorLayer;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolInvocationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;

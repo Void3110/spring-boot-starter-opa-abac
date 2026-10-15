@@ -1,2 +1,3 @@
 dev.dmitriikonovalov.opaabac.autoconfigure.OpaAbacAutoConfiguration
 dev.dmitriikonovalov.opaabac.autoconfigure.OpaAbacDisabledAutoConfiguration
+dev.dmitriikonovalov.opaabac.autoconfigure.OpaMcpAutoConfiguration

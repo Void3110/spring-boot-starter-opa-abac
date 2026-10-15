@@ -31,8 +31,23 @@ allprojects {
     version = property("VERSION_NAME") as String
 }
 
+// --- The Spring Boot line every Boot-BOM import resolves against (ADR 0036 §10) ----------------------
+// Default: the repo's pin (libs.versions.springBoot). `-PspringBootLine=compat` selects springBootCompat (the
+// newest 4.1.x) — used ONLY by the CI step that re-runs :opa-abac-mcp, :opa-abac-spring-boot-starter and
+// :example-mcp-server tests on Boot 4.1. Every module's `mavenBom("…spring-boot-dependencies:…")` reads
+// `springBootBomVersion`, so without the property the default build resolves exactly as before. An unknown
+// value FAILS the build: a typo must never quietly run the default line while claiming to test 4.1.
+val springBootBomVersion: String = when (val line = providers.gradleProperty("springBootLine").orNull) {
+    null -> libs.versions.springBoot.get()
+    "compat" -> libs.versions.springBootCompat.get()
+    else -> throw GradleException("Unknown -PspringBootLine=$line (supported: compat)")
+}
+allprojects {
+    extra["springBootBomVersion"] = springBootBomVersion
+}
+
 // --- Publishing: the explicit library allow-list ---------------------------------------------
-// The five publishable library modules. The BOM (opa-abac-bom) applies the plugin in its own
+// The six publishable library modules. The BOM (opa-abac-bom) applies the plugin in its own
 // build with the JavaPlatform variant, so it is intentionally NOT in this jar-producing list.
 // NEVER add an example-* module here.
 val publishableJarModules = setOf(
@@ -40,6 +55,7 @@ val publishableJarModules = setOf(
     "opa-abac-spring-security",
     "opa-abac-spring-data",
     "opa-abac-keycloak-directory",
+    "opa-abac-mcp",
     "opa-abac-spring-boot-starter",
 )
 
@@ -159,12 +175,15 @@ val mutationTargets = mapOf(
 
 // Suites that mix Docker-backed `*IT` classes with plain unit tests. PIT re-runs the selected tests
 // once per mutant, so leaving a Testcontainers IT in the loop turns a one-minute analysis into an
-// unusable one. Restricting to `*Test` keeps the run interactive — at the cost that a class
-// exercised ONLY by an IT reports as NO_COVERAGE rather than as genuinely untested. In these two
-// modules read SURVIVED (a test ran and did not notice) as the signal, not NO_COVERAGE.
+// unusable one (the starter's `*ToolGateIT` classes each boot a real server). Restricting to `*Test`
+// keeps the run interactive — at the cost that a class exercised ONLY by an IT reports as NO_COVERAGE
+// rather than as genuinely untested. In these modules read SURVIVED (a test ran and did not notice) as
+// the signal, not NO_COVERAGE.
 val mutationUnitTestOnlyModules = setOf(
     "opa-abac-spring-data",
     "example-catalog-management-service",
+    // The tool-gate's per-type `*ToolGateIT` classes each boot a real MCP server on a random port.
+    "opa-abac-spring-boot-starter",
 )
 
 // OpenAPI codegen lands inside the app's own package tree, so the target glob would otherwise sweep

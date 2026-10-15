@@ -67,9 +67,9 @@ when the code it guards breaks? Wired in the root build as a `JavaExec` on PIT's
 ./gradlew mutationTest        # six modules, ~1m20s warm
 ```
 
-Read **SURVIVED**, not the score: `NO_COVERAGE` is inflated in `opa-abac-spring-data` and
-`example-catalog-management-service`, where `--targetTests` excludes the Docker-backed `*IT` classes
-(PIT re-runs tests once per mutant). Baseline and the two things it disproved:
+Read **SURVIVED**, not the score: `NO_COVERAGE` is inflated in `opa-abac-spring-data`,
+`example-catalog-management-service` and `opa-abac-spring-boot-starter`, where `--targetTests` excludes the
+Docker-backed / real-server `*IT` classes (PIT re-runs tests once per mutant). Baseline and the two things it disproved:
 [`docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md`](docs/code-review/MUTATION-TESTING-BASELINE-2026-08-18.md).
 
 ### Shell-runner guards
@@ -121,7 +121,9 @@ starter wires the always-empty `NoOpUserDirectory` — fail-closed by default. O
 
 `example-mcp-server` is the **third** example app: a Spring AI **2.0.0** MCP server whose `@McpTool`
 methods proxy the catalog service's REST API with the caller's own bearer, gated by a tool-gate policy
-(`agent_tools.rego`). It consumes the shipped starter like any adopter — **no library module changes**.
+(`agent_tools.rego`). Since MCP-AUTH-LIBRARY (ADR 0036) the reusable gate lives in the incubating
+**`opa-abac-mcp`** library module (properties under `opa.abac.mcp.*`), which the example consumes like
+any adopter; the example keeps its catalog tools, its ceiling source and the reflective roster installer.
 
 Two things about its build are non-obvious:
 
@@ -133,12 +135,18 @@ Two things about its build are non-obvious:
   transitive `spring-boot-starter-data-jpa` would otherwise make Boot auto-configure a `DataSource` and
   fail at startup. Excluding it lets the JPA auto-configurations back off on an absent classpath.
 
+The module is supported on Boot **4.0.x and 4.1.x**, both tested: `-PspringBootLine=compat` switches every
+Boot-BOM import to `springBootCompat` (the newest 4.1.x in the catalog) — a step in the CI `build` job. The
+4.1.x artifacts are not in this host's Gradle cache (PKIX on download), so run it outside the sandbox with the
+keychain `JAVA_TOOL_OPTIONS` + `--no-daemon` (`RELEASING.md` §4), or let CI on the PR be the proof.
+
 ```bash
 ./gradlew :example-mcp-server:test
+./gradlew :opa-abac-mcp:test :opa-abac-spring-boot-starter:test :example-mcp-server:test -PspringBootLine=compat
 
 ENABLE_MCP=1 ./deploy.sh up --pods 2       # the tool surface on the rig, behind the gateway at /mcp
                                            # (force-enables ENABLE_OIDC + ENABLE_OPA + ENABLE_USER_SERVICE)
-scripts/postman/run-agent-tool-matrix.sh   # the E1–E11 agent matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh   # the E1–E12 agent matrix, through the gateway
 ```
 
 ### Container runtime for tests (important)
@@ -157,6 +165,7 @@ opa-abac-core/                  # framework-agnostic ABAC model + OPA client (no
 opa-abac-spring-security/       # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
 opa-abac-spring-data/           # partial-eval → JPA Specification data filtering
 opa-abac-keycloak-directory/    # OPTIONAL: Keycloak-admin impl of the UserDirectory port (ADR 0020)
+opa-abac-mcp/                   # INCUBATING: the agent tool-gate for MCP servers (ADR 0036; no Spring AI dep)
 opa-abac-spring-boot-starter/   # auto-configuration (the published starter)
 example-catalog-management-service/   # the app we secure (Postgres + Liquibase + OpenAPI codegen)
 example-mcp-server/             # Spring AI MCP server: @McpTool catalog proxies behind an OPA tool-gate

@@ -2,12 +2,18 @@ package dev.dmitriikonovalov.example.mcp.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.core.AbacContext;
+import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallAuthorizer;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
@@ -34,6 +40,12 @@ class ToolGateInstallationTest {
     @Autowired
     ToolRegistry registry;
 
+    @Autowired
+    ConfigurableListableBeanFactory beanFactory;
+
+    @Autowired
+    PolicyPathResolver policyPathResolver;
+
     @Test
     void everyAdvertisedToolsHandlerIsGatedInEveryList() {
         assertThat(specificationLists).as("the scanner must have produced a tool list").isNotEmpty();
@@ -57,5 +69,29 @@ class ToolGateInstallationTest {
                 .toList();
 
         assertThat(advertised).containsExactlyInAnyOrderElementsOf(registry.names());
+    }
+
+    @Test // I1 — the example boots on the starter's auto-configuration: the PEP is the starter-built bean
+    void thePepIsBuiltByTheStartersAutoConfiguration() {
+        String[] names = beanFactory.getBeanNamesForType(ToolCallAuthorizer.class);
+        assertThat(names).hasSize(1);
+        AnnotatedBeanDefinition definition = (AnnotatedBeanDefinition) beanFactory.getBeanDefinition(names[0]);
+        assertThat(definition.getFactoryMethodMetadata())
+                .as("the ToolCallAuthorizer's @Bean method")
+                .isNotNull();
+        assertThat(definition.getFactoryMethodMetadata().getDeclaringClassName())
+                .isEqualTo("dev.dmitriikonovalov.opaabac.autoconfigure.OpaMcpAutoConfiguration");
+    }
+
+    @Test // I1 — the context's resolver routes the tool-gate's decisions to agent_tools, every other type unchanged
+    void theContextsResolverRoutesToolDecisionsToTheToolGateDocument() {
+        assertThat(policyPathResolver.resolve(new AbacContext(
+                new AbacContext.Subject("alice", List.of(), Map.of()), "view",
+                new AbacContext.Resource("tool", "list_catalogs", Map.of(), List.of()), null, Map.of())))
+                .isEqualTo("agent_tools");
+        assertThat(policyPathResolver.resolve(new AbacContext(
+                new AbacContext.Subject("alice", List.of(), Map.of()), "view",
+                new AbacContext.Resource("catalog", "c-1", Map.of(), List.of()), null, Map.of())))
+                .isEqualTo("catalog");
     }
 }

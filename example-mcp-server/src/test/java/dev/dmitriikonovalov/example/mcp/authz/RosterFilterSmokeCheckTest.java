@@ -1,9 +1,11 @@
 package dev.dmitriikonovalov.example.mcp.authz;
 
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolRosterFilter;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolAuthorizationProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.dmitriikonovalov.example.mcp.tool.ToolDescriptor;
-import dev.dmitriikonovalov.example.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
 import dev.dmitriikonovalov.opaabac.core.AbacContext;
 import dev.dmitriikonovalov.opaabac.core.OpaClient;
 import dev.dmitriikonovalov.opaabac.core.PartialResult;
@@ -33,8 +35,8 @@ import reactor.core.publisher.Mono;
  * and {@code roster-filter.enabled=false} is the deliberate way to override it.
  *
  * <p>Asserted with {@code .getFailure()} rather than {@code .rootCause()}: a
- * {@code SmartInitializingSingleton} throws un-wrapped, the same idiom {@code ToolRegistryValidatorTest}
- * uses for the registry validator.
+ * {@code SmartInitializingSingleton} throws un-wrapped — the same idiom the starter's tool-gate startup
+ * verifier tests use.
  */
 class RosterFilterSmokeCheckTest {
 
@@ -88,15 +90,15 @@ class RosterFilterSmokeCheckTest {
                 .withPropertyValues("example.mcp.authz.roster-filter.enabled=false")
                 // The REAL @Configuration, so the @ConditionalOnProperty under test is the shipped one.
                 .withUserConfiguration(
-                        ToolAuthorizationConfiguration.class, ProviderWithoutSessionFactory.class)
+                        ExampleAuthzConfiguration.class, ProviderWithoutSessionFactory.class)
                 .withBean(ToolRegistry.class, () -> new ToolRegistry(List.of()))
                 .withBean(OpaClient.class, DenyAllOpaClient::new)
                 .withBean(tools.jackson.databind.ObjectMapper.class,
                         tools.jackson.databind.ObjectMapper::new)
-                .withBean(dev.dmitriikonovalov.example.mcp.identity.DelegationChainExtractor.class,
-                        () -> subject -> new dev.dmitriikonovalov.example.mcp.identity.DelegationChain(
+                .withBean(dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor.class,
+                        () -> subject -> new dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChain(
                                 subject.id(), null, List.of()))
-                .withBean(dev.dmitriikonovalov.example.mcp.identity.AgentCapabilitySupplier.class,
+                .withBean(dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier.class,
                         () -> actorId -> null)
                 .run(context -> {
                     assertThat(context)

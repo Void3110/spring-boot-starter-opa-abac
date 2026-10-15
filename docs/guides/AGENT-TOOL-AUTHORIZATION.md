@@ -19,10 +19,13 @@ tags:
 > API and are authorized **before** they run, by a policy that computes **principal ceiling ∩ agent
 > capability in Rego**.
 >
-> **Nothing in the library changes.** No `opa-abac-*` module, no existing service, no existing
-> `.rego` document. The MCP server consumes the published starter exactly as an adopter would —
-> which is also what makes [[#On the local rig|the e2e]] meaningful: the target layer it denies at is
-> the shipped one, byte-for-byte.
+> **Packaged as a library module since 1.5.0 (incubating).** Phase 9 shipped the gate inside the
+> example and changed no library module. ADR [[0036-mcp-auth-library-module|0036]] (slice
+> MCP-AUTH-LIBRARY) moves its reusable half into the new **`opa-abac-mcp`** module — the identity
+> kernel, the capability seam and the tool declarations first — under `opa.abac.mcp.*` properties;
+> the example keeps its catalog tools, its ceiling source and the reflective roster installer. The
+> catalog service and its per-type policies are still the shipped ones, byte-for-byte, which is what
+> makes [[#On the local rig|the e2e]] meaningful: the target layer it denies at is unchanged.
 
 ## Why the MCP specification does not cover this
 
@@ -83,6 +86,30 @@ nightly build.
 | **absent** | an ordinary **human** call — principal-only evaluation | Honest, not a bypass: principal-only is the widest the tool-gate ever goes, and it is still exactly the principal's own ceiling. Agent narrowing only ever restricts. |
 | **present, well-formed** | an agent call — the intersection applies | |
 | **malformed / oversized / cyclic** | **deny** | A broken agent claim is not a human. Never downgrade malformed to principal-only. |
+| **absent, but `azp` is listed in `agent-clients`** | **deny** — `tool-gate-actor-required` | The token comes from a client the operator declared an agent, yet carries no actor: a misconfigured agent client (its IdP mapper is missing), never a human call. Opt-in — see below. |
+
+The claim is configured under **`opa.abac.mcp.identity.*`** — `actor-claim` (default `act_chain`),
+`max-chain-depth` (4), `max-claim-length` (2048) — and the claim name must also be listed in
+`opa.abac.subject.attribute-claims`, or startup fails (`ActorClaimWiringCheck`): a claim that never
+reaches the subject would read every agent call as a human one.
+
+**The `agent-clients` guard** (ADR 0036 §8). `opa.abac.mcp.identity.agent-clients` (default empty) lists the
+OAuth client ids that are agents. A token whose `azp` is listed but which carries no valid actor claim is
+**denied `tool-gate-actor-required`** (layer `tool-gate`, its own WARN naming the client) instead of being
+evaluated as a human call — and before any policy call is spent. Three rules pin it:
+
+- **Precedence.** The claim is read first, so a listed client with a *malformed* actor is still
+  `tool-gate-identity-unreadable`; the guard only ever sees a well-formed absent actor.
+- **It runs whether or not `opa.abac.mcp.agent-gate.enabled` is on.** It asks whether this client's token
+  carries the actor it must — an identity check, like the malformed-claim deny — not an agent-narrowing
+  conjunct.
+- **`azp` must reach the subject.** A non-empty list requires `azp` in `opa.abac.subject.attribute-claims`,
+  or startup fails naming both properties (the same wiring check as the actor claim): without it the guard
+  could never fire. An empty list never runs the check — the policy input is byte-identical to before.
+
+At list time the guard is an identity edge outside the batch: the roster is **unfiltered** (+ WARN) while the
+call-time gate denies every tool. **Residual, by design:** a user handing their *own* token to an agent is a
+human call — the token is the human's, bounded by the human's ceiling; nothing in it says an agent holds it.
 
 ## The capability seam is tri-state
 
@@ -100,10 +127,48 @@ The profile's `allowed-tools` list is **mandatory**: an empty list denies every 
 "unrestricted" would turn a profile someone trimmed to nothing into a profile that permits
 everything.
 
+The YAML default (`ConfigAgentCapabilitySupplier`) reads a **list** of profiles under
+**`opa.abac.mcp.agents.profiles[]`** (`actor-id`, `allowed-categories`, `allowed-tools`,
+`allowed-actions`, `max-risk-tag`) — a list rather than a map keyed by actor id, because relaxed
+binding would mangle an id containing dots. An actor with no profile is authoritative-empty. The outage
+signal, `AgentCapabilityUnavailableException`, is a member of the core library's "could not decide"
+family (`DecisionIndeterminateException`, ADR [[0037-indeterminate-decision-distinct-from-deny|0037]]);
+the gate catches it before the family, so its denial code stays distinct.
+
 The lookup is memoized **per turn** — a turn is *one MCP request*, never a session. Within a turn the
 roster and the gate must see one capability answer or they could disagree; across turns the memo must
 die, or revoking an agent's capability mid-session would not take effect until the client reconnected
 and "the list said I could" would quietly become an authorization.
+
+## The principal ceiling
+
+The human half of the intersection arrives through a dedicated SPI, **`PrincipalCeilingSupplier`** —
+`Optional<RoleDefinition> lookup(subject, resourceType)`: what the principal may do to *some* resource
+of a type. The tool-gate resolves no target (it asks "may this caller invoke this tool at all?" before
+any row is known), so it cannot use the per-resource question the core `RoleDefinitionSupplier` answers.
+The contract:
+
+- **grants are unioned** across every resource the principal governs; a **denial is kept only if it
+  applies to all of them**;
+- **over-approximation is allowed, under-approximation forbidden** — the gate is not the authority on
+  resources (the target service decides each one with the caller's own bearer), while a ceiling that is
+  too narrow removes access the caller has over REST and hides the agent narrowing behind a principal
+  denial;
+- **empty = an authoritative no-role** (the policy default-denies); an **outage throws** a member of the
+  "could not decide" family (`DecisionIndeterminateException` — the core `RoleResolutionException`, or
+  the implementation's own subtype), and the gate denies with `tool-gate-ceiling-unavailable` — any
+  family member thrown by the ceiling lookup gets that code, whichever subtype it is;
+- **no default implementation** — the gate has no honest fallback;
+- an implementer's note from the rig: when roles are recorded on a **governing root**, include the root's
+  type when the asked type is a descendant (the example's `TypeLevelPrincipalCeilingSupplier` does this via
+  `example.mcp.authz.role-source.grant-scope-types`).
+
+**Why not `RoleDefinitionSupplier` with a `null` id?** That would silently reinterpret every adopter's
+existing supplier: one that resolves exactly the role on exactly one resource would be read as a type-level
+union it never computed. A separate SPI is something an implementation opts into. The request memo of
+ADR [[0023-request-scoped-resolution-memoization|0023]] decorates it (`MemoizingPrincipalCeilingSupplier`,
+keyed `(subject, resourceType)`, under the same `opa.abac.resolve-memo.enabled` switch), so the roster and the
+call in one request see one ceiling.
 
 ## The intersection is computed in Rego
 
@@ -124,6 +189,40 @@ to own it.
 
 Category, tool allow-list and risk-tag checks are independent `AND`s on top, so satisfying one never
 compensates for failing another. The risk ranking is a table **in the policy** for the same reason.
+
+## The input contract (v1)
+
+Every tool-gate input — each single decision and **every item** of a roster batch — is versioned:
+`input.environment.schema = "opa-abac.mcp.tool-gate/v1"` (`ToolGateInput.SCHEMA_V1`, set by the PEP). The
+shipped `agent_tools.rego` grants **nothing** for a version it does not know (`known_schema`, required by
+`is_tool_request`, so both `allow` rules and every `bulk` position refuse it) — human calls included. An
+unknown version, a missing marker, an absent `environment`, a non-string marker: all deny.
+
+| Field | v1 content |
+|---|---|
+| `subject.id` | the principal (the token `sub`) |
+| `subject.roles` | the principal's roles, as the starter extracts them |
+| `subject.attributes.actor` | the agent id — **absent for a human call**; its *presence* is what makes a call an agent call |
+| `subject.attributes.chain` | the ordered delegation chain (audit only, never a grant) |
+| `subject.attributes.agent_capability` | `{allowed_categories, allowed_tools, allowed_actions, max_risk_tag}` — absent on an agent call ⇒ deny |
+| `subject.attributes.*` | any other claim copied by `opa.abac.subject.attribute-claims` (e.g. `azp`) |
+| `role_definition` | the principal's type-level ceiling (`PrincipalCeilingSupplier`) |
+| `action` | the tool's declared fine verb (`view`, `list`) — a bare verb |
+| `resource.type` | `tool` (reserved) |
+| `resource.id` | the MCP tool name |
+| `resource.attributes.{category, risk_tags, target_type}` | the tool's declaration in the `ToolRegistry` |
+| `environment.schema` | `opa-abac.mcp.tool-gate/v1` |
+
+**The rule:** any incompatible change to this layout ships as a **new version**, never under v1. In
+particular the actor stays at `input.subject.attributes.actor` in v1 — the policy recognizes an agent call by
+that key's presence, so moving it without a version bump would turn every agent call into an unnarrowed human
+call with every test still green. With the version bumped, a v1-aware policy meeting a later jar **denies**
+instead of misreading.
+
+**What it cannot do:** a policy written *before* v1 ignores the marker — the guarantee starts with v1-aware
+policies. v1 *is* the pre-existing field layout (nothing moved), so an older copy of the policy keeps working
+with v1 input; it just cannot refuse a future version. Deploy the v1-aware `agent_tools.rego` together with the
+1.5.0 jar.
 
 ## The roster: a hint, never a grant
 
@@ -158,6 +257,8 @@ Every edge lands on **deny, or the smaller result**.
 
 | Edge | Failure | Lands on |
 |---|---|---|
+| caller identity | no authenticated caller on the thread the gate decides on (a non-web server; a customizer that moved handlers off the request thread) | **deny** every call (`tool-gate-unauthenticated`) |
+| caller identity | a client listed in `opa.abac.mcp.identity.agent-clients` with no actor claim | **deny** (`tool-gate-actor-required`); the roster is **unfiltered** + WARN |
 | delegation chain | claim absent | principal-only (an ordinary human call) |
 | delegation chain | malformed / oversized / cyclic | **deny** |
 | capability supplier | authoritative-empty | **deny** every tool |
@@ -165,7 +266,8 @@ Every edge lands on **deny, or the smaller result**.
 | principal ceiling | outage at **call** time | **deny** (`tool-gate-ceiling-unavailable`) |
 | tool-gate OPA call | down / timeout / non-200 / malformed / package not loaded | **deny** with `tool-gate-policy-unavailable` — "could not decide", retryable later (since 1.4.0, ADR 0037; it was `tool-gate-denied` before) |
 | tool-gate OPA call | the package is loaded but `allow` is undefined for this input | **deny** with `tool-gate-denied` (undefined-means-deny is a policy answer) |
-| tool metadata | a tool with no declared action/category/risk/target-type | **deny at registration time** — startup fails, the tool is never exposed |
+| input version | `input.environment.schema` unknown, missing or not a string (a jar and a policy that disagree on the input layout) | **deny** with `tool-gate-denied`, human calls included; the roster position is `false` |
+| tool metadata | a tool with no declared action/category/risk/target-type | **deny at registration time** — startup fails, the tool is never exposed; checked against the specifications actually wrapped, both directions |
 | roster batch | dead PDP, **or** a genuinely zero-capability agent | the **empty roster**, treated as authoritative (see below) |
 | roster identity / capability / ceiling at **list** time | unreadable or throwing | the **unfiltered** list + WARN, with the gate still denying per call |
 | roster adapter | pinned SDK internals moved by an upgrade | **startup failure**, naming the pins |
@@ -184,7 +286,7 @@ capability, ceiling — where showing more is safe because the gate keeps denyin
 
 | Switch | OFF behaviour |
 |---|---|
-| `example.mcp.authz.agent-gate.enabled` | The tool-gate stops **narrowing**. The call is evaluated exactly as an ordinary human principal's, and the catalog service still enforces that principal's ceiling on every resource — so OFF **cannot grant an agent more than its principal already has**. The roster reads the same switch and shows the same ceiling-only cut. |
+| `opa.abac.mcp.agent-gate.enabled` | The tool-gate stops **narrowing**. The call is evaluated exactly as an ordinary human principal's, and the catalog service still enforces that principal's ceiling on every resource — so OFF **cannot grant an agent more than its principal already has**. The roster reads the same switch and shows the same ceiling-only cut. |
 | `example.mcp.authz.roster-filter.enabled` | The adapter **and its smoke check** are not installed at all — the deliberate escape hatch for the day an SDK bump moves the pinned internals. The served list is the unfiltered one, byte-identical to the outside-the-batch degradation path, with call-time enforcement unchanged. |
 
 There is **no** switch that disables call-time enforcement. The authoritative gate is not optional.
@@ -197,11 +299,143 @@ something went wrong in a way it can act on: pick another tool, ask the human to
 stack trace, never a bare 5xx, never a silent empty result. The two layers being distinguishable is
 what lets a model react instead of retrying blindly.
 
+On the wire the layer and code ride in the result's **`_meta`** (`{"layer": …, "code": …}`); the text
+content is one safe, uniform message. The tool-gate's codes are documented API:
+
+| Code (layer `tool-gate`) | Meaning |
+|---|---|
+| `tool-gate-denied` | the policy said no (including an undefined `allow` for this input) |
+| `tool-undeclared` | the tool is missing from the `ToolRegistry` — unclassifiable is never unrestricted |
+| `tool-gate-unauthenticated` | no authenticated caller on the thread the gate decided on |
+| `tool-gate-identity-unreadable` | the actor claim is malformed, oversized or cyclic |
+| `tool-gate-actor-required` | the client (`azp`) is listed in `opa.abac.mcp.identity.agent-clients` but the token carries no actor claim |
+| `tool-gate-capability-unavailable` | the agent-capability source could not answer |
+| `tool-gate-ceiling-unavailable` | the principal's ceiling could not be resolved |
+| `tool-gate-policy-unavailable` | the policy engine could not decide (ADR 0037) — retryable later |
+
+Layer `target-gate` carries the target service's own codes (e.g. `ACCESS_DENIED`), relabelled from what the
+tool body recorded.
+
+## Installing the module
+
+`opa-abac-mcp` is auto-configured by the starter (`OpaMcpAutoConfiguration`) as soon as it sits next to
+Spring AI's MCP server — adding the dependency is the whole installation:
+
+```kotlin
+implementation(platform("dev.dmitriikonovalov:opa-abac-bom:<version>"))
+implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
+implementation("dev.dmitriikonovalov:opa-abac-mcp")          // incubating
+implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
+```
+
+**You provide:** a `PrincipalCeilingSupplier` bean (no default — [[#The principal ceiling]]) and a
+`ToolRegistry` bean declaring every tool's action, category, target type and risk tags.
+**Defaulted** (each `@ConditionalOnMissingBean` — your bean wins): the `ToolCallAuthorizer` and
+`ToolRosterFilter`; the claim-based `DelegationChainExtractor` (over a **private** JSON mapper, so a claim
+parse never changes with your Jackson customizations); the YAML `AgentCapabilitySupplier`
+(`opa.abac.mcp.agents.profiles[]`). The starter decorates, bean-level, whatever ended up in the context:
+the ceiling memo (under `opa.abac.resolve-memo.enabled`), the turn-scoped capability memo (always), the
+gate on every tool specification of all four SDK types (every element of every specification list), and
+your `PolicyPathResolver` — **decorated, not replaced**: resource type `tool` goes to
+`opa.abac.mcp.policy-path` (default `agent_tools`), every other type keeps your resolver's answer, so the
+application's other gates are unaffected. The resource type **`tool` is reserved** for the tool-gate.
+
+It is **not** gated on `opa.abac.enabled`, and it never starts half-installed. Startup fails, with a
+message naming the fix, when:
+
+| Condition at startup | Outcome |
+|---|---|
+| no `OpaClient` bean (incl. `opa.abac.enabled=false`) | fails, naming `opa.abac.enabled` and `OpaClient` — **even with** `opa.abac.allow-ungated-methods=true`: that acknowledgment covers `@OpaPreAuthorize` methods, never an ungated tool surface |
+| no `PrincipalCeilingSupplier` bean | fails (there is no default) |
+| a tool specification the module cannot wrap — any element exposing an `McpSchema.Tool tool()` accessor that is not one of the four SDK specification types (e.g. a type a future SDK adds) | fails, naming the type |
+| a reactive (Spring WebFlux) web application | fails — not supported in v1 ([[#Supported configurations]]) |
+| a specification list that never passed the gate (e.g. added with `registerSingleton`) | fails, naming the bean |
+| `opa.abac.mcp.identity.actor-claim` not listed in `opa.abac.subject.attribute-claims` | fails (the wiring check — read from the environment, so it holds with the starter off) |
+| no `ToolRegistry` bean, or its declarations ≠ the tools the gate wrapped (either direction) | fails, with both sorted lists |
+
+Every check runs from one startup callback that resolves every singleton `List` bean first, so
+`spring.main.lazy-initialization=true` cannot skip a guard. No property turns the gate off;
+`opa.abac.mcp.agent-gate.enabled=false` drops the agent conjunct only.
+
+**Declarations are checked against what was actually wrapped.** Every tool is declared in the
+`ToolRegistry`. At startup the names the gate wrapped — the union across every specification list — are
+compared with the registry **in both directions**: a tool that is advertised but undeclared (nothing to
+authorize it against) and a declaration the gate never wrapped (a phantom, or a tool registered some way
+the gate never sees) both fail startup, with both sorted lists in the message; a missing `ToolRegistry`
+fails too, naming it; an empty registry with no tools starts. At call time a tool missing from the
+registry is still denied `tool-undeclared` — the backstop for a wrapped specification whose name the
+registry lost.
+
+**Supported registrations** are the singleton specification-list **bean definitions** (`@Bean` methods or
+registered definitions — Spring AI's own lists are), checked element by element; a hand-built specification
+is supported by contributing it as such a bean (un-gated — the starter wraps and records it; one already
+gated is kept only when its gate is bound to its own tool name and the application's `ToolCallAuthorizer`,
+and is otherwise wrapped again with a WARN). **Unsupported,
+and therefore never wrapped:** a specification added at runtime with `addTool`, one a server customizer adds
+to the builder, a prototype- or scope-bound list, a list produced by a `FactoryBean`, and a list added with
+`registerSingleton` (that one is caught: it fails startup if it carries a tool without the gate). Declaring
+an unwrapped tool fails the startup check, so an unsupported registration cannot pass silently as declared.
+The direct API (`ToolCallGate.gate` and its three siblings, `ToolCallAuthorizer`) stays public for wiring
+without the auto-configuration.
+
+## Supported versions
+
+MCP Java SDK **2.0.x** and Spring AI **2.0.x**, on Spring Boot **4.0.x and 4.1.x** — both tested: the repo
+builds on its 4.0.x pin, and the CI `build` job re-runs the module's, the starter's and the example's tests with
+every Boot-BOM import switched to the newest 4.1.x (`-PspringBootLine=compat`, the catalog's `springBootCompat`).
+The module pins `mcp-core` to the version Spring AI 2.0.x depends on; your own dependency management still wins
+in your build. Spring AI 2.1 is out of scope until it is GA. Spring MVC only (see below).
+
+## Supported configurations
+
+The gate wraps **all four** MCP SDK tool-specification types, each with its own wrapper in
+`…mcp.authz`:
+
+| `spring.ai.mcp.server.type` × `protocol` | Specification type | Wrapper | Status |
+|---|---|---|---|
+| `SYNC` × `STREAMABLE` | `McpServerFeatures.SyncToolSpecification` | `ToolCallGate` | supported — proven over a real `POST /mcp` |
+| `ASYNC` × `STREAMABLE` | `McpServerFeatures.AsyncToolSpecification` | `AsyncToolCallGate` | supported — proven over a real `POST /mcp` |
+| `SYNC` × `STATELESS` | `McpStatelessServerFeatures.SyncToolSpecification` | `StatelessToolCallGate` | supported — proven over a real `POST /mcp` |
+| `ASYNC` × `STATELESS` | `McpStatelessServerFeatures.AsyncToolSpecification` | `StatelessAsyncToolCallGate` | supported — proven over a real `POST /mcp` |
+
+"Proven" is a test per row in the starter (`*ToolGateIT`): on Spring MVC, a real HTTP `tools/call` with a
+forwarded bearer reaches the gate with the caller's identity on the deciding thread, a policy deny returns
+the tool-gate advisory without running the body, and a policy allow runs it once. A type that could not show
+the identity where the gate decides would not be shipped as supported — it would fail startup instead.
+
+**Every wrapper decides when its handler is invoked**, on the transport's calling thread, where the caller's
+`SecurityContextHolder` and request attributes are bound — never inside a `Mono`. An async wrapper then
+returns the denial, or the delegate's `Mono` *decorated, not replaced*: an emitted `ToolInvocationException`
+becomes the same advisory a thrown one does; an error result is relabelled from the tool body's recorded
+failure, read when the result is emitted (an async tool body runs at subscription); any other emitted error,
+and an empty completion, pass through unchanged. A resubscription never asks the policy again.
+
+- **Spring WebFlux is out of scope for v1** ([[0036-mcp-auth-library-module|ADR 0036]] §4): a reactive web
+  application **fails at startup**. The gate reads the caller from the thread a handler is invoked on, which a
+  reactive server does not keep; the planned successor is identity carried in the SDK's transport context.
+- **A non-web application** (e.g. an stdio server) starts, and **every call is denied**
+  `tool-gate-unauthenticated` — there is no request identity to read. Deny-all, never inert.
+- **An `ASYNC` server only scans reactive-returning tools.** Spring AI's annotation scanner registers only
+  `@McpTool` methods returning `Mono`, `Flux` or a `Publisher` on an `ASYNC` server; a synchronous method is
+  silently not served (and, if declared, fails the declarations check above).
+- **The synchronous servers rely on Spring AI's servlet-only `immediateExecution(true)`** to invoke handlers
+  on the request thread: the stateful one through `servletMcpSyncServerCustomizer`, the stateless one inside
+  its server bean whenever the environment is a servlet one. **The customizer trap:** the stateful server
+  injects a *single* `McpSyncServerCustomizer`, and Spring AI's is **not** `@ConditionalOnMissingBean` — a second
+  customizer fails startup with `NoUniqueBeanDefinitionException`, and a `@Primary` one that does not itself set
+  `immediateExecution(true)` moves every handler to `boundedElastic`, where no caller is bound: **every call is
+  then denied** `tool-gate-unauthenticated` (pinned by a test). If you need your own customizer, make it
+  `@Primary` and call `immediateExecution(true)` in it.
+- **Registered after startup is ungated.** A tool added with `addTool` (or by a customizer) never passes the
+  gate — see *Supported registrations* above.
+- The example's reflective `tools/list` installer (`RosterFilterInstaller`) needs the streamable transport and
+  fails startup on `STATELESS`; it stays an example-only adapter.
+
 ## Running it
 
 The tool-gate wraps **every** advertised tool's call handler by post-processing the specification
-list Spring AI's scanner produces, so a tool added later cannot be forgotten — nothing enumerates
-tool names.
+lists Spring AI's auto-configuration produces (the starter's `OpaMcpAutoConfiguration`), so a tool added
+later cannot be forgotten — nothing enumerates tool names.
 
 ```bash
 ./gradlew :example-mcp-server:test
@@ -226,7 +460,7 @@ opa test infra/opa/policies -v
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # force-enables OIDC + OPA + the user-service
-scripts/postman/run-agent-tool-matrix.sh  # the E1-E11 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1-E12 matrix, through the gateway
 ```
 
 The tool surface is **gateway-fronted like every other service here** — the scripted client enters at
@@ -270,11 +504,14 @@ apart end to end; a tool omitted from the roster is still *denied*, not merely h
 OPA mid-suite empties the roster **and** denies every call, with the pre-kill vector — same allows,
 same denies — returning exactly on restart.
 
-Three cells are rig **drills** the runner orchestrates rather than collection steps: it stops and
+Four cells are rig **drills** the runner orchestrates rather than collection steps: it stops and
 restarts the PDP around the outage folders, recreates the pod with `agent-gate` OFF (proving the
-catalog's own gate still refuses what the tool-gate no longer does), and recreates it with the
+catalog's own gate still refuses what the tool-gate no longer does), recreates it with the
 readonly actor's capability emptied — a revocation that removes the tool from the roster *and* denies
-it at call time.
+it at call time — and, for **E12**, recreates it with `catalog-gateway` listed in
+`opa.abac.mcp.identity.agent-clients` (and `azp` copied): the human token, minted by that actor-less
+client, is refused `tool-gate-actor-required` by value, an `agent-readonly` token on the same pod keeps
+its normal outcome, and the default pod then answers the human token normally again.
 
 ### Two things only the rig could show
 
@@ -316,7 +553,8 @@ MCP transport / OAuth authorization (the scope fence sits **above** the validate
 the ecosystem's MCP security layer) · the host-side `ToolCallingManager` leg · HITL / approval flows ·
 policy-filtered retrieval · `listChanged` notifications (the SDK offers only a *global* broadcast;
 revocation bites at call time immediately, and at the next re-list for the view) · a real LLM in the
-loop · extracting an `opa-abac-agent` library module (the slice's exit criterion).
+loop. (The slice's exit criterion — a reusable library module — has since shipped as the incubating
+`opa-abac-mcp`, [[0036-mcp-auth-library-module|ADR 0036]].)
 
 **The existence oracle is accepted and documented:** a roster-hidden tool still answers `tools/call`
 with the layer-naming advisory deny, revealing that it exists. All demo tools are publicly

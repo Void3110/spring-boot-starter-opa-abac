@@ -1,5 +1,6 @@
 package dev.dmitriikonovalov.example.mcp.tool;
 
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolInvocationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.context.request.RequestContextHolder;

@@ -16,8 +16,8 @@ import org.springframework.stereotype.Component;
  * <p>The tools are all reads by design: this slice gates no mutation, so the allow/deny contrast it
  * demonstrates comes from the declared category and risk tier rather than from a destructive call. The
  * authorization attributes for each tool are declared statically in
- * {@code ToolRegistrationConfiguration} and cross-checked against this surface at startup by
- * {@link ToolRegistryValidator} — a tool added here without a declaration fails the context.
+ * {@code ToolRegistrationConfiguration} and cross-checked at startup against the specifications the
+ * {@code opa-abac-mcp} gate wrapped — a tool added here without a declaration fails the context.
  */
 @Component
 public class CatalogTools {

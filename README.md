@@ -58,8 +58,8 @@ implementation(platform("dev.dmitriikonovalov:opa-abac-bom:1.4.0"))
 implementation("dev.dmitriikonovalov:opa-abac-spring-boot-starter")
 ```
 
-Six coordinates publish: `opa-abac-{core, spring-security, spring-data, keycloak-directory,
-spring-boot-starter}` + the `opa-abac-bom` platform. The three `example-*` services are demos and are
+Seven coordinates publish: `opa-abac-{core, spring-security, spring-data, keycloak-directory, mcp,
+spring-boot-starter}` + the `opa-abac-bom` platform (`opa-abac-mcp` from 1.5.0, incubating). The three `example-*` services are demos and are
 **not** published.
 
 **Shipped:**
@@ -226,6 +226,7 @@ spring-boot-starter-opa-abac/
 ├── opa-abac-core/                       # Framework-agnostic ABAC model + OPA client (library)
 ├── opa-abac-spring-security/            # Spring Security integration (AuthorizationManager, @OpaPreAuthorize)
 ├── opa-abac-spring-data/                # Partial-eval → JPA Specification filtering + ltree hierarchy
+├── opa-abac-mcp/                        # The agent tool-gate for MCP servers (incubating, ADR 0036)
 ├── opa-abac-spring-boot-starter/        # Auto-configuration (the published starter)
 ├── example-catalog-management-service/  # E-commerce product catalog REST service (the app we secure)
 ├── example-user-management-service/     # Users/teams/role-definitions/tag-dictionary (drives the ABAC attributes)
@@ -448,19 +449,23 @@ catalog's own gate still denies, and emptying an actor's profile removes the too
 `.rego` document was touched — verified by diff. The MCP server reaches the starter only through its
 public seams, the way an adopter would (an in-repo project dependency on the same unmodified source),
 which is what makes the target-gate denial mean anything: it denies at the shipped layer, byte-for-byte.
-**The library does not ship agent support — this is an example built *on* it.**
+**The library did not ship agent support in Phase 9 — this was an example built *on* it.** From 1.5.0
+the reusable half moves into the incubating `opa-abac-mcp` module
+([ADR 0036](docs/architecture/adr/0036-mcp-auth-library-module.md)); the catalog service and its policies
+stay the shipped, untouched target layer.
 
 Two limits, stated rather than hidden: the roster filter reaches two pinned SDK internals
 **reflectively**, because MCP Java SDK 2.0.0 exposes no per-caller `tools/list` seam
 ([java-sdk #578](https://github.com/modelcontextprotocol/java-sdk/issues/578)) — it fails startup by
 design if an upgrade moves them, and carries a kill-switch; and the per-type catalog policies never see
-the actor, so agent-aware *row* filtering is not expressible here. Extracting a reusable
-`opa-abac-agent` library module is the slice's stated **exit criterion** and is deliberately **not**
-shipped — the seams get exercised by a running demo before anything is frozen into published API.
+the actor, so agent-aware *row* filtering is not expressible here. The slice's stated **exit criterion** — a
+reusable library module — is delivered by MCP-AUTH-LIBRARY as the **incubating** `opa-abac-mcp`
+([ADR 0036](docs/architecture/adr/0036-mcp-auth-library-module.md)): the starter auto-configures it, it gates all
+four MCP tool-specification types, and the example now consumes it like any adopter.
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # the tool surface, behind the gateway at /mcp
-scripts/postman/run-agent-tool-matrix.sh  # the E1–E11 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1–E12 matrix, through the gateway
 ```
 
 Full contract: [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) ·

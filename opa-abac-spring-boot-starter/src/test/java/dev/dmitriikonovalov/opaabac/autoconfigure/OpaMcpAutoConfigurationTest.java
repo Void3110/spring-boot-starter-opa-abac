@@ -1,0 +1,1189 @@
+package dev.dmitriikonovalov.opaabac.autoconfigure;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.RETURNS_DEFAULTS;
+import static org.mockito.Mockito.withSettings;
+
+import com.sun.net.httpserver.HttpServer;
+import dev.dmitriikonovalov.opaabac.core.AbacContext;
+import dev.dmitriikonovalov.opaabac.core.OpaClient;
+import dev.dmitriikonovalov.opaabac.core.PerTypePolicyPathResolver;
+import dev.dmitriikonovalov.opaabac.core.PolicyPathResolver;
+import dev.dmitriikonovalov.opaabac.core.RoleDefinition;
+import dev.dmitriikonovalov.opaabac.mcp.authz.AsyncToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.MemoizingPrincipalCeilingSupplier;
+import dev.dmitriikonovalov.opaabac.mcp.authz.PrincipalCeilingSupplier;
+import dev.dmitriikonovalov.opaabac.mcp.authz.StatelessAsyncToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.StatelessToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallAuthorizer;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolCallGate;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolPolicyPathResolver;
+import dev.dmitriikonovalov.opaabac.mcp.authz.ToolRosterFilter;
+import dev.dmitriikonovalov.opaabac.mcp.identity.ActorClaimWiringCheck;
+import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilityProfile;
+import dev.dmitriikonovalov.opaabac.mcp.identity.AgentCapabilitySupplier;
+import dev.dmitriikonovalov.opaabac.mcp.identity.ClaimDelegationChainExtractor;
+import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChain;
+import dev.dmitriikonovalov.opaabac.mcp.identity.DelegationChainExtractor;
+import dev.dmitriikonovalov.opaabac.mcp.identity.TurnScopedCapabilityCache;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
+import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
+import dev.dmitriikonovalov.opaabac.security.AbacAuthentication;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
+import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.LazyInitializationBeanFactoryPostProcessor;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.FilteredClassLoader;
+import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Scope;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.annotation.RequestScope;
+import reactor.core.publisher.Mono;
+
+/**
+ * {@link ApplicationContextRunner} slice tests for {@link OpaMcpAutoConfiguration} (MCP-AUTH-LIBRARY T3/T4,
+ * U9–U17, U35–U37; T5: U23, U25).
+ *
+ * <h2>The baseline</h2>
+ * Every fixture starts from {@code opa.abac.subject.attribute-claims=act_chain} + an {@code OpaClient}
+ * pointed at an in-process {@link HttpServer} stub (the starter's own, via {@code OpaAbacAutoConfiguration})
+ * + a {@link PrincipalCeilingSupplier} + an <strong>empty</strong> {@link ToolRegistry}; a non-empty
+ * specification list is only ever contributed together with matching declarations. A case that proves one
+ * failure removes exactly one baseline piece, so the failure it asserts cannot come from another guard, and
+ * every startup failure is asserted by <em>this slice's own message text</em> along the cause chain.
+ */
+class OpaMcpAutoConfigurationTest {
+
+    private static final RoleDefinition CEILING = new RoleDefinition(
+            "type-level", Map.of(), Map.of("catalog", List.of("READ")), Map.of(), Map.of(), null);
+
+    private HttpServer opaStub;
+    private final List<String> opaPaths = new CopyOnWriteArrayList<>();
+
+    @BeforeEach
+    void startOpaStub() throws IOException {
+        opaStub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        opaStub.createContext("/", exchange -> {
+            opaPaths.add(exchange.getRequestURI().getPath());
+            String body = exchange.getRequestURI().getPath().endsWith("/bulk")
+                    ? "{\"result\":[true]}"
+                    : "{\"result\":{\"allow\":true}}";
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        opaStub.start();
+    }
+
+    @AfterEach
+    void stopOpaStub() {
+        opaStub.stop(0);
+        Counters.reset();
+    }
+
+    private String opaUrl() {
+        return "http://127.0.0.1:" + opaStub.getAddress().getPort();
+    }
+
+    /** The full baseline: the starter (OpaClient), the MCP auto-configuration, a ceiling, an empty registry. */
+    private ApplicationContextRunner baseline() {
+        return baselineWithRegistry(EmptyRegistry.class);
+    }
+
+    /**
+     * The baseline with a fixture that brings its OWN registry in place of the empty one — a non-empty
+     * specification list only ever arrives together with its declarations.
+     */
+    private ApplicationContextRunner baselineWithRegistry(Class<?> fixtureWithRegistry) {
+        return new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.subject.attribute-claims=act_chain", "opa.abac.base-url=" + opaUrl())
+                .withUserConfiguration(CeilingSource.class, fixtureWithRegistry);
+    }
+
+    /** The baseline minus the OpaClient: the starter's own auto-configuration is simply not there. */
+    private ApplicationContextRunner baselineWithoutOpaClient() {
+        return new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.subject.attribute-claims=act_chain")
+                .withUserConfiguration(CeilingSource.class, EmptyRegistry.class);
+    }
+
+    private static ApplicationContextRunner lazy(ApplicationContextRunner runner) {
+        return runner
+                .withInitializer(c -> c.addBeanFactoryPostProcessor(new LazyInitializationBeanFactoryPostProcessor()))
+                .withUserConfiguration(LazyProbe.class);
+    }
+
+    /** Every message along the cause chain — the failure a SmartInitializingSingleton throws is unwrapped. */
+    private static String failureMessages(AssertableApplicationContext context) {
+        StringBuilder messages = new StringBuilder();
+        for (Throwable t = context.getStartupFailure(); t != null; t = t.getCause()) {
+            messages.append(t.getMessage()).append('\n');
+        }
+        return messages.toString();
+    }
+
+    // --- U9 : activation --------------------------------------------------------------------------
+
+    @Test // U9 — module + Spring AI on the classpath ⇒ the gate's beans, with the YAML capability default
+    void activatesWithTheModuleAndSpringAiOnTheClasspath() {
+        baseline().run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(ToolCallAuthorizer.class)
+                    .hasSingleBean(ToolRosterFilter.class)
+                    .hasSingleBean(ActorClaimWiringCheck.class);
+            assertThat(context.getBean(DelegationChainExtractor.class))
+                    .isInstanceOf(ClaimDelegationChainExtractor.class);
+            AgentCapabilitySupplier capabilities = context.getBean(AgentCapabilitySupplier.class);
+            assertThat(capabilities).isInstanceOf(TurnScopedCapabilityCache.class);
+            assertThat(context.getBean("agentCapabilitySupplier")).isSameAs(capabilities);
+            // The YAML default under the memo: an unconfigured agent is authoritative-empty.
+            assertThat(capabilities.lookup("nobody")).isEqualTo(AgentCapabilityProfile.empty());
+        });
+    }
+
+    @Test // U9 — Spring AI hidden ⇒ none of the gate's beans
+    void backsOffWithoutSpringAi() {
+        baseline().withClassLoader(new FilteredClassLoader("org.springframework.ai"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(ToolCallAuthorizer.class)
+                            .doesNotHaveBean(ToolRosterFilter.class)
+                            .doesNotHaveBean(DelegationChainExtractor.class)
+                            .doesNotHaveBean(AgentCapabilitySupplier.class)
+                            .doesNotHaveBean(ActorClaimWiringCheck.class);
+                });
+    }
+
+    @Test // U9 — the module hidden ⇒ none of them (no fixture here may reference a module type)
+    void backsOffWithoutTheModule() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.base-url=" + opaUrl())
+                .withClassLoader(new FilteredClassLoader("dev.dmitriikonovalov.opaabac.mcp"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean("toolCallAuthorizer")
+                            .doesNotHaveBean("toolRosterFilter")
+                            .doesNotHaveBean("delegationChainExtractor")
+                            .doesNotHaveBean("agentCapabilitySupplier")
+                            .doesNotHaveBean("actorClaimWiringCheck")
+                            .doesNotHaveBean("opaMcpStartupVerifier");
+                });
+    }
+
+    // --- U10 / U11 : the prerequisites -------------------------------------------------------------
+
+    @Test // U10 — no OpaClient ⇒ the context fails, naming opa.abac.enabled and OpaClient
+    void failsWithoutAnOpaClient() {
+        baselineWithoutOpaClient().run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context)).contains("opa.abac.enabled").contains("OpaClient");
+        });
+    }
+
+    @Test // U10 + fork 16 — the starter OFF with ADR 0038's acknowledgment still never serves tools ungated
+    void failsWithTheStarterOffEvenUnderTheUngatedMethodsAcknowledgment() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaAbacDisabledAutoConfiguration.class,
+                        OpaMcpAutoConfiguration.class))
+                .withPropertyValues(
+                        "opa.abac.enabled=false",
+                        "opa.abac.allow-ungated-methods=true",
+                        "opa.abac.subject.attribute-claims=act_chain")
+                .withUserConfiguration(CeilingSource.class, EmptyRegistry.class)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context))
+                            .contains("opa.abac.enabled")
+                            .contains("OpaClient")
+                            .contains("opa.abac.allow-ungated-methods does not apply to MCP tools");
+                });
+    }
+
+    @Test // U11 — no PrincipalCeilingSupplier ⇒ fails naming the SPI (there is no default)
+    void failsWithoutAPrincipalCeilingSupplier() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.subject.attribute-claims=act_chain", "opa.abac.base-url=" + opaUrl())
+                .withUserConfiguration(EmptyRegistry.class)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context)).contains("PrincipalCeilingSupplier");
+                });
+    }
+
+    // --- U12 : adopter beans win -------------------------------------------------------------------
+
+    @Test // U12 — an adopter capability source replaces the YAML default and is still wrapped by the memo
+    void anAdopterCapabilitySupplierWinsAndIsStillMemoized() {
+        baseline().withUserConfiguration(AdopterCapability.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBeanNamesForType(AgentCapabilitySupplier.class))
+                    .containsExactly("adopterCapability");
+            AgentCapabilitySupplier capabilities = context.getBean(AgentCapabilitySupplier.class);
+            assertThat(capabilities).isInstanceOf(TurnScopedCapabilityCache.class);
+            assertThat(capabilities.lookup("any")).isEqualTo(AdopterCapability.PROFILE);
+        });
+    }
+
+    @Test // U12 — an adopter extractor ⇒ the default backs off
+    void anAdopterExtractorWins() {
+        baseline().withUserConfiguration(AdopterExtractor.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBeanNamesForType(DelegationChainExtractor.class))
+                    .containsExactly("adopterExtractor");
+            assertThat(context.getBean(DelegationChainExtractor.class))
+                    .isNotInstanceOf(ClaimDelegationChainExtractor.class);
+        });
+    }
+
+    // --- U13 : the policy-path decorator -----------------------------------------------------------
+
+    private static AbacContext contextOf(String type) {
+        return new AbacContext(
+                new AbacContext.Subject("alice", List.of(), Map.of()),
+                "view",
+                new AbacContext.Resource(type, "r-1", Map.of(), List.of()),
+                null,
+                Map.of());
+    }
+
+    @Test // U13 — tool ⇒ the tool-gate package; any other type ⇒ exactly the undecorated resolver's answer
+    void decoratesTheApplicationsResolverInsteadOfReplacingIt() {
+        baseline().withPropertyValues("opa.abac.policy-prefix=abac").run(context -> {
+            PolicyPathResolver resolver = context.getBean(PolicyPathResolver.class);
+            assertThat(resolver).isInstanceOf(ToolPolicyPathResolver.class);
+            assertThat(resolver.resolve(contextOf("tool"))).isEqualTo("agent_tools");
+            assertThat(resolver.resolve(contextOf("catalog")))
+                    .isEqualTo(new PerTypePolicyPathResolver("abac").resolve(contextOf("catalog")))
+                    .isEqualTo("abac/catalog");
+
+            // The context's one OpaClient was built from the DECORATED resolver.
+            OpaClient opa = context.getBean(OpaClient.class);
+            opa.allow(contextOf("tool"));
+            opa.allowAll(List.of(contextOf("tool")));
+            assertThat(opaPaths).containsExactly("/v1/data/agent_tools", "/v1/data/agent_tools/bulk");
+        });
+    }
+
+    @Test // U13 — the configured package path
+    void routesToolDecisionsToTheConfiguredPolicyPath() {
+        baseline().withPropertyValues("opa.abac.mcp.policy-path=x/y").run(context ->
+                assertThat(context.getBean(PolicyPathResolver.class).resolve(contextOf("tool")))
+                        .isEqualTo("x/y"));
+    }
+
+    // --- U14 : the ceiling memo --------------------------------------------------------------------
+
+    @Test // U14 — the context's ceiling source is memoized by default
+    void theCeilingIsMemoizedByDefault() {
+        baseline().run(context -> assertThat(context.getBean(PrincipalCeilingSupplier.class))
+                .isInstanceOf(MemoizingPrincipalCeilingSupplier.class));
+    }
+
+    @Test // U14 — the role-definition memo's switch governs the ceiling memo too
+    void theResolveMemoSwitchOffServesTheRawCeilingSource() {
+        baseline().withPropertyValues("opa.abac.resolve-memo.enabled=false").run(context ->
+                assertThat(context.getBean(PrincipalCeilingSupplier.class))
+                        .isNotInstanceOf(MemoizingPrincipalCeilingSupplier.class)
+                        .isSameAs(context.getBean("ceilingSource")));
+    }
+
+    // --- U15 : every list, every element -----------------------------------------------------------
+
+    @Test // U15 — two sync lists, an element at index > 0, a pre-gated element kept as is, other lists untouched
+    void gatesEveryElementOfEverySyncSpecificationList() {
+        baselineWithRegistry(TwoSyncListsDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> first = (List<SyncToolSpecification>) context.getBean("firstTools");
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> second = (List<SyncToolSpecification>) context.getBean("secondTools");
+
+            assertThat(first).hasSize(2)
+                    .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+            assertThat(second).hasSize(2)
+                    .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+            // index 1 of the second list was already gated by the context's authorizer: kept, never wrapped twice
+            assertThat(second.get(1).callHandler()).isSameAs(TwoSyncListsDeclared.preGatedHandler);
+
+            assertThat(context.getBean("names")).isEqualTo(List.of("a", "b"));
+            @SuppressWarnings("unchecked")
+            List<Object> resources = (List<Object>) context.getBean("resources");
+            assertThat(resources).singleElement().isSameAs(TwoSyncListsDeclared.RESOURCE);
+        });
+    }
+
+    // --- U16 : the wiring check reads the environment ----------------------------------------------
+
+    @Test // U16 — the actor claim must be copied; checked without ever consulting the starter's properties bean
+    void theWiringCheckReadsTheEnvironmentNotTheStartersPropertiesBean() {
+        // A mock that records WHO calls it. Spring's own configuration-properties binder does touch it (the
+        // bean's type carries @ConfigurationProperties); what must never touch it is the tool-gate's code.
+        List<String> callers = new CopyOnWriteArrayList<>();
+        OpaAbacProperties replaced = mock(OpaAbacProperties.class, withSettings().defaultAnswer(invocation -> {
+            for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
+                callers.add(frame.getClassName());
+            }
+            return RETURNS_DEFAULTS.answer(invocation);
+        }));
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(OpaMcpAutoConfiguration.class))
+                .withPropertyValues(
+                        "opa.abac.mcp.identity.actor-claim=act_chain",
+                        "opa.abac.subject.attribute-claims=azp")
+                .withBean(OpaAbacProperties.class, () -> replaced)
+                .withBean(OpaClient.class, StubOpaClient::new)
+                .withUserConfiguration(CeilingSource.class, EmptyRegistry.class)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context))
+                            .contains("opa.abac.mcp.identity.actor-claim")
+                            .contains("opa.abac.subject.attribute-claims");
+                    assertThat(callers)
+                            .as("the wiring check and the auto-configuration never consult the properties bean")
+                            .noneMatch(caller -> caller.startsWith("dev.dmitriikonovalov.opaabac.mcp.")
+                                    || caller.equals(OpaMcpAutoConfiguration.class.getName())
+                                    || caller.startsWith(OpaMcpAutoConfiguration.class.getName() + "$"));
+                });
+    }
+
+    // --- U23 (T5; U35's three SDK-type cases rewritten) : all four types wrapped, any other refused --
+
+    @Test // U23 — the stateful async type now starts, and every element carries ITS type's gate
+    void wrapsAnAsyncStatefulSpecificationList() {
+        baselineWithRegistry(AsyncStatefulDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            List<?> tools = context.getBean("asyncTools", List.class);
+            assertThat(tools).singleElement()
+                    .isInstanceOfSatisfying(McpServerFeatures.AsyncToolSpecification.class,
+                            spec -> assertThat(spec.callHandler()).isInstanceOf(AsyncToolCallGate.class));
+        });
+    }
+
+    @Test // U23 — the stateless sync type now starts and wraps
+    void wrapsAStatelessSyncSpecificationList() {
+        baselineWithRegistry(StatelessSyncDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            List<?> tools = context.getBean("statelessTools", List.class);
+            assertThat(tools).singleElement()
+                    .isInstanceOfSatisfying(McpStatelessServerFeatures.SyncToolSpecification.class,
+                            spec -> assertThat(spec.callHandler()).isInstanceOf(StatelessToolCallGate.class));
+        });
+    }
+
+    @Test // U23 — the stateless async type now starts and wraps
+    void wrapsAStatelessAsyncSpecificationList() {
+        baselineWithRegistry(StatelessAsyncDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            List<?> tools = context.getBean("statelessAsyncTools", List.class);
+            assertThat(tools).singleElement()
+                    .isInstanceOfSatisfying(McpStatelessServerFeatures.AsyncToolSpecification.class,
+                            spec -> assertThat(spec.callHandler()).isInstanceOf(StatelessAsyncToolCallGate.class));
+        });
+    }
+
+    @Test // U23 — a type nobody has heard of (a future fifth) is recognized by its tool() accessor and refused
+    void refusesAnUnknownToolBearingType() {
+        baselineWithRegistry(FutureSpecificationDeclared.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains(FutureSpecification.class.getName())
+                    .contains("cannot wrap")
+                    .contains("supported: " + McpToolSpecifications.SUPPORTED);
+        });
+    }
+
+    @Test // U23 — one known and one unknown element in ONE list: every element is checked, the list is refused
+    void refusesAListMixingAKnownAndAnUnknownElement() {
+        baselineWithRegistry(MixedKnownAndUnknownDeclared.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("mixedTools")
+                    .contains(FutureSpecification.class.getName());
+        });
+    }
+
+    @Test // U15 (layer-3 review) — on all four types, a hand-built gate bound to another tool's name, or to another
+          // authorizer, is wrapped again: each half of the binding is pinned on its own
+    void wrapsAgainAPreGatedElementBoundToAnotherToolOrAuthorizer() {
+        baselineWithRegistry(MisBoundPreGatesDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            ToolCallAuthorizer authorizer = context.getBean(ToolCallAuthorizer.class);
+            for (String bean : List.of("misBoundSync", "misBoundAsync", "misBoundStateless", "misBoundStatelessAsync")) {
+                assertThat(context.getBean(bean, List.class)).as(bean).hasSize(2).allSatisfy(element -> {
+                    String name = McpToolSpecifications.toolName(element);
+                    assertThat(McpToolSpecifications.isGated(element, authorizer))
+                            .as(name + ": the outer gate is bound to its own tool and the context's authorizer")
+                            .isTrue();
+                    assertThat(handlerOf(element)).as(name + ": wrapped again, not kept")
+                            .isNotSameAs(MisBoundPreGatesDeclared.PRE_GATES.get(name));
+                });
+            }
+        });
+    }
+
+    @Test // layer-3 review round 2 — a non-singleton authorizer: every gate is bound to the one instance installed
+    void aPrototypeAuthorizerBindsEveryGateToTheInstanceTheGateInstalled() {
+        baselineWithRegistry(PrototypeAuthorizerDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> tools = (List<SyncToolSpecification>) context.getBean("prototypeTools");
+            assertThat(tools).hasSize(2)
+                    .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+        });
+    }
+
+    private static Object handlerOf(Object element) {
+        return switch (element) {
+            case SyncToolSpecification s -> s.callHandler();
+            case McpServerFeatures.AsyncToolSpecification s -> s.callHandler();
+            case McpStatelessServerFeatures.SyncToolSpecification s -> s.callHandler();
+            case McpStatelessServerFeatures.AsyncToolSpecification s -> s.callHandler();
+            default -> throw new IllegalArgumentException(String.valueOf(element));
+        };
+    }
+
+    @Test // U35 (layer-3 review) — a never-post-processed list whose element carries a foreign-bound gate is refused
+    void refusesAListWhoseGateIsBoundToAnotherAuthorizer() {
+        baseline()
+                .withInitializer(c -> c.getBeanFactory().registerSingleton("foreignGated", new ArrayList<>(List.of(
+                        new SyncToolSpecification(tool("foreign"), ToolCallGate.gate(
+                                syncSpec("foreign"), MisBoundPreGatesDeclared.FOREIGN).callHandler())))))
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context))
+                            .contains("foreignGated")
+                            .contains("bound to another tool's name or another authorizer");
+                });
+    }
+
+    @Test // U23 — a list of elements WITHOUT a tool() accessor is not a tool list: untouched, and starts
+    void leavesAListWithoutToolAccessorsUntouched() {
+        baseline().withUserConfiguration(NotToolBearing.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean("notTools", List.class)).isSameAs(NotToolBearing.NOT_TOOLS);
+        });
+    }
+
+    @Test // U23 — all four types in one context: the declarations check counts the union across the four
+    void theFourTypesTogetherAreCountedAgainstTheRegistry() {
+        baselineWithRegistry(AllFourTypesDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            for (String name : List.of("syncOfFour", "asyncOfFour", "statelessOfFour", "statelessAsyncOfFour")) {
+                assertThat(context.getBean(name, List.class))
+                        .allSatisfy(element -> assertThat(McpToolSpecifications.isGated(
+                                element, context.getBean(ToolCallAuthorizer.class))).isTrue());
+            }
+        });
+    }
+
+    // --- U28 (T6) : the agent-clients guard is wired, and its wiring check runs at startup --------------
+
+    @Test // U28 — agent-clients set without azp among the copied claims ⇒ startup fails naming azp
+    void agentClientsWithoutAzpCopiedFailsStartup() {
+        baseline().withPropertyValues("opa.abac.mcp.identity.agent-clients=catalog-gateway").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("'azp'")
+                    .contains("opa.abac.mcp.identity.agent-clients")
+                    .contains("opa.abac.subject.attribute-claims");
+        });
+    }
+
+    @Test // U28/U27 — with azp copied it starts, and the context's authorizer denies a listed client w/o actor
+    void theContextsAuthorizerCarriesTheAgentClientsGuard() {
+        baselineWithRegistry(AllFourTypesDeclared.class)
+                .withPropertyValues(
+                        "opa.abac.mcp.identity.agent-clients=catalog-gateway",
+                        "opa.abac.subject.attribute-claims=act_chain,azp")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    SecurityContextHolder.getContext().setAuthentication(new AbacAuthentication(
+                            new AbacContext.Subject("user-alice", List.of(), Map.of("azp", "catalog-gateway"))));
+                    try {
+                        assertThat(context.getBean(ToolCallAuthorizer.class).authorize("s").code())
+                                .isEqualTo("tool-gate-actor-required");
+                    } finally {
+                        SecurityContextHolder.clearContext();
+                    }
+                    assertThat(opaPaths).as("a deterministic deny spends no policy call").isEmpty();
+                });
+    }
+
+    // --- U25 : a non-web application starts, and every call is denied (no caller on the thread) ------
+
+    @Test // U25 — the plain (non-web) context starts; each of the four wrapped handlers denies unauthenticated
+    void aNonWebApplicationStartsAndDeniesEveryCallUnauthenticated() {
+        baselineWithRegistry(AllFourTypesDeclared.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getSourceApplicationContext())
+                    .as("the runner's context is not a web application context")
+                    .isNotInstanceOf(org.springframework.web.context.WebApplicationContext.class);
+            SecurityContextHolder.clearContext();
+            AllFourTypesDeclared.BODY_RUNS.set(0);
+            McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("x", Map.of());
+
+            List<CallToolResult> results = new ArrayList<>();
+            results.add(((SyncToolSpecification) context.getBean("syncOfFour", List.class).get(0))
+                    .callHandler().apply(null, request));
+            results.add(((McpServerFeatures.AsyncToolSpecification) context.getBean("asyncOfFour", List.class).get(0))
+                    .callHandler().apply(null, request).block());
+            results.add(((McpStatelessServerFeatures.SyncToolSpecification)
+                    context.getBean("statelessOfFour", List.class).get(0))
+                    .callHandler().apply(McpTransportContext.EMPTY, request));
+            results.add(((McpStatelessServerFeatures.AsyncToolSpecification)
+                    context.getBean("statelessAsyncOfFour", List.class).get(0))
+                    .callHandler().apply(McpTransportContext.EMPTY, request).block());
+
+            assertThat(results).hasSize(4).allSatisfy(result -> {
+                assertThat(result.isError()).isTrue();
+                assertThat(result.meta()).containsEntry("layer", "tool-gate")
+                        .containsEntry("code", "tool-gate-unauthenticated");
+            });
+            assertThat(AllFourTypesDeclared.BODY_RUNS).as("no tool body ever ran").hasValue(0);
+            assertThat(opaPaths).as("an unauthenticated call never reaches the policy").isEmpty();
+        });
+    }
+
+    @Test // U35 — a list that never passed the post-processor (registerSingleton) is caught by the verifier
+    void refusesASyncListThatNeverPassedTheGate() {
+        baseline()
+                .withInitializer(c -> c.getBeanFactory().registerSingleton(
+                        "smuggledTools", new ArrayList<>(List.of(syncSpec("smuggled")))))
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context))
+                            .contains("smuggledTools")
+                            .contains("without the opa-abac-mcp tool-gate");
+                });
+    }
+
+    // --- U36 : the guards are eager ----------------------------------------------------------------
+
+    @Test // U36 — the lazy fixture really is lazy: an unrequested bean is never created
+    void theLazyFixtureIsReallyLazy() {
+        lazy(baseline()).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(Counters.PROBE.get()).as("an unrequested bean under lazy initialization").isZero();
+        });
+    }
+
+    @Test // U36 — U10 under lazy initialization
+    void theOpaClientCheckIsEagerUnderLazyInitialization() {
+        lazy(baselineWithoutOpaClient()).run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context)).contains("opa.abac.enabled").contains("OpaClient");
+        });
+    }
+
+    @Test // U36 — U11 under lazy initialization
+    void theCeilingCheckIsEagerUnderLazyInitialization() {
+        lazy(new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.subject.attribute-claims=act_chain", "opa.abac.base-url=" + opaUrl())
+                .withUserConfiguration(EmptyRegistry.class))
+                .run(context -> {
+                    assertThat(Counters.PROBE.get()).isZero();
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context)).contains("PrincipalCeilingSupplier");
+                });
+    }
+
+    @Test // U36 — U16 under lazy initialization
+    void theWiringCheckIsEagerUnderLazyInitialization() {
+        lazy(baseline()).withPropertyValues("opa.abac.subject.attribute-claims=azp").run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context)).contains("opa.abac.mcp.identity.actor-claim");
+        });
+    }
+
+    @Test // U36 — U35 under lazy initialization: the unsupported list is resolved by the verifier, not injected
+    void anUnsupportedListNothingInjectsIsStillRefusedUnderLazyInitialization() {
+        lazy(baselineWithRegistry(FutureSpecificationDeclared.class)).run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains(FutureSpecification.class.getName());
+        });
+    }
+
+    @Test // U36 — request- and prototype-scoped lists are never instantiated by the verifier, and do not fail
+    void scopedAndPrototypeListsAreNeverTouchedUnderLazyInitialization() {
+        lazy(baseline()).withUserConfiguration(ScopedLists.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(Counters.REQUEST_LIST.get()).isZero();
+            assertThat(Counters.PROTOTYPE_LIST.get()).isZero();
+        });
+    }
+
+    @Test // U36 — without lazy init, a @RequestScope proxy nothing injects starts: only step 2's skip keeps it out
+    void aRequestScopedProxyListNothingInjectsStillStarts() {
+        baseline().withUserConfiguration(RequestScopedProxyList.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(Counters.REQUEST_PROXY_LIST.get()).isZero();
+        });
+    }
+
+    @Test // layer-2 — only a REAL scoped proxy is exempt: a singleton list whose name merely has a
+    // 'scopedTarget.' namesake is still gated and counted, never passed through
+    void aScopedTargetNamesakeDoesNotExemptASingletonToolList() {
+        baselineWithRegistry(ScopedTargetNamesake.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> lookalike = (List<SyncToolSpecification>) context.getBean("lookalike");
+            assertThat(lookalike).singleElement()
+                    .satisfies(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+        });
+    }
+
+    // --- U17 / U37 : declarations checked against what was wrapped (T4) ---------------------------
+
+    @Test // U17 — wrapped ⊋ registry: an advertised tool with no declaration fails, the message names it
+    void failsWhenAWrappedToolIsUndeclared() {
+        baselineWithRegistry(UndeclaredTool.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("Advertised but undeclared (a tool with no action/category/risk to authorize against): [b]")
+                    .contains("Declared but never wrapped")
+                    .contains(": [].");
+        });
+    }
+
+    @Test // U17 — registry ⊋ wrapped: a declaration the gate never wrapped fails, the message names it
+    void failsWhenADeclaredToolWasNeverWrapped() {
+        baselineWithRegistry(PhantomDeclaration.class).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context))
+                    .contains("Advertised but undeclared (a tool with no action/category/risk to authorize against): []")
+                    .contains("Declared but never wrapped")
+                    .contains("[phantom]");
+        });
+    }
+
+    @Test // U17 — names spread over two lists that together equal the registry start
+    void startsWhenTheUnionOfAllListsEqualsTheRegistry() {
+        baselineWithRegistry(TwoSyncListsDeclared.class).run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test // U17 — no ToolRegistry bean fails, naming it
+    void failsWithoutAToolRegistry() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        OpaAbacAutoConfiguration.class, OpaMcpAutoConfiguration.class))
+                .withPropertyValues("opa.abac.subject.attribute-claims=act_chain", "opa.abac.base-url=" + opaUrl())
+                .withUserConfiguration(CeilingSource.class)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(failureMessages(context)).contains("needs a ToolRegistry bean");
+                });
+    }
+
+    @Test // U17 — an empty registry and no tools: a server with no tools starts
+    void startsWithAnEmptyRegistryAndNoTools() {
+        baseline().run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test // U37 — under lazy initialization a matching list nothing injects is still wrapped and counted
+    void aLazyListNothingInjectsIsWrappedAndCounted() {
+        lazy(baselineWithRegistry(LazyPairDeclared.class)).run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasNotFailed();
+            @SuppressWarnings("unchecked")
+            List<SyncToolSpecification> pair = (List<SyncToolSpecification>) context.getBean("lazyPair");
+            assertThat(pair).hasSize(2)
+                    .allSatisfy(spec -> assertThat(spec.callHandler()).isInstanceOf(ToolCallGate.class));
+        });
+    }
+
+    @Test // U37 — and a third declaration with no tool behind it still fails, naming it
+    void aLazyContextStillFailsOnADeclarationNothingServes() {
+        lazy(baselineWithRegistry(LazyPairWithAThirdDeclaration.class)).run(context -> {
+            assertThat(Counters.PROBE.get()).isZero();
+            assertThat(context).hasFailed();
+            assertThat(failureMessages(context)).contains("Declared but never wrapped").contains("[third]");
+        });
+    }
+
+    // --- fixtures ----------------------------------------------------------------------------------
+
+    @Configuration(proxyBeanMethods = false)
+    static class ScopedTargetNamesake {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("look")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> lookalike() {
+            return new ArrayList<>(List.of(syncSpec("look")));
+        }
+
+        @Bean(name = "scopedTarget.lookalike")
+        Object unrelatedNamesake() {
+            return new Object();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class UndeclaredTool {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("a")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> tools() {
+            return new ArrayList<>(List.of(syncSpec("a"), syncSpec("b")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PhantomDeclaration {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("a"), declared("phantom")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> tools() {
+            return new ArrayList<>(List.of(syncSpec("a")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class LazyPairDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("first"), declared("second")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> lazyPair() {
+            return new ArrayList<>(List.of(syncSpec("first"), syncSpec("second")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class LazyPairWithAThirdDeclaration {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("first"), declared("second"), declared("third")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> lazyPair() {
+            return new ArrayList<>(List.of(syncSpec("first"), syncSpec("second")));
+        }
+    }
+
+    static SyncToolSpecification syncSpec(String name) {
+        return new SyncToolSpecification(tool(name), (exchange, request) -> CallToolResult.builder().build());
+    }
+
+    static Tool tool(String name) {
+        return Tool.builder().name(name).inputSchema(Map.of("type", "object")).build();
+    }
+
+    static ToolDescriptor declared(String name) {
+        return new ToolDescriptor(name, "view", "READ", "catalog", Set.of("low"));
+    }
+
+    static final class Counters {
+        static final AtomicInteger PROBE = new AtomicInteger();
+        static final AtomicInteger REQUEST_LIST = new AtomicInteger();
+        static final AtomicInteger PROTOTYPE_LIST = new AtomicInteger();
+        static final AtomicInteger REQUEST_PROXY_LIST = new AtomicInteger();
+
+        static void reset() {
+            PROBE.set(0);
+            REQUEST_LIST.set(0);
+            PROTOTYPE_LIST.set(0);
+            REQUEST_PROXY_LIST.set(0);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CeilingSource {
+        @Bean
+        PrincipalCeilingSupplier ceilingSource() {
+            return (subject, type) -> Optional.of(CEILING);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class EmptyRegistry {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of());
+        }
+    }
+
+    /** An ordinary bean nothing requests — the proof that a fixture is really lazy. */
+    @Configuration(proxyBeanMethods = false)
+    static class LazyProbe {
+        @Bean
+        Object lazyProbe() {
+            Counters.PROBE.incrementAndGet();
+            return new Object();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AdopterCapability {
+        static final AgentCapabilityProfile PROFILE =
+                new AgentCapabilityProfile(Set.of("READ"), Set.of("t"), Set.of("view"), "low");
+
+        @Bean
+        AgentCapabilitySupplier adopterCapability() {
+            return actorId -> PROFILE;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AdopterExtractor {
+        @Bean
+        DelegationChainExtractor adopterExtractor() {
+            return subject -> DelegationChain.ofPrincipal(subject.id());
+        }
+    }
+
+    /** Two sync lists whose tools together equal the declarations; plus two non-tool lists. */
+    @Configuration(proxyBeanMethods = false)
+    static class TwoSyncListsDeclared {
+        static volatile ToolCallGate preGatedHandler;
+        static final McpServerFeatures.SyncResourceSpecification RESOURCE =
+                new McpServerFeatures.SyncResourceSpecification(
+                        McpSchema.Resource.builder().uri("res://x").name("x").build(), (exchange, request) -> null);
+
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("a"), declared("b"), declared("c"), declared("d")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> firstTools() {
+            return new ArrayList<>(List.of(syncSpec("a"), syncSpec("b")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> secondTools(ToolCallAuthorizer authorizer) {
+            SyncToolSpecification preGated = ToolCallGate.gate(syncSpec("d"), authorizer);
+            preGatedHandler = (ToolCallGate) preGated.callHandler();
+            return new ArrayList<>(List.of(syncSpec("c"), preGated));
+        }
+
+        @Bean
+        List<String> names() {
+            return List.of("a", "b");
+        }
+
+        @Bean
+        List<Object> resources() {
+            return List.of(RESOURCE);
+        }
+    }
+
+    /**
+     * One list per specification type, each with two pre-gated elements: {@code <type>-name} carries a gate bound
+     * to the context's authorizer but ANOTHER tool's name; {@code <type>-auth} carries a gate bound to its own name
+     * but an authorizer built inline. A name-only rule keeps the second; an authorizer-only rule keeps the first.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class MisBoundPreGatesDeclared {
+        /** Behaves like an authorizer, but is never the context's. */
+        static final ToolCallAuthorizer FOREIGN = new ToolCallAuthorizer(null, null, null, null, null, null);
+        /** Every pre-built gate handler, by the tool name of the specification carrying it. */
+        static final Map<String, Object> PRE_GATES = new ConcurrentHashMap<>();
+
+        private static <H> H preGate(String name, H handler) {
+            PRE_GATES.put(name, handler);
+            return handler;
+        }
+
+        private static McpServerFeatures.AsyncToolSpecification asyncSpec(String name) {
+            return new McpServerFeatures.AsyncToolSpecification(
+                    tool(name), (exchange, request) -> Mono.just(CallToolResult.builder().build()));
+        }
+
+        private static McpStatelessServerFeatures.SyncToolSpecification statelessSpec(String name) {
+            return new McpStatelessServerFeatures.SyncToolSpecification(
+                    tool(name), (transport, request) -> CallToolResult.builder().build());
+        }
+
+        private static McpStatelessServerFeatures.AsyncToolSpecification statelessAsyncSpec(String name) {
+            return new McpStatelessServerFeatures.AsyncToolSpecification(
+                    tool(name), (transport, request) -> Mono.just(CallToolResult.builder().build()));
+        }
+
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("s-name"), declared("s-auth"), declared("a-name"),
+                    declared("a-auth"), declared("ss-name"), declared("ss-auth"), declared("sa-name"),
+                    declared("sa-auth")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> misBoundSync(ToolCallAuthorizer authorizer) {
+            return new ArrayList<>(List.of(
+                    new SyncToolSpecification(tool("s-name"), preGate("s-name",
+                            ToolCallGate.gate(syncSpec("other"), authorizer).callHandler())),
+                    new SyncToolSpecification(tool("s-auth"), preGate("s-auth",
+                            ToolCallGate.gate(syncSpec("s-auth"), FOREIGN).callHandler()))));
+        }
+
+        @Bean
+        List<McpServerFeatures.AsyncToolSpecification> misBoundAsync(ToolCallAuthorizer authorizer) {
+            return new ArrayList<>(List.of(
+                    new McpServerFeatures.AsyncToolSpecification(tool("a-name"), preGate("a-name",
+                            AsyncToolCallGate.gate(asyncSpec("other"), authorizer).callHandler())),
+                    new McpServerFeatures.AsyncToolSpecification(tool("a-auth"), preGate("a-auth",
+                            AsyncToolCallGate.gate(asyncSpec("a-auth"), FOREIGN).callHandler()))));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.SyncToolSpecification> misBoundStateless(ToolCallAuthorizer authorizer) {
+            return new ArrayList<>(List.of(
+                    new McpStatelessServerFeatures.SyncToolSpecification(tool("ss-name"), preGate("ss-name",
+                            StatelessToolCallGate.gate(statelessSpec("other"), authorizer).callHandler())),
+                    new McpStatelessServerFeatures.SyncToolSpecification(tool("ss-auth"), preGate("ss-auth",
+                            StatelessToolCallGate.gate(statelessSpec("ss-auth"), FOREIGN).callHandler()))));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.AsyncToolSpecification> misBoundStatelessAsync(ToolCallAuthorizer authorizer) {
+            return new ArrayList<>(List.of(
+                    new McpStatelessServerFeatures.AsyncToolSpecification(tool("sa-name"), preGate("sa-name",
+                            StatelessAsyncToolCallGate.gate(statelessAsyncSpec("other"), authorizer).callHandler())),
+                    new McpStatelessServerFeatures.AsyncToolSpecification(tool("sa-auth"), preGate("sa-auth",
+                            StatelessAsyncToolCallGate.gate(statelessAsyncSpec("sa-auth"), FOREIGN).callHandler()))));
+        }
+    }
+
+    /** A user-defined, prototype-scoped authorizer: every lookup returns a new instance. */
+    @Configuration(proxyBeanMethods = false)
+    static class PrototypeAuthorizerDeclared {
+        @Bean
+        @Scope("prototype")
+        ToolCallAuthorizer toolCallAuthorizer() {
+            return new ToolCallAuthorizer(null, null, null, null, null, null);
+        }
+
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("p1"), declared("p2")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> prototypeTools() {
+            return new ArrayList<>(List.of(syncSpec("p1"), syncSpec("p2")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AsyncStatefulDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("async")));
+        }
+
+        @Bean
+        List<McpServerFeatures.AsyncToolSpecification> asyncTools() {
+            return List.of(new McpServerFeatures.AsyncToolSpecification(
+                    tool("async"), (exchange, request) -> Mono.just(CallToolResult.builder().build())));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class StatelessSyncDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("stateless")));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.SyncToolSpecification> statelessTools() {
+            return List.of(new McpStatelessServerFeatures.SyncToolSpecification(
+                    tool("stateless"), (transport, request) -> CallToolResult.builder().build()));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class StatelessAsyncDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("stateless-async")));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.AsyncToolSpecification> statelessAsyncTools() {
+            return List.of(new McpStatelessServerFeatures.AsyncToolSpecification(
+                    tool("stateless-async"), (transport, request) -> Mono.just(CallToolResult.builder().build())));
+        }
+    }
+
+    /** A specification type no SDK release ships — recognized only by its {@code tool()} accessor. */
+    record FutureSpecification(Tool tool) {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FutureSpecificationDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("future")));
+        }
+
+        @Bean
+        List<FutureSpecification> futureTools() {
+            return List.of(new FutureSpecification(tool("future")));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MixedKnownAndUnknownDeclared {
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("known"), declared("future")));
+        }
+
+        @Bean
+        List<Object> mixedTools() {
+            return List.of(syncSpec("known"), new FutureSpecification(tool("future")));
+        }
+    }
+
+    /** Elements with a {@code tool()} method that does not return {@code McpSchema.Tool}: not tool-bearing. */
+    record NotASpecification(String tool) {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class NotToolBearing {
+        static final List<NotASpecification> NOT_TOOLS = List.of(new NotASpecification("a"));
+
+        @Bean
+        List<NotASpecification> notTools() {
+            return NOT_TOOLS;
+        }
+    }
+
+    /** One tool of each of the four SDK types, all declared; every body counts its runs. */
+    @Configuration(proxyBeanMethods = false)
+    static class AllFourTypesDeclared {
+        static final AtomicInteger BODY_RUNS = new AtomicInteger();
+
+        @Bean
+        ToolRegistry toolRegistry() {
+            return new ToolRegistry(List.of(declared("s"), declared("a"), declared("ss"), declared("sa")));
+        }
+
+        @Bean
+        List<SyncToolSpecification> syncOfFour() {
+            return List.of(new SyncToolSpecification(tool("s"), (exchange, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return CallToolResult.builder().build();
+            }));
+        }
+
+        @Bean
+        List<McpServerFeatures.AsyncToolSpecification> asyncOfFour() {
+            return List.of(new McpServerFeatures.AsyncToolSpecification(tool("a"), (exchange, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return Mono.just(CallToolResult.builder().build());
+            }));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.SyncToolSpecification> statelessOfFour() {
+            return List.of(new McpStatelessServerFeatures.SyncToolSpecification(tool("ss"), (transport, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return CallToolResult.builder().build();
+            }));
+        }
+
+        @Bean
+        List<McpStatelessServerFeatures.AsyncToolSpecification> statelessAsyncOfFour() {
+            return List.of(new McpStatelessServerFeatures.AsyncToolSpecification(tool("sa"), (transport, request) -> {
+                BODY_RUNS.incrementAndGet();
+                return Mono.just(CallToolResult.builder().build());
+            }));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ScopedLists {
+        @Bean
+        @Scope("request")
+        List<SyncToolSpecification> requestTools() {
+            Counters.REQUEST_LIST.incrementAndGet();
+            return List.of(syncSpec("request-scoped"));
+        }
+
+        @Bean
+        @Scope("prototype")
+        List<SyncToolSpecification> prototypeTools() {
+            Counters.PROTOTYPE_LIST.incrementAndGet();
+            return List.of(syncSpec("prototype"));
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class RequestScopedProxyList {
+        @Bean
+        @RequestScope
+        List<SyncToolSpecification> requestProxyTools() {
+            Counters.REQUEST_PROXY_LIST.incrementAndGet();
+            return new ArrayList<>(List.of(syncSpec("request-proxy")));
+        }
+    }
+
+    /** OpaClient has three methods, so it cannot be a lambda. Allows nothing. */
+    static final class StubOpaClient implements OpaClient {
+        @Override
+        public boolean allow(AbacContext context) {
+            return false;
+        }
+
+        @Override
+        public dev.dmitriikonovalov.opaabac.core.PartialResult compile(AbacContext context) {
+            return dev.dmitriikonovalov.opaabac.core.PartialResult.denyAll();
+        }
+
+        @Override
+        public List<Boolean> allowAll(List<AbacContext> contexts) {
+            return contexts.stream().map(c -> Boolean.FALSE).toList();
+        }
+    }
+}
