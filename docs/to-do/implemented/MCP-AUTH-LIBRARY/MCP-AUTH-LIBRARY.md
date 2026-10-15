@@ -1,6 +1,6 @@
 ---
 tags:
-  - status/planned
+  - status/done
   - type/index
   - area/abac
   - area/opa
@@ -10,7 +10,17 @@ tags:
 
 # MCP-AUTH-LIBRARY — the agent tool-gate as a library module (`opa-abac-mcp`)
 
-> **Status: ✅ implemented + reviewed 2026-10-10 (autonomous, ORCHESTRATOR — two parts; layer-3 review in three rounds, [[MCP-AUTH-LIBRARY-REVIEW]]) — awaiting push · PR · merge.** Decomposed 2026-10-09 — eight tickets, two parts. Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
+> ✅ **SHIPPED 2026-10-15** — branch `feature/void3110/mcp-auth-library` (PR #139, squash-merged as `706c084`),
+> T1–T8 all green, orchestrated two-part autonomous run (no pauses, no escalations) + layer-3 review in three
+> rounds (Approved with fixes — [[../../../code-review/MCP-AUTH-LIBRARY-REVIEW|review note]]: round 1's two Low
+> and round 2's test gap + nits fixed in-branch, headline the "already gated" shortcut now requiring a gate bound
+> to its own tool name and the context's authorizer; round 3 dry → its nits to backlog item 24).
+> `./gradlew build` ✅ · `opa test` **459/459** · agent-tool matrix E1–E12 **92 assertions, 0 failed** on rebuilt
+> images · Sonar: documented FP classes only · CI 5/5, including the two proofs this host deferred (U24 the
+> WebFlux guard 3/3, U33 the Boot 4.1.1 line). The agent tool-gate now ships as the incubating `opa-abac-mcp`
+> module (the 7th coordinate), auto-configured by the starter. Release 1.5.0 (ADR 0038 + this slice) is next.
+
+> **Status: ✅ shipped 2026-10-15 (PR #139); implemented + reviewed 2026-10-10 (autonomous, ORCHESTRATOR — two parts; layer-3 review in three rounds, [[MCP-AUTH-LIBRARY-REVIEW]]).** Decomposed 2026-10-09 — eight tickets, two parts. Designed 2026-10-03. Grill-me settled fifteen forks the same day (sixteen with the 2026-10-09 amendment)
 > ([[00-DESIGN]] §Considered and rejected); the contract is
 > [[0036-mcp-auth-library-module|ADR 0036]], which **supersedes** the 2026-08-01 decision to defer this
 > extraction to a second consumer and **amends** [[0028-agent-tool-call-authorization|ADR 0028]]'s
@@ -33,8 +43,7 @@ tags:
 > delta-checked, and the loop ended on two consecutive checks with no blocking defect (the last with no finding
 > at all). Known run inputs, not open defects: two proofs may defer on this host's PKIX gap (`spring-webflux` for
 > U24, Boot 4.1.1 for U33) under the `**LOCAL PROOF DEFERRED:**` protocol in T5/T8.
-> **Next:** `/autonomous-implement MCP-AUTH-LIBRARY` on the maintainer's go → one multi-lens `/deep-review` →
-> merge → release 1.5.0.
+> **Next:** release 1.5.0 — ADR 0038 + this slice, one cut, the maintainer's (`RELEASING.md`).
 
 ## Why this slice exists
 
