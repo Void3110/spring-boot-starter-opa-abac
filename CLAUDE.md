@@ -119,7 +119,7 @@ starter wires the always-empty `NoOpUserDirectory` — fail-closed by default. O
 
 ### The MCP server module (Phase 9, AGENT-TOOL-AUTHZ)
 
-`example-mcp-server` is the **third** example app: a Spring AI **2.0.0** MCP server whose `@McpTool`
+`example-mcp-server` is the **third** example app: a Spring AI **2.0.1** MCP server whose `@McpTool`
 methods proxy the catalog service's REST API with the caller's own bearer, gated by a tool-gate policy
 (`agent_tools.rego`). Since MCP-AUTH-LIBRARY (ADR 0036) the reusable gate lives in the incubating
 **`opa-abac-mcp`** library module (properties under `opa.abac.mcp.*`), which the example consumes like
@@ -127,7 +127,7 @@ any adopter; the example keeps its catalog tools, its ceiling source and the ref
 
 Two things about its build are non-obvious:
 
-- Spring AI 2.0.0's starter POM declares **Spring Boot 4.1.0**, but the dependency-management plugin
+- Spring AI 2.0.1's starter POM declares **Spring Boot 4.1.1**, but the dependency-management plugin
   imports *this* repo's Boot BOM (4.0.x, pinned in `gradle/libs.versions.toml`) first, so every
   `spring-boot-*` artifact resolves to that pin. The
   MCP auto-configuration starts cleanly on that baseline (verified, not assumed).
