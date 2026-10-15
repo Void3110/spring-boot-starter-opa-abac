@@ -316,6 +316,15 @@ content is one safe, uniform message. The tool-gate's codes are documented API:
 Layer `target-gate` carries the target service's own codes (e.g. `ACCESS_DENIED`), relabelled from what the
 tool body recorded.
 
+> **What a tool body's exception shows the model (Spring AI 2.0.1+).** Spring AI turns a `RuntimeException`
+> thrown by an `@McpTool` method into an error result carrying **that exception's own message** (2.0.0 masked
+> every one as `Error invoking method: <name>`; spring-ai #6534), and propagates a checked exception, an `Error`
+> or an `McpError` as a protocol failure instead. The gate relabels only a failure the body **recorded**
+> (`ToolFailureRecord.capture` of a `ToolInvocationException`); any other exception's message reaches the model
+> as written. So on every expected failure path, throw a `ToolInvocationException` with a message meant for a
+> model, and keep response bodies, URLs and internal detail out of exception messages —
+> `CatalogApiErrorTranslator` in the example is the pattern.
+
 ## Installing the module
 
 `opa-abac-mcp` is auto-configured by the starter (`OpaMcpAutoConfiguration`) as soon as it sits next to
@@ -443,7 +452,7 @@ opa test infra/opa/policies -v
 ```
 
 > **One configuration pin you must not lose.** `spring.ai.mcp.server.protocol: STREAMABLE` is set
-> **explicitly** in `application.yml`. Spring AI 2.0.0's auto-configuration matches the property
+> **explicitly** in `application.yml`. Spring AI 2.0.x's auto-configuration matches the property
 > *string* and ignores the properties class's own field default: with the property absent, the SSE
 > condition (`matchIfMissing = true`) wins and the server silently serves the legacy transport
 > (`GET /sse` + `POST /mcp/message`) while `POST /mcp` 404s. The roster adapter's seam exists only on

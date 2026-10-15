@@ -391,7 +391,7 @@ human the call is for, and the agent making it. Everything else in this repo ans
 surface above it has no gate at all: the MCP specification covers how a server validates a bearer, not
 *which* tools that bearer may then call, and offers no way to vary the advertised list per caller.
 
-`example-mcp-server` — **four read-only `@McpTool` catalog proxies** on Spring AI 2.0.0, streamable-HTTP
+`example-mcp-server` — **four read-only `@McpTool` catalog proxies** on Spring AI 2.0.1, streamable-HTTP
 MCP (spec revision `2025-11-25`) — closes that with a structure rather than a feature:
 
 | Layer | Asks | Owned by | Policy |

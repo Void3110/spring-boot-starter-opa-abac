@@ -44,7 +44,10 @@ that was safe only in the example's own configuration is a startup failure or a 
   `mcp-core` 2.0.0 (the version Spring AI 2.0.x uses) and on no Spring AI artifact.
 - **Supported:** MCP Java SDK 2.0.x and Spring AI 2.0.x, on Spring Boot **4.0.x and 4.1.x** — both tested in CI
   (the build job re-runs the module's, the starter's and the example's tests on the newest 4.1.x). Spring MVC
-  only; Spring AI 2.1 is out of scope until GA.
+  only; Spring AI 2.1 is out of scope until GA. Built and tested on **Spring AI 2.0.1** (which still uses
+  `mcp-core` 2.0.0). From 2.0.1, a `RuntimeException` thrown by an `@McpTool` body reaches the model with **its
+  own message** (2.0.0 masked it; spring-ai #6534): throw a `ToolInvocationException` with a model-facing
+  message on expected failure paths — the guide's *What a tool body's exception shows the model*.
 - **`PrincipalCeilingSupplier`** (new SPI, `…mcp.authz`): the principal's type-level ceiling —
   `Optional<RoleDefinition> lookup(subject, resourceType)`, grants unioned across governed resources,
   over-approximation allowed, empty = no role, an outage throws a `DecisionIndeterminateException` subtype

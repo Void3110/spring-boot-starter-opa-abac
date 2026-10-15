@@ -7,7 +7,7 @@ spring:
         name: opa-abac-catalog-tools
         version: 1.0.0
         # MUST be set EXPLICITLY, even though STREAMABLE is also the properties class's field default.
-        # The 2.0.0 auto-configuration's @Conditionals match the PROPERTY STRING and ignore that field:
+        # The 2.0.x auto-configuration's @Conditionals match the PROPERTY STRING and ignore that field:
         # the streamable condition is havingValue="STREAMABLE" matchIfMissing=false, while the SSE twin
         # is havingValue="SSE" matchIfMissing=TRUE. So with this line absent the server silently serves
         # the LEGACY SSE transport (GET /sse + POST /mcp/message) and POST /mcp 404s — which is exactly
