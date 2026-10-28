@@ -467,7 +467,7 @@ four MCP tool-specification types, and the example now consumes it like any adop
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # the tool surface, behind the gateway at /mcp
-scripts/postman/run-agent-tool-matrix.sh  # the E1–E16 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1–E17 matrix, through the gateway
 ```
 
 Full contract: [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) ·

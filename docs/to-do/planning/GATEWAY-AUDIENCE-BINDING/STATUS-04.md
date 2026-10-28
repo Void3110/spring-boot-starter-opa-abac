@@ -110,6 +110,38 @@ from the design alone. The one exception is the runbook's step list, which is wh
   - The runbook was corrected from this run: the discovery order, the authorize parameters, the label, and the
     harmless `400`.
 
+## After E13: the two findings fixed on the branch (maintainer decision, 2026-10-29)
+
+The maintainer chose to fix E13's two findings before the whole-delivery review rather than leave them in the
+backlog. Each test was run against the unfixed code first, and failed:
+
+- **28 — the read-only MCP hints.** The four `@McpTool`s carry `annotations = @McpTool.McpAnnotations(readOnlyHint
+  = true, destructiveHint = false, idempotentHint = true, openWorldHint = false)`.
+  - **U9** (`McpToolSurfaceTest`) reads the hints off every specification list the context serves. Before the fix:
+    `Expecting value to be true but was false`.
+  - On the rig, the agent matrix's **E10** roster cell reads them back through the gateway.
+- **27 — the transport's error bodies.** `McpErrorJsonMixin`, a Boot `@JacksonMixin(McpError.class)` with
+  `@JsonIgnoreProperties({"stackTrace","cause","suppressed","localizedMessage"})`. It is registered by Boot's mix-in
+  scan, so it applies wherever Boot's JSON mapper writes an `McpError`: the MVC converters the transport's
+  `ServerResponse.badRequest().body(McpError)` uses (`javap -c`, mcp-spring-webmvc 2.0.1). The body is now
+  `{"jsonRpcError":{…},"message":"…"}`.
+  - **U10** (`McpTransportErrorBodyTest`) covers the `400` (an `Accept` without `text/event-stream`) and the
+    `404` (an unknown session): exactly those two members, the message named, no `stackTrace`. Both failed before
+    the fix.
+  - On the rig, a new **E17** folder makes the same two requests through the gateway.
+- **Proof:**
+  - `./gradlew :example-mcp-server:test` 85/0 (82 + U9 + U10×2).
+  - The agent matrix on a rebuilt MCP image: **110/0** (107 + E10's hint check + E17's two).
+  - The step-up matrix, whose MCP cells hit the same server: 69/0. `./gradlew build` green.
+  - The local Sonar gate: three standing by-design findings, all on lines that predate the fix and all in
+    mx-302e78 — S112 and S4502 on `SecurityConfig`, S1075 on `CatalogTools.CATALOGS_PATH`. Nothing on the new
+    code.
+  - `check-collection-conformance.py` and `check-shell-guards.py` clean.
+- **Docs:** backlog 27/28 marked fixed (27 keeps "report it upstream to Spring AI" open). The runbook's label
+  bullet and its `400` row are rewritten. [[AGENT-TOOL-AUTHORIZATION]] gains the hints-are-advisory paragraph,
+  the transport-refusal note under §Running it, and E17. The postman README row gains E17; `CLAUDE.md` and
+  `README.md` now say E1–E17.
+
 ## Decisions
 
 - **The runbook is its own page** under `docs/guides/`, not a section of the agent guide. It is

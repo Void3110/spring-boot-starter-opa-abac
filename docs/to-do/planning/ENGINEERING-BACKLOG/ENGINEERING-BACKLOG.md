@@ -14,7 +14,7 @@ tags:
 >
 > Take from the top. Each item is self-contained: no item blocks another.
 >
-> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–24 were opened 2026-10-10 by MCP-AUTH-LIBRARY — 24 by its layer-3 review.) (Items 25–28 were opened 2026-10-29 by GATEWAY-AUDIENCE-BINDING — 25–26 its two named successors, 27–28 found by its real-client login, QA E13.) Item 10 remains — the same shape item 9 had (a
+> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–24 were opened 2026-10-10 by MCP-AUTH-LIBRARY — 24 by its layer-3 review.) (Items 25–28 were opened 2026-10-29 by GATEWAY-AUDIENCE-BINDING — 25–26 its two named successors, 27–28 found by its real-client login, QA E13, and fixed on the same branch.) Item 10 remains — the same shape item 9 had (a
 > BOM-managed version, no reachable path), waiting on the next Boot patch line.
 > Each shipped item carries the correction its own estimate needed — read those before trusting a
 > future backlog entry's effort figure: five of the eight were wrong in a way that mattered.
@@ -491,7 +491,7 @@ sub-path, presets `resource` from the request's `Host`, and answers whenever ins
 document and the two-path endpoint into `opa-abac-mcp` behind an opt-in property, with the example's tests (U1–U6) as
 the module's.
 
-## 27. The MCP transport's error bodies carry a full stack trace (found by QA E13, 2026-10-29)
+## 27. The MCP transport's error bodies carry a full stack trace (found by QA E13) — ✅ FIXED 2026-10-29 (GATEWAY-AUDIENCE-BINDING branch)
 
 **The gap.** Spring AI 2.0.1's `WebMvcStreamableServerTransportProvider` answers its transport errors by serializing
 the whole `McpError` object as the body — `stackTrace` (117 frames on the rig, framework classes plus one of this
@@ -503,23 +503,23 @@ Claude Code 2.1.286's first post-login request hit the first of these (it recove
 **authenticated** caller sees it: the gateway answers a token-less request `401` first. So this is a low-severity
 information disclosure (CWE-209), not an auth bypass.
 
-**Fix shape:** in `example-mcp-server`, keep the transport's error bodies to the JSON-RPC error alone. Two
-candidates: a Jackson mix-in that ignores `Throwable`'s `stackTrace`/`suppressed`/`cause`/`localizedMessage` on
-`McpError`, or a filter that rewrites a transport error to `{"jsonrpc":"2.0","error":{…}}`. Pin it with a test per
-status (400, 404) that the body names the error and carries no `stackTrace`. Report it upstream to Spring AI; the
-library module needs it too if `opa-abac-mcp` ever ships a transport.
+**Fixed** by `example-mcp-server`'s `McpErrorJsonMixin`: a Boot `@JacksonMixin(McpError.class)` that ignores
+`stackTrace`/`cause`/`suppressed`/`localizedMessage`. The body is now `{"jsonRpcError":{…},"message":"…"}`. It is
+pinned by U10 (`McpTransportErrorBodyTest`, both statuses) and on the rig by the agent matrix's E17. **Still open:**
+reporting it upstream to Spring AI. The library module needs the same treatment if `opa-abac-mcp` ever ships a
+transport.
 
-## 28. The four demo tools declare no MCP annotations, so hosts label them destructive (found by QA E13, 2026-10-29)
+## 28. The four demo tools declare no MCP annotations, so hosts label them destructive (found by QA E13) — ✅ FIXED 2026-10-29 (GATEWAY-AUDIENCE-BINDING branch)
 
 **The gap.** `@McpTool`'s `annotations` default to `readOnlyHint=false`, `destructiveHint=true`,
 `idempotentHint=false`, `openWorldHint=true` (`javap -v`, spring-ai-mcp-annotations 2.0.1). The example's four tools
 are reads and set none of them, so Claude Code lists every one as **"destructive · open-world"**. A host may ask for
 approval on each call, or a reviewer may read the demo as handing an agent write tools.
 
-**Fix shape:** `annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false,
-idempotentHint = true, openWorldHint = false)` on `list_catalogs`, `get_catalog`, `list_categories`, `get_product`.
-Add a `tools/list` assertion in the agent matrix that reads the hints back. The hints are advisory and are never a
-substitute for the tool-gate's declared category and risk tier; the guide should say so in one line.
+**Fixed:** the four tools carry `@McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false,
+idempotentHint = true, openWorldHint = false)`. U9 (`McpToolSurfaceTest`) reads them off every specification list
+the context serves, and the agent matrix's E10 roster cell reads them back through the gateway. The guide says the
+hints are advisory.
 
 ---
 

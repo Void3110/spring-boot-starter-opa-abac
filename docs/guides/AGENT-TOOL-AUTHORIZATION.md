@@ -458,6 +458,12 @@ opa test infra/opa/policies -v
 > (`GET /sse` + `POST /mcp/message`) while `POST /mcp` 404s. The roster adapter's seam exists only on
 > the streamable transport, and its smoke check fails startup naming this property if it is missing.
 
+> **The transport's own refusals must not leak the exception.** Spring AI 2.0.1's streamable transport answers
+> an `Accept` without `text/event-stream` (`400`) or an unknown session (`404`) by handing its `McpError` to the
+> HTTP message converters. A Throwable serialized as a bean is ~29 KB of `stackTrace`, `cause` and `suppressed`.
+> The example's `McpErrorJsonMixin` (a Boot `@JacksonMixin`) keeps the JSON-RPC error and its message. A real
+> client meets this — Claude Code's first post-login request is that `400`.
+
 > **The streamable transport streams, so the security chain must permit `ASYNC`.** A `tools/list`
 > response is written as SSE via an async dispatch; on that re-dispatch a stateless chain has no
 > authentication left, and `authenticated()` would deny a response that has *already started* —
@@ -469,7 +475,7 @@ opa test infra/opa/policies -v
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # force-enables OIDC + OPA + the user-service
-scripts/postman/run-agent-tool-matrix.sh  # the E1-E16 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1-E17 matrix, through the gateway
 ```
 
 The tool surface is **gateway-fronted like every other service here** — the scripted client enters at
@@ -623,6 +629,11 @@ port `33418`. Like the three demo agents, it mints `act_chain` (`["agent-host"]`
 
 A person logging an MCP host in therefore hands it **less** than their own reach, by construction.
 
+The four tools also carry MCP tool annotations — `readOnlyHint` true, `destructiveHint` and `openWorldHint` false —
+so a host labels them as the reads they are. `@McpTool`'s defaults would have them advertise as destructive. The
+hints are **advisory**: the gate never reads them, and what it enforces is each tool's declared category and risk
+tier.
+
 ### Refresh tokens rotate
 
 The realm sets `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0`, because the MCP spec requires rotation for
@@ -642,14 +653,16 @@ token minted per call), which needs per-resource audiences. It is in the backlog
 
 ### Proven on the rig
 
-The agent matrix carries four cells for this path:
+The agent matrix carries five cells for this path:
 - **E13**: both documents through the gateway with no token, a forged `Host` leaving the document byte-identical,
   and the catch-all's `401` for a `POST` or a third path;
 - **E14**: the miner's `--discover` login — it walks the documents to the realm the way a host does, and checks
   the token's `aud`, `azp`, `act_chain` and `iss`;
 - **E15**: the host's narrowed roster and its risk-cap denial, against a REST read of the same product on the same
   token;
-- **E16**: rotation.
+- **E16**: rotation;
+- **E17**: the transport's own `400`/`404` answer the JSON-RPC error and nothing else. E10's roster cell also reads
+  every tool's read-only hints back.
 
 The step-up matrix's E9k proves rotation for the SPA client too.
 

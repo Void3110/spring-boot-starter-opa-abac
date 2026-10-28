@@ -45,6 +45,9 @@
 #           the same token reads the same product over REST (200)
 #   E16     the host's refresh token rotates: a refresh answers a NEW refresh token, and replaying the
 #           first is refused `invalid_grant` "Maximum allowed refresh token reuse exceeded"
+#   E17     the transport's own refusals — an Accept without text/event-stream (400), an unknown session
+#           (404) — answer the JSON-RPC error and its message, never the exception's stack trace; and E10's
+#           roster cell reads every tool's read-only hints back (both found by the real-client login, QA E13)
 # E9 (every pre-existing runner still green) is a suite-level acceptance, not a cell here.
 #
 # Prereq: the full rig is up WITH the MCP server (the flag force-enables OIDC + OPA + the user-service):
@@ -519,6 +522,9 @@ REPLAYED_BODY="${REPLAYED% *}"
   exit 1; }
 echo "  E16: the refresh answered a new refresh token; the replay -> 400 invalid_grant (reuse exceeded)."
 
+echo "==> newman: E17 — the transport's own refusals carry no stack trace"
+run_folder "E17 — the transport's own refusals name the error, never a stack trace" e17
+
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --
 # KEEP_FIXTURES=1 skips it. The DELETEs ride the FK cascades: team -> memberships + custom roles;
 # catalog -> categories -> products. The rig itself is restored by the EXIT trap either way.
@@ -532,4 +538,4 @@ DELETE FROM catalog WHERE id IN ('$AGENT_CATALOG_ID', '$FOREIGN_CATALOG_ID');
 SQL
 fi
 
-echo "==> Agent tool-call authorization matrix: E1-E8, E10-E16 green through the gateway."
+echo "==> Agent tool-call authorization matrix: E1-E8, E10-E17 green through the gateway."

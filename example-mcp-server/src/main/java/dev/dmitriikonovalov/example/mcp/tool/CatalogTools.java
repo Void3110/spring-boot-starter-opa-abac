@@ -18,6 +18,11 @@ import org.springframework.stereotype.Component;
  * authorization attributes for each tool are declared statically in
  * {@code ToolRegistrationConfiguration} and cross-checked at startup against the specifications the
  * {@code opa-abac-mcp} gate wrapped — a tool added here without a declaration fails the context.
+ *
+ * <p>Each tool also tells an MCP host what it is: a read — no side effect, safe to repeat, confined to this
+ * service's catalog. Without those annotations, {@code @McpTool}'s defaults ({@code destructiveHint} and
+ * {@code openWorldHint} true) make a host label every read "destructive". The hints are advisory and the gate
+ * never reads them: it decides on the declared category and risk tier.
  */
 @Component
 public class CatalogTools {
@@ -42,6 +47,8 @@ public class CatalogTools {
     @McpTool(
             name = LIST_CATALOGS,
             description = "List the product catalogs the calling user may see.",
+            annotations = @McpTool.McpAnnotations(
+                    readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
             generateOutputSchema = false)
     public Map<String, Object> listCatalogs() {
         return catalogApi.getJson(CATALOGS_PATH);
@@ -50,6 +57,8 @@ public class CatalogTools {
     @McpTool(
             name = GET_CATALOG,
             description = "Get one product catalog by id.",
+            annotations = @McpTool.McpAnnotations(
+                    readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
             generateOutputSchema = false)
     public Map<String, Object> getCatalog(
             @McpToolParam(description = "The catalog id", required = true) String catalogId) {
@@ -59,6 +68,8 @@ public class CatalogTools {
     @McpTool(
             name = LIST_CATEGORIES,
             description = "List the categories of one product catalog.",
+            annotations = @McpTool.McpAnnotations(
+                    readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
             generateOutputSchema = false)
     public Map<String, Object> listCategories(
             @McpToolParam(description = "The catalog id", required = true) String catalogId) {
@@ -68,6 +79,8 @@ public class CatalogTools {
     @McpTool(
             name = GET_PRODUCT,
             description = "Get one product, including its commercial detail.",
+            annotations = @McpTool.McpAnnotations(
+                    readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
             generateOutputSchema = false)
     public Map<String, Object> getProduct(
             @McpToolParam(description = "The catalog id", required = true) String catalogId,

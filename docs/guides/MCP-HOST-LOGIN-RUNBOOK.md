@@ -56,10 +56,10 @@ browser window that opens.
 - `/mcp` reports **"Authentication successful. Connected to catalog."**, and the server lists exactly **three**
   tools: `get_catalog`, `list_catalogs`, `list_categories`. `get_product` is in the host's profile but is a
   medium-risk tool, so the low risk cap hides it — and denies it, should the client call it anyway.
-- Claude Code labels the three **"destructive · open-world"**. They are reads. The demo tools declare no MCP tool
-  annotations, so the client shows the specification's defaults (`destructiveHint` and `openWorldHint` true) —
-  backlog item 28. The hints are advisory either way: what the tool-gate enforces is each tool's declared
-  category and risk tier.
+- Each tool advertises itself as a read (MCP tool annotations: `readOnlyHint` true, `destructiveHint` and
+  `openWorldHint` false). The first E13 run predated them, and Claude Code labelled the three "destructive ·
+  open-world", the specification's defaults (backlog item 28, fixed). The hints are advisory: what the tool-gate
+  enforces is each tool's declared category and risk tier.
 - Asking Claude to list the catalogs returns the ones `demo` can read: the demo catalog the seed created.
 
 If the tool list is **empty**, `demo` has no membership. Re-run the seed. An empty list is the honest answer for
@@ -73,7 +73,7 @@ a principal with no ceiling, not a broken login.
 | Claude Code reports it cannot discover authorization | `GET http://localhost:9085/.well-known/oauth-protected-resource/mcp` answers `404` — the MCP server runs without `EXAMPLE_MCP_OAUTH_PROTECTED_RESOURCE_*`. Bring the rig up with `ENABLE_MCP=1`. |
 | Every call answers `403 {"error":"mismatched audience"}` | The realm predates the `gateway-audience` mapper. Run `./deploy.sh down`, then up again, so Keycloak re-imports the realm. |
 | A tool call is denied `tool-gate-actor-required` | The token carries no `act_chain`: the realm's `catalog-mcp-host` lost its actor mapper. Re-import the realm. |
-| The gateway log shows one `POST /mcp` answering `400` right after the login | Expected, and harmless: Claude Code 2.1.286's first request carried an `Accept` header without `text/event-stream`, which the streamable transport refuses. The next request is the real `initialize` (`200`). (That `400`'s body carries a full stack trace — backlog item 27.) |
+| The gateway log shows one `POST /mcp` answering `400` right after the login | Expected, and harmless: Claude Code 2.1.286's first request carried an `Accept` header without `text/event-stream`, which the streamable transport refuses. The next request is the real `initialize` (`200`). The `400`'s body is the JSON-RPC error alone; before backlog item 27's fix it carried a full stack trace. |
 
 To remove the server again: `claude mcp remove catalog`.
 

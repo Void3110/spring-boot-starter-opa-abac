@@ -1,7 +1,7 @@
 {
  "info": {
   "name": "Agent tool-call authorization matrix (Phase 9)",
-  "description": "The AGENT-TOOL-AUTHZ slice proven end to end through the gateway, with the collection itself as a deterministic scripted MCP client (streamable HTTP, POST /mcp: `initialize` answers plain application/json and assigns Mcp-Session-Id as a response header; `notifications/initialized` answers 202 with an empty body; every later request is SSE-framed). Cells E1–E11 of docs/to-do/implemented/AGENT-TOOL-AUTHZ/10-QA-TEST-CASES.md, plus E12 (MCP-AUTH-LIBRARY: the agent-clients guard) and E13/E15 (GATEWAY-AUDIENCE-BINDING: the protected-resource documents, and the MCP host agent minted by the discovery login). Every assertion is on the actual cut — which tool names, which denials, which LAYER — never on response shape alone. E6 (PDP kill), E7 (agent-gate off), E11 (revocation) and E12 (agent-clients guard) are drills the runner orchestrates around the rig: run this collection with scripts/postman/run-agent-tool-matrix.sh, not standalone.",
+  "description": "The AGENT-TOOL-AUTHZ slice proven end to end through the gateway, with the collection itself as a deterministic scripted MCP client (streamable HTTP, POST /mcp: `initialize` answers plain application/json and assigns Mcp-Session-Id as a response header; `notifications/initialized` answers 202 with an empty body; every later request is SSE-framed). Cells E1–E11 of docs/to-do/implemented/AGENT-TOOL-AUTHZ/10-QA-TEST-CASES.md, plus E12 (MCP-AUTH-LIBRARY: the agent-clients guard) and E13/E15 (GATEWAY-AUDIENCE-BINDING: the protected-resource documents, and the MCP host agent minted by the discovery login), and E17 (the transport's own refusals carry no stack trace). Every assertion is on the actual cut — which tool names, which denials, which LAYER — never on response shape alone. E6 (PDP kill), E7 (agent-gate off), E11 (revocation) and E12 (agent-clients guard) are drills the runner orchestrates around the rig: run this collection with scripts/postman/run-agent-tool-matrix.sh, not standalone.",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
  },
  "event": [
@@ -211,7 +211,18 @@
          "// E10: a token with NO actor claim is an honest HUMAN call. The SAME bulk rule decides",
          "// it, ceiling-only — so the human sees every declared tool their own role permits, and",
          "// the agent path can only ever narrow this set.",
-         "mcpRoster('E10 human roster', pm.response, ['get_catalog', 'get_product', 'list_catalogs', 'list_categories']);"
+         "mcpRoster('E10 human roster', pm.response, ['get_catalog', 'get_product', 'list_catalogs', 'list_categories']);",
+         "// Each tool also advertises itself as the read it is (MCP tool annotations). Without them a host labels",
+         "// every one \"destructive · open-world\" (QA E13, backlog 28). Advisory hints: the gate never reads them.",
+         "const listed = ((mcpNode(pm.response) || {}).result || {}).tools || [];",
+         "pm.test('E10: all four listed tools advertise read-only hints', function () {",
+         "    pm.expect(listed.length, 'listed tools').to.eql(4);",
+         "    listed.forEach(function (t) {",
+         "        const a = t.annotations || {};",
+         "        pm.expect([a.readOnlyHint, a.destructiveHint, a.idempotentHint, a.openWorldHint], t.name + ' hints')",
+         "            .to.eql([true, false, true, false]);",
+         "    });",
+         "});"
         ]
        }
       }
@@ -4086,6 +4097,125 @@
         "{{mcp_category_id}}",
         "products",
         "{{mcp_product_id}}"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "E17 — the transport's own refusals name the error, never a stack trace",
+   "item": [
+    {
+     "name": "initialize with Accept: application/json only (human) — the 400 Claude Code's first request met",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The streamable transport answers this itself, before any tool or gate runs. Spring AI 2.0.1 hands the",
+         "// whole McpError to the message converters; the example's Jackson mix-in keeps the error and its message.",
+         "pm.test('E17: an Accept without text/event-stream answers 400 with the JSON-RPC error and nothing else', function () {",
+         "    pm.response.to.have.status(400);",
+         "    const body = pm.response.json();",
+         "    pm.expect(Object.keys(body).sort(), 'top-level members').to.eql(['jsonRpcError', 'message']);",
+         "    pm.expect(body.message).to.include('Invalid Accept headers');",
+         "    pm.expect(body.jsonRpcError.code, 'a JSON-RPC error code').to.be.a('number');",
+         "    pm.expect(pm.response.text(), 'body').to.not.include('stackTrace');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-11-25\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"agent-tool-matrix\", \"version\": \"1.0.0\"}}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
+       ]
+      }
+     }
+    },
+    {
+     "name": "tools/list on an unknown session (human) — the 404",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// The streamable transport answers this itself, before any tool or gate runs. Spring AI 2.0.1 hands the",
+         "// whole McpError to the message converters; the example's Jackson mix-in keeps the error and its message.",
+         "pm.test('E17: an unknown session answers 404 with the JSON-RPC error and nothing else', function () {",
+         "    pm.response.to.have.status(404);",
+         "    const body = pm.response.json();",
+         "    pm.expect(Object.keys(body).sort(), 'top-level members').to.eql(['jsonRpcError', 'message']);",
+         "    pm.expect(body.message).to.include('Session not found');",
+         "    pm.expect(body.jsonRpcError.code, 'a JSON-RPC error code').to.be.a('number');",
+         "    pm.expect(pm.response.text(), 'body').to.not.include('stackTrace');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Accept",
+        "value": "application/json, text/event-stream"
+       },
+       {
+        "key": "Authorization",
+        "value": "Bearer {{human_token}}"
+       },
+       {
+        "key": "mcp-session-id",
+        "value": "no-such-session"
+       },
+       {
+        "key": "MCP-Protocol-Version",
+        "value": "2025-11-25"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tools/list\", \"params\": {}}"
+      },
+      "url": {
+       "raw": "{{gateway}}/mcp",
+       "host": [
+        "{{gateway}}"
+       ],
+       "path": [
+        "mcp"
        ]
       }
      }
