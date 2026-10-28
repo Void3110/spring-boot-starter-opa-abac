@@ -41,7 +41,7 @@ gateway runs APISIX 3.19.0. And a real MCP client — Claude Code, say — can f
 - **Flag-gated route blocks are two-armed** (mx-a1144b): a block that PUTs on `flag=1` DELETEs on
   `flag=0`, or a flip leaves stale public routes.
 - **Realm changes land only on a Keycloak recreate** — the realm is imported from the bind-mounted export.
-- **Must not break:** any of the twenty e2e runners; the SPA (packaged and vite-dev); the agent matrix
+- **Must not break:** any of the nineteen e2e runners ([[01-DECOMPOSITION]] §The full suite); the SPA (packaged and vite-dev); the agent matrix
   E1–E12; the step-up miner; Jaeger traces.
 
 ## The slice boundary
@@ -79,8 +79,11 @@ registration (the host client is pre-registered); `https` on the rig.
 
 - **Gateway:** every `openid-connect` block gains
   `claim_validator: { issuer: { valid_issuers: [<ISSUER_ALLOWLIST>] }, audience: { match_with_client_id: true } }`;
-  the `serverless-pre-function` issuer guard and its Lua are **deleted**. `ISSUER_ALLOWLIST` stays the one
-  documented, overridable variable.
+  the **issuer-guard** `serverless-pre-function` on those blocks and its Lua are **deleted** (`internal-blocked`
+  keeps its own `serverless-pre-function` — the `/internal/*` 404). `ISSUER_ALLOWLIST` stays the one
+  documented, overridable variable. The check binds every **bearer-presented** token, in browser-flow mode
+  too; a browser-flow *session* carries the token the gateway's own client obtained (stamped by its own
+  mapper; the cookie encrypted under `session.secret`), so that path needs no audience check.
 - **Realm:** one inline `oidc-audience-mapper` per legitimate client (`included.client.audience:
   catalog-gateway`, access token yes, ID token no) on `catalog-gateway`, `catalog-spa` and the three
   `catalog-agent-*`; `catalog-directory` never gets one. **No `clientScopes` key in the export** — Keycloak
@@ -89,15 +92,15 @@ registration (the host client is pre-registered); `https` on the rig.
   rejected 2).
 - **P0 probes, before the gateway change is trusted** (recorded in STATUS with the raw evidence):
   1. Keycloak 26.3.2 with `resource=http://localhost:9085/mcp` on authorize and token: what is `aud`?
-     (Expected: the mapper's value; RFC 8707 ignored. If Keycloak honors it, `aud` must still contain
-     `catalog-gateway` for the binding to hold — record which.)
-  2. APISIX 3.19 on a token whose `aud` is an **array** containing `catalog-gateway` plus others (Keycloak
-     adds `account` for some clients): admitted? On a token without it: which status (expected a plain
-     403), which body?
-- **Proof (beside E9 in the step-up runner):** a `catalog-directory` service-account token through the
-  gateway → refused (the P0-measured status); a `catalog-gateway` password-grant token → 200; the E9
-  foreign-issuer / gateway-origin / `BEARER` controls green with the guard gone; every runner green on a
-  recreated Keycloak.
+     (Expected: the mapper's value; RFC 8707 ignored.) **If a `resource`-minted token lacks
+     `catalog-gateway`, T3 stops** — every MCP client sends `resource` — and §1/§5 of the ADR are revisited.
+  2. APISIX 3.19 on what this realm actually mints: the `catalog-directory` token (expected `aud:
+     realm-management` → `403 {"error":"mismatched audience"}`) and a legitimate token after the mapper
+     (whose `aud` shape is recorded). The no-`aud` arm is cited from source — no client here mints one.
+- **Proof (beside E9 in the step-up runner):** a `catalog-directory` service-account token refused on
+  **each** authenticated surface (catalog, user-service, `/mcp`), a `catalog-gateway` password-grant token
+  admitted on the same three; the E9 foreign-issuer / gateway-origin / `BEARER` controls green with the guard
+  gone; `/internal/*` still 404; every runner green on a recreated Keycloak.
 
 ### T3 — The MCP OAuth surface
 
@@ -117,10 +120,16 @@ own actor id `agent-host`.
 ```
 
 `catalog-mcp-host` joins `opa.abac.mcp.identity.agent-clients` (with `azp` copied, the wiring check's
-requirement), so a token from it without an actor is refused `tool-gate-actor-required`. Every reader of
-that switch must agree — the E12 drill's temporary listing is reconciled with the new default.
+requirement), so a token from it without an actor is refused `tool-gate-actor-required` — set in **both**
+`application.yml` and the compose file, as the profile is. Every reader of that switch must agree: the agent
+matrix's E12 drill extends the new default instead of replacing it, and the E12-restore cell's wording
+(written for an empty default) is rewritten.
 
-**Refresh tokens rotate realm-wide:** `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0`.
+**Refresh tokens rotate realm-wide:** `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0`. Keycloak 26.3.2
+answers a reused refresh token with `invalid_grant` "Maximum allowed refresh token reuse exceeded" **and
+detaches the client session**. The SPA therefore becomes **single-flight** on refresh — its `freshUser()`
+shares one in-flight `signinSilent()` among concurrent callers (today a catalog view's parallel reads each
+start their own, and oidc-client-ts does not de-duplicate) — decided in validation round 1.
 
 **The RFC 9728 document** — `example-mcp-server`, two exact paths, values from configuration
 (`example.mcp.oauth.protected-resource.resource`, `…authorization-server`; set by the MCP compose file to
@@ -152,11 +161,14 @@ because the host's whole login runs through the gateway origin; and the `/mcp` r
 `bearer_only` + `deny` (today it inherits the SPA flag, so `ENABLE_SPA=0` would redirect a token-less MCP
 client to a login page instead of answering 401).
 
-**The miner learns discovery** — `mint-code-flow-token.py --discover http://localhost:9085/mcp`: fetch the
-path-inserted document, fall back to the root one; read `authorization_servers`; try the spec's three
-authorization-server metadata URLs in order (RFC 8414 path-inserted, OIDC path-inserted, OIDC appended);
-refuse unless `code_challenge_methods_supported` lists `S256`; send `resource` on authorize **and** token;
-mint as `catalog-mcp-host`. The probes' answers (which of the three succeeded, what the gateway answered for
+**The miner learns discovery** — `mint-code-flow-token.py --discover http://localhost:9085/mcp`, with its own
+transport: the gateway origin is both the connect URL and the presented `Host` (the legacy mode's
+`keycloak:8888` Host override would mint the wrong `iss`), redirects are never followed, and only a `200` with
+JSON counts as an answer. Fetch the path-inserted document, fall back to the root one; refuse on a `resource`
+mismatch; read `authorization_servers`; try the spec's three authorization-server metadata URLs in order
+(RFC 8414 path-inserted, OIDC path-inserted, OIDC appended); refuse on an `issuer` mismatch or without `S256`
+in `code_challenge_methods_supported`; send `resource` on authorize **and** token; mint as `catalog-mcp-host`
+with its registered callback, for the agent runner's human (`demo`). The probes' answers (which of the three succeeded, what the gateway answered for
 the others) are recorded in STATUS — the first two hit the gateway's catch-all.
 
 **Proof (the agent matrix, new cells):**
@@ -232,6 +244,8 @@ Then the 1.5.0 cut (ADR 0038 + MCP-AUTH-LIBRARY + this slice's documentation).
 11. **The document's failure contract** — *404 + WARN for everything* rejected (a typo silently turns
     discovery off). **Off is a state, half is an error, never request-derived.**
 12. **Refresh tokens** — *no refresh for the host* rejected (a re-login every 30 minutes); *leave reusable*
-    rejected (a spec MUST unmet). **Realm-wide rotation.**
+    rejected (a spec MUST unmet). **Realm-wide rotation.** *Revisited in validation round 1:* rotation would
+    break the SPA's concurrent refreshes (Keycloak detaches the session on reuse); *rotation with reuse > 0*
+    rejected (weaker and still racy). **Rotation + a single-flight `freshUser()` in the SPA** (maintainer).
 13. **Placement** — *library code in 1.5.0* rejected (new published API needing its own review).
     **Example only.**

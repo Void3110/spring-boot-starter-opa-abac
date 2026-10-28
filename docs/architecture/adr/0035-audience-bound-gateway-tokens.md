@@ -16,7 +16,8 @@ tags:
 RFC 9728 protected-resource metadata, RFC 8707 resource indicators, MCP authorization, token passthrough
 
 > Every example service runs with `opa.abac.subject.trust-forwarded-jwt=true`: it decodes the forwarded
-> token and verifies nothing, because the gateway is the only verifier. The gateway verified the
+> token and verifies no signature, issuer or audience (only its structure and expiry), because the gateway is
+> the only verifier. The gateway verified the
 > **signature and expiry** and — through a hand-written Lua guard — the **issuer**, but **never the
 > audience**. Any realm-signed token was accepted on any route, including a service-account token meant
 > only for the Keycloak admin API. And a real MCP client had no way to discover how to log in to the
@@ -58,8 +59,11 @@ Measured on the rig (2026-09-06, re-read 2026-10-28):
 ### 1. One gateway audience for every route
 
 Every route the gateway authenticates — the catalog, the user-service, `/mcp` — requires
-**`aud ∋ catalog-gateway`**: `claim_validator.audience.match_with_client_id: true` on each
-`openid-connect` block (whose `client_id` is `catalog-gateway`). There is **one protected resource**
+**`aud ∋ catalog-gateway`** of every bearer-presented token: `claim_validator.audience.match_with_client_id:
+true` on each `openid-connect` block (whose `client_id` is `catalog-gateway`). That holds in the browser-flow
+mode too, for a request carrying a bearer header; a browser-flow *session* carries the token the gateway's own
+client obtained — stamped by its own mapper, the cookie encrypted under `session.secret` — so that path needs
+no audience check. There is **one protected resource**
 behind **one gateway**: the MCP surface and the catalog API share its audience.
 
 A token without that audience is refused at the edge, whatever its signature. The service-account client
@@ -111,8 +115,8 @@ only on the scripted password-grant runners.
 route that carries **no auth plugin** (the document is what a client reads before it has a token). The
 document names `resource` (the MCP endpoint's absolute URL, `http://localhost:9085/mcp` on the rig),
 `authorization_servers` (the realm as the host reaches it, `http://localhost:9085/realms/catalog-demo`)
-and `bearer_methods_supported: [header]`. It carries **no `scopes_supported`**: the audience is a default
-scope assigned server-side, so no scope a client asks for grants anything.
+and `bearer_methods_supported: [header]`. It carries **no `scopes_supported`**: each legitimate client's own
+mapper adds the audience whatever scope is requested, so no scope a client asks for grants anything.
 
 The failure contract:
 
@@ -128,9 +132,13 @@ path-inserted URI this server answers.
 
 ### 7. Refresh tokens rotate, realm-wide
 
-`revokeRefreshToken: true`, `refreshTokenMaxReuse: 0`: every refresh returns a new refresh token and
-invalidates the old one — the MCP spec's requirement for public clients, applied to both (the SPA renews
-through `oidc-client-ts`, which stores each new refresh token). The password-grant runners never refresh.
+`revokeRefreshToken: true`, `refreshTokenMaxReuse: 0` — the MCP spec's requirement for public clients, applied
+to both. Keycloak 26.3.2's semantics: every refresh returns a new refresh token; reusing one already used →
+`invalid_grant` "Maximum allowed refresh token reuse exceeded", and the client session is **detached**; an
+older token after a newer one was used → "Stale token" (second-granularity). Because reuse detaches the
+session, **the SPA's refresh is single-flight**: its `freshUser()` shares one in-flight renewal among
+concurrent callers (a catalog view's parallel reads each refreshed on their own before, and oidc-client-ts does
+not de-duplicate). The password-grant runners never refresh.
 
 ### 8. The library changes only in documentation
 
@@ -176,6 +184,8 @@ here. The guide states the deviation where it describes the forwarded bearer.
   admitted, the metadata document on both paths (identical under a forged `Host`), a token minted through
   the full discovery flow carrying the audience and the actor, its narrowed roster, `get_product` refused
   at `tool-gate` while the same human reads it over REST, and a refresh-token replay refused.
+- **The SPA's refresh becomes single-flight** (§7) — the one change to the demo console, made because rotation
+  turns a concurrent refresh into a session loss.
 - **A real MCP client can log in to the rig** — documented as a manual runbook, not a CI step (client
   versions move faster than the suite).
 - **No published-API change.** The 1.5.0 cut waits for this slice only because the slice changes what the

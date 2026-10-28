@@ -13,8 +13,7 @@ tags:
 > and the contract [[0035-audience-bound-gateway-tokens|ADR 0035]]. **Scope grew on 2026-10-15** (maintainer): the slice
 > also carries MCP OAuth discovery (RFC 9728) for `example-mcp-server`, an MCP host **agent** client and audience binding on
 > `/mcp`; it lands **before the 1.5.0 cut**. Target moved to **APISIX 3.19.0** (released 2026-09-28). Four tickets: T1 the
-> bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Next:** `/decompose` (collaborative
-> mini package). The research below is the record it was designed from.
+> bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Decomposed 2026-10-28** ([[01-DECOMPOSITION]], [[10-QA-TEST-CASES]], STATUS-01…04; no prompt — collaborative). **Next:** the collaborative build, T1 first. The research below is the record it was designed from.
 >
 > *Original status (2026-09-07):* researched, not yet designed. Opened 2026-09-07 from a maintainer question — *"is
 > an audience check something anyone using the example app as a starting point would miss?"* — and

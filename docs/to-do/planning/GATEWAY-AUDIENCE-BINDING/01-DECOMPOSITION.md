@@ -28,6 +28,33 @@ T1 (APISIX 3.19, issuer-preserving) ──► T2 (audience in the plugin, guard 
   audience-binding scope and is landable without T3 if the MCP surface slips.
 - **T4 is docs-only** and may start drafting during T3, but lands last: it describes what T2 and T3 measured.
 
+## Two id spaces — read this before the tickets
+
+The tickets cite **QA case ids** from [[10-QA-TEST-CASES]] (`U*`, `I*`, `E*`). The runners and collections
+have **their own cell numbers**, which this slice extends; where the two could be confused, the tickets say
+*QA E…* or *cell E…*:
+
+| QA case | Becomes |
+|---|---|
+| QA E4, E5 | step-up runner preflight cells **E9i**, **E9j** (beside the existing E9a–h) |
+| QA E7, E8, E9, E10 | agent matrix cells **E13**, **E14**, **E15**, **E16** (the collection's next numbers) |
+| QA E11 | a step-up runner preflight cell **E9k** (the SPA client's rotation) |
+| QA E13 | a manual runbook step, recorded in STATUS-04 — no cell |
+| *the agent matrix's E12 drill* | the existing `agent-clients` cell, *not* QA E12 |
+
+## The full suite (what "every runner green" means)
+
+The nineteen runners `scripts/postman/run-*.sh` (incl. `run-tests.sh`, `run-matrix.sh`,
+`run-spa-auth-smoke.sh`), on **two** rigs ([[E2E-TESTING]] §Two rig flavours):
+
+1. **The user-service rig, flags exported** — `export ENABLE_MCP=1 ENABLE_RESILIENCE_STUB=1` (the SPA and the
+   directory default on; OIDC and the user-service are forced), then `./deploy.sh up --pods 2`, then all
+   nineteen. **Export, never prefix:** several runners re-`up` the rig mid-run and forward the optional
+   flags; a prefixed `ENABLE_MCP=1` is lost and the flag-off arm tears the MCP server down.
+2. **The OIDC-only quickstart rig** — `ENABLE_SPA=0 ENABLE_DIRECTORY=0 ENABLE_OIDC=1 ./deploy.sh up --pods 2`
+   (the browser-flow `openid-connect` mode), then `run-tests.sh` and `run-matrix.sh`, the two runners that
+   run on both flavours.
+
 ## Cross-cutting acceptance (every ticket)
 
 - **Fail-closed:** no change in this slice may admit a token, a request or a document a correctly configured
@@ -76,9 +103,9 @@ and refused, the same routes, traces still reaching Jaeger.
 in 3.11.0; the `session.secret` check; the opentelemetry `metadata_schema`); the image tag on Docker Hub
 (`3.19.0-debian`, 2026-09-29).
 
-**Acceptance.** **E1**, **E2**, **E3**. Every runner green on the bumped gateway, on the default rig and
-with `ENABLE_MCP=1`; a request through the gateway produces an `apisix` span in Jaeger; `ENABLE_SPA=0`
-boots and a token-less catalog request still redirects to the login.
+**Acceptance.** **E1**, **E2**, **E3**. The full suite (above) green on the bumped gateway, both rigs; a
+request through the gateway produces an `apisix` span in Jaeger; the OIDC-only rig (`ENABLE_SPA=0`) boots
+and a token-less catalog request still redirects to the login.
 
 **What NOT to touch.** No audience check (T2). No realm change. The Lua guard. No route added or removed.
 `etcd` stays `quay.io/coreos/etcd:v3.5.16` (proven by the suite, not assumed).
@@ -90,9 +117,16 @@ alone.
 
 **Deliverables.**
 - **Two probes first, recorded in STATUS-02 with the raw evidence** (P0, ADR 0035 §Context):
-  **I1** — Keycloak 26.3.2's `aud` with `resource=http://localhost:9085/mcp` on authorize and token;
-  **I2** — APISIX 3.19's answer to an `aud` array containing `catalog-gateway`, to one without it, and to a
-  token with no `aud`.
+  **I1** — Keycloak 26.3.2's `aud` with `resource=http://localhost:9085/mcp` on authorize and token. **If a
+  token minted with `resource` does NOT contain `catalog-gateway`, T2 lands but T3 stops** — every MCP client
+  sends `resource` (the spec requires it), so every host token would be refused — and ADR 0035 §1/§5 are
+  revisited with the maintainer (candidates: a custom-audience mapper naming the MCP URL +
+  `claim_validator.audience.claim`, or turning Keycloak's resource-indicator handling off).
+  **I2** — APISIX 3.19's answer on the audience edge, **measuring what this realm actually mints** (the shape
+  of `aud` is recorded per client, not assumed): the `catalog-directory` token (expected `aud: realm-management`
+  → mismatched); a legitimate token after the mapper (string or array — whichever occurs). The no-`aud` arm
+  (`403 {"error":"required audience claim not present"}`, `openid-connect.lua` 3.19 lines 1275–1280) is cited
+  from source, not minted — no client of this realm emits a token without `aud`.
 - **Realm (`infra/keycloak/realm-export.json`): one inline `oidc-audience-mapper` per legitimate client** —
   `catalog-gateway`, `catalog-spa`, `catalog-agent-readonly`, `catalog-agent-overreach`, `catalog-agent-revoked`
   — named `gateway-audience`, config `included.client.audience: catalog-gateway`, `access.token.claim: true`,
@@ -103,13 +137,24 @@ alone.
   reversed, [[00-DESIGN]] §Considered and rejected 2).
 - **Gateway (`infra/apisix/init-routes.sh`):** every `openid-connect` block gains
   `claim_validator.audience.match_with_client_id: true` (the block's `client_id` is `catalog-gateway`;
-  3.18+ makes it imply `required`). The `ISSUER_GUARD` `serverless-pre-function` and its Lua are **deleted**,
-  with the comment block rewritten to say where the issuer contract now lives and why the case-insensitive
-  scheme subtlety no longer applies (one plugin authenticates and checks the issuer).
-- **e2e (`scripts/postman/run-step-up-matrix.sh`, beside E9):** **E9i** a `catalog-directory`
-  service-account token through the gateway → `403` with body `{"error":"mismatched audience"}` (or the I2
-  measurement, if it differs — recorded); **E9j** a `catalog-gateway` password-grant token → `200`. The E9a–h
-  controls unchanged and green with the guard gone.
+  3.18+ makes it imply `required`). The **`ISSUER_GUARD`** `serverless-pre-function` on the three
+  `openid-connect` blocks, and its Lua, are **deleted**, with the comment block rewritten to say where the
+  issuer contract now lives and why the case-insensitive scheme subtlety no longer applies (one plugin
+  authenticates and checks the issuer). **`internal-blocked` keeps its own `serverless-pre-function`** (the
+  `/internal/*` 404 that keeps the catalog's creator lookup off the edge), and `serverless-pre-function`
+  stays in `config.yaml`'s plugin list.
+- **What "every route" means, precisely:** the audience check runs on every **bearer-presented** token on
+  every `openid-connect` route — in browser-flow mode too, since a request carrying a bearer header goes
+  through the same JWKS + `claim_validator` path. A browser-flow **session** (no bearer header) carries the
+  token the gateway's own client `catalog-gateway` obtained, which its own mapper stamps; the session cookie is
+  encrypted under `session.secret`. That path is not audience-checked and needs not be.
+- **e2e (`scripts/postman/run-step-up-matrix.sh`, beside E9):** **cell E9i** — a `catalog-directory`
+  service-account token refused **on each authenticated surface**: the catalog (`GET /api/v1/catalogs`), the
+  user-service (`GET /api/v1/teams`) and `/mcp` (an MCP `initialize` POST) → the I2-measured refusal
+  (expected `403`, body `{"error":"mismatched audience"}`), never `200`; **cell E9j** — a `catalog-gateway`
+  password-grant token → `200` on the same three requests (the paired allow control per surface). The E9a–h
+  controls unchanged and green with the guard gone, and `GET /internal/catalog/{id}/created-by` through the
+  gateway still `404`.
 - **e2e — the per-client drift guard:** a token from **each** of the five clients carries `aud ∋
   catalog-gateway` (four password-grant mints in the step-up runner's preflight + the miner's `catalog-spa`
   token), and `catalog-directory`'s does not.
@@ -138,17 +183,34 @@ client, and is narrowed by the tool-gate exactly as the scripted agents are.
   `http://localhost:33418/callback` and `http://127.0.0.1:33418/callback`, `defaultClientScopes` = the
   agents' (`openid`, `profile`, `email`, `roles`), the `subject` mapper, the `gateway-audience` audience
   mapper (as T2), and the hardcoded `act-chain` mapper with `claim.value: ["agent-host"]`.
-- **Realm-wide refresh rotation:** `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0`.
+- **Realm-wide refresh rotation:** `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0` — with Keycloak
+  26.3.2's actual semantics (`TokenManager.validateTokenReuse`): reusing a refresh token that was already
+  used → `invalid_grant` "Maximum allowed refresh token reuse exceeded", and the client session is
+  **detached** (`validateTokenReuseForRefresh`); an older token after a newer one was used → `invalid_grant`
+  "Stale token" (second-granularity `iat`).
+- **The SPA's refresh becomes single-flight** (maintainer decision, 6b round 1): `example-demo-ui/src/auth.ts`
+  `freshUser()` shares **one** in-flight `signinSilent()` among concurrent callers. Today each expired-token
+  read calls it independently (`api.ts` → `freshUser()`; a catalog view fans out several reads at once), and
+  oidc-client-ts does not de-duplicate — under rotation the losers would replay the same refresh token and
+  Keycloak would detach the session. A vitest pins it (**U8**).
 - **The host's capability** — profile `agent-host`: `allowed-categories: [READ]`, `allowed-tools:
   [list_catalogs, get_catalog, list_categories, get_product]`, `allowed-actions: [view, list]`,
   `max-risk-tag: low`. **In both** `example-mcp-server/src/main/resources/application.yml` **and**
   `infra/compose.mcp.yaml` (`OPA_ABAC_MCP_AGENTS_PROFILES_3_*`): the compose file binds the profile list
   from indexed environment variables, and a list bound from the environment replaces the YAML list whole.
-- **The agent-clients default:** `OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS` defaults to
-  `catalog-agent-readonly,catalog-agent-overreach,catalog-agent-revoked,catalog-mcp-host`, and
-  `OPA_ABAC_SUBJECT_ATTRIBUTE_CLAIMS` to `act_chain,azp` (the wiring check requires `azp` whenever
-  `agent-clients` is set). The E12 drill in `run-agent-tool-matrix.sh` **extends** that list with
-  `catalog-gateway` rather than replacing it (every reader of the switch agrees).
+- **The agent-clients default, in both places** (as the profile): `example-mcp-server`'s `application.yml`
+  gains `opa.abac.mcp.identity.agent-clients: [catalog-agent-readonly, catalog-agent-overreach,
+  catalog-agent-revoked, catalog-mcp-host]` and `opa.abac.subject.attribute-claims: [act_chain, azp]` (the
+  wiring check requires `azp` whenever `agent-clients` is set); `infra/compose.mcp.yaml`'s
+  `MCP_AGENT_CLIENTS` / `MCP_SUBJECT_ATTRIBUTE_CLAIMS` defaults carry the same values.
+  `ApplicationYamlBindingTest` (which pins the three-profile list today) is updated to the four profiles and
+  the two new keys.
+- **The agent matrix's E12 drill** (`run-agent-tool-matrix.sh`) **extends** the default list with
+  `catalog-gateway` rather than replacing it (every reader of the switch agrees), and the **E12-restore**
+  cell's name and script comment — "the guard is gone with the drill", "with agent-clients back to its empty
+  default the guard never runs" — are rewritten: after this slice the default list is non-empty, and what the
+  restore proves is that `catalog-gateway` is no longer listed. The runner header (`:32–35`, `:46–47`)
+  likewise.
 - **The RFC 9728 document — `example-mcp-server`:**
   - `ProtectedResourceProperties` (`@ConfigurationProperties("example.mcp.oauth.protected-resource")`:
     `resource`, `authorization-server`) and its validation — both blank ⇒ discovery off; one blank, or a
@@ -174,16 +236,32 @@ client, and is narrowed by the tool-gate exactly as the scripted agents are.
     (the MCP host's whole login runs through the gateway origin) — and removed only when both are off;
   - the `/mcp` route's `openid-connect` is **always** `bearer_only: true` + `unauth_action: deny` (an API
     surface: a token-less MCP client must get `401`, never a browser redirect), independent of `ENABLE_SPA`.
-- **The miner (`scripts/postman/mint-code-flow-token.py`) learns `--discover <mcp-url>`:** fetch the
-  path-inserted document, fall back to the root one; take `authorization_servers[0]`; try the three
-  authorization-server metadata URLs in the spec's order (RFC 8414 path-inserted, OIDC path-inserted, OIDC
-  appended) and report on stderr which answered; refuse unless `code_challenge_methods_supported` contains
-  `S256`; send `resource=<mcp-url>` on both the authorize and the token request; mint as `--client`
-  (`catalog-mcp-host` in the cells). The connect/issuer rebasing the miner already does still applies
-  (the authorization server is reached through the gateway origin, so `iss` = `http://localhost:9085/realms/catalog-demo`).
-  `--field refresh_token` exposes the refresh token for the rotation cell.
+- **The miner (`scripts/postman/mint-code-flow-token.py`) learns `--discover <mcp-url>`**, with its own
+  transport rules — the legacy defaults stay untouched outside this mode (the step-up E9d issuer-parity cell
+  depends on them):
+  - **Transport:** in discovery mode `--keycloak` **and** `--issuer` both become the origin of
+    `authorization_servers[0]` (`http://localhost:9085`) — the presented `Host` is the gateway origin, no
+    rewrite to `keycloak:8888`, no rebasing onto `:28888`. (The legacy mode forces `Host: <--issuer netloc>`
+    on every request and rebases rendered URLs onto the connect URL — through the gateway that would mint
+    `iss = http://keycloak:8888/…`.)
+  - **Discovery:** `GET` the path-inserted document, then the root one; only a `200` with a JSON body counts
+    as an answer; redirects are never followed (the existing `NoRedirect` session); refuse if both are absent,
+    or if the document's `resource` ≠ the `--discover` URL. Take `authorization_servers[0]`; try the spec's
+    three metadata URLs in order (RFC 8414 path-inserted, OIDC path-inserted, OIDC appended) under the same
+    "200 + JSON" rule — the first two land on the gateway's catch-all (`401` in SPA mode, `302` in browser-flow
+    mode) and are skipped — and report on stderr which answered; refuse if the metadata's `issuer` ≠
+    `authorization_servers[0]` or `code_challenge_methods_supported` lacks `S256`.
+  - **The grant:** send `resource=<mcp-url>` on both the authorize and the token request; mint as `--client`.
+    The cells always pass the full invocation: `--discover http://localhost:9085/mcp --client catalog-mcp-host
+    --redirect-uri http://localhost:33418/callback --user demo` (the agent runner's `DEMO_USER`, the human whose
+    REST read is the cell-E15 contrast), `--field access_token,refresh_token` (one invocation for both).
+  - **A note for the reader:** RFC 9728 §3.3 read strictly would void the root-path document (its `resource`
+    names `/mcp`, not the root); the MCP spec's fallback is what places it there, and the miner accepts it.
 - **e2e — `scripts/postman/run-agent-tool-matrix.sh` + `agent-tool-matrix.postman_collection.json`,
-  cells E13–E16** (the collection's next numbers), mapped in [[10-QA-TEST-CASES]].
+  cells E13–E16** (QA E7–E10, the mapping table above); **step-up runner cell E9k** (QA E11 — the SPA client's
+  rotation: mint a `catalog-spa` pair with the miner's legacy mode, refresh **in-network** as E9h does → a new
+  refresh token; replay the first → `invalid_grant` "Maximum allowed refresh token reuse exceeded").
+  `run-spa-auth-smoke.sh` stays green as the gateway's bearer-posture control only — it never refreshes.
 
 *Seams verified:* `OAuth2ProtectedResourceMetadataFilter` (`javap -c`, 7.0.7) as above; `SecurityConfig`'s
 two chain arms (source); the compose profile binding (`infra/compose.mcp.yaml` lines 62–76); the E12 drill's
@@ -191,12 +269,14 @@ overrides (`run-agent-tool-matrix.sh`); the passthrough's `ENABLE_SPA` gate and 
 inheritance (`init-routes.sh`); the miner's PKCE flow and options (source); the MCP spec 2025-11-25
 discovery order and the `resource` requirement (read at the source).
 
-**Acceptance.** **U1–U7**, **E7–E12**; `./gradlew :example-mcp-server:test` + `./gradlew build` green; the
-local Sonar gate on the changed `.java`; every runner green on a re-imported realm (`ENABLE_MCP=1`).
+**Acceptance.** **U1–U8**, **E7–E12**; `./gradlew :example-mcp-server:test` + `./gradlew build` green;
+`npm test` in `example-demo-ui` green; the local Sonar gate on the changed `.java`; the full suite green on a
+re-imported realm.
 
 **What NOT to touch.** No library module (`opa-abac-*`). No policy. The four existing tools and their
-declarations. `catalog-directory`. The SPA's code (rotation must work with it as is — proven, not adapted).
-No `WWW-Authenticate` change on the gateway's 401 (ADR 0035 §6: well-known only).
+declarations. `catalog-directory`. In the SPA, **only** `freshUser()`'s single-flight — no other auth change.
+No `WWW-Authenticate` change on the gateway's 401 (ADR 0035 §6: well-known only). The miner's legacy
+(non-`--discover`) defaults.
 
 ## T4 — Docs, the runbook, the backlog
 
@@ -205,10 +285,11 @@ expiry, issuer **and** audience — and the MCP OAuth path is documented for ado
 terminal.
 
 **Deliverables.**
-- [[ABAC-AUTHORIZATION]] §Signature trust: the full statement, with the example's APISIX `claim_validator`
-  configuration as the reference.
-- A one-line pointer to it in: README step 3; [[TWO-LAYER-AUTHORIZATION]] §Signature trust (and drop its stale
-  "reserved `verifySignature` mode" sentence — the property was deleted); the `trustForwardedJwt` javadoc in
+- [[ABAC-AUTHORIZATION]] §"Signature-trust posture (read this)": the full statement, with the example's APISIX
+  `claim_validator` configuration as the reference — and drop that section's stale "a `verifySignature` mode is
+  reserved" sentence (the property was deleted).
+- A one-line pointer to it in: README step 3; [[TWO-LAYER-AUTHORIZATION]] §"Signature trust between the layers"
+  (and drop its own copy of the stale `verifySignature` sentence); the `trustForwardedJwt` javadoc in
   `opa-abac-spring-boot-starter/.../OpaAbacProperties.java`; `docs/prompts/FROM-EXAMPLE-TO-YOUR-APP.md`.
 - `docs/guides/E2E-TESTING.md`: the "in-network token caveat" rewritten to the measured truth (what the
   gateway enforces now; the three authorities plus the MCP host; the audience).
