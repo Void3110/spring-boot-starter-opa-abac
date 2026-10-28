@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 /**
  * Builds the protected-resource document at startup, so a half-configured or malformed one fails the
@@ -16,7 +17,12 @@ public class ProtectedResourceConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ProtectedResourceConfiguration.class);
 
+    /**
+     * Eager even under {@code spring.main.lazy-initialization=true}: the contract is a startup failure for a
+     * half-configured or malformed document, and a lazy bean would defer it to the first request.
+     */
     @Bean
+    @Lazy(false)
     ProtectedResourceDocument protectedResourceDocument(ProtectedResourceProperties properties) {
         ProtectedResourceDocument document = ProtectedResourceDocument.from(properties);
         if (!document.isEnabled()) {

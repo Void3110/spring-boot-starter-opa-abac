@@ -14,7 +14,7 @@ tags:
 >
 > Take from the top. Each item is self-contained: no item blocks another.
 >
-> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–24 were opened 2026-10-10 by MCP-AUTH-LIBRARY — 24 by its layer-3 review.) (Items 25–28 were opened 2026-10-29 by GATEWAY-AUDIENCE-BINDING — 25–26 its two named successors, 27–28 found by its real-client login, QA E13, and fixed on the same branch.) Item 10 remains — the same shape item 9 had (a
+> **Status 2026-09-07: items 1–9 are SHIPPED.** (Items 21–24 were opened 2026-10-10 by MCP-AUTH-LIBRARY — 24 by its layer-3 review.) (Items 25–29 were opened 2026-10-29 by GATEWAY-AUDIENCE-BINDING — 25–26 its two named successors; 27–28 found by its real-client login, QA E13, and fixed on the same branch; 29 found by its review.) Item 10 remains — the same shape item 9 had (a
 > BOM-managed version, no reachable path), waiting on the next Boot patch line.
 > Each shipped item carries the correction its own estimate needed — read those before trusting a
 > future backlog entry's effort figure: five of the eight were wrong in a way that mattered.
@@ -520,6 +520,21 @@ approval on each call, or a reviewer may read the demo as handing an agent write
 idempotentHint = true, openWorldHint = false)`. U9 (`McpToolSurfaceTest`) reads them off every specification list
 the context serves, and the agent matrix's E10 roster cell reads them back through the gateway. The guide says the
 hints are advisory.
+
+## 29. Refresh rotation signs out a second console tab, and races the gateway's own session renewal (found by the slice review, 2026-10-29)
+
+**The gap.** The realm rotates refresh tokens (ADR 0035 §7), and that has two consequences no runner exercises:
+- **The demo SPA's single-flight `freshUser()` is per tab.** Tokens live in per-tab `sessionStorage`, and every tab
+  sits in one Keycloak client session. Once one tab refreshes, a second tab holding an older refresh token
+  answers `invalid_grant` ("Stale token") and is signed out.
+- **The gateway's own browser-flow session renewal can race.** On an `ENABLE_SPA=0` rig, two parallel requests on an
+  expired APISIX session can present the same refresh token.
+
+Both follow from Keycloak 26.3.2's measured reuse semantics. Neither is measured on the rig.
+
+**Fix shape:** a cross-tab lock for the SPA (Web Locks or a `BroadcastChannel` sharing the renewed user), and a
+measured browser-flow drill. Or scope rotation to the public clients that need it (`catalog-spa`,
+`catalog-mcp-host`) as a client attribute instead of realm-wide, and re-measure.
 
 ---
 

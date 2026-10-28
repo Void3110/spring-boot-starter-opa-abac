@@ -62,7 +62,7 @@ like regressions:
 
 | Flavour | Command | What decides authorization |
 |---|---|---|
-| **OIDC-only** (the quickstart) | `ENABLE_OIDC=1 ./deploy.sh up --pods 2` | the catalog's **static `demo` role supplier** (`CATALOG_ROLE_SOURCE` unset) — realm roles map straight to permissions, no teams exist |
+| **OIDC-only** (the quickstart) | `ENABLE_SPA=0 ENABLE_DIRECTORY=0 ENABLE_OIDC=1 ./deploy.sh up --pods 2` — in a shell with no `ENABLE_MCP` / `ENABLE_USER_SERVICE` set (`ENABLE_SPA` and `ENABLE_DIRECTORY` default to 1 since 2026-09-11, and each forces the user-service) | the catalog's **static `demo` role supplier** (`CATALOG_ROLE_SOURCE` unset) — realm roles map straight to permissions, no teams exist |
 | **user-service** (everything else) | `ENABLE_OIDC=1 ENABLE_USER_SERVICE=1 ./deploy.sh up --pods 2` | **real membership** — `CATALOG_ROLE_SOURCE=http`, roles resolved from the user-service |
 
 **`run-tests.sh` and `run-matrix.sh` run on both.** They create their own catalog, and since
@@ -85,7 +85,7 @@ where no team model exists. Each runner detects the flavour by reading the catal
 > demo console with the matrices; `run-demo-world-matrix.sh` exports them itself for exactly this reason.
 
 > Read the flavour from the **catalog pod**, not from whether the user-service is reachable.
-> `ENABLE_OIDC=1 ./deploy.sh up` recreates the catalog pods on the static supplier but leaves an
+> The OIDC-only `up` above recreates the catalog pods on the static supplier but leaves an
 > already-running `usermgmt` container alone, so a reachability probe reports "membership rig" on a
 > rig that ignores membership entirely.
 
@@ -184,10 +184,10 @@ Keycloak's **host** port (`localhost:28888`) while presenting the **in-network**
 (`http://keycloak:8888`), so its tokens carry exactly the issuer every in-network ROPC token
 carries, and it needs no container on the compose network. The flip side is that every URL
 Keycloak then renders (form actions, redirects) names `keycloak:8888` and is unreachable from the
-host, so the miner rebases each one onto the connect URL before following it. *(Measured
-2026-08-14: APISIX validates the token **signature** against the realm JWKS and does not itself
-enforce `iss`, so a host-issuer token happens to pass today as well — the miner takes parity by
-construction rather than leaving it to the validator's leniency.)*
+host, so the miner rebases each one onto the connect URL before following it. *(The gateway admits
+three rig authorities, `localhost:28888` among them, so a host-issuer token would pass it as well; the
+miner takes parity by construction rather than leaving it to that allowlist's breadth. Until ADR 0035
+the gateway checked no issuer in the plugin at all — measured 2026-08-14 on APISIX 3.11.)*
 
 Three gotchas are handled inside the script, each of which reads as a different bug than it is:
 
@@ -207,8 +207,8 @@ Three gotchas are handled inside the script, each of which reads as a different 
 Its contract is pinned by the step-up **runner's preflight** (`run-step-up-matrix.sh` — the E9
 block plus the dual-identity checks; the original in-ticket check was a throwaway): `aal1` +
 numeric `auth_time`; `aal2` through the TOTP step with a fresh `auth_time`; **issuer parity** with
-the in-network mints (APISIX validates the signature, not `iss`, so this is the one place a
-`DEFAULT_ISSUER` regression would be caught); and a minted token reaching a 200 through the gateway
+the in-network mints (the gateway admits all three rig authorities, so a `DEFAULT_ISSUER` regression that
+moved the miner to another of them would pass it — this is the one place it is caught); and a minted token reaching a 200 through the gateway
 with a tampered-token 401 as the control, so the 200 is not a bypass. The `--no-max-age` SSO-reuse
 half (the **same** `auth_time` back with an advanced `iat`) is measured by the drill's E3 cell.
 

@@ -23,7 +23,7 @@
 #      creates, so createdAt ASC, id ASC gives a deterministic walk order;
 #   5. run newman: emea-reader counts 5, apac-reader counts 3 on the same URL; the walk is exact.
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888).
+# Honors the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits).
 
 set -euo pipefail
 

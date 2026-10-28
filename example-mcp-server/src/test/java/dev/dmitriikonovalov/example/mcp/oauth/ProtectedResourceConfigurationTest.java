@@ -67,9 +67,16 @@ class ProtectedResourceConfigurationTest {
             "resource             | http://localhost:9085/                    | must name the MCP endpoint",
             "resource             | http://localhost:9085                     | must name the MCP endpoint",
             "resource             | http://localhost:9085/api/mcp             | must name the MCP endpoint",
+            "resource             | http://localhost:9085/mcp?tenant=a        | carries a query",
+            "resource             | http://:9085/mcp                          | has no valid host and port",
+            "resource             | http://localhost:bad/mcp                  | has no valid host and port",
+            "resource             | http://localhost:99999/mcp                | has no valid host and port",
+            "resource             | http://admin@localhost:9085/mcp           | carries userinfo",
             "authorization-server | realms/catalog-demo                       | is not an absolute http(s) URL",
             "authorization-server | mailto:keycloak@example.invalid           | is not an absolute http(s) URL",
             "authorization-server | http://localhost:9085/realms/catalog-demo#x | carries a fragment",
+            "authorization-server | http://u:p@localhost:9085/realms/catalog-demo | carries userinfo",
+            "authorization-server | http://:9085/realms/catalog-demo          | has no valid host and port",
     })
     void aMalformedValueFailsStartupNamingTheKeyAndTheReason(String key, String value, String reason) {
         String resource = key.equals("resource") ? value : RESOURCE;
@@ -81,6 +88,17 @@ class ProtectedResourceConfigurationTest {
                         .isInstanceOf(IllegalStateException.class)
                         .hasMessageStartingWith(fullKey + "='" + value + "'")
                         .hasMessageContaining(reason));
+    }
+
+    @Test // U2 under lazy initialization — the half-configured document still fails STARTUP, not the first request
+    void lazyInitializationDoesNotDeferTheStartupFailure() {
+        runner.withPropertyValues("spring.main.lazy-initialization=true",
+                        ProtectedResourceDocument.RESOURCE_KEY + "=" + RESOURCE)
+                .withInitializer(context -> context.addBeanFactoryPostProcessor(
+                        new org.springframework.boot.LazyInitializationBeanFactoryPostProcessor()))
+                .run(context -> assertThat(context).hasFailed().getFailure().rootCause()
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageStartingWith(ProtectedResourceDocument.AUTHORIZATION_SERVER_KEY + " is not set"));
     }
 
     @Test // both valid: on, nothing logged

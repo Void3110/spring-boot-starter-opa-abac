@@ -31,7 +31,8 @@ matrix's E14 (the miner's `--discover`); this is the same flow driven by a real 
    `http://localhost:33418/callback`.
 4. The token it gets is an **agent** token: `azp: catalog-mcp-host`, `act_chain: ["agent-host"]`,
    `aud: catalog-gateway`. The MCP server's tool-gate narrows it to the `agent-host` profile: reads only, at the
-   low risk tier.
+   low risk tier. That narrowing is the tool surface's. The same token, presented to the REST API, is decided as
+   `demo` ([[AGENT-TOOL-AUTHORIZATION]] §The host is an agent, not the person).
 
 ## Steps
 

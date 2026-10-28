@@ -91,7 +91,9 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" local
 > **Refresh tokens rotate, realm-wide** (`revokeRefreshToken`, `refreshTokenMaxReuse: 0`). A refresh answers a
 > new refresh token. Presenting a spent one answers `invalid_grant` "Maximum allowed refresh token reuse
 > exceeded", and Keycloak detaches the session. A client that refreshes concurrently must share one refresh,
-> as the demo SPA's `freshUser()` does.
+> as the demo SPA's `freshUser()` does. That is per tab: a second console tab holding an older refresh token is
+> signed out with "Stale token". On a browser-flow rig, the gateway's own session renewal can race the same way.
+> Both are recorded in backlog 29.
 
 ## Demo SPA auth (bearer-only gateway) — opt-in
 

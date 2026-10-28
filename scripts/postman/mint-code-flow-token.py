@@ -54,9 +54,10 @@ authorization spec 2025-11-25), starting from nothing but the MCP endpoint's URL
 2. The authorization server's metadata for `authorization_servers[0]`, at the spec's three URLs in
    order — RFC 8414 path-inserted, OIDC path-inserted, OIDC appended — under the same "200 + JSON"
    rule; stderr says which one answered. Its `issuer` must equal `authorization_servers[0]`, and
-   `code_challenge_methods_supported` must list `S256`.
+   `code_challenge_methods_supported` must be a list containing `S256`. The MCP URL and the issuer must be
+   https, or http to a loopback host (the rig).
 3. The code flow at that metadata's endpoints, with RFC 8707 `resource=<mcp-url>` on both the
-   authorize and the token request.
+   authorize and the token request. Both endpoints must be on the issuer's origin, or the script refuses.
 
 The transport is the authorization server's own origin, both to connect to and as the Host — so the
 token's `iss` is the advertised issuer, never `keycloak:8888`. `--keycloak`, `--issuer` and `--realm`
@@ -192,10 +193,10 @@ class ForcedCookieSession:
         # Minting through the host port with the host's own Host header would stamp
         # `iss: http://localhost:28888`; connecting to the same port while presenting the
         # IN-NETWORK authority stamps the issuer every other runner's ROPC token carries.
-        # Measured on this rig (2026-08-14): APISIX validates the SIGNATURE against the realm
-        # JWKS and does not itself enforce `iss`, so a host-issuer token happens to pass today
-        # too — parity is taken here by construction rather than left to the validator's
-        # leniency, and it is what lets the miner run from the host with no container on the
+        # The gateway admits three rig authorities (`claim_validator.issuer.valid_issuers`, ADR
+        # 0035), localhost:28888 among them, so a host-issuer token would pass it too; parity is
+        # taken here by construction rather than left to that allowlist's breadth, and it is
+        # what lets the miner run from the host with no container on the
         # compose network. `--issuer <the connect URL>` opts out.
         headers = {"User-Agent": "opa-abac-code-flow-miner",
                    "Host": urllib.parse.urlparse(self.issuer).netloc}
@@ -260,8 +261,25 @@ def fetch_json(url: str, timeout: float) -> tuple[int, dict | None]:
     return status, document if isinstance(document, dict) else None
 
 
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def require_secure_transport(label: str, url: str) -> None:
+    """https, or plain http to a loopback host only — the MCP spec's rule for authorization endpoints.
+
+    This script sends a password, an authorization code and a PKCE verifier; over plain http to anything but
+    this machine they would cross the network in the clear. The rig is http on localhost, which this allows.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS):
+        return
+    raise SystemExit(f"{label} {url!r} is neither https nor a loopback http URL — refusing to send "
+                     f"credentials over it")
+
+
 def discover(mcp_url: str, timeout: float) -> dict:
     """Walk RFC 9728 -> the authorization server's metadata, as an MCP host does. Returns the metadata."""
+    require_secure_transport("the MCP URL", mcp_url)
     target = urllib.parse.urlparse(mcp_url)
     origin = f"{target.scheme}://{target.netloc}"
     document = None
@@ -282,6 +300,7 @@ def discover(mcp_url: str, timeout: float) -> dict:
     if not isinstance(servers, list) or not servers or not isinstance(servers[0], str):
         raise SystemExit(f"the protected-resource document lists no authorization server: {document}")
     issuer = servers[0]
+    require_secure_transport("the authorization server", issuer)
 
     parsed = urllib.parse.urlparse(issuer)
     issuer_origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -303,12 +322,20 @@ def discover(mcp_url: str, timeout: float) -> dict:
     if metadata.get("issuer") != issuer:
         raise SystemExit(f"the metadata's issuer {metadata.get('issuer')!r} is not the advertised "
                          f"authorization server {issuer!r}")
-    if "S256" not in (metadata.get("code_challenge_methods_supported") or []):
+    methods = metadata.get("code_challenge_methods_supported")
+    if not isinstance(methods, list) or "S256" not in methods:
         raise SystemExit("the authorization server does not advertise PKCE S256 — refusing, as the MCP "
                          "spec requires")
     for endpoint in ("authorization_endpoint", "token_endpoint"):
-        if not isinstance(metadata.get(endpoint), str):
+        url = metadata.get(endpoint)
+        if not isinstance(url, str):
             raise SystemExit(f"the authorization-server metadata has no {endpoint}")
+        # The code, the PKCE verifier and the forced Host go to these URLs as given, so a document naming
+        # another origin would hand them to that host: the whole grant stays on the issuer's origin.
+        parsed_endpoint = urllib.parse.urlparse(url)
+        if f"{parsed_endpoint.scheme}://{parsed_endpoint.netloc}" != issuer_origin:
+            raise SystemExit(f"the metadata's {endpoint} {url!r} is not on the issuer's origin "
+                             f"{issuer_origin!r} — refusing to send the grant there")
     return metadata
 
 

@@ -104,7 +104,9 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #     service account, audience realm-management — is refused 403 {"error":"mismatched audience"}; a
 #     token with no `aud` at all, 403 {"error":"required audience claim not present"}.
 # A browser-flow SESSION (ENABLE_SPA=0, no bearer header) carries the token the gateway's own
-# catalog-gateway client obtained; it is encrypted under session.secret and needs no re-check.
+# catalog-gateway client obtained, and the plugin forwards it WITHOUT re-checking it: the cookie holds the
+# whole session, encrypted and MACed under session.secret alone. So that path is exactly as trustworthy as
+# the secret is secret — anyone who knows it can mint a session naming any token. See OIDC_SESSION_SECRET.
 #
 # THE THREE RIG AUTHORITIES — every one is a real, exercised login path. Adding a way to reach
 # Keycloak means adding its origin here, or that path 401s at the edge:
@@ -118,7 +120,11 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 ISSUER_ALLOWLIST="${ISSUER_ALLOWLIST:-http://keycloak:8888/realms/catalog-demo,http://localhost:9085/realms/catalog-demo,http://localhost:28888/realms/catalog-demo}"
 # The list as a JSON array, for openid-connect's claim_validator.issuer.valid_issuers.
 ISSUER_VALID_JSON="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "%s\"%s\"", (i>1 ? "," : ""), $i}')"
-OIDC_SESSION_SECRET="${APISIX_OIDC_SESSION_SECRET:-catalog-demo-local-session-secret}"
+# The browser-flow session key. NEVER a constant: a value committed here would let anyone who has read this
+# public repo forge a session cookie, and the gateway forwards a session's token unchecked (see above).
+# APISIX 3.11 generated a random one itself; 3.14+ requires it to be set, so a fresh random one is generated
+# per deploy unless APISIX_OIDC_SESSION_SECRET pins it (a re-deploy then simply logs browser sessions out).
+OIDC_SESSION_SECRET="${APISIX_OIDC_SESSION_SECRET:-$(head -c 32 /dev/urandom | base64 | tr -d '\n')}"
 
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
@@ -140,7 +146,7 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   #     match_with_client_id, so the refusal of an audience-less token does not rest on a version
   #     detail. The client_id it matches is this block's own: catalog-gateway.
   #   - session.secret: required since 3.14 whenever bearer_only is false (the browser-flow mode,
-  #     ENABLE_SPA=0); >= 16 characters. A local-rig value; override with APISIX_OIDC_SESSION_SECRET.
+  #     ENABLE_SPA=0); >= 16 characters. Random per deploy unless APISIX_OIDC_SESSION_SECRET is set.
   oidc_conf() { # bearer_only unauth_action -> the openid-connect plugin's JSON members
     local bearer_only="$1" unauth_action="$2" conf
     conf="\"_meta\":{\"priority\":2599},\
@@ -262,7 +268,7 @@ fi
 # the upstream — APISIX refuses to drop an upstream a route still references; plain -s so a 404 on
 # a never-created id is a no-op, not an errexit abort). Only the ENABLE_USER_SERVICE block stays
 # one-armed, deliberately: deploy.sh never stops its containers on a flag-flip, so its routes stay
-# live rather than stale.
+# live — and are refreshed to this deploy's posture whenever they exist (see that block).
 if [ "${ENABLE_SPA:-0}" = "1" ]; then
   spa_resp=$(curl -s -w "\n%{http_code}" -X PUT \
     -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
@@ -310,11 +316,22 @@ fi
 # catch-all (/*, below) that WOULD otherwise match /internal/catalog/{id}/created-by — so an explicit
 # `internal-blocked` route (priority 70, defined just before the catch-all) 404s every /internal/* path at
 # the edge. The gateway thus proxies ONLY /api/v1/teams*, /api/v1/users*, /api/v1/catalogs* (catch-all),
-# the Keycloak realms/resources paths (ENABLE_SPA), /mcp* (ENABLE_MCP), and the packaged-SPA static
-# paths / + /index.html + favicons + /assets/* (GET/HEAD only, ENABLE_SPA); /internal/* is positively blocked.
+# the Keycloak realms/resources paths (ENABLE_SPA or ENABLE_MCP), /mcp* + the two RFC 9728 documents
+# (ENABLE_MCP), and the packaged-SPA static paths / + /index.html + favicons + /assets/* (GET/HEAD only,
+# ENABLE_SPA); /internal/* is positively blocked.
 #
-# Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — only wired when the usermgmt pod is up.
-if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
+# Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — wired when the usermgmt pod is up — AND re-PUT
+# whenever either route already exists. deploy.sh never stops the user-service on a flag flip, so its
+# routes stay live after a re-up without the flag; skipping them would leave them on whatever posture an
+# EARLIER deploy gave them — no openid-connect at all after an ENABLE_OIDC=0 deploy, or no audience check
+# after one from before ADR 0035 — while every other route moved to this deploy's (found by the slice
+# review, 2026-10-29). A retained route therefore always carries the current plugin set.
+usermgmt_route_exists() {
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-KEY: $API_KEY" \
+        "$APISIX_ADMIN/apisix/admin/routes/$1" || true)" = "200" ]
+}
+if [ "${ENABLE_USER_SERVICE:-0}" = "1" ] || usermgmt_route_exists usermgmt-teams \
+     || usermgmt_route_exists usermgmt-users; then
   # The two usermgmt pods publish on host ports 28090 + 28092 (deploy.sh wait_usermgmt_healthy waits
   # for both). Round-robin over both = HA parity with the catalog pool; both share one Postgres, so
   # concurrent membership/role mutations across the pods serialize on the shared @Version/locked-write

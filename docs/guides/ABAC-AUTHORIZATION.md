@@ -266,8 +266,9 @@ The example's gateway is the reference: APISIX `openid-connect` on every authent
 }
 ```
 
-A token without `catalog-gateway` in `aud` answers `403 {"error":"mismatched audience"}` at the gateway, before
-any application sees it. On APISIX before 3.12 the plugin validated no issuer at all, so pin the version you rely
+A token whose `aud` does not contain `catalog-gateway` answers `403 {"error":"mismatched audience"}` at the
+gateway, and one with no `aud` claim at all `403 {"error":"required audience claim not present"}` — either way
+before any application sees it. On APISIX before 3.12 the plugin validated no issuer at all, so pin the version you rely
 on.
 
 > ⚠️ **This is safe only behind such a gateway.** Deployed gateway-less / internet-exposed, signature

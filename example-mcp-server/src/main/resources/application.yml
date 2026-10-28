@@ -46,7 +46,8 @@ example:
     # RFC 9728 protected-resource metadata (ADR 0035 §6) — how an MCP client discovers where to log a user
     # in. Both set: served at /.well-known/oauth-protected-resource and /.well-known/oauth-protected-resource/mcp.
     # Both unset: OFF — those paths answer 404 and the server logs one WARN. One set, or a value that is not an
-    # absolute http(s) URL, carries a fragment, or (resource) names a path other than /mcp: startup failure.
+    # absolute http(s) URL, carries userinfo or a fragment, or (resource) carries a query or names a path other
+    # than /mcp: startup failure.
     # Built from these values only, never from the request. The rig sets both (infra/compose.mcp.yaml).
     oauth:
       protected-resource:

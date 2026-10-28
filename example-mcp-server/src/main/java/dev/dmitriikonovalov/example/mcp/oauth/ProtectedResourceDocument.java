@@ -12,9 +12,9 @@ import java.util.Map;
  *
  * <h2>Off is a state, half is an error</h2>
  * Both values unset means discovery is off: the endpoints answer {@code 404} and the server logs one WARN.
- * Exactly one set, or a value that is not an absolute {@code http(s)} URL, carries a fragment, or (for
- * {@code resource}) names a path other than the MCP endpoint's, fails startup naming the key and the
- * reason. A half-written document would advertise a guess, and a client acting on it would send the user's
+ * Exactly one set, or a value that is not an absolute {@code http(s)} URL, carries userinfo or a fragment, or
+ * (for {@code resource}) carries a query or names a path other than the MCP endpoint's, fails startup naming
+ * the key and the reason. A half-written document would advertise a guess, and a client acting on it would send the user's
  * login to the wrong place.
  *
  * <h2>Never request-derived</h2>
@@ -60,6 +60,10 @@ public final class ProtectedResourceDocument {
         }
         URI resourceUri = absoluteHttpUrl(RESOURCE_KEY, resource);
         absoluteHttpUrl(AUTHORIZATION_SERVER_KEY, authorizationServer);
+        if (resourceUri.getRawQuery() != null) {
+            throw new IllegalStateException(RESOURCE_KEY + "='" + resource + "' carries a query, which a resource "
+                    + "identifier should not (RFC 8707 §2): clients compare it verbatim.");
+        }
         if (!MCP_ENDPOINT_PATH.equals(resourceUri.getRawPath())) {
             throw new IllegalStateException(RESOURCE_KEY + "='" + resource + "' must name the MCP endpoint, "
                     + "whose path is " + MCP_ENDPOINT_PATH + "; it names '" + resourceUri.getRawPath() + "'.");
@@ -99,6 +103,14 @@ public final class ProtectedResourceDocument {
         if (!uri.isAbsolute() || uri.getRawAuthority() == null
                 || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
             throw new IllegalStateException(key + "='" + value + "' is not an absolute http(s) URL.");
+        }
+        // java.net.URI falls back to a REGISTRY-based authority when the server form does not parse — an empty
+        // host (http://:9085/mcp), a non-numeric port (http://localhost:bad/mcp) — and still reports it absolute.
+        if (uri.getHost() == null || uri.getHost().isEmpty() || uri.getPort() > 65535) {
+            throw new IllegalStateException(key + "='" + value + "' has no valid host and port.");
+        }
+        if (uri.getRawUserInfo() != null) {
+            throw new IllegalStateException(key + "='" + value + "' carries userinfo, which an advertised URL must not.");
         }
         if (uri.getRawFragment() != null) {
             throw new IllegalStateException(key + "='" + value + "' carries a fragment, which RFC 9728 forbids.");

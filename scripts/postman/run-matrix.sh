@@ -8,7 +8,7 @@
 # Prereq: the full rig is up WITH OIDC + OPA and the per-type policies loaded:
 #   ENABLE_OIDC=1 ./deploy.sh up --pods 2
 #
-# Like run-tests.sh, tokens are minted IN-NETWORK (APISIX validates issuer http://keycloak:8888), but
+# Like run-tests.sh, tokens are minted IN-NETWORK (keycloak:8888, one of the three issuers the gateway admits), but
 # here we mint TWO — for the viewer and editor realm users — and inject both into newman.
 # See docs/guides/E2E-TESTING.md for the in-network token rationale.
 #

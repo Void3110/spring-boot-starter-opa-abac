@@ -62,8 +62,10 @@ Every route the gateway authenticates — the catalog, the user-service, `/mcp` 
 **`aud ∋ catalog-gateway`** of every bearer-presented token: `claim_validator.audience.match_with_client_id:
 true` on each `openid-connect` block (whose `client_id` is `catalog-gateway`). That holds in the browser-flow
 mode too, for a request carrying a bearer header; a browser-flow *session* carries the token the gateway's own
-client obtained — stamped by its own mapper, the cookie encrypted under `session.secret` — so that path needs
-no audience check. There is **one protected resource**
+client obtained — stamped by its own mapper, the cookie encrypted and MACed under `session.secret` — so that path
+needs no audience check **only while that secret is secret**: the plugin forwards a session's token unchecked, so
+a known secret lets anyone mint a session naming any token. The rig generates a random one per deploy (amended
+2026-10-29 by the slice review; a committed default had made it public). There is **one protected resource**
 behind **one gateway**: the MCP surface and the catalog API share its audience.
 
 A token without that audience is refused at the edge, whatever its signature. The service-account client

@@ -589,7 +589,7 @@ client's login somewhere else:
 |---|---|
 | both unset | **Discovery off**: both paths answer `404`; one startup WARN names both keys. |
 | exactly one set | **Startup failure**, naming the missing key. A half-written document would advertise a guess. |
-| a value that is not an absolute `http(s)` URL, carries a fragment, or (`resource`) names a path other than `/mcp` | **Startup failure**, naming the key and the reason. |
+| a value that is not an absolute `http(s)` URL, carries userinfo or a fragment, or (`resource`) carries a query or names a path other than `/mcp` | **Startup failure**, naming the key and the reason. |
 | both valid | The document, `200`, `application/json`. |
 
 The shipped `application.yml` leaves discovery off; the rig's `infra/compose.mcp.yaml` sets both values to the
@@ -627,7 +627,12 @@ port `33418`. Like the three demo agents, it mints `act_chain` (`["agent-host"]`
   `tool-gate-actor-required` rather than read as the person's own call. `azp` is in
   `opa.abac.subject.attribute-claims` for that reason.
 
-A person logging an MCP host in therefore hands it **less** than their own reach, by construction.
+On the tool surface, then, a person logging an MCP host in hands it **less** than their own reach. **On the REST
+API the same token is the person's own.** It carries the gateway's one audience, so the catalog and user-service
+routes admit it, and their policies decide it at the principal's ceiling, writes included. That is ADR 0028 §2's
+accepted bound: bypassing the tool-gate yields the human's own authority, never more. A host that replays its
+token against the REST API is therefore not narrowed. Closing that needs per-resource audiences with RFC 8693
+exchange at the MCP server (backlog 25).
 
 The four tools also carry MCP tool annotations — `readOnlyHint` true, `destructiveHint` and `openWorldHint` false —
 so a host labels them as the reads they are. `@McpTool`'s defaults would have them advertise as destructive. The
@@ -642,6 +647,13 @@ public clients, and it holds realm-wide. A refresh answers a new refresh token. 
 
 That second effect is why the demo SPA's `freshUser()` refreshes **single-flight**: a catalog view fans out
 several reads at once, and a refresh per caller would replay the spent token and sign the user out.
+
+Two limits remain, recorded rather than engineered around (backlog 29):
+- **The single flight is per tab.** Two console tabs share one Keycloak client session but hold separate tokens.
+  Once one tab refreshes, the other's older refresh token answers `invalid_grant` ("Stale token"), and that tab
+  is signed out.
+- **The gateway's own browser-flow session renews on its own.** On a browser-flow rig (`ENABLE_SPA=0`), two
+  parallel requests on an expired session can race the same refresh token.
 
 ### The documented deviation: the forwarded bearer
 

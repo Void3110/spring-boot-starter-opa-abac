@@ -46,6 +46,9 @@ the drift risk this slice's later tickets would multiply (T2 edits all three, T3
 one fragment. Fail-closed check: `valid_issuers` only narrows (a token whose `iss` is not one of the three is
 refused 401 by the plugin itself, before the guard); the metadata PUT fails the deploy rather than leaving the
 gateway untraced; `session.secret` is a rig value, not a credential. Nothing else substantive.
+**Corrected by the slice review (2026-10-29):** that last judgment was wrong. The secret keys the browser-flow
+session cookie, whose access token the gateway forwards unchecked, so a committed default let anyone forge a
+session. It is now random per deploy ([[GATEWAY-AUDIENCE-BINDING-REVIEW]] finding 1).
 
 ## Integration / e2e
 
