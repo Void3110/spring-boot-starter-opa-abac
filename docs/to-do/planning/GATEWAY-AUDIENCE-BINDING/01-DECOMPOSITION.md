@@ -46,17 +46,20 @@ have **their own cell numbers**, which this slice extends; where the two could b
 ## The full suite (what "every runner green" means)
 
 The nineteen runners `scripts/postman/run-*.sh` (incl. `run-tests.sh`, `run-matrix.sh`,
-`run-spa-auth-smoke.sh`), on **three** rigs, in this order (the recipe Mulch `opa-abac-e2e-suite` mx-7c81b9
-measured; [[E2E-TESTING]] §Two rig flavours):
+`run-spa-auth-smoke.sh`), on **three** rigs, in this order (rigs 1–2: the recipe Mulch `opa-abac-rig-deploy-ops`
+mx-7c81b9 measured; rig 3: [[E2E-TESTING]] §Two rig flavours):
 
-0. **Fresh images first:** `ENABLE_MCP=1 ./deploy.sh build` — `up` reuses existing `opa-abac-*:local` images.
-1. **The resilience rig, on its own** — `./profile.sh up; ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up
+0. **Fresh images first:** `ENABLE_MCP=1 ./deploy.sh build` (the catalog + MCP images) **and** `docker build -t
+   opa-abac-usermgmt:local -f example-user-management-service/Dockerfile .` (`build` never rebuilds the
+   user-service image) — `up` reuses existing `opa-abac-*:local` images.
+1. **The resilience rig, on its own** — `./deploy.sh down; ./profile.sh up; ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up
    --pods 2`, then `run-resilience-matrix.sh` only. `ENABLE_RESILIENCE_STUB=1` repoints the catalog pods'
    **whole** role source at the stub, so no other runner can share this rig.
 2. **The main rig** — `./deploy.sh down; ./profile.sh up; ENABLE_MCP=1 ./deploy.sh up --pods 2` (the SPA and the
    directory default on; OIDC and the user-service are forced), then `scripts/postman/seed-demo-data.sh` (the
    demo-world matrix's prerequisite), then the other **eighteen** runners. **Keep `ENABLE_MCP=1` on every
-   call:** several runners re-`up` the rig mid-run and forward the optional flags, and the flag-off arm tears
+   call:** a runner may re-`up` the rig mid-run (the supervised-scope matrix does, forwarding the optional
+   flags), and the flag-off arm tears
    the MCP server down — `export` it in an interactive shell; in a session where every command gets a fresh
    shell (an agent's), pass it inline on each runner call.
 3. **The OIDC-only quickstart rig** — `./deploy.sh down; ./profile.sh up;` then, in an environment with **no**
@@ -112,10 +115,10 @@ and refused, the same routes, traces still reaching Jaeger.
 in 3.11.0; the `session.secret` check; the opentelemetry `metadata_schema`); the image tag on Docker Hub
 (`3.19.0-debian`, 2026-09-29).
 
-**Acceptance.** **E1**, **E2**, **E3**. The full suite (above) green on the bumped gateway, both rigs; a
+**Acceptance.** **E1**, **E2**, **E3**. The full suite (above) green on the bumped gateway, all three rigs; a
 request through the gateway produces an `apisix` span in Jaeger; the **browser-flow rig** (`ENABLE_SPA=0
-ENABLE_MCP=1 ./deploy.sh up --pods 2` — the directory defaults on, so the catalog, user-service and `/mcp`
-blocks all run with `bearer_only: false`) boots with every route accepted and a token-less catalog request still
+ENABLE_MCP=1 ./deploy.sh up --pods 2` — `ENABLE_SPA=0` sets `bearer_only: false`, and `ENABLE_MCP=1` brings the
+user-service and the MCP server, so the catalog, user-service and `/mcp` blocks all run in browser-flow mode) boots with every route accepted and a token-less catalog request still
 redirects to the login. (The OIDC-only rig wires only the catalog route, so it cannot prove the `session.secret`
 on the other two blocks.)
 
@@ -274,11 +277,11 @@ client, and is narrowed by the tool-gate exactly as the scripted agents are.
   rotation: mint a `catalog-spa` pair as `demo` with the miner's legacy mode and its **own** cookie jar (never
   the runner's shared `COOKIE_JAR`), refresh **in-network** as E9h does → a new refresh token; replay the first →
   `invalid_grant` "Maximum allowed refresh token reuse exceeded").
-- **QA E12** runs as a recorded rig step on the browser-flow rig after T3's `/mcp` pin, in STATUS-03.
   `run-spa-auth-smoke.sh` stays green as the gateway's bearer-posture control only — it never refreshes.
+- **QA E12** runs as a recorded rig step on the browser-flow rig after T3's `/mcp` pin, in STATUS-03.
 
 *Seams verified:* `OAuth2ProtectedResourceMetadataFilter` (`javap -c`, 7.0.7) as above; `SecurityConfig`'s
-two chain arms (source); the compose profile binding (`infra/compose.mcp.yaml` lines 62–76); the E12 drill's
+two chain arms (source); the compose profile binding (`infra/compose.mcp.yaml` lines 62–78); the E12 drill's
 overrides (`run-agent-tool-matrix.sh`); the passthrough's `ENABLE_SPA` gate and the `$OIDC_BEARER_ONLY`
 inheritance (`init-routes.sh`); the miner's PKCE flow and options (source); the MCP spec 2025-11-25
 discovery order and the `resource` requirement (read at the source).

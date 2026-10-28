@@ -208,7 +208,8 @@ The "discovery off" and "half-configured" states are unit/slice-test cases in th
 ## Validation
 
 Every ticket ends green on the rig before the next one touches anything: T1 the full suite; T2 a recreated
-Keycloak + the full suite + the new controls; T3 the agent matrix + the step-up cells E9k + the example's tests + `npm test` (U8);
+Keycloak + the full suite + the new controls; T3 a recreated Keycloak + the full suite (incl. the SPA smoke) + agent cells E13–E16 + step-up cell E9k + the
+E12 rig step + the example's tests + `npm test` (U8);
 T4 the doc gates. `./gradlew build` and the local Sonar gate on any `.java` change; `check-shell-guards.py`
 and `check-collection-conformance.py` on every runner/collection change. The first whole-delivery review is
 one multi-lens `/deep-review` pass; follow-up rounds are the Fable + Opus pair.
