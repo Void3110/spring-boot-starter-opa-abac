@@ -412,6 +412,38 @@ SOURCE_IAT="$(token_claim "$REFRESH_SOURCE_TOKEN" iat)"
   echo "ERROR: the refreshed token's iat ($REFRESHED_IAT) went BACKWARDS from the source's" >&2
   echo "       ($SOURCE_IAT) — the pair is not what it claims to be." >&2
   exit 1; }
+#   (k) THE SPA CLIENT'S REFRESH ROTATES (ADR 0035 §7, QA E11) — the realm rotates refresh tokens for
+#       every client, the public SPA one included: a refresh answers a NEW refresh token, and the spent one
+#       is refused on reuse (Keycloak also detaches the session then, which is why the demo SPA refreshes
+#       single-flight — U8). Minted as `demo` with its OWN cookie jar, never anna's shared one, so this
+#       login cannot disturb the SSO session E3 reuses; refreshed in-network, as E9h does.
+SPA_JAR="$(mktemp -t stepup-spa-jar.XXXXXX)"
+SPA_PAIR="$("$MINER" --user demo --cookie-jar "$SPA_JAR" --field access_token,refresh_token)" || {
+  rm -f "$SPA_JAR"
+  echo "ERROR: could not mint demo's catalog-spa token pair for the E9k check." >&2; exit 1; }
+rm -f "$SPA_JAR"
+SPA_REFRESH="$(printf '%s' "$SPA_PAIR" | sed -n '2p')"
+[ -n "$SPA_REFRESH" ] || { echo "ERROR: the miner returned no refresh token for E9k." >&2; exit 1; }
+spa_refresh() { # refresh_token -> "<body> <status>", in-network as the public SPA client
+  "$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s -w ' %{http_code}' \
+    -X POST "$KEYCLOAK_TOKEN_URL" \
+    -d grant_type=refresh_token -d "client_id=$MINER_CLIENT" -d "refresh_token=$1"
+}
+SPA_ROTATED="$(spa_refresh "$SPA_REFRESH")" || true
+SPA_ROTATED_REFRESH="$(printf '%s' "${SPA_ROTATED% *}" | sed -n 's/.*"refresh_token":"\([^"]*\)".*/\1/p')"
+[ "${SPA_ROTATED##* }" = "200" ] && [ -n "$SPA_ROTATED_REFRESH" ] && [ "$SPA_ROTATED_REFRESH" != "$SPA_REFRESH" ] || {
+  echo "ERROR: the catalog-spa refresh did not answer 200 with a NEW refresh token (E9k):" >&2
+  echo "       ${SPA_ROTATED##* } $(printf '%s' "${SPA_ROTATED% *}" | head -c 300)" >&2
+  exit 1; }
+SPA_REPLAYED="$(spa_refresh "$SPA_REFRESH")" || true
+[ "${SPA_REPLAYED##* }" = "400" ] \
+  && printf '%s' "${SPA_REPLAYED% *}" | grep -q '"error":"invalid_grant"' \
+  && printf '%s' "${SPA_REPLAYED% *}" | grep -q 'Maximum allowed refresh token reuse exceeded' || {
+  echo "ERROR: replaying the spent catalog-spa refresh token was not refused as a reuse (E9k):" >&2
+  echo "       $SPA_REPLAYED" >&2
+  echo "       Is revokeRefreshToken on in the realm? (re-import it: ./deploy.sh down, then up)" >&2
+  exit 1; }
+echo "  E9k: the catalog-spa refresh rotated; replaying the spent one -> 400 invalid_grant (reuse exceeded)."
 #   (i) THE AUDIENCE REFUSAL, ON EVERY SURFACE (ADR 0035 §1, QA E4) — a token this realm signs
 #       for something other than the gateway is not a gateway token. The directory's service
 #       account (client_credentials, audience realm-management, NO gateway-audience mapper — the

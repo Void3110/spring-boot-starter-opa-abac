@@ -129,7 +129,9 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
     OIDC_UNAUTH_ACTION="auth"
   fi
   # ONE openid-connect configuration for every route that authenticates (the catalog catch-all, the
-  # user-service routes, /mcp) — built here once, so the three can never drift apart.
+  # user-service routes, /mcp) — defined here once, so they can never drift apart. It is a function of the
+  # posture only: /mcp is an API surface and always takes the bearer-only posture (see the MCP block);
+  # everything else follows ENABLE_SPA.
   #   - claim_validator.issuer.valid_issuers: since APISIX 3.12 a block WITHOUT it validates `iss`
   #     against the DISCOVERY document's issuer (http://keycloak:8888/…) — which 3.11 never did — so
   #     leaving it out would refuse every token minted through the gateway origin (the SPA) or the
@@ -139,22 +141,27 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   #     detail. The client_id it matches is this block's own: catalog-gateway.
   #   - session.secret: required since 3.14 whenever bearer_only is false (the browser-flow mode,
   #     ENABLE_SPA=0); >= 16 characters. A local-rig value; override with APISIX_OIDC_SESSION_SECRET.
-  OIDC_CONF="\"_meta\":{\"priority\":2599},\
+  oidc_conf() { # bearer_only unauth_action -> the openid-connect plugin's JSON members
+    local bearer_only="$1" unauth_action="$2" conf
+    conf="\"_meta\":{\"priority\":2599},\
 \"client_id\":\"catalog-gateway\",\
 \"client_secret\":\"catalog-gateway-secret\",\
 \"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
 \"realm\":\"catalog-demo\",\
 \"scope\":\"openid profile email\",\
-\"bearer_only\":$OIDC_BEARER_ONLY,\
+\"bearer_only\":$bearer_only,\
 \"use_jwks\":true,\
-\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
+\"unauth_action\":\"$unauth_action\",\
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
 \"claim_validator\":{\"issuer\":{\"valid_issuers\":[$ISSUER_VALID_JSON]},\"audience\":{\"required\":true,\"match_with_client_id\":true}},\
 \"ssl_verify\":false"
-  if [ "$OIDC_BEARER_ONLY" = "false" ]; then
-    OIDC_CONF="$OIDC_CONF,\"session\":{\"secret\":\"$OIDC_SESSION_SECRET\"}"
-  fi
+    if [ "$bearer_only" = "false" ]; then
+      conf="$conf,\"session\":{\"secret\":\"$OIDC_SESSION_SECRET\"}"
+    fi
+    printf '%s' "$conf"
+  }
+  OIDC_CONF="$(oidc_conf "$OIDC_BEARER_ONLY" "$OIDC_UNAUTH_ACTION")"
   PLUGINS="$PLUGINS,\"openid-connect\":{$OIDC_CONF}"
 fi
 
@@ -212,8 +219,10 @@ fi
 #
 # CRITICAL: these routes carry NO openid-connect plugin — the login/token/JWKS calls must be public
 # passthrough (you can't present a bearer token while you're still trying to obtain one). Priority 50
-# beats the catalog-all catch-all (/*, priority 0). Only wired in SPA mode.
-if [ "${ENABLE_SPA:-0}" = "1" ]; then
+# beats the catalog-all catch-all (/*, priority 0). Wired for the SPA and for the MCP surface (ADR 0035
+# §5): an MCP host logs its user in at the issuer the protected-resource document names, which is this
+# same gateway origin, so its whole code flow runs through these routes too. Removed only when both are off.
+if [ "${ENABLE_SPA:-0}" = "1" ] || [ "${ENABLE_MCP:-0}" = "1" ]; then
   curl -sf -o /dev/null -X PUT \
     -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
     "$APISIX_ADMIN/apisix/admin/upstreams/keycloak-pool" \
@@ -226,9 +235,9 @@ if [ "${ENABLE_SPA:-0}" = "1" ]; then
       "$APISIX_ADMIN/apisix/admin/routes/$name" \
       -d "{\"name\":\"$name\",\"uri\":\"$uri\",\"methods\":[$methods_json],\"upstream_id\":\"keycloak-pool\",\"priority\":50,\"status\":1}"
   done
-  echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [SPA single-origin auth, public passthrough]"
+  echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [single-origin auth for the SPA / the MCP host, public passthrough]"
 else
-  # Flag off: positively remove the passthrough ROUTES a previous SPA deploy may have left in the
+  # Both flags off: positively remove the passthrough ROUTES a previous SPA/MCP deploy may have left in the
   # reused etcd (public proxy to a possibly-down keycloak:8888 otherwise lingers on non-SPA rigs).
   # ROUTES ONLY — the Keycloak CONTAINER is shared with plain ENABLE_OIDC (the openid-connect
   # plugin discovers in-network, not through these routes) and is deploy.sh's to manage.
@@ -385,9 +394,13 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
   # Same plugin set as the usermgmt routes: openid-connect (bearer validation) + response-rewrite +
   # tracing/cors when enabled — and NOT the catalog `opa` gateway plugin, for the same reason the
   # user-service omits it: this service authorizes itself, with its own tool-gate.
+  #
+  # /mcp is ALWAYS bearer-only (ADR 0035 §6), whatever ENABLE_SPA says: it is an API surface, and a
+  # token-less MCP client must get a 401 — the cue to read the protected-resource document and log in —
+  # never a 302 to a login page it cannot render. The browser-flow posture stays on the other routes.
   MCP_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
   if [ "${ENABLE_OIDC:-0}" = "1" ]; then
-    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{$OIDC_CONF}"
+    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{$(oidc_conf true deny)}"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
     MCP_PLUGINS="$MCP_PLUGINS,\"cors\":{\
@@ -417,12 +430,36 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
     exit 1
   fi
   echo "  route 'mcp' (/mcp*) -> mcp-pool  [priority 65; NO catalog opa plugin — the tool-gate is in-app]"
+
+  # The RFC 9728 protected-resource documents (ADR 0035 §6), served by the MCP server itself. An MCP
+  # client reads them BEFORE it holds a token, so the route carries NO auth plugin — and for that reason it
+  # is exactly the two paths, GET only: a POST, or any other /.well-known path, falls to the catch-all and
+  # its bearer check. Priority 66: above /mcp* (65) and the catch-all (0).
+  PR_PLUGINS=""
+  if [ "${ENABLE_TRACING:-1}" = "1" ]; then
+    PR_PLUGINS="\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
+  fi
+  pr_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/routes/mcp-protected-resource" \
+    -d "{\"name\":\"mcp-protected-resource\",\
+\"uris\":[\"/.well-known/oauth-protected-resource\",\"/.well-known/oauth-protected-resource/mcp\"],\
+\"methods\":[\"GET\"],\
+\"upstream_id\":\"mcp-pool\",\"priority\":66,\"status\":1,\"plugins\":{$PR_PLUGINS}}")
+  pr_code=$(printf '%s' "$pr_resp" | tail -n1)
+  if [ "$pr_code" != "200" ] && [ "$pr_code" != "201" ]; then
+    echo "  ERROR: route 'mcp-protected-resource' PUT failed ($pr_code): $(printf '%s' "$pr_resp" | head -n1)" >&2
+    exit 1
+  fi
+  echo "  route 'mcp-protected-resource' (the two RFC 9728 documents, GET) -> mcp-pool  [priority 66; NO auth plugin]"
 else
   # Flag off: remove the route + upstream a previous ENABLE_MCP deploy left in the reused etcd
   # (routes before the upstream — APISIX refuses to drop an upstream a route still references).
   # deploy.sh mirrors this with `mcp_compose down`; the E6/E7 drills are unaffected — they recreate
   # the mcp CONTAINER via their own compose call, never through a flag-less `deploy.sh up`.
-  curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/mcp"
+  for r in mcp mcp-protected-resource; do
+    curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/$r"
+  done
   curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams/mcp-pool"
 fi
 

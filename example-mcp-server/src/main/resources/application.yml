@@ -43,6 +43,17 @@ example:
         # The user-management service — where the principal's type-level ceiling is resolved from.
         base-url: http://localhost:8081
         timeout: 2s
+    # RFC 9728 protected-resource metadata (ADR 0035 §6) — how an MCP client discovers where to log a user
+    # in. Both set: served at /.well-known/oauth-protected-resource and /.well-known/oauth-protected-resource/mcp.
+    # Both unset: OFF — those paths answer 404 and the server logs one WARN. One set, or a value that is not an
+    # absolute http(s) URL, carries a fragment, or (resource) names a path other than /mcp: startup failure.
+    # Built from these values only, never from the request. The rig sets both (infra/compose.mcp.yaml).
+    oauth:
+      protected-resource:
+        # The MCP endpoint's absolute URL as clients reach it — through the gateway on the rig.
+        resource: ""
+        # The authorization server's issuer — the realm, at the same origin the client reaches.
+        authorization-server: ""
 
 # The starter: this service reads the forwarded bearer into an AbacAuthentication, and its OpaClient is the
 # one the tool-gate asks. Turning it off does NOT turn the tool-gate off: with no OpaClient the MCP server
@@ -55,9 +66,11 @@ opa:
       # app — the starter's JWT extractor decodes the forwarded token WITHOUT verifying its signature,
       # so it stays disabled until this is set. Never enable gateway-less.
       trust-forwarded-jwt: true
-      # Carries the delegation claim into AbacContext.Subject#attributes, where the extractor reads it.
+      # Carries the delegation claim into AbacContext.Subject#attributes, where the extractor reads it —
+      # and `azp`, which the agent-clients guard below reads (the startup wiring check requires it).
       attribute-claims:
         - act_chain
+        - azp
     # The tool-gate library module (opa-abac-mcp, ADR 0036), auto-configured by the starter because the
     # module sits next to Spring AI's MCP server: these settings feed its gate, its delegation-claim reader
     # and its YAML default capability source. The example's own settings stay under example.mcp.*.
@@ -80,6 +93,14 @@ opa:
         actor-claim: act_chain
         max-chain-depth: 4
         max-claim-length: 2048
+        # The OAuth clients (azp) that ARE agents. A token from a listed client that carries no actor is
+        # refused tool-gate-actor-required instead of being read as an ordinary human call, so a client
+        # whose act-chain mapper went missing cannot silently reach its principal's full ceiling.
+        agent-clients:
+          - catalog-agent-readonly
+          - catalog-agent-overreach
+          - catalog-agent-revoked
+          - catalog-mcp-host
       # The demo agent registry. Every dimension NARROWS — the tool-gate intersects these with the
       # principal's ceiling in Rego, so nothing here can grant an agent what its principal lacks.
       # allowed-tools is MANDATORY: an empty list denies every tool, it does not mean "unrestricted".
@@ -106,6 +127,14 @@ opa:
             allowed-tools: []
             allowed-actions: []
             max-risk-tag: ""
+          # An MCP HOST a person logs in with (Claude Code and similar, realm client catalog-mcp-host,
+          # ADR 0035 §5): an agent, not the person. Reads only, and capped at the LOW risk tier, so
+          # get_product (medium) is listed here and still denied — the cap is the only reason.
+          - actor-id: agent-host
+            allowed-categories: [READ]
+            allowed-tools: [list_catalogs, get_catalog, list_categories, get_product]
+            allowed-actions: [view, list]
+            max-risk-tag: low
 
 management:
   endpoints:

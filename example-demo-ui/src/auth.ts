@@ -138,23 +138,34 @@ export function logout(): Promise<void> {
   return userManager.signoutRedirect()
 }
 
+/** The one refresh in flight, or null. Cleared when it settles, so the next expiry starts afresh. */
+let inFlightRefresh: Promise<AuthUser | null> | null = null
+
 /**
  * The current user with a VALID access token — refreshing on demand when it has lapsed. This is
  * the "manually / on demand" renewal the UserManager config promises (no silent-renew iframe):
  * an expired access token + a refresh token → one refresh-grant call to the token endpoint.
  * Returns null when there is no session or the refresh itself fails (SSO idle timeout / revoked)
  * — callers treat that as signed out rather than sending a dead bearer that would 401 anyway.
+ *
+ * <p><b>Single-flight.</b> Every caller that finds the token expired while a refresh is running
+ * shares that refresh. The realm rotates refresh tokens (ADR 0035 §7): each one is single-use, and
+ * Keycloak answers a second use with `invalid_grant` and detaches the session. A catalog view fans
+ * out several reads at once, and oidc-client-ts does not de-duplicate `signinSilent()`, so a refresh
+ * per caller would replay the spent token and sign the user out mid-page.
  */
 export async function freshUser(): Promise<AuthUser | null> {
   const user = await userManager.getUser()
   if (!user) return null
   if (!user.expired) return user
   if (!user.refresh_token) return null
-  try {
-    return await userManager.signinSilent()
-  } catch {
-    return null
-  }
+  inFlightRefresh ??= userManager
+    .signinSilent()
+    .catch(() => null)
+    .finally(() => {
+      inFlightRefresh = null
+    })
+  return inFlightRefresh
 }
 
 /** The current user, or null if not signed in (an expired token is refreshed on demand). */

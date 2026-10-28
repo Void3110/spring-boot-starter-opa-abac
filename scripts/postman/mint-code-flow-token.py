@@ -40,6 +40,27 @@ Two things about this rig that are easy to get wrong:
    unreachable from the host — so this script rebases each one onto `--keycloak` before
    following it. The step-up runner's E9 preflight asserts both halves: the `iss` value, and
    a 200 through the gateway (with a tampered-token 401 as the control).
+
+**Discovery mode (`--discover <mcp-url>`)** logs in the way an MCP host does (ADR 0035 §6, MCP
+authorization spec 2025-11-25), starting from nothing but the MCP endpoint's URL:
+
+    ./mint-code-flow-token.py --discover http://localhost:9085/mcp --client catalog-mcp-host \
+        --redirect-uri http://localhost:33418/callback --user demo --field access_token,refresh_token
+
+1. The RFC 9728 protected-resource document: the path-inserted one, then the root one. Only a `200`
+   with a JSON body counts; redirects are never followed. Its `resource` must equal `--discover`.
+   (RFC 9728 §3.3, read strictly, would void the root document, whose `resource` names `/mcp` rather
+   than the root; the MCP spec's fallback is what puts it there, and this script accepts it.)
+2. The authorization server's metadata for `authorization_servers[0]`, at the spec's three URLs in
+   order — RFC 8414 path-inserted, OIDC path-inserted, OIDC appended — under the same "200 + JSON"
+   rule; stderr says which one answered. Its `issuer` must equal `authorization_servers[0]`, and
+   `code_challenge_methods_supported` must list `S256`.
+3. The code flow at that metadata's endpoints, with RFC 8707 `resource=<mcp-url>` on both the
+   authorize and the token request.
+
+The transport is the authorization server's own origin, both to connect to and as the Host — so the
+token's `iss` is the advertised issuer, never `keycloak:8888`. `--keycloak`, `--issuer` and `--realm`
+do not apply in this mode, and the legacy defaults above are untouched outside it.
 """
 
 from __future__ import annotations
@@ -213,6 +234,84 @@ class ForcedCookieSession:
         return rebased + ("?" + parsed.query if parsed.query else "")
 
 
+def fetch_json(url: str, timeout: float) -> tuple[int, dict | None]:
+    """GET a metadata document. Only a 200 whose body parses as a JSON object counts as an answer.
+
+    Redirects are never followed: a well-known URL that redirects is not answering, and following it
+    would let whatever sits at that path choose where this client looks next.
+    """
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *_args, **_kwargs):
+            return None
+
+    request = urllib.request.Request(url, headers={"User-Agent": "opa-abac-code-flow-miner",
+                                                   "Accept": "application/json"})
+    try:
+        response = urllib.request.build_opener(NoRedirect).open(request, timeout=timeout)
+        status, body = response.status, response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as error:
+        return error.code, None
+    if status != 200:
+        return status, None
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return status, None
+    return status, document if isinstance(document, dict) else None
+
+
+def discover(mcp_url: str, timeout: float) -> dict:
+    """Walk RFC 9728 -> the authorization server's metadata, as an MCP host does. Returns the metadata."""
+    target = urllib.parse.urlparse(mcp_url)
+    origin = f"{target.scheme}://{target.netloc}"
+    document = None
+    for url in (f"{origin}/.well-known/oauth-protected-resource{target.path}",
+                f"{origin}/.well-known/oauth-protected-resource"):
+        status, document = fetch_json(url, timeout)
+        print(f"    protected-resource metadata {url} -> {status}"
+              f"{'' if document else ' (not an answer)'}", file=sys.stderr)
+        if document:
+            break
+    if not document:
+        raise SystemExit(f"no protected-resource metadata for {mcp_url}: neither the path-inserted nor "
+                         f"the root document answered 200 with JSON")
+    if document.get("resource") != mcp_url:
+        raise SystemExit(f"the protected-resource document names resource={document.get('resource')!r}, "
+                         f"not {mcp_url!r} — refusing to log in for a different resource")
+    servers = document.get("authorization_servers")
+    if not isinstance(servers, list) or not servers or not isinstance(servers[0], str):
+        raise SystemExit(f"the protected-resource document lists no authorization server: {document}")
+    issuer = servers[0]
+
+    parsed = urllib.parse.urlparse(issuer)
+    issuer_origin = f"{parsed.scheme}://{parsed.netloc}"
+    issuer_path = parsed.path.rstrip("/")
+    candidates = (
+        ("RFC 8414 path-inserted", f"{issuer_origin}/.well-known/oauth-authorization-server{issuer_path}"),
+        ("OIDC path-inserted", f"{issuer_origin}/.well-known/openid-configuration{issuer_path}"),
+        ("OIDC appended", f"{issuer.rstrip('/')}/.well-known/openid-configuration"),
+    )
+    metadata = None
+    for label, url in candidates:
+        status, metadata = fetch_json(url, timeout)
+        if metadata:
+            print(f"    authorization-server metadata answered at the {label} URL: {url}", file=sys.stderr)
+            break
+        print(f"    authorization-server metadata {label} {url} -> {status} (not an answer)", file=sys.stderr)
+    if not metadata:
+        raise SystemExit(f"no authorization-server metadata for {issuer} at any of the three URLs")
+    if metadata.get("issuer") != issuer:
+        raise SystemExit(f"the metadata's issuer {metadata.get('issuer')!r} is not the advertised "
+                         f"authorization server {issuer!r}")
+    if "S256" not in (metadata.get("code_challenge_methods_supported") or []):
+        raise SystemExit("the authorization server does not advertise PKCE S256 — refusing, as the MCP "
+                         "spec requires")
+    for endpoint in ("authorization_endpoint", "token_endpoint"):
+        if not isinstance(metadata.get(endpoint), str):
+            raise SystemExit(f"the authorization-server metadata has no {endpoint}")
+    return metadata
+
+
 def decode_claims(token: str) -> dict:
     payload = token.split(".")[1]
     return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
@@ -223,8 +322,12 @@ def mint(args) -> dict:
     if args.cookie_jar:
         session.load(args.cookie_jar)
 
-    auth_url = f"{session.base}/realms/{args.realm}/protocol/openid-connect/auth"
-    token_url = f"{session.base}/realms/{args.realm}/protocol/openid-connect/token"
+    if args.metadata:
+        auth_url = args.metadata["authorization_endpoint"]
+        token_url = args.metadata["token_endpoint"]
+    else:
+        auth_url = f"{session.base}/realms/{args.realm}/protocol/openid-connect/auth"
+        token_url = f"{session.base}/realms/{args.realm}/protocol/openid-connect/token"
 
     verifier = base64.urlsafe_b64encode(os.urandom(40)).decode().rstrip("=")
     challenge = base64.urlsafe_b64encode(
@@ -240,6 +343,9 @@ def mint(args) -> dict:
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
+    if args.discover:
+        # RFC 8707: the resource the token is for, on the authorize AND the token request.
+        params["resource"] = args.discover
     if args.acr:
         # Both halves matter: `acr_values` is what the realm's level-2 condition reads, and the
         # essential `claims` request is what makes Keycloak refuse to hand back a weaker acr
@@ -306,13 +412,16 @@ def mint(args) -> dict:
     if not code:
         raise SystemExit(f"no authorization code after {MAX_FORM_STEPS} steps (status {status})")
 
-    status, _, body = session.request(token_url, data={
+    exchange = {
         "grant_type": "authorization_code",
         "client_id": args.client,
         "code": code,
         "redirect_uri": args.redirect_uri,
         "code_verifier": verifier,
-    })
+    }
+    if args.discover:
+        exchange["resource"] = args.discover
+    status, _, body = session.request(token_url, data=exchange)
     if status != 200:
         raise SystemExit(f"token exchange failed with {status}: {body[:600]}")
 
@@ -362,6 +471,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "and the RFC 6238 parameters stay in one place")
     parser.add_argument("--show-claims", action="store_true",
                         help="print the decoded access-token claims to stderr")
+    parser.add_argument("--discover", default=None, metavar="MCP_URL",
+                        help="log in the way an MCP host does: discover the authorization server from "
+                             "the MCP endpoint's protected-resource metadata, connect to its origin, and "
+                             "send RFC 8707 resource=MCP_URL (--keycloak/--issuer/--realm do not apply)")
     parser.add_argument("--field", default="access_token",
                         help="token-response field(s) to print, comma-separated, one per line "
                              "(default: access_token)")
@@ -381,6 +494,15 @@ def main(argv: list[str]) -> int:
         args.max_age = None
     elif args.max_age is None and args.acr:
         args.max_age = 0
+
+    args.metadata = None
+    if args.discover:
+        print(f"==> discovering the authorization server for {args.discover}", file=sys.stderr)
+        args.metadata = discover(args.discover, args.timeout)
+        # Connect to the issuer's own origin AND present it as the Host: the legacy issuer-parity move
+        # (an in-network Host, rebased URLs) would mint iss=keycloak:8888 through the gateway.
+        issuer = urllib.parse.urlparse(args.metadata["issuer"])
+        args.keycloak = args.issuer = f"{issuer.scheme}://{issuer.netloc}"
 
     described = f"acr={args.acr or '(none)'} max_age={'(omitted)' if args.max_age is None else args.max_age}"
     print(f"==> code flow for {args.user} ({described}) against {args.keycloak}", file=sys.stderr)
