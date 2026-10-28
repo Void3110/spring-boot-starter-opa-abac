@@ -54,14 +54,18 @@ keycloak = "26.0.5"
 # security review (docs/code-review/SECURITY-REVIEW-2026-07-12.md, F2).
 commonsIo = "2.19.0"
 
-# Spring AI — the MCP server starter behind example-mcp-server (Phase 9, AGENT-TOOL-AUTHZ). 2.0.0 is
-# the current GA line and brings MCP Java SDK 2.0.0 (MCP spec revision 2025-11-25) plus the
-# @McpTool annotation model (org.springframework.ai.mcp.annotation). NOTE: the starter's POM declares
-# spring-boot 4.1.0 while this repo is pinned to 4.0.x — the dependency-management plugin's Boot BOM
+# Spring AI — the MCP server starter behind example-mcp-server (Phase 9, AGENT-TOOL-AUTHZ). 2.0.1 is
+# the current GA patch and still brings MCP Java SDK 2.0.0 (MCP spec revision 2025-11-25) plus the
+# @McpTool annotation model (org.springframework.ai.mcp.annotation). 2.0.1 changed one behavior the gate
+# meets: an @McpTool body's RuntimeException becomes an error result carrying ITS OWN message (2.0.0 wrapped
+# it as "Error invoking method: <name>"; spring-ai #6534) — see AGENT-TOOL-AUTHORIZATION "What a tool body's
+# exception shows the model". NOTE: the starter's POM declares spring-boot 4.1.1 while this repo is pinned to
+# 4.0.x — the dependency-management plugin's Boot BOM
 # wins for every spring-boot-* artifact, so the example builds and runs on the repo's 4.0.x baseline.
 # See docs/to-do/.../AGENT-TOOL-AUTHZ/STATUS-01.md; a repo-wide 4.1.x bump is a separate slice.
-springAi = "2.0.0"
-# MCP Java SDK — the version Spring AI 2.0.0's own MCP modules depend on (mcp-spring-webmvc-2.0.0.pom).
+springAi = "2.0.1"
+# MCP Java SDK — the version Spring AI's own MCP modules depend on: 2.0.0 for Spring AI 2.0.0 AND 2.0.1
+# (spring-ai v2.0.1 pom: mcp.sdk.version 2.0.0) — so SDK 2.0.1 is not taken until Spring AI moves to it.
 # opa-abac-mcp pins mcp-core to it EXPLICITLY (api scope: its types are in the module's public
 # signatures): the Spring AI BOM manages only org.springframework.ai artifacts and the Boot BOM not this
 # one at all. It moves WITH springAi — bump both together (ADR 0036 §10, §13).
