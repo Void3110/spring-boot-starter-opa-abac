@@ -46,7 +46,7 @@ plugins:
   - opentelemetry      # Phase B: export gateway spans to Jaeger
   - opa                # Phase B: call OPA for an (allow-all, for now) decision per request
   - openid-connect     # Phase 2 (identity): terminate Keycloak OIDC at the gateway
-  - serverless-pre-function   # the /internal/* block route (and, until ADR 0035 T2, the issuer-allowlist guard)
+  - serverless-pre-function   # the /internal/* block route (the internal-blocked 404)
   - cors               # Phase 7 (demo SPA): allow the browser SPA's cross-origin calls (ENABLE_SPA)
 
 # opentelemetry: the collector settings are PLUGIN METADATA since APISIX 3.12 (a `plugin_attr.opentelemetry`
