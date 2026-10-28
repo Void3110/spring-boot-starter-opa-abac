@@ -9,7 +9,7 @@ tags:
 
 # GATEWAY-AUDIENCE-BINDING — tokens bound to this gateway, on APISIX 3.19, and an MCP surface an OAuth client can find
 
-> **Status: 📐 designed 2026-10-28** — grill-me settled thirteen forks; the design is [[GATEWAY-AUDIENCE-BINDING/00-DESIGN|00-DESIGN]]
+> **Status: 📐 designed 2026-10-28** — grill-me settled thirteen forks; the design is [[00-DESIGN]]
 > and the contract [[0035-audience-bound-gateway-tokens|ADR 0035]]. **Scope grew on 2026-10-15** (maintainer): the slice
 > also carries MCP OAuth discovery (RFC 9728) for `example-mcp-server`, an MCP host **agent** client and audience binding on
 > `/mcp`; it lands **before the 1.5.0 cut**. Target moved to **APISIX 3.19.0** (released 2026-09-28). Four tickets: T1 the
@@ -23,6 +23,19 @@ tags:
 > **Build: collaborative** (the [[SPA-CHALLENGE-UX]] shape — mini package, no autonomous prompt).
 > Slice-shaped, not backlog-shaped: it changes the rig's security contract, the gateway version, the
 > realm, the e2e suite and three guides at once.
+
+## The package (2026-10-28)
+
+[[00-DESIGN]] · [[01-DECOMPOSITION]] ·
+[[10-QA-TEST-CASES]] · STATUS-01…04 · the contract
+[[0035-audience-bound-gateway-tokens|ADR 0035]]. No autonomous prompt (collaborative build).
+
+| # | Ticket | Status |
+|---|---|---|
+| T1 | APISIX 3.11.0 → 3.19.0, behavior-preserving (incl. `valid_issuers` — 3.12+ defaults to the discovery issuer) | ☐ |
+| T2 | Audience in the plugin (one mapper per client); the Lua guard deleted | ☐ |
+| T3 | The MCP OAuth surface: the host agent client, the RFC 9728 document, the miner's `--discover`, refresh rotation | ☐ |
+| T4 | Docs, the Claude Code runbook, the backlog | ☐ |
 
 ## What the rig does today (measured 2026-09-06, all three claims re-checkable)
 

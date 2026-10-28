@@ -271,6 +271,13 @@ about *who the authorization is for* and gives each tech phase a user-visible ac
 - **J9** *As an operator upgrading the library*, a policy written for a different input version denies instead
   of misreading the request — a version mismatch can never quietly route an agent call down the human branch.
   — **[[MCP-AUTH-LIBRARY]]** ✅ (input schema v1)
+- **J10** *As a user of an MCP host such as Claude Code*, I point it at the catalog's MCP endpoint and it finds
+  out by itself how to log me in — and once I have, it acts as an **agent** narrowed below me (reads only, low
+  risk), never with everything I may do. — **[[GATEWAY-AUDIENCE-BINDING]]** (RFC 9728 discovery, the host
+  agent client; ADR [[0035-audience-bound-gateway-tokens|0035]])
+- **J11** *As an operator*, a token the realm issued for something else — a service account meant for the
+  identity provider's admin API — is refused at the gateway, whatever its signature: every gateway token is
+  bound to the gateway's audience and to an issuer I listed. — **[[GATEWAY-AUDIENCE-BINDING]]**
 
 ### Epic K — "I can see what my people are working on, without joining their teams" (supervised read scope)
 

@@ -22,7 +22,7 @@ RFC 9728 protected-resource metadata, RFC 8707 resource indicators, MCP authoriz
 > only for the Keycloak admin API. And a real MCP client had no way to discover how to log in to the
 > `/mcp` surface. This ADR binds every gateway token to one audience and an issuer allowlist **in the
 > gateway's own plugin**, and makes the MCP surface discoverable by RFC 9728. Settled with the
-> maintainer in the grill of 2026-10-28 (thirteen forks, [[GATEWAY-AUDIENCE-BINDING/00-DESIGN|00-DESIGN]]
+> maintainer in the grill of 2026-10-28 (thirteen forks, [[00-DESIGN]]
 > §Considered and rejected).
 
 ## Context
@@ -65,13 +65,15 @@ behind **one gateway**: the MCP surface and the catalog API share its audience.
 A token without that audience is refused at the edge, whatever its signature. The service-account client
 `catalog-directory` deliberately never carries it — it is the negative control.
 
-### 2. The audience comes from one shared client scope
+### 2. The audience comes from a mapper on each legitimate client
 
-A realm client scope `gateway-audience` carries **one** `oidc-audience-mapper`
-(`included.client.audience = catalog-gateway`, access token only). It is a **default** scope of every
-client that legitimately reaches the gateway: `catalog-gateway`, `catalog-spa`, the three
-`catalog-agent-*`, and the MCP host client (§5). One definition to audit; a client that misses it gets a
-loud refusal, never access.
+Every client that legitimately reaches the gateway — `catalog-gateway`, `catalog-spa`, the three
+`catalog-agent-*`, and the MCP host client (§5) — carries one inline `oidc-audience-mapper`
+(`included.client.audience = catalog-gateway`, access token only). A client that misses it gets a loud
+refusal, never access, and an e2e cell per client guards the copies against drift. *(The grill chose one
+shared client scope; the decomposition reversed it on 2026-10-28: Keycloak 26.3.2 creates its built-in
+client scopes on import only when the export declares no `clientScopes`, so a shared scope would have meant
+owning every built-in scope in the repo or defining the realm in two places.)*
 
 ### 3. The issuer is checked by the same plugin; the Lua guard is deleted
 
@@ -85,14 +87,16 @@ spelling) re-prove the contract.
 ### 4. The gateway moves to APISIX 3.19.0, as its own step
 
 The bump (3.11.0 → 3.19.0) lands **before** any audience change, proven by the full e2e suite on its
-own, so a 3.19 regression is never confused with an audience refusal. It brings `session.secret` on every
+own, so a 3.19 regression is never confused with an audience refusal. It must already carry §3's
+`valid_issuers`: since 3.12 a block without it validates `iss` against the discovery issuer, which would
+refuse every token minted through the gateway origin. It brings `session.secret` on every
 browser-flow `openid-connect` block (required since 3.14 when `bearer_only=false`) and moves the
 opentelemetry collector configuration from `plugin_attr` to plugin metadata (since 3.12).
 
 ### 5. The MCP host client is an agent
 
 A new **public** client for an MCP host (e.g. Claude Code) to log a user in with: authorization code +
-PKCE (`S256`), a fixed `localhost` callback, no password grant, the `gateway-audience` scope. It carries
+PKCE (`S256`), a fixed `localhost` callback, no password grant, the audience mapper (§2). It carries
 the **same hardcoded actor mapper** as the `catalog-agent-*` clients, naming its own actor, and is listed in
 `opa.abac.mcp.identity.agent-clients` — so a token from it without an actor is refused
 `tool-gate-actor-required`. Its capability profile is **reads only, capped at `low` risk**, with every tool
@@ -150,9 +154,10 @@ here. The guide states the deviation where it describes the forwarded bearer.
 |---|---|
 | **Per-resource audiences** (`/mcp` vs the catalog API) + RFC 8693 exchange | Spec-purist and the eventual successor, but it adds Keycloak token-exchange configuration, a confidential exchange client, an exchange step in the example's catalog client and new failure classes to pin — a slice of its own. |
 | A **named API audience** (`claim_validator.audience.claim` + a custom value) | Reads better for an adopter whose gateway client id is an implementation detail, but costs a custom claim value and one more place to configure; `match_with_client_id` is zero configuration and is what the plugin hardened in 3.18. |
-| A **mapper per client** | Six identical mappers that can drift; the shared scope is one definition, and each client's default-scope list still shows it. |
+| One **shared client scope** | One definition to audit (the grill's first choice), but Keycloak's import then stops creating its built-in scopes — the repo would own them all, or a post-import step would define the realm in two places. |
 | **Keep the Lua issuer guard** | Two plugins deciding one question is how its case-sensitivity trap existed; the plugin's own `valid_issuers` removes the class. |
 | The MCP host as a **human** client | An AI host acting for the user would get the user's full ceiling on the one path real MCP clients use — the narrowing this repo demonstrates would not apply there. |
+| Spring Security's `OAuth2ProtectedResourceMetadataFilter` | It matches every `/.well-known/oauth-protected-resource/**` sub-path, presets `resource` from the request's URL (its `Host`) and answers whenever installed — three breaches of §6's contract (`javap -c`, 7.0.7). A two-mapping controller instead. |
 | The **gateway** serves the metadata statically | The document would live in a shell script instead of the resource it describes, and an adopter copying the MCP server would get nothing. |
 | Stamp `resource_metadata` on the gateway's 401 | One fewer client round trip, but it needs the gateway to rewrite a header on a response its own auth plugin generated; the spec requires only one mechanism. |
 | 404 + WARN for **every** misconfiguration | The service always boots, but a typo in one value silently turns discovery off instead of failing the deploy that introduced it. |

@@ -20,8 +20,8 @@ tags:
 
 Today the gateway is the only verifier, and it checks a token's signature, expiry and (by a Lua guard) its
 issuer — never its audience, so any realm-signed token is accepted on any route. After this slice, every
-route requires `aud ∋ catalog-gateway`, stamped by one shared client scope onto the clients that
-legitimately reach the gateway; the issuer allowlist moves from the Lua guard into the same plugin; the
+route requires `aud ∋ catalog-gateway`, stamped by an audience mapper on each client that legitimately
+reaches the gateway; the issuer allowlist moves from the Lua guard into the same plugin; the
 gateway runs APISIX 3.19.0. And a real MCP client — Claude Code, say — can find out how to log in to
 `/mcp`: the MCP server publishes an RFC 9728 document, the client logs the user in through a new public
 **agent** client, and the tool-gate narrows that agent exactly as it narrows the scripted ones.
@@ -46,8 +46,8 @@ gateway runs APISIX 3.19.0. And a real MCP client — Claude Code, say — can f
 
 ## The slice boundary
 
-**In:** the APISIX bump; plugin-side issuer + audience validation on every `openid-connect` route; the
-`gateway-audience` client scope; realm-wide refresh-token rotation; the MCP host agent client and its
+**In:** the APISIX bump; plugin-side issuer + audience validation on every `openid-connect` route; an
+audience mapper on each legitimate client; realm-wide refresh-token rotation; the MCP host agent client and its
 capability profile; the RFC 9728 document in `example-mcp-server` and its gateway route; the miner's
 discovery mode; the e2e cells; the docs (§T4).
 
@@ -67,7 +67,11 @@ registration (the host client is pre-registered); `https` on the rig.
   (`PUT /apisix/admin/plugin_metadata/opentelemetry`, written by `init-routes.sh`) — since 3.12 the old
   location is silently ignored and traces would stop.
 - `ssl_verify: false` stays explicit on every block (the default flipped to `true` in 3.16).
-- The Lua issuer guard **stays** in this ticket.
+- **`claim_validator.issuer.valid_issuers` = the three rig authorities, already in this ticket** — found by
+  the decomposition's seam check (2026-10-28): since 3.12 a block with no `valid_issuers` validates `iss`
+  against the *discovery* issuer (`keycloak:8888`), which 3.11 never did, so a bare bump would 401 every SPA
+  token. Setting the allowlist is what keeps T1 behavior-preserving.
+- The Lua issuer guard **stays** in this ticket (now redundant; T2 deletes it).
 - **Proof:** every e2e runner green on the bumped gateway, and a request's trace still reaches Jaeger.
   `etcd` stays `v3.5.16` — proven by the suite, not assumed.
 
@@ -77,9 +81,12 @@ registration (the host client is pre-registered); `https` on the rig.
   `claim_validator: { issuer: { valid_issuers: [<ISSUER_ALLOWLIST>] }, audience: { match_with_client_id: true } }`;
   the `serverless-pre-function` issuer guard and its Lua are **deleted**. `ISSUER_ALLOWLIST` stays the one
   documented, overridable variable.
-- **Realm:** a client scope `gateway-audience` with one `oidc-audience-mapper`
-  (`included.client.audience: catalog-gateway`, access token yes, ID token no), a **default** scope of
-  `catalog-gateway`, `catalog-spa` and the three `catalog-agent-*`. `catalog-directory` never gets it.
+- **Realm:** one inline `oidc-audience-mapper` per legitimate client (`included.client.audience:
+  catalog-gateway`, access token yes, ID token no) on `catalog-gateway`, `catalog-spa` and the three
+  `catalog-agent-*`; `catalog-directory` never gets one. **No `clientScopes` key in the export** — Keycloak
+  26.3.2 creates its built-in scopes on import only when that key is absent, so the shared scope the grill
+  chose would have dropped `profile`/`roles`/`basic`/`acr` (reversed in decomposition, §Considered and
+  rejected 2).
 - **P0 probes, before the gateway change is trusted** (recorded in STATUS with the raw evidence):
   1. Keycloak 26.3.2 with `resource=http://localhost:9085/mcp` on authorize and token: what is `aud`?
      (Expected: the mapper's value; RFC 8707 ignored. If Keycloak honors it, `aud` must still contain
@@ -96,8 +103,8 @@ registration (the host client is pre-registered); `https` on the rig.
 
 **The host client** — `catalog-mcp-host`: public, standard flow, PKCE `S256` required, redirect URIs
 `http://localhost:<fixed port>/callback` and `http://127.0.0.1:<fixed port>/callback`, no direct access
-grants, default scopes = the existing ones + `gateway-audience`, and the hardcoded actor mapper with its own
-actor id `agent-host`.
+grants, the agents' default scopes, the audience mapper (as T2), and the hardcoded actor mapper with its
+own actor id `agent-host`.
 
 **Its capability** (`opa.abac.mcp.agents.profiles[]` in the example):
 
@@ -133,12 +140,17 @@ that switch must agree — the E12 drill's temporary listing is reconciled with 
 | One set, or a value not an absolute `http(s)` URL, with a fragment, or a `resource` path other than the MCP endpoint's | Startup failure, naming the key and the reason. |
 | Any request, any `Host` | The identical document — never request-derived. |
 
-The application's security chain permits **exactly** those two paths (never `/.well-known/**`). Spring
-Security 7.0.7's `OAuth2ProtectedResourceMetadataFilter` or a small controller — **decided by a spike** in
-the ticket; the example authenticates by forwarded JWT, not as a resource server, so the filter may not fit.
+The application's security chain permits **exactly** those two paths (never `/.well-known/**`). **A small
+controller, not Spring Security 7.0.7's `OAuth2ProtectedResourceMetadataFilter`** — the decomposition's
+`javap -c` answered the spike: the filter matches `/.well-known/oauth-protected-resource/**`, presets
+`resource` from the request URL (its `Host`) before the customizer runs, and always answers once installed.
 
 **The gateway route** — `mcp-protected-resource`: `uris` = the two paths, `GET` only, **no auth plugin**,
-upstream `mcp-pool`, a priority above the catch-all; two-armed with `ENABLE_MCP`.
+upstream `mcp-pool`, a priority above the catch-all; two-armed with `ENABLE_MCP`. Two more gateway pins the
+seam check found: the `/realms/*` passthrough (today `ENABLE_SPA`-only) is also wired with `ENABLE_MCP=1`,
+because the host's whole login runs through the gateway origin; and the `/mcp` route is always
+`bearer_only` + `deny` (today it inherits the SPA flag, so `ENABLE_SPA=0` would redirect a token-less MCP
+client to a login page instead of answering 401).
 
 **The miner learns discovery** — `mint-code-flow-token.py --discover http://localhost:9085/mcp`: fetch the
 path-inserted document, fall back to the root one; read `authorization_servers`; try the spec's three
@@ -197,7 +209,11 @@ Then the 1.5.0 cut (ADR 0038 + MCP-AUTH-LIBRARY + this slice's documentation).
 1. **Audience** — *per-resource audiences + RFC 8693 exchange* rejected for now (a slice of its own; the
    recorded successor); *a named API audience* rejected (custom value + one more config place;
    `match_with_client_id` is zero-config). **One gateway audience.**
-2. **Mapper placement** — *a mapper per client* rejected (six copies that drift). **One shared scope.**
+2. **Mapper placement** — the grill chose *one shared client scope* over a mapper per client (one
+   definition to audit). **Reversed in decomposition (2026-10-28, maintainer):** Keycloak 26.3.2's import
+   creates the built-in scopes only when the export has no `clientScopes` key, so the shared scope would
+   have meant owning every built-in scope definition in the repo, or a post-import admin step defining the
+   realm in two places. **A mapper per client**, its drift guarded by an e2e cell per client (QA E6).
 3. **The host client** — *a human client* rejected (an AI host would get the user's full ceiling on the one
    real MCP path). **An agent client.**
 4. **Who serves the metadata** — *the gateway, statically* rejected (the document belongs to the resource,
