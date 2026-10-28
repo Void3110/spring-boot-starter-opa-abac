@@ -7,9 +7,16 @@ tags:
   - area/deploy
 ---
 
-# GATEWAY-AUDIENCE-BINDING — tokens bound to this gateway, on APISIX 3.18
+# GATEWAY-AUDIENCE-BINDING — tokens bound to this gateway, on APISIX 3.19, and an MCP surface an OAuth client can find
 
-> **Status: 📋 researched, not yet designed.** Opened 2026-09-07 from a maintainer question — *"is
+> **Status: 📐 designed 2026-10-28** — grill-me settled thirteen forks; the design is [[GATEWAY-AUDIENCE-BINDING/00-DESIGN|00-DESIGN]]
+> and the contract [[0035-audience-bound-gateway-tokens|ADR 0035]]. **Scope grew on 2026-10-15** (maintainer): the slice
+> also carries MCP OAuth discovery (RFC 9728) for `example-mcp-server`, an MCP host **agent** client and audience binding on
+> `/mcp`; it lands **before the 1.5.0 cut**. Target moved to **APISIX 3.19.0** (released 2026-09-28). Four tickets: T1 the
+> bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Next:** `/decompose` (collaborative
+> mini package). The research below is the record it was designed from.
+>
+> *Original status (2026-09-07):* researched, not yet designed. Opened 2026-09-07 from a maintainer question — *"is
 > an audience check something anyone using the example app as a starting point would miss?"* — and
 > answered by measurement: **yes, because the example itself has none.** Two decisions are already
 > taken (below); the grill-me, `00-DESIGN`, **ADR 0035** (0034 was taken by TAG-GATED-CREATE on 2026-09-11) and the decomposition are the next steps.
