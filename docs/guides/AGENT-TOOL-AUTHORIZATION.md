@@ -628,11 +628,14 @@ port `33418`. Like the three demo agents, it mints `act_chain` (`["agent-host"]`
   `opa.abac.subject.attribute-claims` for that reason.
 
 On the tool surface, then, a person logging an MCP host in hands it **less** than their own reach. **On the REST
-API the same token is the person's own.** It carries the gateway's one audience, so the catalog and user-service
-routes admit it, and their policies decide it at the principal's ceiling, writes included. That is ADR 0028 §2's
-accepted bound: bypassing the tool-gate yields the human's own authority, never more. A host that replays its
-token against the REST API is therefore not narrowed. Closing that needs per-resource audiences with RFC 8693
-exchange at the MCP server (backlog 25).
+API the host's token is not narrowed by its profile.** It carries the gateway's one audience, so the catalog and
+user-service routes admit it, and their policies decide it as the person for **membership-based** access, writes
+included. That is ADR 0028 §2's accepted bound: bypassing the tool-gate yields the human's own authority, never
+more. Two parts of that authority stay human-only: the **supervised read path** and **step-up elevation**.
+`catalog.rego` and the child policies deny a supervised decision to any call carrying `act_chain`, and never
+elevate one (ADR 0030 Amendment 4), so an agent never inherits a supervisor's oversight reach. The user-service
+reads no `act_chain` at all, so there the token is decided exactly as the person. Narrowing the REST surface too needs per-resource audiences with RFC 8693 exchange at the MCP
+server (backlog 25).
 
 The four tools also carry MCP tool annotations — `readOnlyHint` true, `destructiveHint` and `openWorldHint` false —
 so a host labels them as the reads they are. `@McpTool`'s defaults would have them advertise as destructive. The

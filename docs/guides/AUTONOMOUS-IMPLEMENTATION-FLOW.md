@@ -795,8 +795,8 @@ skeleton itself is next revised.
   IT (the mechanism works against real Postgres) **plus** an e2e matrix showing the decisive contrast
   (two subjects, same endpoint, different outcome). Make the e2e assert the *cut* (row counts /
   allow-vs-deny), not just response shape.
-- **Rig truths that read like bugs but aren't:** APISIX validates the issuer as `keycloak:8888`, so a
-  host-minted token is rejected — mint in-network; OPA `--watch` doesn't always reload — restart it
+- **Rig truths that read like bugs but aren't:** the gateway admits exactly three issuers and requires
+  `aud ∋ catalog-gateway` (ADR 0035) — mint in-network (`keycloak:8888`, the suite's canonical issuer); OPA `--watch` doesn't always reload — restart it
   after a rego edit; `deploy.sh` only rebuilds the image if it's absent — `./deploy.sh build` to force
   new code in. Name the ones the slice will hit in the operator notes.
 

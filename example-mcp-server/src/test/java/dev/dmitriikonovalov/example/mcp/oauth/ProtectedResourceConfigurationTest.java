@@ -71,12 +71,14 @@ class ProtectedResourceConfigurationTest {
             "resource             | http://:9085/mcp                          | has no valid host and port",
             "resource             | http://localhost:bad/mcp                  | has no valid host and port",
             "resource             | http://localhost:99999/mcp                | has no valid host and port",
+            "resource             | http://localhost:0/mcp                    | has no valid host and port",
             "resource             | http://admin@localhost:9085/mcp           | carries userinfo",
             "authorization-server | realms/catalog-demo                       | is not an absolute http(s) URL",
             "authorization-server | mailto:keycloak@example.invalid           | is not an absolute http(s) URL",
             "authorization-server | http://localhost:9085/realms/catalog-demo#x | carries a fragment",
             "authorization-server | http://u:p@localhost:9085/realms/catalog-demo | carries userinfo",
             "authorization-server | http://:9085/realms/catalog-demo          | has no valid host and port",
+            "authorization-server | http://localhost:9085/realms/catalog-demo?x=1 | carries a query",
     })
     void aMalformedValueFailsStartupNamingTheKeyAndTheReason(String key, String value, String reason) {
         String resource = key.equals("resource") ? value : RESOURCE;
@@ -99,6 +101,18 @@ class ProtectedResourceConfigurationTest {
                 .run(context -> assertThat(context).hasFailed().getFailure().rootCause()
                         .isInstanceOf(IllegalStateException.class)
                         .hasMessageStartingWith(ProtectedResourceDocument.AUTHORIZATION_SERVER_KEY + " is not set"));
+    }
+
+    @ParameterizedTest(name = "valid: {0} with {1}") // a valid value is never refused by the stricter checks
+    @CsvSource(delimiter = '|', value = {
+            "http://my_host:9085/mcp      | http://my_host:9085/realms/catalog-demo",
+            "http://[::1]:9085/mcp        | http://[::1]:9085/realms/catalog-demo",
+            "https://example.org:443/mcp  | https://example.org/realms/catalog-demo/",
+            "https://example.org/mcp      | https://idp.example.org"})
+    void validValuesAreAccepted(String resource, String issuer) {
+        runner.withPropertyValues(ProtectedResourceDocument.RESOURCE_KEY + "=" + resource,
+                        ProtectedResourceDocument.AUTHORIZATION_SERVER_KEY + "=" + issuer)
+                .run(context -> assertThat(context.getBean(ProtectedResourceDocument.class).isEnabled()).isTrue());
     }
 
     @Test // both valid: on, nothing logged

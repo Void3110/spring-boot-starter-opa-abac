@@ -126,8 +126,10 @@ escapes the contract across a flag flip (Medium), a documentation overclaim abou
   `mcp-protected-resource` are two-armed; the user-service block is now refreshed.
 - **Fix 4** went into the shared helpers rather than the two cells the finding named, so every tool-call cell
   is covered.
-- **Fix 10** swept every runner's header except `run-resource-resolution-matrix.sh`, which a separate session is
-  rewriting; its header line is left to that branch.
+- **Fix 10** swept nine runners' headers, but not four other places whose wording differed:
+  `run-resilience-matrix.sh`, `run-tests.sh`, `local.postman_environment.example.json` and
+  AUTONOMOUS-IMPLEMENTATION-FLOW's rig truths. Round 2 found all four and they are fixed.
+  `run-resource-resolution-matrix.sh` is left to the separate session rewriting it.
 
 ## What's done right
 
@@ -172,8 +174,63 @@ All runs are on fresh images and a re-imported realm, 2026-10-29.
 - **Lints:** `check-collection-conformance.py` 18 clean; `check-shell-guards.py` 28 clean;
   `verify-package.sh` PACKAGE OK.
 
+## Round 2 — the same three on the fix commit (`d9eac71`)
+
+Each reviewer judged every round-1 fix CLOSED, PARTIAL or WRONG.
+- **Verdicts:** gpt-6.1-sol **BLOCK**; gpt-6-astra and Opus **APPROVE-WITH-FIXES**. Fail-closed synthesis: BLOCK.
+- **Round-1 fixes:** no fix was judged WRONG. Fixes 2, 4, 8 and 10 were judged PARTIAL by at least two reviewers,
+  and the findings below are those gaps. Opus also judged 6 PARTIAL (R2-3).
+- **Cost:** Opus 310k tokens; the Codex legs are outside the Claude pool.
+
+| # | Sev | Finding | Raised by | Status |
+|---|---|---|---|---|
+| R2-1 | Medium | Fix 2's lookup read any non-200 — a 5xx, an unreachable Admin API — as "route absent", silently skipping the refresh. sol raised it as critical; it needs the Admin API to fail mid-deploy after succeeding for every route before it. | sol F1, astra F1 | Fixed: only `404` is absence, any other answer aborts the deploy (probed with a fake `curl`: 200 / 404 / 503 / 000) |
+| R2-2 | Medium | Fix 2's retained-only refresh also re-PUT the upstream with the default two nodes, overwriting a single-pod `USERMGMT_NODES` choice. | sol F2, astra F2 | Fixed: a retained-only refresh rewrites the routes and leaves the upstream alone |
+| R2-3 | Low | Fix 5/6 edges: an RFC 3986 reg-name host with `_` was refused (`java.net.URI` reports no host for it), port 0 was accepted, and an `authorization-server` with a query was accepted. | Opus F2, F3 | Fixed: reg-name fallback grammar, ports 1–65535, the query refused on both values. New cases, valid ones included (underscore host, IPv6, `:443`, trailing-slash and pathless issuers) |
+| R2-4 | Low | Fix 8 was too strict: the origin comparison was by spelling (an explicit `:443` or a host's case read as foreign), and loopback was a literal list (`[0:0:0:0:0:0:0:1]`, `localhost.` refused). | sol F3, F4, astra F4 | Fixed: normalized `(scheme, host, effective port)`, and `ipaddress.is_loopback` + the trailing dot. Probed both ways |
+| R2-5 | Low | Fix 4 was incomplete: a 200 SSE answer with an empty body or a JSON-RPC `error` still passed `mcpAllowed`. | Opus F1, sol F5, astra F3 | Fixed: both helpers also require a parsed JSON-RPC `result` and no `error`. Probed against the collection's own helpers: a real result PASS; empty, error and 500 FAIL |
+| R2-6 | docs | Fix 3 overcorrected: "on the REST API the token is the person's own" ignores that the supervised path and step-up deny any `act_chain` call. | sol F6, Opus F4 | Fixed: membership reach is the person's; the supervised path and step-up stay human-only; the user-service reads no `act_chain` |
+| R2-7 | docs | Fix 10 was incomplete: `run-resilience-matrix.sh`, `run-tests.sh`, `local.postman_environment.example.json` and AUTONOMOUS-IMPLEMENTATION-FLOW still described the old issuer check, and this note claimed a full sweep. | astra F5, Opus F5 | Fixed, and the sweep sentence corrected |
+| R2-8 | low, pre-existing | `scripts/load/run-load.sh`'s baseline pass re-runs `init-routes.sh` without the SPA/MCP flags, so the two load passes no longer see a byte-identical gateway (ADR 0021 §2). It is the 2026-09-11 SPA default, not this slice. | Opus F6 | Follow-up task (out of this branch, by the proportionality clamp) |
+
+**The open question, the intermittent 60 s `504` on `/mcp`: no mechanism found by any reviewer.** All three read
+the exact-version bytecode:
+- the transport answers the Accept `400` before reading the body;
+- Tomcat 11.0.24 marks a `400` connection-dropping (`statusDropsConnection`) and sends `Connection: close`, so no
+  half-read keep-alive connection survives it;
+- the 60 s matches APISIX's default upstream read timeout, with no retries for a `POST`.
+
+Opus's common factor, inference only: both failing requests needed a *new* upstream connection — after a pod
+recreate, and after a `Connection: close` — through Docker Desktop's forwarding to `host.docker.internal:28093`.
+Its proposed falsifiers:
+- read APISIX's `error.log` at the next occurrence;
+- point `mcp-pool` at the in-network `mcp:8080`;
+- raise `server.tomcat.keep-alive-timeout` above the gateway's idle timeout.
+
+All three are recorded in Mulch with the occurrence.
+
+**Round-2 test results** (fresh images, a re-imported realm, 2026-10-29):
+- **`./gradlew build`:** green, 1534 tests, 0 failures; `example-mcp-server` 99/0.
+- **The local Sonar gate:** it first flagged two real issues in the new reg-name regex — S5998, an alternation
+  inside `+`, and S6353, `[0-9]` for `\d`. Both were fixed with a possessive quantifier and `\w` / `\d` /
+  `\p{XDigit}`, and the tests re-run. Then only the three standing classes remained.
+- **The full suite on three rigs: 787 newman assertions, 0 failed**, plus the SPA smoke 4/4.
+  - The agent matrix ran 110/0 with the stricter helpers, so all 22 tool-call cells carry a real JSON-RPC result.
+  - `run-resource-resolution-matrix.sh` is still red, pre-existing.
+  - The rig's MCP image may predate the regex tweak above. The rig's values are `localhost` URLs, which never
+    reach the reg-name fallback, and the unit tests cover it.
+- **The retained-route drill, from a single-pod `USERMGMT_NODES` deploy with no OIDC:**
+  - precondition `openid-connect= False`;
+  - after the flag-off re-up, both routes carry the audience block, and the log reads "refreshing their
+    plugins (upstream left as is)";
+  - **the upstream is still `{"host.docker.internal:28090": 1}`**;
+  - a directory bearer → `403 mismatched audience`.
+- **The session-secret drill:** the secret changed across deploys.
+- **QA E12:** `/mcp` → `401`, the catalog → `302`, the discovery login and the directory refusal as before.
+
 ## Rounds
 
 | Round | Reviewers | Verdict | Outcome |
 |---|---|---|---|
 | 1 | Opus · Codex gpt-6-astra · Codex gpt-6.1-sol | BLOCK ×3 | 13 findings confirmed, all fixed or documented |
+| 2 | the same three, on `d9eac71` | BLOCK (sol) · APPROVE-WITH-FIXES ×2 | 7 findings fixed; 1 pre-existing one to a follow-up task |

@@ -5,10 +5,11 @@
 # Prereq: the full rig is up with OIDC ->  ENABLE_OIDC=1 ./deploy.sh up --pods 2
 # (Postgres + APISIX on :9085 + Keycloak realm catalog-demo + catalog pods.)
 #
-# Because Keycloak is hostname-aware and APISIX validates the issuer IN-NETWORK
-# (issuer http://keycloak:8888), a token minted against the host (localhost:28888) is
-# rejected at the gateway. So this runner mints the token from INSIDE the shared compose
-# network (opa-abac-example_default) and injects it into newman as `access_token`.
+# Because Keycloak is hostname-aware, a token's issuer is the authority it was minted at. The
+# gateway admits three (keycloak:8888, the gateway origin localhost:9085, the published port
+# localhost:28888); the suite's canonical one is the in-network keycloak:8888, so this runner
+# mints the token from INSIDE the shared compose network (opa-abac-example_default) and
+# injects it into newman as `access_token`.
 # See docs/guides/E2E-TESTING.md for the full explanation.
 #
 # BOTH RIG FLAVOURS, ONE COLLECTION. Slice B4 (ADR 0018) made membership the sole access path, so on

@@ -72,6 +72,7 @@ import hashlib
 import hmac
 import html
 import http.cookiejar
+import ipaddress
 import json
 import os
 import re
@@ -261,7 +262,29 @@ def fetch_json(url: str, timeout: float) -> tuple[int, dict | None]:
     return status, document if isinstance(document, dict) else None
 
 
-LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+def is_loopback(hostname: str | None) -> bool:
+    """`localhost` (with or without the root's trailing dot), or any loopback IP literal in any spelling."""
+    if not hostname:
+        return False
+    if hostname.rstrip(".").lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def origin_of(url: str) -> tuple[str, str, int | None]:
+    """(scheme, host, effective port): two spellings of one origin compare equal (case, default port)."""
+    parsed = urllib.parse.urlparse(url)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").rstrip(".").lower()
+    try:
+        host = ipaddress.ip_address(host).compressed
+    except ValueError:
+        pass
+    port = parsed.port or {"http": 80, "https": 443}.get(scheme)
+    return scheme, host, port
 
 
 def require_secure_transport(label: str, url: str) -> None:
@@ -271,7 +294,8 @@ def require_secure_transport(label: str, url: str) -> None:
     this machine they would cross the network in the clear. The rig is http on localhost, which this allows.
     """
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS):
+    scheme = parsed.scheme.lower()
+    if scheme == "https" or (scheme == "http" and is_loopback(parsed.hostname)):
         return
     raise SystemExit(f"{label} {url!r} is neither https nor a loopback http URL — refusing to send "
                      f"credentials over it")
@@ -332,8 +356,7 @@ def discover(mcp_url: str, timeout: float) -> dict:
             raise SystemExit(f"the authorization-server metadata has no {endpoint}")
         # The code, the PKCE verifier and the forced Host go to these URLs as given, so a document naming
         # another origin would hand them to that host: the whole grant stays on the issuer's origin.
-        parsed_endpoint = urllib.parse.urlparse(url)
-        if f"{parsed_endpoint.scheme}://{parsed_endpoint.netloc}" != issuer_origin:
+        if origin_of(url) != origin_of(issuer):
             raise SystemExit(f"the metadata's {endpoint} {url!r} is not on the issuer's origin "
                              f"{issuer_origin!r} — refusing to send the grant there")
     return metadata

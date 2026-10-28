@@ -326,28 +326,51 @@ fi
 # EARLIER deploy gave them — no openid-connect at all after an ENABLE_OIDC=0 deploy, or no audience check
 # after one from before ADR 0035 — while every other route moved to this deploy's (found by the slice
 # review, 2026-10-29). A retained route therefore always carries the current plugin set.
-usermgmt_route_exists() {
-  [ "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-KEY: $API_KEY" \
-        "$APISIX_ADMIN/apisix/admin/routes/$1" || true)" = "200" ]
+#
+# Only a 404 means "absent": any other answer (a 5xx, an unreachable Admin API) aborts the deploy, because
+# reading a failed lookup as absence would skip exactly the refresh this exists for. A retained-only refresh
+# rewrites the ROUTES and leaves the upstream alone — this deploy did not configure the user-service, so the
+# node set an earlier deploy chose (a USERMGMT_NODES single-pod override) stays as it was.
+usermgmt_route_exists() { # route id -> 0 present, 1 absent; exits on any other answer
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-KEY: $API_KEY" \
+            "$APISIX_ADMIN/apisix/admin/routes/$1" || true)"
+  case "$code" in
+    200) return 0 ;;
+    404) return 1 ;;
+    *) echo "  ERROR: could not tell whether route '$1' exists (Admin API answered '$code') — refusing to" >&2
+       echo "         continue, since a retained user-service route might keep an earlier deploy's auth." >&2
+       exit 1 ;;
+  esac
 }
-if [ "${ENABLE_USER_SERVICE:-0}" = "1" ] || usermgmt_route_exists usermgmt-teams \
-     || usermgmt_route_exists usermgmt-users; then
+UM_CONFIGURE_UPSTREAM=0
+UM_REFRESH_ROUTES=0
+if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
+  UM_CONFIGURE_UPSTREAM=1; UM_REFRESH_ROUTES=1
+elif usermgmt_route_exists usermgmt-teams || usermgmt_route_exists usermgmt-users; then
+  UM_REFRESH_ROUTES=1
+fi
+if [ "$UM_REFRESH_ROUTES" = "1" ]; then
   # The two usermgmt pods publish on host ports 28090 + 28092 (deploy.sh wait_usermgmt_healthy waits
   # for both). Round-robin over both = HA parity with the catalog pool; both share one Postgres, so
   # concurrent membership/role mutations across the pods serialize on the shared @Version/locked-write
   # path. Override the node set with USERMGMT_NODES (comma-separated host:port) for a single-pod rig.
-  USERMGMT_NODES="${USERMGMT_NODES:-host.docker.internal:28090,host.docker.internal:28092}"
-  UM_NODES_JSON=""
-  IFS=',' read -ra _um_nodes <<< "$USERMGMT_NODES"
-  for _n in "${_um_nodes[@]}"; do
-    [ -n "$UM_NODES_JSON" ] && UM_NODES_JSON="$UM_NODES_JSON,"
-    UM_NODES_JSON="$UM_NODES_JSON\"$_n\":1"
-  done
-  curl -sf -o /dev/null -X PUT \
-    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
-    "$APISIX_ADMIN/apisix/admin/upstreams/usermgmt-pool" \
-    -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{$UM_NODES_JSON}}"
-  echo "  upstream 'usermgmt-pool' -> round-robin over: $USERMGMT_NODES"
+  if [ "$UM_CONFIGURE_UPSTREAM" = "1" ]; then
+    USERMGMT_NODES="${USERMGMT_NODES:-host.docker.internal:28090,host.docker.internal:28092}"
+    UM_NODES_JSON=""
+    IFS=',' read -ra _um_nodes <<< "$USERMGMT_NODES"
+    for _n in "${_um_nodes[@]}"; do
+      [ -n "$UM_NODES_JSON" ] && UM_NODES_JSON="$UM_NODES_JSON,"
+      UM_NODES_JSON="$UM_NODES_JSON\"$_n\":1"
+    done
+    curl -sf -o /dev/null -X PUT \
+      -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+      "$APISIX_ADMIN/apisix/admin/upstreams/usermgmt-pool" \
+      -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{$UM_NODES_JSON}}"
+    echo "  upstream 'usermgmt-pool' -> round-robin over: $USERMGMT_NODES"
+  else
+    echo "  user-service routes retained from an earlier deploy -> refreshing their plugins (upstream left as is)"
+  fi
 
   # The user-mgmt routes' plugin set: openid-connect (the same bearer validation as the catalog route)
   # + tracing + cors-when-SPA. NOT the catalog `opa` gateway plugin (the user-service authorizes itself).
