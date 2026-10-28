@@ -15,6 +15,16 @@ tags:
 > `/mcp`; it lands **before the 1.5.0 cut**. Target moved to **APISIX 3.19.0** (released 2026-09-28). Four tickets: T1 the
 > bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Decomposed 2026-10-28** ([[01-DECOMPOSITION]], [[10-QA-TEST-CASES]], STATUS-01…04; no prompt — collaborative). **Next:** the collaborative build, T1 first. The research below is the record it was designed from.
 >
+> **Validated:** 2026-10-28 — mechanical + adversarial clean; 3 delta checks after 3 amendments. The adversarial
+> pass was one full round by four independent reviewers given an identical read-only brief (two Claude models, two
+> Codex models, at the maintainer's request); every finding acted on was re-verified at the source, and the round's
+> one design decision (refresh rotation vs the SPA's concurrent refreshes) went to the maintainer. The loop ended on
+> a delta check with no defect. **Run inputs carried to the build, not open defects:** T4 also corrects
+> [[E2E-TESTING]] §Two rig flavours (its OIDC-only command predates the SPA/directory defaults — the package's rig 3
+> is the right one) and its "several runners re-`up`" sentence (only the supervised-scope matrix does); keep
+> `docker build -t opa-abac-usermgmt:local …` on one line when pasting it; read "the E12 rig step" in 00-DESIGN
+> §Validation as QA E12.
+>
 > *Original status (2026-09-07):* researched, not yet designed. Opened 2026-09-07 from a maintainer question — *"is
 > an audience check something anyone using the example app as a starting point would miss?"* — and
 > answered by measurement: **yes, because the example itself has none.** Two decisions are already
