@@ -39,21 +39,30 @@ have **their own cell numbers**, which this slice extends; where the two could b
 | QA E4, E5 | step-up runner preflight cells **E9i**, **E9j** (beside the existing E9a–h) |
 | QA E7, E8, E9, E10 | agent matrix cells **E13**, **E14**, **E15**, **E16** (the collection's next numbers) |
 | QA E11 | a step-up runner preflight cell **E9k** (the SPA client's rotation) |
+| QA E3, QA E12 | recorded rig steps on the browser-flow rig (`ENABLE_SPA=0 ENABLE_MCP=1`), in STATUS-01 / STATUS-03 — no cell |
 | QA E13 | a manual runbook step, recorded in STATUS-04 — no cell |
 | *the agent matrix's E12 drill* | the existing `agent-clients` cell, *not* QA E12 |
 
 ## The full suite (what "every runner green" means)
 
 The nineteen runners `scripts/postman/run-*.sh` (incl. `run-tests.sh`, `run-matrix.sh`,
-`run-spa-auth-smoke.sh`), on **two** rigs ([[E2E-TESTING]] §Two rig flavours):
+`run-spa-auth-smoke.sh`), on **three** rigs, in this order (the recipe Mulch `opa-abac-e2e-suite` mx-7c81b9
+measured; [[E2E-TESTING]] §Two rig flavours):
 
-1. **The user-service rig, flags exported** — `export ENABLE_MCP=1 ENABLE_RESILIENCE_STUB=1` (the SPA and the
-   directory default on; OIDC and the user-service are forced), then `./deploy.sh up --pods 2`, then all
-   nineteen. **Export, never prefix:** several runners re-`up` the rig mid-run and forward the optional
-   flags; a prefixed `ENABLE_MCP=1` is lost and the flag-off arm tears the MCP server down.
-2. **The OIDC-only quickstart rig** — `ENABLE_SPA=0 ENABLE_DIRECTORY=0 ENABLE_OIDC=1 ./deploy.sh up --pods 2`
-   (the browser-flow `openid-connect` mode), then `run-tests.sh` and `run-matrix.sh`, the two runners that
-   run on both flavours.
+0. **Fresh images first:** `ENABLE_MCP=1 ./deploy.sh build` — `up` reuses existing `opa-abac-*:local` images.
+1. **The resilience rig, on its own** — `./profile.sh up; ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up
+   --pods 2`, then `run-resilience-matrix.sh` only. `ENABLE_RESILIENCE_STUB=1` repoints the catalog pods'
+   **whole** role source at the stub, so no other runner can share this rig.
+2. **The main rig** — `./deploy.sh down; ./profile.sh up; ENABLE_MCP=1 ./deploy.sh up --pods 2` (the SPA and the
+   directory default on; OIDC and the user-service are forced), then `scripts/postman/seed-demo-data.sh` (the
+   demo-world matrix's prerequisite), then the other **eighteen** runners. **Keep `ENABLE_MCP=1` on every
+   call:** several runners re-`up` the rig mid-run and forward the optional flags, and the flag-off arm tears
+   the MCP server down — `export` it in an interactive shell; in a session where every command gets a fresh
+   shell (an agent's), pass it inline on each runner call.
+3. **The OIDC-only quickstart rig** — `./deploy.sh down; ./profile.sh up;` then, in an environment with **no**
+   leftover `ENABLE_MCP` / `ENABLE_RESILIENCE_STUB` (unset them — `ENABLE_MCP=1` forces the user-service),
+   `ENABLE_SPA=0 ENABLE_DIRECTORY=0 ENABLE_OIDC=1 ./deploy.sh up --pods 2`, then `run-tests.sh` and
+   `run-matrix.sh`, the two runners that run on both flavours.
 
 ## Cross-cutting acceptance (every ticket)
 
@@ -104,8 +113,11 @@ in 3.11.0; the `session.secret` check; the opentelemetry `metadata_schema`); the
 (`3.19.0-debian`, 2026-09-29).
 
 **Acceptance.** **E1**, **E2**, **E3**. The full suite (above) green on the bumped gateway, both rigs; a
-request through the gateway produces an `apisix` span in Jaeger; the OIDC-only rig (`ENABLE_SPA=0`) boots
-and a token-less catalog request still redirects to the login.
+request through the gateway produces an `apisix` span in Jaeger; the **browser-flow rig** (`ENABLE_SPA=0
+ENABLE_MCP=1 ./deploy.sh up --pods 2` — the directory defaults on, so the catalog, user-service and `/mcp`
+blocks all run with `bearer_only: false`) boots with every route accepted and a token-less catalog request still
+redirects to the login. (The OIDC-only rig wires only the catalog route, so it cannot prove the `session.secret`
+on the other two blocks.)
 
 **What NOT to touch.** No audience check (T2). No realm change. The Lua guard. No route added or removed.
 `etcd` stays `quay.io/coreos/etcd:v3.5.16` (proven by the suite, not assumed).
@@ -200,11 +212,11 @@ client, and is narrowed by the tool-gate exactly as the scripted agents are.
   from indexed environment variables, and a list bound from the environment replaces the YAML list whole.
 - **The agent-clients default, in both places** (as the profile): `example-mcp-server`'s `application.yml`
   gains `opa.abac.mcp.identity.agent-clients: [catalog-agent-readonly, catalog-agent-overreach,
-  catalog-agent-revoked, catalog-mcp-host]` and `opa.abac.subject.attribute-claims: [act_chain, azp]` (the
-  wiring check requires `azp` whenever `agent-clients` is set); `infra/compose.mcp.yaml`'s
+  catalog-agent-revoked, catalog-mcp-host]`, and its existing `opa.abac.subject.attribute-claims: [act_chain]`
+  gains `azp` (the wiring check requires `azp` whenever `agent-clients` is set); `infra/compose.mcp.yaml`'s
   `MCP_AGENT_CLIENTS` / `MCP_SUBJECT_ATTRIBUTE_CLAIMS` defaults carry the same values.
-  `ApplicationYamlBindingTest` (which pins the three-profile list today) is updated to the four profiles and
-  the two new keys.
+  `ApplicationYamlBindingTest` (which pins the three-profile list today) is updated to the four profiles, the
+  new `agent-clients` key and `azp` in `attribute-claims`.
 - **The agent matrix's E12 drill** (`run-agent-tool-matrix.sh`) **extends** the default list with
   `catalog-gateway` rather than replacing it (every reader of the switch agrees), and the **E12-restore**
   cell's name and script comment — "the guard is gone with the drill", "with agent-clients back to its empty
@@ -259,8 +271,10 @@ client, and is narrowed by the tool-gate exactly as the scripted agents are.
     names `/mcp`, not the root); the MCP spec's fallback is what places it there, and the miner accepts it.
 - **e2e — `scripts/postman/run-agent-tool-matrix.sh` + `agent-tool-matrix.postman_collection.json`,
   cells E13–E16** (QA E7–E10, the mapping table above); **step-up runner cell E9k** (QA E11 — the SPA client's
-  rotation: mint a `catalog-spa` pair with the miner's legacy mode, refresh **in-network** as E9h does → a new
-  refresh token; replay the first → `invalid_grant` "Maximum allowed refresh token reuse exceeded").
+  rotation: mint a `catalog-spa` pair as `demo` with the miner's legacy mode and its **own** cookie jar (never
+  the runner's shared `COOKIE_JAR`), refresh **in-network** as E9h does → a new refresh token; replay the first →
+  `invalid_grant` "Maximum allowed refresh token reuse exceeded").
+- **QA E12** runs as a recorded rig step on the browser-flow rig after T3's `/mcp` pin, in STATUS-03.
   `run-spa-auth-smoke.sh` stays green as the gateway's bearer-posture control only — it never refreshes.
 
 *Seams verified:* `OAuth2ProtectedResourceMetadataFilter` (`javap -c`, 7.0.7) as above; `SecurityConfig`'s

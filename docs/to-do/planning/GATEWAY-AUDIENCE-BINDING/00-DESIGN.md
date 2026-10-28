@@ -49,7 +49,8 @@ gateway runs APISIX 3.19.0. And a real MCP client — Claude Code, say — can f
 **In:** the APISIX bump; plugin-side issuer + audience validation on every `openid-connect` route; an
 audience mapper on each legitimate client; realm-wide refresh-token rotation; the MCP host agent client and its
 capability profile; the RFC 9728 document in `example-mcp-server` and its gateway route; the miner's
-discovery mode; the e2e cells; the docs (§T4).
+discovery mode; the SPA's single-flight `freshUser()` (the one demo-console change rotation requires); the e2e
+cells; the docs (§T4).
 
 **Out:** RFC 8693 token exchange at the MCP server (the successor to the documented deviation — a backlog
 item); a library seam for protected-resource metadata (waits for a second consumer); the `WWW-Authenticate`
@@ -179,7 +180,8 @@ the others) are recorded in STATUS — the first two hit the gateway's catch-all
 - its `tools/list` = exactly the three `low`-risk tools; `get_product` → `tool-gate` denial on risk tier,
   while the same human reads that product over REST (200);
 - a refresh with the host's refresh token → a new refresh token; replaying the old one → `invalid_grant`;
-- the SPA auth smoke green with rotation on.
+- a `catalog-spa` refresh rotates (step-up cell E9k); the SPA auth smoke stays green as the bearer-posture
+  control (it never refreshes); a vitest (U8) pins the single-flight refresh.
 
 The "discovery off" and "half-configured" states are unit/slice-test cases in the example (no rig drill).
 
@@ -206,7 +208,7 @@ The "discovery off" and "half-configured" states are unit/slice-test cases in th
 ## Validation
 
 Every ticket ends green on the rig before the next one touches anything: T1 the full suite; T2 a recreated
-Keycloak + the full suite + the new controls; T3 the agent matrix + the SPA smoke + the example's tests;
+Keycloak + the full suite + the new controls; T3 the agent matrix + the step-up cells E9k + the example's tests + `npm test` (U8);
 T4 the doc gates. `./gradlew build` and the local Sonar gate on any `.java` change; `check-shell-guards.py`
 and `check-collection-conformance.py` on every runner/collection change. The first whole-delivery review is
 one multi-lens `/deep-review` pass; follow-up rounds are the Fable + Opus pair.
