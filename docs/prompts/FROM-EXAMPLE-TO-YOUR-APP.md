@@ -228,6 +228,8 @@ each is behind a flag or a module and comes out cleanly. Delete rather than leav
 - OPA does not watch its policy mount and `deploy.sh up` rebuilds only *absent* images — after a
   policy or code change, restart OPA and `./deploy.sh build` (Mulch `opa-abac-rig-deploy-ops`).
 - A tag-requiring WRITE role can create what it cannot read (`TAG-GATED-CREATE`).
-- The gateway checks signature, expiry and issuer, not audience (`GATEWAY-AUDIENCE-BINDING`).
-- `opa.abac.subject.trust-forwarded-jwt=true` is only safe behind a signature-validating gateway;
-  the starter refuses to extract subjects until you say so.
+- A gateway that checks the signature but not the issuer and audience admits every token the realm
+  signs for anything — the example's checks all four (`GATEWAY-AUDIENCE-BINDING`, ADR 0035).
+- `opa.abac.subject.trust-forwarded-jwt=true` is only safe behind a gateway that verifies the signature,
+  expiry, issuer and audience (`docs/guides/ABAC-AUTHORIZATION.md` §Signature-trust posture); the
+  starter refuses to extract subjects until you say so.

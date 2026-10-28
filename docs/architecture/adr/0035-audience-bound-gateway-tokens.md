@@ -10,7 +10,7 @@ tags:
 
 # ADR 0035 — Gateway tokens are bound to an audience and an issuer, and the MCP surface is discoverable by OAuth
 
-**Status:** Accepted — designed 2026-10-28 (slice [[GATEWAY-AUDIENCE-BINDING]]); not yet implemented.
+**Status:** Accepted (implemented 2026-10-29, release 1.5.0) — slice **GATEWAY-AUDIENCE-BINDING** ([[GATEWAY-AUDIENCE-BINDING]], design [[GATEWAY-AUDIENCE-BINDING/00-DESIGN|00-DESIGN]])
 **Date:** 2026-10-28
 **Context tags:** gateway trust, `aud`, `iss`, APISIX `openid-connect`, Keycloak audience mapper,
 RFC 9728 protected-resource metadata, RFC 8707 resource indicators, MCP authorization, token passthrough

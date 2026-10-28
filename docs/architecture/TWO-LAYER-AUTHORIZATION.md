@@ -60,9 +60,9 @@ natively (`AbacFilter` + `AbacSubjectExtractor`). Reasons:
   headers. Re-deriving the Subject from the (gateway-validated) JWT inside the app keeps the trust model
   explicit and the decision self-contained.
 
-The gateway's job shrinks to **authn + forward + (optional) coarse route check**, plus two
-structural edge guards — the `/internal/*` 404 block and the token-issuer allow-list; everything
-attribute-level moves into the app.
+The gateway's job shrinks to **authn + forward + (optional) coarse route check**, plus the
+structural edge checks — the `/internal/*` 404 block, and the token's issuer and audience, both checked by
+`openid-connect` itself since ADR 0035; everything attribute-level moves into the app.
 
 ## Signature trust between the layers
 
@@ -70,9 +70,9 @@ The app does **not** re-verify the JWT signature — it trusts that the gateway 
 (`openid-connect` against the JWKS) and does structural + `exp` checks only. That posture is an
 explicit opt-in: `opa.abac.subject.trust-forwarded-jwt=true`; without it the default extractor
 refuses and the app fails closed. This is safe **only because**
-the app sits behind a validating gateway and is not directly exposed. A `verifySignature` mode is reserved
-for a gateway-less deployment but not implemented in this slice. See the loud tradeoff note in
-[[ABAC-AUTHORIZATION]].
+the app sits behind a validating gateway and is not directly exposed — one that verifies the signature,
+expiry, issuer **and audience** of every bearer (the full statement and the example's APISIX configuration:
+[[ABAC-AUTHORIZATION]] §Signature-trust posture).
 
 ## Per-type policy documents
 

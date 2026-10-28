@@ -195,6 +195,8 @@ request is anonymous until you opt in). To actually enforce ABAC, your applicati
    signature-validating gateway. The default JWT extractor does not verify signatures itself; until you
    acknowledge the gateway-trust posture it stays disabled (every request anonymous, all checks deny),
    with a startup warning explaining why. Alternatively, provide your own `AbacSubjectExtractor` bean.
+   The gateway must verify the **signature, expiry, issuer and audience** — see
+   [the signature-trust posture](docs/guides/ABAC-AUTHORIZATION.md#signature-trust-posture-read-this).
 
 See [`docs/guides/ABAC-AUTHORIZATION.md`](docs/guides/ABAC-AUTHORIZATION.md) for the full wiring and the
 [example services](example-catalog-management-service/) for a working `SecurityConfig`.
@@ -465,7 +467,7 @@ four MCP tool-specification types, and the example now consumes it like any adop
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # the tool surface, behind the gateway at /mcp
-scripts/postman/run-agent-tool-matrix.sh  # the E1–E12 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1–E16 matrix, through the gateway
 ```
 
 Full contract: [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) ·

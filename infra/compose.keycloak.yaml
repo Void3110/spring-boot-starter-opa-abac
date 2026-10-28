@@ -24,6 +24,15 @@
 # deny and the gateway-origin ALLOW). STRICT=false stays: the demo SPA logs in
 # through the host port from a browser, which a strict in-network hostname would break. A
 # production deployment should still pin the hostname (KC_HOSTNAME + KC_HOSTNAME_STRICT=true).
+#
+# Token-shape note (ADR 0035): the gateway also requires `aud` to contain `catalog-gateway`. Each
+# legitimate client stamps it with its own `gateway-audience` oidc-audience-mapper in the realm export
+# (catalog-gateway, catalog-spa, the three catalog-agent-*, catalog-mcp-host); catalog-directory has
+# none, so its service-account token (aud: realm-management) is refused at the edge. The export declares
+# NO clientScopes key on purpose: Keycloak creates its built-in scopes on import only when that key is
+# absent. catalog-mcp-host is the MCP hosts' PUBLIC agent client (PKCE, loopback callback :33418,
+# act_chain=["agent-host"]). Refresh tokens rotate realm-wide (revokeRefreshToken, maxReuse 0): a spent
+# one answers invalid_grant and detaches the session. Any change here needs the down-first re-import.
 
 name: opa-abac-example
 

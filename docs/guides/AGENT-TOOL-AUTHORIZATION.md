@@ -469,7 +469,7 @@ opa test infra/opa/policies -v
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # force-enables OIDC + OPA + the user-service
-scripts/postman/run-agent-tool-matrix.sh  # the E1-E12 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1-E16 matrix, through the gateway
 ```
 
 The tool surface is **gateway-fronted like every other service here** — the scripted client enters at
@@ -486,8 +486,9 @@ The tool surface is **gateway-fronted like every other service here** — the sc
   *every* tool call denies with `tool-gate-ceiling-unavailable`, which reads like a broken policy and
   is a broken URL.
 - **The actor comes from which client minted the token.** The realm carries one client per demo
-  actor — `catalog-agent-{readonly,overreach,revoked}` — each with a hardcoded-claim protocol mapper
-  minting `act_chain` with that actor's id. So the same human can *also* obtain an ordinary no-actor
+  actor — `catalog-agent-{readonly,overreach,revoked}`, plus the MCP host's public `catalog-mcp-host`
+  (§MCP OAuth discovery) — each with a hardcoded-claim protocol mapper minting `act_chain` with that
+  actor's id. So the same human can *also* obtain an ordinary no-actor
   token through `catalog-gateway`, which is exactly what the human-parity cells need. One agent
   client could not mint three actors, and a user-attribute mapper would bind the actor to the human.
 
@@ -505,6 +506,7 @@ denials, which **layer** — never on response shape alone.
 | `agent-readonly` — capped below `medium` risk | exactly `list_catalogs`, `get_catalog` | **denied `tool-gate`** |
 | `agent-overreach` — capability lists WRITE, GRANT, every verb | the human's four, **never more** | allowed |
 | the same `agent-readonly`, acting for a **low-privilege** principal | `[]` | denied |
+| `agent-host` — the MCP host, logged in by discovery, capped at `low` | exactly `list_catalogs`, `get_catalog`, `list_categories` | **denied `tool-gate`** (listed; the risk cap) |
 
 The middle two rows are the whole argument: the capability **narrows and never grants**, and the
 contrast is drawn on *one* token — the same human is permitted `get_product` directly. Alongside
@@ -517,10 +519,11 @@ Four cells are rig **drills** the runner orchestrates rather than collection ste
 restarts the PDP around the outage folders, recreates the pod with `agent-gate` OFF (proving the
 catalog's own gate still refuses what the tool-gate no longer does), recreates it with the
 readonly actor's capability emptied — a revocation that removes the tool from the roster *and* denies
-it at call time — and, for **E12**, recreates it with `catalog-gateway` listed in
-`opa.abac.mcp.identity.agent-clients` (and `azp` copied): the human token, minted by that actor-less
+it at call time — and, for **E12**, recreates it with `catalog-gateway` **added** to the four agent clients
+`opa.abac.mcp.identity.agent-clients` lists by default: the human token, minted by that actor-less
 client, is refused `tool-gate-actor-required` by value, an `agent-readonly` token on the same pod keeps
-its normal outcome, and the default pod then answers the human token normally again.
+its normal outcome, and the default pod, where `catalog-gateway` is no longer listed, answers the human
+token normally again.
 
 ### Two things only the rig could show
 
@@ -556,10 +559,104 @@ Not defects — demo scope, named so a reader does not mistake them for the desi
   resolve memo within a turn, and chunked so a principal governing many roots cannot build a request
   line the servlet container refuses.
 
+## MCP OAuth discovery
+
+A real MCP host — Claude Code, an IDE agent — starts from nothing but the server's URL. The MCP authorization
+specification (2025-11-25) has it discover where to log the user in, and the example implements that path
+([[0035-audience-bound-gateway-tokens|ADR 0035]] §5–§7). Logging Claude Code in by hand:
+[[MCP-HOST-LOGIN-RUNBOOK]].
+
+### The protected-resource document
+
+`example-mcp-server` serves the RFC 9728 document on **exactly two** paths: `/.well-known/oauth-protected-resource/mcp`,
+which clients try first, and `/.well-known/oauth-protected-resource`, the fallback.
+
+```json
+{"resource":"http://localhost:9085/mcp","authorization_servers":["http://localhost:9085/realms/catalog-demo"],"bearer_methods_supported":["header"]}
+```
+
+It is built **once, from configuration** — `example.mcp.oauth.protected-resource.resource` and
+`…authorization-server` — and never from the request, so a forged `Host` or `X-Forwarded-*` cannot point a
+client's login somewhere else:
+
+| Configuration | Outcome |
+|---|---|
+| both unset | **Discovery off**: both paths answer `404`; one startup WARN names both keys. |
+| exactly one set | **Startup failure**, naming the missing key. A half-written document would advertise a guess. |
+| a value that is not an absolute `http(s)` URL, carries a fragment, or (`resource`) names a path other than `/mcp` | **Startup failure**, naming the key and the reason. |
+| both valid | The document, `200`, `application/json`. |
+
+The shipped `application.yml` leaves discovery off; the rig's `infra/compose.mcp.yaml` sets both values to the
+gateway origin.
+
+**It is not Spring Security's `OAuth2ProtectedResourceMetadataFilter`.** That filter matches every sub-path of
+the well-known prefix, presets `resource` from the request URL (its `Host`) and answers whenever installed —
+three breaches of the contract above (`javap -c`, Spring Security 7.0.7). A two-mapping controller does the
+job. The security chain permits exactly those two `GET` paths and nothing else under `/.well-known`.
+
+### At the gateway
+
+- **The documents have their own route**: the two paths, `GET` only, **no auth plugin**, priority 66. A client
+  reads them before it has a token. A `POST`, or any other well-known path, falls to the catch-all and its bearer
+  check.
+- **`/mcp` is always bearer-only**, whatever `ENABLE_SPA` says. A token-less MCP client must get `401` — its cue
+  to discover — never a `302` to a login page it cannot render.
+- **The `/realms/*` passthrough is wired whenever `ENABLE_MCP=1`**, not only for the SPA. The document names the
+  realm at the gateway origin, so the host's whole code flow runs through it, and Keycloak stamps that origin as
+  the token's `iss`, one of the three the gateway admits.
+- **Keycloak ignores RFC 8707 `resource`.** The spec has clients send it on the authorize and token requests;
+  Keycloak 26.3.2 leaves `aud` to the mappers either way (measured, ADR 0035 T2 probe I1). So the binding is on
+  the mapper-stamped audience, and a Keycloak upgrade should re-measure it.
+
+### The host is an agent, not the person
+
+The realm's `catalog-mcp-host` is a **public** client: Authorization Code + PKCE S256, loopback redirect URIs on
+port `33418`. Like the three demo agents, it mints `act_chain` (`["agent-host"]`) and carries the
+`gateway-audience` mapper. On the server:
+
+- its profile, `agent-host`, is `allowed-categories: [READ]`, the four tools, `allowed-actions: [view, list]`,
+  `max-risk-tag: low`. Its roster is the three low-risk reads; `get_product` is listed in the profile and still
+  denied, the risk cap being the only reason;
+- it is one of the four `opa.abac.mcp.identity.agent-clients`, so a host token whose actor went missing is refused
+  `tool-gate-actor-required` rather than read as the person's own call. `azp` is in
+  `opa.abac.subject.attribute-claims` for that reason.
+
+A person logging an MCP host in therefore hands it **less** than their own reach, by construction.
+
+### Refresh tokens rotate
+
+The realm sets `revokeRefreshToken: true`, `refreshTokenMaxReuse: 0`, because the MCP spec requires rotation for
+public clients, and it holds realm-wide. A refresh answers a new refresh token. Presenting a spent one answers
+`invalid_grant` "Maximum allowed refresh token reuse exceeded", and Keycloak detaches the session.
+
+That second effect is why the demo SPA's `freshUser()` refreshes **single-flight**: a catalog view fans out
+several reads at once, and a refresh per caller would replay the spent token and sign the user out.
+
+### The documented deviation: the forwarded bearer
+
+The tools forward the caller's own bearer to the catalog API, in-network. The MCP spec says a server *"MUST NOT
+pass through the token it received"*. Here the token was issued for the gateway's single audience, which the
+catalog shares, so the catalog is not a third party holding a token meant for someone else — but a strict reading
+still forbids it. The spec-aligned successor is **RFC 8693 token exchange** at the MCP server (a catalog-audience
+token minted per call), which needs per-resource audiences. It is in the backlog as its own slice.
+
+### Proven on the rig
+
+The agent matrix carries four cells for this path:
+- **E13**: both documents through the gateway with no token, a forged `Host` leaving the document byte-identical,
+  and the catch-all's `401` for a `POST` or a third path;
+- **E14**: the miner's `--discover` login — it walks the documents to the realm the way a host does, and checks
+  the token's `aud`, `azp`, `act_chain` and `iss`;
+- **E15**: the host's narrowed roster and its risk-cap denial, against a REST read of the same product on the same
+  token;
+- **E16**: rotation.
+
+The step-up matrix's E9k proves rotation for the SPA client too.
+
 ## Scope boundary — explicitly not in this slice
 
-MCP transport / OAuth authorization (the scope fence sits **above** the validated token, delegated to
-the ecosystem's MCP security layer) · the host-side `ToolCallingManager` leg · HITL / approval flows ·
+MCP transport / OAuth authorization in the library (the scope fence sits **above** the validated token; the
+example's discovery path, §MCP OAuth discovery, is example code, and RFC 8693 token exchange is backlog) · the host-side `ToolCallingManager` leg · HITL / approval flows ·
 policy-filtered retrieval · `listChanged` notifications (the SDK offers only a *global* broadcast;
 revocation bites at call time immediately, and at the next re-list for the view) · a real LLM in the
 loop. (The slice's exit criterion — a reusable library module — has since shipped as the incubating

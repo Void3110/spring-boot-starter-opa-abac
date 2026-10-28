@@ -99,19 +99,34 @@ individual prerequisites are in the per-matrix sections below and in
 
 Keycloak is **hostname-aware**: the `iss` claim follows the request's Host header
 (`KC_HOSTNAME_STRICT=false`), so an in-network mint carries `http://keycloak:8888` and a host-port
-mint carries `http://localhost:28888`. The openid-connect plugin validates the token signature
-against the realm JWKS and does not itself enforce `iss` (measured 2026-08-14), so the gateway
-carries an **issuer-allowlist guard** beside it (`ISSUER_ALLOWLIST` in `init-routes.sh`, hardened
-the same day): three authorities pass — `keycloak:8888` (every runner's in-network mints, and the
-miner's presented authority), **`localhost:9085`, the gateway origin** (the demo SPA's whole PKCE
-flow goes through the gateway's `/realms/*` passthrough, and Keycloak rewrites its advertised
-issuer to it — packaged and vite-dev alike), and `localhost:28888` (the published Keycloak port).
-A realm-signed token minted with a forged Host header is refused 401, under **any** cased spelling
-of the `Bearer` scheme. The suite still mints in-network so every token
-carries the canonical issuer. The step-up runner's E9 preflight pins all three halves — the `iss`
-value, the tamper control (the 200 is signature-validated), the foreign-issuer control across three
-cased spellings and all three guarded routes (the allowlist actually bites), and the gateway-origin
-control (it does **not** bite the browser — the half whose absence broke the SPA for one commit).
+mint carries `http://localhost:28888`. What the gateway enforces on every bearer, in its `openid-connect`
+plugin (APISIX 3.19, `claim_validator`, ADR 0035):
+
+- **The signature**, against the realm JWKS, and the expiry.
+- **The issuer is one of three rig authorities** (`ISSUER_ALLOWLIST` in `init-routes.sh`, rendered as
+  `valid_issuers`). Anything else is refused 401, under any cased spelling of the `Bearer` scheme.
+  - `keycloak:8888`: every runner's in-network mints, and the legacy miner's presented authority.
+  - **`localhost:9085`, the gateway origin**: the demo SPA's whole PKCE flow, and the MCP host's discovery
+    login (the miner's `--discover`), go through the gateway's `/realms/*` passthrough. Keycloak rewrites its
+    advertised issuer to that origin, packaged and vite-dev alike.
+  - `localhost:28888`: the published Keycloak port.
+- **The audience carries `catalog-gateway`**: each legitimate client stamps it with its own
+  `gateway-audience` mapper. A realm token minted for anything else — the `catalog-directory` service
+  account's, `aud: realm-management` — is refused `403 {"error":"mismatched audience"}`.
+
+Until ADR 0035 the issuer check was a separate Lua guard. APISIX 3.11's plugin validated the signature and
+not `iss` (measured 2026-08-14), and no audience check existed. The suite still mints in-network, so every
+runner token carries the canonical issuer.
+
+The step-up runner's E9 preflight pins every half:
+- the `iss` value;
+- the tamper control (the 200 is signature-validated);
+- the foreign-issuer control, across three cased spellings and all three authenticating routes (the
+  allowlist actually bites);
+- the gateway-origin control: it does **not** bite the browser — the half whose absence broke the SPA for
+  one commit;
+- E9i/E9j: the audience refusal and its allow control, on the catalog, user-service and `/mcp`;
+- the per-client check that all five legitimate clients' tokens carry the audience.
 
 So the suite does **not** grab the token from the host. The runner mints it from inside the shared
 compose network (`opa-abac-example_default`) and hands it to newman:

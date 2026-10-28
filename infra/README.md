@@ -64,17 +64,34 @@ TOKEN=$(docker run --rm --network opa-abac-example_default curlimages/curl -s \
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" localhost:9085/actuator/health  # 200
 ```
 
-> **Issuer gotcha:** Keycloak is hostname-aware — the `iss` claim follows the request's Host
-> header (`KC_HOSTNAME_STRICT=false`; see `compose.keycloak.yaml`'s issuer note). In-network mints
-> carry `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. The openid-connect
-> plugin validates the signature against the realm JWKS and does not itself enforce `iss`
-> (measured 2026-08-14), so the routes carry an **issuer-allowlist pre-function** beside it
-> (`ISSUER_ALLOWLIST` in `apisix/init-routes.sh`). **Three** authorities pass: `keycloak:8888`,
-> `localhost:28888`, and — load-bearing — **`localhost:9085`, the gateway origin**, because the demo
-> SPA runs its whole PKCE flow through the gateway's `/realms/*` passthrough and Keycloak rewrites
-> its advertised issuer to it. A forged-Host mint is refused 401. E9 pins both halves: the
-> foreign-issuer deny and the gateway-origin allow. Mint in-network for the suite: it is the
-> canonical authority, and the miner presents it from the host for the same parity.
+> **What the gateway checks on every bearer (ADR 0035).** The `openid-connect` plugin (APISIX 3.19) verifies
+> the signature against the realm JWKS, the expiry, and two claims, both in its `claim_validator`:
+>
+> - **The issuer.** Keycloak is hostname-aware — the `iss` claim follows the request's Host header
+>   (`KC_HOSTNAME_STRICT=false`; see `compose.keycloak.yaml`'s issuer note). In-network mints carry
+>   `http://keycloak:8888`; host-port mints carry `http://localhost:28888`. **Three** authorities pass
+>   (`ISSUER_ALLOWLIST` in `apisix/init-routes.sh`, rendered as `valid_issuers`):
+>   - `keycloak:8888`;
+>   - `localhost:28888`;
+>   - **`localhost:9085`, the gateway origin**, which is load-bearing: the demo SPA's PKCE flow and the MCP
+>     host's discovery login run through the gateway's `/realms/*` passthrough, and Keycloak rewrites its
+>     advertised issuer to that origin.
+>
+>   A forged-Host mint is refused 401. Until ADR 0035 this was a Lua pre-function beside the plugin: APISIX
+>   3.11 checked no `iss`.
+> - **The audience.** `aud` must contain `catalog-gateway` — `required` + `match_with_client_id`. Each
+>   legitimate client stamps it with its own `gateway-audience` `oidc-audience-mapper`: `catalog-gateway`,
+>   `catalog-spa`, the three `catalog-agent-*`, `catalog-mcp-host`. A realm token minted for anything else is
+>   refused `403 {"error":"mismatched audience"}` — `catalog-directory`'s service account, `aud:
+>   realm-management`, is the standing example.
+>
+> The step-up runner's E9 preflight pins both claims, and the deny and allow halves of each. Mint in-network
+> for the suite: it is the canonical authority, and the miner presents it from the host for the same parity.
+>
+> **Refresh tokens rotate, realm-wide** (`revokeRefreshToken`, `refreshTokenMaxReuse: 0`). A refresh answers a
+> new refresh token. Presenting a spent one answers `invalid_grant` "Maximum allowed refresh token reuse
+> exceeded", and Keycloak detaches the session. A client that refreshes concurrently must share one refresh,
+> as the demo SPA's `freshUser()` does.
 
 ## Demo SPA auth (bearer-only gateway) — opt-in
 
@@ -115,8 +132,8 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:9085/actuator/health        #
 
 # mint a token IN-NETWORK (see the issuer gotcha above) and call through the gateway.
 # NOTE: catalog-spa is a *public* client with direct-access-grants OFF (correct for a real PKCE
-# browser client), so for a CLI smoke test mint via the confidential catalog-gateway client — the
-# token is realm-scoped, so APISIX validates it regardless of which client minted it:
+# browser client), so for a CLI smoke test mint via the confidential catalog-gateway client — APISIX
+# admits it because that client, like catalog-spa, stamps aud=catalog-gateway (ADR 0035):
 TOKEN=$(docker run --rm --network opa-abac-example_default curlimages/curl -s \
   -X POST http://keycloak:8888/realms/catalog-demo/protocol/openid-connect/token \
   -d client_id=catalog-gateway -d client_secret=catalog-gateway-secret \
@@ -189,7 +206,9 @@ public `createTeam` fails closed to 403.
 
 > **`/internal/**` is NEVER gateway-exposed — the load-bearing invariant.** The gateway proxies ONLY
 > `/api/v1/teams*`, `/api/v1/users*`, `/api/v1/catalogs*` (catch-all), the Keycloak `/realms/*` +
-> `/resources/*` paths (`ENABLE_SPA`), `/mcp*` (`ENABLE_MCP`), and the packaged-SPA static paths
+> `/resources/*` paths (`ENABLE_SPA` or `ENABLE_MCP`), `/mcp*` (`ENABLE_MCP`, always bearer-only), the two
+> RFC 9728 documents `/.well-known/oauth-protected-resource` and `…/oauth-protected-resource/mcp` (GET only,
+> no auth plugin, `ENABLE_MCP` — see [[MCP-HOST-LOGIN-RUNBOOK]]), and the packaged-SPA static paths
 > `/` + `/index.html` + favicons + `/assets/*` (GET/HEAD only, `ENABLE_SPA`).
 > The user-service's `/internal/**` (resolve, governed-targets, bootstrap) and the
 > catalog's `/internal/catalog/{id}/created-by` are `permitAll` + in-network only — exposing them through
