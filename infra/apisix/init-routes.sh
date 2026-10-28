@@ -34,6 +34,21 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+# opentelemetry: where APISIX ships its spans. Since 3.12 the plugin reads this ONLY from plugin metadata
+# (the old config.yaml `plugin_attr.opentelemetry` is silently ignored, and the plugin then traces nothing).
+# The plugin is still enabled per route below (ENABLE_TRACING).
+otel_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+  -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+  "$APISIX_ADMIN/apisix/admin/plugin_metadata/opentelemetry" \
+  -d '{"resource":{"service.name":"apisix"},"collector":{"address":"jaeger:4318","request_timeout":3},"batch_span_processor":{"max_queue_size":1024,"batch_timeout":2,"inactive_timeout":1,"max_export_batch_size":16},"trace_id_source":"random","set_ngx_var":false}') || true
+otel_code=$(printf '%s' "$otel_resp" | tail -n1)
+if [ "$otel_code" != "200" ] && [ "$otel_code" != "201" ]; then
+  echo "ERROR: opentelemetry plugin metadata rejected (HTTP $otel_code):" >&2
+  printf '%s\n' "$otel_resp" | sed '$d' >&2
+  exit 1
+fi
+echo "  plugin_metadata 'opentelemetry' -> collector jaeger:4318 (service.name=apisix)"
+
 # Upstream: round-robin pool over the catalog app pods.
 #   pass_host=pass keeps the original Host header so the Spring app sees the right URL.
 curl -sf -o /dev/null -X PUT \
@@ -97,6 +112,9 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #   - localhost:28888  the published Keycloak port, reachable directly from the host.
 ISSUER_ALLOWLIST="${ISSUER_ALLOWLIST:-http://keycloak:8888/realms/catalog-demo,http://localhost:9085/realms/catalog-demo,http://localhost:28888/realms/catalog-demo}"
 ISSUER_ALLOWED_LUA="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "[%c%s%c]=true,", 39, $i, 39}')"
+# The same list as a JSON array, for openid-connect's own claim_validator.issuer.valid_issuers.
+ISSUER_VALID_JSON="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "%s\"%s\"", (i>1 ? "," : ""), $i}')"
+OIDC_SESSION_SECRET="${APISIX_OIDC_SESSION_SECRET:-catalog-demo-local-session-secret}"
 ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local allowed = {${ISSUER_ALLOWED_LUA}} local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end if not auth:lower():match('^bearer%s') then return end local token = auth:match('^%S+%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.[^%.]*$') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if type(claims.iss) ~= 'string' or not allowed[claims.iss] then core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end end\"]}"
 
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
@@ -107,8 +125,15 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
     OIDC_BEARER_ONLY="false"
     OIDC_UNAUTH_ACTION="auth"
   fi
-  PLUGINS="$PLUGINS,\"openid-connect\":{\
-\"_meta\":{\"priority\":2599},\
+  # ONE openid-connect configuration for every route that authenticates (the catalog catch-all, the
+  # user-service routes, /mcp) — built here once, so the three can never drift apart.
+  #   - claim_validator.issuer.valid_issuers: since APISIX 3.12 a block WITHOUT it validates `iss`
+  #     against the DISCOVERY document's issuer (http://keycloak:8888/…) — which 3.11 never did — so
+  #     leaving it out would refuse every token minted through the gateway origin (the SPA) or the
+  #     published port. It carries the same three authorities as the issuer guard below.
+  #   - session.secret: required since 3.14 whenever bearer_only is false (the browser-flow mode,
+  #     ENABLE_SPA=0); >= 16 characters. A local-rig value; override with APISIX_OIDC_SESSION_SECRET.
+  OIDC_CONF="\"_meta\":{\"priority\":2599},\
 \"client_id\":\"catalog-gateway\",\
 \"client_secret\":\"catalog-gateway-secret\",\
 \"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
@@ -119,7 +144,12 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
 \"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
-\"ssl_verify\":false}"
+\"claim_validator\":{\"issuer\":{\"valid_issuers\":[$ISSUER_VALID_JSON]}},\
+\"ssl_verify\":false"
+  if [ "$OIDC_BEARER_ONLY" = "false" ]; then
+    OIDC_CONF="$OIDC_CONF,\"session\":{\"secret\":\"$OIDC_SESSION_SECRET\"}"
+  fi
+  PLUGINS="$PLUGINS,\"openid-connect\":{$OIDC_CONF}"
   PLUGINS="$PLUGINS,$ISSUER_GUARD"
 fi
 
@@ -292,19 +322,7 @@ if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
   # + tracing + cors-when-SPA. NOT the catalog `opa` gateway plugin (the user-service authorizes itself).
   UM_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
   if [ "${ENABLE_OIDC:-0}" = "1" ]; then
-    UM_PLUGINS="$UM_PLUGINS,\"openid-connect\":{\
-\"_meta\":{\"priority\":2599},\
-\"client_id\":\"catalog-gateway\",\
-\"client_secret\":\"catalog-gateway-secret\",\
-\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
-\"realm\":\"catalog-demo\",\
-\"scope\":\"openid profile email\",\
-\"bearer_only\":$OIDC_BEARER_ONLY,\
-\"use_jwks\":true,\
-\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
-\"set_access_token_header\":true,\
-\"access_token_in_authorization_header\":true,\
-\"ssl_verify\":false}"
+    UM_PLUGINS="$UM_PLUGINS,\"openid-connect\":{$OIDC_CONF}"
     UM_PLUGINS="$UM_PLUGINS,$ISSUER_GUARD"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
@@ -365,19 +383,7 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
   # user-service omits it: this service authorizes itself, with its own tool-gate.
   MCP_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
   if [ "${ENABLE_OIDC:-0}" = "1" ]; then
-    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{\
-\"_meta\":{\"priority\":2599},\
-\"client_id\":\"catalog-gateway\",\
-\"client_secret\":\"catalog-gateway-secret\",\
-\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
-\"realm\":\"catalog-demo\",\
-\"scope\":\"openid profile email\",\
-\"bearer_only\":$OIDC_BEARER_ONLY,\
-\"use_jwks\":true,\
-\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
-\"set_access_token_header\":true,\
-\"access_token_in_authorization_header\":true,\
-\"ssl_verify\":false}"
+    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{$OIDC_CONF}"
     MCP_PLUGINS="$MCP_PLUGINS,$ISSUER_GUARD"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then

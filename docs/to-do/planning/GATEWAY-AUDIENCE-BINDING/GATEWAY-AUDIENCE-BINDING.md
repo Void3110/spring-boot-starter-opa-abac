@@ -41,7 +41,7 @@ tags:
 
 | # | Ticket | Status |
 |---|---|---|
-| T1 | APISIX 3.11.0 → 3.19.0, behavior-preserving (incl. `valid_issuers` — 3.12+ defaults to the discovery issuer) | ☐ |
+| T1 | APISIX 3.11.0 → 3.19.0, behavior-preserving (incl. `valid_issuers` — 3.12+ defaults to the discovery issuer) | ✅ 2026-10-28 |
 | T2 | Audience in the plugin (one mapper per client); the Lua guard deleted | ☐ |
 | T3 | The MCP OAuth surface: the host agent client, the RFC 9728 document, the miner's `--discover`, refresh rotation | ☐ |
 | T4 | Docs, the Claude Code runbook, the backlog | ☐ |

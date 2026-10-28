@@ -28,7 +28,7 @@ services:
       retries: 10
 
   apisix:
-    image: apache/apisix:3.11.0-debian
+    image: apache/apisix:3.19.0-debian
     container_name: opa-abac-apisix
     depends_on:
       etcd:

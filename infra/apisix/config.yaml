@@ -46,23 +46,9 @@ plugins:
   - opentelemetry      # Phase B: export gateway spans to Jaeger
   - opa                # Phase B: call OPA for an (allow-all, for now) decision per request
   - openid-connect     # Phase 2 (identity): terminate Keycloak OIDC at the gateway
-  - serverless-pre-function   # demo: enrich requests with identity headers from the validated JWT
+  - serverless-pre-function   # the /internal/* block route (and, until ADR 0035 T2, the issuer-allowlist guard)
   - cors               # Phase 7 (demo SPA): allow the browser SPA's cross-origin calls (ENABLE_SPA)
 
-# opentelemetry plugin: where APISIX ships its spans. The plugin must also be enabled
-# per-route (see infra/apisix/init-routes.sh).
-plugin_attr:
-  opentelemetry:
-    resource:
-      service.name: apisix
-    collector:
-      address: jaeger:4318      # OTLP HTTP ingest on the Jaeger container
-      request_timeout: 3
-    batch_span_processor:
-      max_queue_size: 1024
-      batch_timeout: 2
-      inactive_timeout: 1
-      max_export_batch_size: 16
-    # always mint a trace id so even unauthenticated probes produce a root span
-    trace_id_source: random
-    set_ngx_var: false
+# opentelemetry: the collector settings are PLUGIN METADATA since APISIX 3.12 (a `plugin_attr.opentelemetry`
+# block here is silently ignored) — infra/apisix/init-routes.sh writes them through the Admin API
+# (`PUT /apisix/admin/plugin_metadata/opentelemetry`), and enables the plugin per route.
