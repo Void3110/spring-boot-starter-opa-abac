@@ -10,8 +10,14 @@ tags:
 
 # GATEWAY-AUDIENCE-BINDING — Code Review
 
-> **Verdict**: Round 1 — **BLOCK** from all three reviewers (fail-closed synthesis). Every confirmed finding
-> was fixed on the branch; round 2 reviews the fix commit. See [Rounds](#rounds).
+> **Verdict**: **Approved with fixes.** Four rounds, the same three reviewers each time:
+> - round 1: BLOCK ×3, 13 findings — one High (a forgeable browser-flow session) and two Medium;
+> - round 2: BLOCK (sol), 7 findings in the round-1 fixes;
+> - round 3: APPROVE-WITH-FIXES ×3, 2 Low + 2 docs;
+> - round 4: **APPROVE ×3 with no findings** — the terminal, no-fix round.
+>
+> Every confirmed finding is fixed or documented; one pre-existing item went to a follow-up task. See
+> [Rounds](#rounds).
 > **Scope**: The whole slice — T1 APISIX 3.11 → 3.19, T2 audience binding and the Lua issuer guard's deletion,
 > T3 the MCP OAuth surface (the host agent client, RFC 9728 discovery, refresh rotation, the SPA single-flight
 > refresh, the miner's `--discover`), T4 docs and the Claude Code runbook, and the QA-E13 fix commit (backlog
@@ -256,6 +262,26 @@ All three are recorded in Mulch with the occurrence.
 
 Round 3 fixed things, so by the loop rule it is **not** terminal: round 4 verifies these fixes.
 
+## Round 4 — the same three on `3458c9b` (terminal)
+
+- **Verdicts: APPROVE from all three, with no findings.** R3-1 … R3-4 were judged CLOSED by all three.
+- **What the reviewers probed** (the Codex legs and Opus):
+  - the miner's `origin_of` across about 30 spelling pairs, including host-confusion forms (`@`, `#@`, `\@`);
+  - the document's port parsing across 75 values, with the reg-name and server-authority arms agreeing on every
+    spelling;
+  - a whole-tree sweep for stale gateway descriptions;
+  - `opa test` on the agent-deny cases.
+- **Cost:** Opus 213k tokens. Across the four rounds Opus used about 1.1M Claude tokens; the Codex legs are
+  outside the Claude pool.
+
+**Known nits, deliberately not fixed:** fixing them would have made this a fixing round and restarted the loop.
+- No test exercises the reg-name arm's `≤ 5` digit guard. Without it, an absurdly long port fails startup with a
+  `NumberFormatException` instead of the keyed message.
+- `infra/README.md` says "see the issuer gotcha above", a label that no longer exists. The passage just above it
+  still explains the point.
+
+Neither is a behavior defect.
+
 ## Rounds
 
 | Round | Reviewers | Verdict | Outcome |
@@ -263,3 +289,4 @@ Round 3 fixed things, so by the loop rule it is **not** terminal: round 4 verifi
 | 1 | Opus · Codex gpt-6-astra · Codex gpt-6.1-sol | BLOCK ×3 | 13 findings confirmed, all fixed or documented |
 | 2 | the same three, on `d9eac71` | BLOCK (sol) · APPROVE-WITH-FIXES ×2 | 7 findings fixed; 1 pre-existing one to a follow-up task |
 | 3 | the same three, on `64950c2` | APPROVE-WITH-FIXES ×3 | 2 Low + 2 docs fixed; 1 pre-existing Mulch item recorded |
+| 4 | the same three, on `3458c9b` | **APPROVE ×3** | no findings — terminal |

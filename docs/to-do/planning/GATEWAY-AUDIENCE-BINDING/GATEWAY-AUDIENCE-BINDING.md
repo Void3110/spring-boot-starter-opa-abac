@@ -13,7 +13,7 @@ tags:
 > and the contract [[0035-audience-bound-gateway-tokens|ADR 0035]]. **Scope grew on 2026-10-15** (maintainer): the slice
 > also carries MCP OAuth discovery (RFC 9728) for `example-mcp-server`, an MCP host **agent** client and audience binding on
 > `/mcp`; it lands **before the 1.5.0 cut**. Target moved to **APISIX 3.19.0** (released 2026-09-28). Four tickets: T1 the
-> bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Decomposed 2026-10-28** ([[01-DECOMPOSITION]], [[10-QA-TEST-CASES]], STATUS-01…04; no prompt — collaborative). **Built:** T1–T3 2026-10-28, T4 2026-10-29 (QA E13 — Claude Code logged in for real). **Next:** the whole-delivery multi-lens `/deep-review`, then the PR. The research below is the record it was designed from.
+> bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Decomposed 2026-10-28** ([[01-DECOMPOSITION]], [[10-QA-TEST-CASES]], STATUS-01…04; no prompt — collaborative). **Built:** T1–T3 2026-10-28, T4 2026-10-29 (QA E13 — Claude Code logged in for real). **Reviewed** 2026-10-29: four rounds, Opus + Codex ×2, approved with fixes ([[GATEWAY-AUDIENCE-BINDING-REVIEW]]). **Next:** the PR, then the folder moves to `implemented/` and the 1.5.0 cut. The research below is the record it was designed from.
 >
 > **Validated:** 2026-10-28 — mechanical + adversarial clean; 3 delta checks after 3 amendments. The adversarial
 > pass was one full round by four independent reviewers given an identical read-only brief (two Claude models, two
