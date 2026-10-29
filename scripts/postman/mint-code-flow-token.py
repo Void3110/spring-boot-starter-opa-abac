@@ -275,15 +275,17 @@ def is_loopback(hostname: str | None) -> bool:
 
 
 def origin_of(url: str) -> tuple[str, str, int | None]:
-    """(scheme, host, effective port): two spellings of one origin compare equal (case, default port)."""
+    """(scheme, host, effective port): two spellings of one origin compare equal (host case, an IP literal's
+    spelling, an omitted vs an explicit default port) — and nothing else does. A trailing dot and an explicit
+    port 0 are kept as written: they are different origins, and only an OMITTED port takes the default."""
     parsed = urllib.parse.urlparse(url)
     scheme = parsed.scheme.lower()
-    host = (parsed.hostname or "").rstrip(".").lower()
+    host = (parsed.hostname or "").lower()
     try:
         host = ipaddress.ip_address(host).compressed
     except ValueError:
         pass
-    port = parsed.port or {"http": 80, "https": 443}.get(scheme)
+    port = {"http": 80, "https": 443}.get(scheme) if parsed.port is None else parsed.port
     return scheme, host, port
 
 
@@ -505,8 +507,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"Keycloak base URL to CONNECT to (default: {DEFAULT_KEYCLOAK})")
     parser.add_argument("--issuer", default=DEFAULT_ISSUER,
                         help="the authority presented as the Host header, and therefore the `iss` "
-                             f"the token carries (default: {DEFAULT_ISSUER} — the one APISIX "
-                             "validates; pass --issuer <the connect URL> to mint a host-issuer token)")
+                             f"the token carries (default: {DEFAULT_ISSUER} — the suite's canonical "
+                             "issuer, one of the three the gateway admits; pass --issuer <the connect URL> to "
+                             "mint a host-issuer token)")
     parser.add_argument("--realm", default=DEFAULT_REALM)
     parser.add_argument("--client", default=DEFAULT_CLIENT,
                         help=f"public PKCE client (default: {DEFAULT_CLIENT})")

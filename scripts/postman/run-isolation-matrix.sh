@@ -17,8 +17,8 @@
 #   docker restart opa-abac-opa # reload the B4 policy (T1)
 #   # the user-service must run with ABAC_OWNERSHIP_ENABLED=true (compose.usermgmt.yaml) for E2/E7.
 #
-# How it wires the data: it mints three in-network tokens (alice/bob/carol — issuer must match what
-# APISIX validates, http://keycloak:8888), decodes each sub, bootstraps the three as user-service users,
+# How it wires the data: it mints three in-network tokens (alice/bob/carol — at keycloak:8888, one of the
+# three issuers the gateway admits), decodes each sub, bootstraps the three as user-service users,
 # pre-seeds CAROL's OWN catalog + team (she's the owner), and leaves ALICE's create + add-member to the
 # matrix (performed LIVE through the gateway). Carol's membership in Alice's (live) team is added by the
 # collection after E2 captures Alice's team id. Honors the in-network token caveat.

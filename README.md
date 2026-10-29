@@ -318,8 +318,9 @@ cd scripts/postman && ./run-hierarchy-matrix.sh          # or run-tests.sh / run
 ```
 
 > The newman matrices under [`scripts/postman/`](scripts/postman/) are the through-the-gateway proofs
-> (role / team / tag / data-filtering / hierarchy). Mint tokens **in-network** (APISIX validates the
-> issuer as `keycloak:8888`) — the scripts handle this. See [`infra/README.md`](infra/README.md).
+> (role / team / tag / data-filtering / hierarchy). Mint tokens **in-network**, at `keycloak:8888`, the suite's
+> canonical issuer and one of the three the gateway admits. Every token must also carry `aud: catalog-gateway`.
+> The scripts handle both. See [`infra/README.md`](infra/README.md).
 
 ### Try the demo console (the browser demo)
 

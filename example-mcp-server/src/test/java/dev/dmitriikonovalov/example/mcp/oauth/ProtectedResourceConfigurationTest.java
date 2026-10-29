@@ -72,6 +72,8 @@ class ProtectedResourceConfigurationTest {
             "resource             | http://localhost:bad/mcp                  | has no valid host and port",
             "resource             | http://localhost:99999/mcp                | has no valid host and port",
             "resource             | http://localhost:0/mcp                    | has no valid host and port",
+            "resource             | http://my_host:00000/mcp                  | has no valid host and port",
+            "resource             | http://my_host:065536/mcp                 | has no valid host and port",
             "resource             | http://admin@localhost:9085/mcp           | carries userinfo",
             "authorization-server | realms/catalog-demo                       | is not an absolute http(s) URL",
             "authorization-server | mailto:keycloak@example.invalid           | is not an absolute http(s) URL",
@@ -106,6 +108,7 @@ class ProtectedResourceConfigurationTest {
     @ParameterizedTest(name = "valid: {0} with {1}") // a valid value is never refused by the stricter checks
     @CsvSource(delimiter = '|', value = {
             "http://my_host:9085/mcp      | http://my_host:9085/realms/catalog-demo",
+            "http://my_host:000080/mcp    | http://my_host:/realms/catalog-demo",
             "http://[::1]:9085/mcp        | http://[::1]:9085/realms/catalog-demo",
             "https://example.org:443/mcp  | https://example.org/realms/catalog-demo/",
             "https://example.org/mcp      | https://idp.example.org"})

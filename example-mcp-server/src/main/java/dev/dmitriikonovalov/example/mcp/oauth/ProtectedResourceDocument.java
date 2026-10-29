@@ -41,7 +41,7 @@ public final class ProtectedResourceDocument {
      * name it does not accept as a hostname (one with an underscore), leaving {@link URI#getHost()} null.
      */
     private static final Pattern REG_NAME_AUTHORITY =
-            Pattern.compile("(?:[\\w.~!$&'()*+,;=-]|%\\p{XDigit}{2})++(?::(\\d{1,5}))?");
+            Pattern.compile("(?:[\\w.~!$&'()*+,;=-]|%\\p{XDigit}{2})++(?::(\\d*+))?");
 
     private final Map<String, Object> body;
 
@@ -141,7 +141,12 @@ public final class ProtectedResourceDocument {
         if (matcher == null || !matcher.matches()) {
             return false;
         }
-        return matcher.group(1) == null || validPort(Integer.parseInt(matcher.group(1)));
+        String port = matcher.group(1);
+        if (port == null || port.isEmpty()) {
+            return true; // RFC 3986: an empty port is the scheme's default, as URI reads it for a server authority
+        }
+        String digits = port.replaceFirst("^0++", "");
+        return !digits.isEmpty() && digits.length() <= 5 && validPort(Integer.parseInt(digits));
     }
 
     private static boolean validPort(int port) {

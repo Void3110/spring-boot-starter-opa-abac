@@ -10,11 +10,12 @@
 # Run AFTER:  ENABLE_SPA=1 ./deploy.sh up --pods 2
 # Then:       scripts/postman/run-spa-auth-smoke.sh
 #
-# Tokens are minted IN-NETWORK (issuer must match what APISIX validates against — see infra/README.md
-# "Issuer gotcha"). The browser SPA uses the public `catalog-spa` client via PKCE; that client has
-# direct-access-grants OFF (correct for a real browser client), so this CLI smoke test mints via the
-# confidential `catalog-gateway` client instead — the token is realm-scoped, so APISIX validates it
-# regardless of which client minted it.
+# Tokens are minted IN-NETWORK, at keycloak:8888, one of the three issuers the gateway admits (see
+# infra/README.md "What the gateway checks on every bearer"). The browser SPA uses the public `catalog-spa`
+# client via PKCE; that client has direct-access-grants OFF (correct for a real browser client), so this CLI
+# smoke test mints via the confidential `catalog-gateway` client instead. The gateway admits it because that
+# client, like catalog-spa, stamps aud=catalog-gateway (ADR 0035). A token from a client without that mapper
+# is refused 403 "mismatched audience", not 401.
 
 set -euo pipefail
 

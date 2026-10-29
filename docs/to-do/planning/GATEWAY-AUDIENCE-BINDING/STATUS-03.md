@@ -109,8 +109,9 @@ Path: inline review in the collaborative session (the slice's whole-delivery `/d
     app's chain.
   - A misconfigured document cannot be served. A missing one is a `404`, never a guess.
   - The host is an agent, so on the tool surface its token cannot reach the principal's full ceiling. (Corrected
-    by the slice review, 2026-10-29: on the REST API the same token is the person's, by ADR 0028 §2 — backlog 25
-    is what would close it.) Two things stop that on `/mcp`: the
+    by the slice review, 2026-10-29: on the REST API the same token has the person's MEMBERSHIP reach, by ADR
+    0028 §2, while the supervised path and step-up stay human-only (they deny any `act_chain` call). Backlog 25
+    is what would narrow REST too.) Two things stop that on `/mcp`: the
     risk cap is in its profile, and `agent-clients` refuses a host token whose actor went missing.
   - Rotation only narrows: a replayed refresh token is refused.
   - The miner refuses a document for another resource, an issuer mismatch, and an AS without S256.

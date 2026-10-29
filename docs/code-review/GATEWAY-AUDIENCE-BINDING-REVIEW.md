@@ -228,9 +228,38 @@ All three are recorded in Mulch with the occurrence.
 - **The session-secret drill:** the secret changed across deploys.
 - **QA E12:** `/mcp` → `401`, the catalog → `302`, the discovery login and the directory refusal as before.
 
+## Round 3 — the same three on `64950c2`
+
+- **Verdicts: APPROVE-WITH-FIXES from all three.** No reviewer blocked.
+- **Round-2 fixes:** R2-1, R2-2 and R2-5 were judged CLOSED by all three. Opus judged R2-3 and R2-4 CLOSED, and
+  both Codex legs judged them PARTIAL (R3-1, R3-2 below). R2-7 was PARTIAL with all three (R3-3), and astra also
+  marked R2-6 PARTIAL (R3-4).
+- **Cost:** Opus 302k tokens.
+
+| # | Sev | Finding | Raised by | Status |
+|---|---|---|---|---|
+| R3-1 | Low | R2-4's `origin_of` equated two *distinct* origins: it stripped a trailing dot (`example.org.`) and gave an explicit `:0` the default port. Codex raised it as medium. Re-ranked Low on Opus's evidence: a trailing-dot FQDN is the same DNS name, and port 0 cannot be connected to, so no grant reached another host. Fixed anyway, because exact origin equality is cheap. | sol F1, astra F1 | Fixed: the dot and `:0` are kept; only an omitted port takes the default. Probed: `example.org.` and `:0` are now different, while `:443`, host case and IPv6 spellings still match |
+| R3-2 | Low | The reg-name fallback's `\d{1,5}` refused a zero-padded port (`my_host:000080`) and an empty port (`my_host:`). Both are valid RFC 3986, and the server-authority arm accepts them. | sol F2, astra F2 | Fixed: the port is parsed after stripping leading zeros, and an empty port is the default. New cases: `000080` and empty accepted; `00000` and `065536` refused |
+| R3-3 | docs | Four more stale gateway descriptions: the root README, the miner's `--help`, `run-isolation-matrix.sh`, and `run-spa-auth-smoke.sh`. The last said any client's token is accepted, the opposite of this slice's headline. | sol F3, astra F3, Opus F1–F3 | Fixed. A whole-tree sweep leaves only "issuer must match what APISIX validates" comments, which are accurate |
+| R3-4 | docs | STATUS-03's in-place correction still said the REST token is "the person's", without the supervised and step-up exceptions. | astra F4 | Fixed |
+| R3-5 | low, pre-existing | Four Mulch records (mx-c5a27d, mx-91fa5d, mx-05b2c1, mx-5537aa) still say a host-port token is refused, a 3.11-era truth. | Opus F4 | A current-truth reference recorded and linked to all four. The records themselves are 3.11-era measurements, so they are not rewritten |
+
+**Round-3 test results** (2026-10-29):
+- **`./gradlew build`:** green, 1537 tests, 0 failures, including the three new document cases.
+- **Sonar:** only the three standing classes.
+- **On a rebuilt MCP image:** the agent matrix 110/0. Its E14 discovery login went through the new origin
+  check: answered at OIDC appended, with `aud`, `azp`, `act_chain` and `iss` as before.
+- **`run-spa-auth-smoke.sh`:** 4/4.
+- **The browser-flow rig:** the discovery login succeeds there too.
+- **Not re-run:** the full suite. Round 3 changed no gateway, realm or policy file, only the miner, the document
+  validator, and docs/comments.
+
+Round 3 fixed things, so by the loop rule it is **not** terminal: round 4 verifies these fixes.
+
 ## Rounds
 
 | Round | Reviewers | Verdict | Outcome |
 |---|---|---|---|
 | 1 | Opus · Codex gpt-6-astra · Codex gpt-6.1-sol | BLOCK ×3 | 13 findings confirmed, all fixed or documented |
 | 2 | the same three, on `d9eac71` | BLOCK (sol) · APPROVE-WITH-FIXES ×2 | 7 findings fixed; 1 pre-existing one to a follow-up task |
+| 3 | the same three, on `64950c2` | APPROVE-WITH-FIXES ×3 | 2 Low + 2 docs fixed; 1 pre-existing Mulch item recorded |
