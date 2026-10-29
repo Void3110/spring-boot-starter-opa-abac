@@ -21,7 +21,7 @@
 # checks; then re-parent the movable Category under the FOREIGN catalog (via the catalog DB, rewriting the
 # ltree path of the subtree + its products) and assert the read flips to 403.
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps runtime ids
+# Honors the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits) and keeps runtime ids
 # in the collection variable scope.
 
 set -euo pipefail

@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.dmitriikonovalov.example.mcp.tool.CatalogTools;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolDescriptor;
 import dev.dmitriikonovalov.opaabac.mcp.tool.ToolRegistry;
+import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -28,6 +32,30 @@ class McpToolSurfaceTest {
 
     @Autowired
     ToolRegistry registry;
+
+    /** By name — the context holds more than one specification list (see ToolGateInstallationTest). */
+    @Autowired
+    Map<String, List<SyncToolSpecification>> specificationLists;
+
+    @Test // U9 — every tool advertises itself as the read it is, so an MCP host does not label it destructive
+    void everyAdvertisedToolCarriesReadOnlyHints() {
+        List<McpSchema.Tool> tools = specificationLists.values().stream()
+                .flatMap(List::stream)
+                .map(SyncToolSpecification::tool)
+                .toList();
+        assertThat(tools).as("the scanner must have produced the tool list").isNotEmpty();
+
+        // @McpTool's defaults are destructiveHint=true and openWorldHint=true, and Claude Code shows them
+        // as "destructive · open-world" (QA E13). The hints are advisory — the tool-gate decides on each
+        // tool's declared category and risk tier — but a read must not advertise itself as a write.
+        for (McpSchema.Tool tool : tools) {
+            assertThat(tool.annotations()).as("annotations of %s", tool.name()).isNotNull();
+            assertThat(tool.annotations().readOnlyHint()).as("readOnlyHint of %s", tool.name()).isTrue();
+            assertThat(tool.annotations().destructiveHint()).as("destructiveHint of %s", tool.name()).isFalse();
+            assertThat(tool.annotations().idempotentHint()).as("idempotentHint of %s", tool.name()).isTrue();
+            assertThat(tool.annotations().openWorldHint()).as("openWorldHint of %s", tool.name()).isFalse();
+        }
+    }
 
     @Test // U1
     void everyAdvertisedToolDeclaresAnActionCategoryAndRiskTag() {

@@ -195,6 +195,8 @@ request is anonymous until you opt in). To actually enforce ABAC, your applicati
    signature-validating gateway. The default JWT extractor does not verify signatures itself; until you
    acknowledge the gateway-trust posture it stays disabled (every request anonymous, all checks deny),
    with a startup warning explaining why. Alternatively, provide your own `AbacSubjectExtractor` bean.
+   The gateway must verify the **signature, expiry, issuer and audience** — see
+   [the signature-trust posture](docs/guides/ABAC-AUTHORIZATION.md#signature-trust-posture-read-this).
 
 See [`docs/guides/ABAC-AUTHORIZATION.md`](docs/guides/ABAC-AUTHORIZATION.md) for the full wiring and the
 [example services](example-catalog-management-service/) for a working `SecurityConfig`.
@@ -316,8 +318,9 @@ cd scripts/postman && ./run-hierarchy-matrix.sh          # or run-tests.sh / run
 ```
 
 > The newman matrices under [`scripts/postman/`](scripts/postman/) are the through-the-gateway proofs
-> (role / team / tag / data-filtering / hierarchy). Mint tokens **in-network** (APISIX validates the
-> issuer as `keycloak:8888`) — the scripts handle this. See [`infra/README.md`](infra/README.md).
+> (role / team / tag / data-filtering / hierarchy). Mint tokens **in-network**, at `keycloak:8888`, the suite's
+> canonical issuer and one of the three the gateway admits. Every token must also carry `aud: catalog-gateway`.
+> The scripts handle both. See [`infra/README.md`](infra/README.md).
 
 ### Try the demo console (the browser demo)
 
@@ -465,7 +468,7 @@ four MCP tool-specification types, and the example now consumes it like any adop
 
 ```bash
 ENABLE_MCP=1 ./deploy.sh up --pods 2      # the tool surface, behind the gateway at /mcp
-scripts/postman/run-agent-tool-matrix.sh  # the E1–E12 matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh  # the E1–E17 matrix, through the gateway
 ```
 
 Full contract: [`docs/guides/AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) ·

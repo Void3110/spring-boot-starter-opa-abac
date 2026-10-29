@@ -82,7 +82,7 @@ persona's screen self-explanatory:
 
 ```
 browser ──Bearer JWT──▶ APISIX :9085
-                          │ openid-connect: signature + expiry against the realm's JWKS; a Lua guard checks `iss`
+                          │ openid-connect: signature + expiry against the realm's JWKS; `iss` (three rig authorities) + `aud ∋ catalog-gateway`
                           ▼
                      catalog service (one of two pods)
                           │ 1. AbacSubjectExtractor reads the forwarded JWT (trust-forwarded-jwt: the gateway already verified it)

@@ -34,6 +34,21 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+# opentelemetry: where APISIX ships its spans. Since 3.12 the plugin reads this ONLY from plugin metadata
+# (the old config.yaml `plugin_attr.opentelemetry` is silently ignored, and the plugin then traces nothing).
+# The plugin is still enabled per route below (ENABLE_TRACING).
+otel_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+  -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+  "$APISIX_ADMIN/apisix/admin/plugin_metadata/opentelemetry" \
+  -d '{"resource":{"service.name":"apisix"},"collector":{"address":"jaeger:4318","request_timeout":3},"batch_span_processor":{"max_queue_size":1024,"batch_timeout":2,"inactive_timeout":1,"max_export_batch_size":16},"trace_id_source":"random","set_ngx_var":false}') || true
+otel_code=$(printf '%s' "$otel_resp" | tail -n1)
+if [ "$otel_code" != "200" ] && [ "$otel_code" != "201" ]; then
+  echo "ERROR: opentelemetry plugin metadata rejected (HTTP $otel_code):" >&2
+  printf '%s\n' "$otel_resp" | sed '$d' >&2
+  exit 1
+fi
+echo "  plugin_metadata 'opentelemetry' -> collector jaeger:4318 (service.name=apisix)"
+
 # Upstream: round-robin pool over the catalog app pods.
 #   pass_host=pass keeps the original Host header so the Spring app sees the right URL.
 curl -sf -o /dev/null -X PUT \
@@ -73,18 +88,25 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #     when it is missing/invalid; it never initiates a redirect login. The browser SPA does its
 #     own Authorization Code + PKCE against Keycloak (public client `catalog-spa`) and presents
 #     the token. Same JWKS validation, no gateway-driven login.
-# THE ISSUER-ALLOWLIST GUARD (hardened 2026-08-14). Keycloak 26's `iss` follows the request's
-# Host header (KC_HOSTNAME_STRICT=false — load-bearing for the browser SPA, whose whole PKCE flow
-# runs against the gateway origin), and the openid-connect plugin validates the SIGNATURE against
-# the realm JWKS but never `iss` (measured — the step-up runner's E9 controls pin both facts).
-# Signature validation already binds a token to the realm's keys, so the residual risk is a
-# realm-signed token NAMING an arbitrary authority (mint through a published port with a forged
-# Host); this guard refuses those. It only NARROWS: a missing or malformed bearer passes through
-# to openid-connect, the primary authenticator, which rejects it on its own terms. THE SCHEME MATCH
-# IS CASE-INSENSITIVE, and that is load-bearing rather than cosmetic: openid-connect lowercases the
-# scheme before validating (`string.lower(res[1]) == 'bearer'`), so a case-fixed match here would
-# make this guard's skip set LARGER than the authenticator's reject set — `Authorization: BEARER
-# <tok>` would skip the issuer check and still authenticate (measured: it reached the upstream).
+# THE TOKEN CONTRACT AT THE EDGE (ADR 0035). Every openid-connect block below checks two claims of a
+# bearer-presented token itself, after the signature (claim_validator):
+#   - `iss` is one of the three rig authorities (issuer.valid_issuers). Keycloak 26's `iss` follows the
+#     request's Host header (KC_HOSTNAME_STRICT=false — load-bearing for the browser SPA, whose whole
+#     PKCE flow runs against the gateway origin), so a realm-signed token can NAME an arbitrary
+#     authority (a mint through the published port with a forged Host); the plugin refuses it, 401.
+#     Until ADR 0035 a Lua serverless-pre-function beside the plugin did this, re-parsing the
+#     Authorization header and matching the scheme case-insensitively to keep its skip set inside the
+#     plugin's reject set. One plugin now authenticates AND checks the issuer, so there is no second
+#     parser to drift from.
+#   - `aud` contains catalog-gateway (audience.required + match_with_client_id, against the block's
+#     client_id). Each legitimate client stamps it with its own `gateway-audience` mapper
+#     (infra/keycloak/realm-export.json). A realm token minted for anything else — the directory's
+#     service account, audience realm-management — is refused 403 {"error":"mismatched audience"}; a
+#     token with no `aud` at all, 403 {"error":"required audience claim not present"}.
+# A browser-flow SESSION (ENABLE_SPA=0, no bearer header) carries the token the gateway's own
+# catalog-gateway client obtained, and the plugin forwards it WITHOUT re-checking it: the cookie holds the
+# whole session, encrypted and MACed under session.secret alone. So that path is exactly as trustworthy as
+# the secret is secret — anyone who knows it can mint a session naming any token. See OIDC_SESSION_SECRET.
 #
 # THE THREE RIG AUTHORITIES — every one is a real, exercised login path. Adding a way to reach
 # Keycloak means adding its origin here, or that path 401s at the edge:
@@ -96,8 +118,13 @@ PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr
 #                      changeOrigin, so the Host is still :9085). Omitting this 401s every SPA call.
 #   - localhost:28888  the published Keycloak port, reachable directly from the host.
 ISSUER_ALLOWLIST="${ISSUER_ALLOWLIST:-http://keycloak:8888/realms/catalog-demo,http://localhost:9085/realms/catalog-demo,http://localhost:28888/realms/catalog-demo}"
-ISSUER_ALLOWED_LUA="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "[%c%s%c]=true,", 39, $i, 39}')"
-ISSUER_GUARD="\"serverless-pre-function\":{\"phase\":\"rewrite\",\"functions\":[\"return function(conf, ctx) local core = require('apisix.core') local allowed = {${ISSUER_ALLOWED_LUA}} local auth = core.request.header(ctx, 'Authorization') if type(auth) ~= 'string' then return end if not auth:lower():match('^bearer%s') then return end local token = auth:match('^%S+%s+(.+)') if not token then return end local payload = token:match('^[^%.]+%.([^%.]+)%.[^%.]*$') if not payload then return end payload = payload:gsub('-', '+'):gsub('_', '/') local pad = #payload % 4 if pad == 2 then payload = payload .. '==' elseif pad == 3 then payload = payload .. '=' elseif pad == 1 then return end local decoded = ngx.decode_base64(payload) if not decoded then return end local ok, claims = pcall(core.json.decode, decoded) if not ok or type(claims) ~= 'table' then return end if type(claims.iss) ~= 'string' or not allowed[claims.iss] then core.response.exit(401, {error = 'invalid_token', error_description = 'token issuer is not a rig authority'}) end end\"]}"
+# The list as a JSON array, for openid-connect's claim_validator.issuer.valid_issuers.
+ISSUER_VALID_JSON="$(printf '%s' "$ISSUER_ALLOWLIST" | awk -F, '{for(i=1;i<=NF;i++) printf "%s\"%s\"", (i>1 ? "," : ""), $i}')"
+# The browser-flow session key. NEVER a constant: a value committed here would let anyone who has read this
+# public repo forge a session cookie, and the gateway forwards a session's token unchecked (see above).
+# APISIX 3.11 generated a random one itself; 3.14+ requires it to be set, so a fresh random one is generated
+# per deploy unless APISIX_OIDC_SESSION_SECRET pins it (a re-deploy then simply logs browser sessions out).
+OIDC_SESSION_SECRET="${APISIX_OIDC_SESSION_SECRET:-$(head -c 32 /dev/urandom | base64 | tr -d '\n')}"
 
 if [ "${ENABLE_OIDC:-0}" = "1" ]; then
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
@@ -107,20 +134,41 @@ if [ "${ENABLE_OIDC:-0}" = "1" ]; then
     OIDC_BEARER_ONLY="false"
     OIDC_UNAUTH_ACTION="auth"
   fi
-  PLUGINS="$PLUGINS,\"openid-connect\":{\
-\"_meta\":{\"priority\":2599},\
+  # ONE openid-connect configuration for every route that authenticates (the catalog catch-all, the
+  # user-service routes, /mcp) — defined here once, so they can never drift apart. It is a function of the
+  # posture only: /mcp is an API surface and always takes the bearer-only posture (see the MCP block);
+  # everything else follows ENABLE_SPA.
+  #   - claim_validator.issuer.valid_issuers: since APISIX 3.12 a block WITHOUT it validates `iss`
+  #     against the DISCOVERY document's issuer (http://keycloak:8888/…) — which 3.11 never did — so
+  #     leaving it out would refuse every token minted through the gateway origin (the SPA) or the
+  #     published port. It carries ISSUER_ALLOWLIST, the three authorities above.
+  #   - claim_validator.audience: `required` is stated although 3.18+ implies it from
+  #     match_with_client_id, so the refusal of an audience-less token does not rest on a version
+  #     detail. The client_id it matches is this block's own: catalog-gateway.
+  #   - session.secret: required since 3.14 whenever bearer_only is false (the browser-flow mode,
+  #     ENABLE_SPA=0); >= 16 characters. Random per deploy unless APISIX_OIDC_SESSION_SECRET is set.
+  oidc_conf() { # bearer_only unauth_action -> the openid-connect plugin's JSON members
+    local bearer_only="$1" unauth_action="$2" conf
+    conf="\"_meta\":{\"priority\":2599},\
 \"client_id\":\"catalog-gateway\",\
 \"client_secret\":\"catalog-gateway-secret\",\
 \"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
 \"realm\":\"catalog-demo\",\
 \"scope\":\"openid profile email\",\
-\"bearer_only\":$OIDC_BEARER_ONLY,\
+\"bearer_only\":$bearer_only,\
 \"use_jwks\":true,\
-\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
+\"unauth_action\":\"$unauth_action\",\
 \"set_access_token_header\":true,\
 \"access_token_in_authorization_header\":true,\
-\"ssl_verify\":false}"
-  PLUGINS="$PLUGINS,$ISSUER_GUARD"
+\"claim_validator\":{\"issuer\":{\"valid_issuers\":[$ISSUER_VALID_JSON]},\"audience\":{\"required\":true,\"match_with_client_id\":true}},\
+\"ssl_verify\":false"
+    if [ "$bearer_only" = "false" ]; then
+      conf="$conf,\"session\":{\"secret\":\"$OIDC_SESSION_SECRET\"}"
+    fi
+    printf '%s' "$conf"
+  }
+  OIDC_CONF="$(oidc_conf "$OIDC_BEARER_ONLY" "$OIDC_UNAUTH_ACTION")"
+  PLUGINS="$PLUGINS,\"openid-connect\":{$OIDC_CONF}"
 fi
 
 # CORS — only needed when a browser SPA on a different origin (the Vite dev server on :3000)
@@ -177,8 +225,10 @@ fi
 #
 # CRITICAL: these routes carry NO openid-connect plugin — the login/token/JWKS calls must be public
 # passthrough (you can't present a bearer token while you're still trying to obtain one). Priority 50
-# beats the catalog-all catch-all (/*, priority 0). Only wired in SPA mode.
-if [ "${ENABLE_SPA:-0}" = "1" ]; then
+# beats the catalog-all catch-all (/*, priority 0). Wired for the SPA and for the MCP surface (ADR 0035
+# §5): an MCP host logs its user in at the issuer the protected-resource document names, which is this
+# same gateway origin, so its whole code flow runs through these routes too. Removed only when both are off.
+if [ "${ENABLE_SPA:-0}" = "1" ] || [ "${ENABLE_MCP:-0}" = "1" ]; then
   curl -sf -o /dev/null -X PUT \
     -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
     "$APISIX_ADMIN/apisix/admin/upstreams/keycloak-pool" \
@@ -191,9 +241,9 @@ if [ "${ENABLE_SPA:-0}" = "1" ]; then
       "$APISIX_ADMIN/apisix/admin/routes/$name" \
       -d "{\"name\":\"$name\",\"uri\":\"$uri\",\"methods\":[$methods_json],\"upstream_id\":\"keycloak-pool\",\"priority\":50,\"status\":1}"
   done
-  echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [SPA single-origin auth, public passthrough]"
+  echo "  routes 'keycloak-realms' (/realms/*) + 'keycloak-resources' (/resources/*) -> keycloak:8888  [single-origin auth for the SPA / the MCP host, public passthrough]"
 else
-  # Flag off: positively remove the passthrough ROUTES a previous SPA deploy may have left in the
+  # Both flags off: positively remove the passthrough ROUTES a previous SPA/MCP deploy may have left in the
   # reused etcd (public proxy to a possibly-down keycloak:8888 otherwise lingers on non-SPA rigs).
   # ROUTES ONLY — the Keycloak CONTAINER is shared with plain ENABLE_OIDC (the openid-connect
   # plugin discovers in-network, not through these routes) and is deploy.sh's to manage.
@@ -218,7 +268,7 @@ fi
 # the upstream — APISIX refuses to drop an upstream a route still references; plain -s so a 404 on
 # a never-created id is a no-op, not an errexit abort). Only the ENABLE_USER_SERVICE block stays
 # one-armed, deliberately: deploy.sh never stops its containers on a flag-flip, so its routes stay
-# live rather than stale.
+# live — and are refreshed to this deploy's posture whenever they exist (see that block).
 if [ "${ENABLE_SPA:-0}" = "1" ]; then
   spa_resp=$(curl -s -w "\n%{http_code}" -X PUT \
     -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
@@ -266,46 +316,67 @@ fi
 # catch-all (/*, below) that WOULD otherwise match /internal/catalog/{id}/created-by — so an explicit
 # `internal-blocked` route (priority 70, defined just before the catch-all) 404s every /internal/* path at
 # the edge. The gateway thus proxies ONLY /api/v1/teams*, /api/v1/users*, /api/v1/catalogs* (catch-all),
-# the Keycloak realms/resources paths (ENABLE_SPA), /mcp* (ENABLE_MCP), and the packaged-SPA static
-# paths / + /index.html + favicons + /assets/* (GET/HEAD only, ENABLE_SPA); /internal/* is positively blocked.
+# the Keycloak realms/resources paths (ENABLE_SPA or ENABLE_MCP), /mcp* + the two RFC 9728 documents
+# (ENABLE_MCP), and the packaged-SPA static paths / + /index.html + favicons + /assets/* (GET/HEAD only,
+# ENABLE_SPA); /internal/* is positively blocked.
 #
-# Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — only wired when the usermgmt pod is up.
+# Gated under ENABLE_USER_SERVICE (ENABLE_SPA implies it) — wired when the usermgmt pod is up — AND re-PUT
+# whenever either route already exists. deploy.sh never stops the user-service on a flag flip, so its
+# routes stay live after a re-up without the flag; skipping them would leave them on whatever posture an
+# EARLIER deploy gave them — no openid-connect at all after an ENABLE_OIDC=0 deploy, or no audience check
+# after one from before ADR 0035 — while every other route moved to this deploy's (found by the slice
+# review, 2026-10-29). A retained route therefore always carries the current plugin set.
+#
+# Only a 404 means "absent": any other answer (a 5xx, an unreachable Admin API) aborts the deploy, because
+# reading a failed lookup as absence would skip exactly the refresh this exists for. A retained-only refresh
+# rewrites the ROUTES and leaves the upstream alone — this deploy did not configure the user-service, so the
+# node set an earlier deploy chose (a USERMGMT_NODES single-pod override) stays as it was.
+usermgmt_route_exists() { # route id -> 0 present, 1 absent; exits on any other answer
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-KEY: $API_KEY" \
+            "$APISIX_ADMIN/apisix/admin/routes/$1" || true)"
+  case "$code" in
+    200) return 0 ;;
+    404) return 1 ;;
+    *) echo "  ERROR: could not tell whether route '$1' exists (Admin API answered '$code') — refusing to" >&2
+       echo "         continue, since a retained user-service route might keep an earlier deploy's auth." >&2
+       exit 1 ;;
+  esac
+}
+UM_CONFIGURE_UPSTREAM=0
+UM_REFRESH_ROUTES=0
 if [ "${ENABLE_USER_SERVICE:-0}" = "1" ]; then
+  UM_CONFIGURE_UPSTREAM=1; UM_REFRESH_ROUTES=1
+elif usermgmt_route_exists usermgmt-teams || usermgmt_route_exists usermgmt-users; then
+  UM_REFRESH_ROUTES=1
+fi
+if [ "$UM_REFRESH_ROUTES" = "1" ]; then
   # The two usermgmt pods publish on host ports 28090 + 28092 (deploy.sh wait_usermgmt_healthy waits
   # for both). Round-robin over both = HA parity with the catalog pool; both share one Postgres, so
   # concurrent membership/role mutations across the pods serialize on the shared @Version/locked-write
   # path. Override the node set with USERMGMT_NODES (comma-separated host:port) for a single-pod rig.
-  USERMGMT_NODES="${USERMGMT_NODES:-host.docker.internal:28090,host.docker.internal:28092}"
-  UM_NODES_JSON=""
-  IFS=',' read -ra _um_nodes <<< "$USERMGMT_NODES"
-  for _n in "${_um_nodes[@]}"; do
-    [ -n "$UM_NODES_JSON" ] && UM_NODES_JSON="$UM_NODES_JSON,"
-    UM_NODES_JSON="$UM_NODES_JSON\"$_n\":1"
-  done
-  curl -sf -o /dev/null -X PUT \
-    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
-    "$APISIX_ADMIN/apisix/admin/upstreams/usermgmt-pool" \
-    -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{$UM_NODES_JSON}}"
-  echo "  upstream 'usermgmt-pool' -> round-robin over: $USERMGMT_NODES"
+  if [ "$UM_CONFIGURE_UPSTREAM" = "1" ]; then
+    USERMGMT_NODES="${USERMGMT_NODES:-host.docker.internal:28090,host.docker.internal:28092}"
+    UM_NODES_JSON=""
+    IFS=',' read -ra _um_nodes <<< "$USERMGMT_NODES"
+    for _n in "${_um_nodes[@]}"; do
+      [ -n "$UM_NODES_JSON" ] && UM_NODES_JSON="$UM_NODES_JSON,"
+      UM_NODES_JSON="$UM_NODES_JSON\"$_n\":1"
+    done
+    curl -sf -o /dev/null -X PUT \
+      -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+      "$APISIX_ADMIN/apisix/admin/upstreams/usermgmt-pool" \
+      -d "{\"type\":\"roundrobin\",\"pass_host\":\"pass\",\"scheme\":\"http\",\"nodes\":{$UM_NODES_JSON}}"
+    echo "  upstream 'usermgmt-pool' -> round-robin over: $USERMGMT_NODES"
+  else
+    echo "  user-service routes retained from an earlier deploy -> refreshing their plugins (upstream left as is)"
+  fi
 
   # The user-mgmt routes' plugin set: openid-connect (the same bearer validation as the catalog route)
   # + tracing + cors-when-SPA. NOT the catalog `opa` gateway plugin (the user-service authorizes itself).
   UM_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
   if [ "${ENABLE_OIDC:-0}" = "1" ]; then
-    UM_PLUGINS="$UM_PLUGINS,\"openid-connect\":{\
-\"_meta\":{\"priority\":2599},\
-\"client_id\":\"catalog-gateway\",\
-\"client_secret\":\"catalog-gateway-secret\",\
-\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
-\"realm\":\"catalog-demo\",\
-\"scope\":\"openid profile email\",\
-\"bearer_only\":$OIDC_BEARER_ONLY,\
-\"use_jwks\":true,\
-\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
-\"set_access_token_header\":true,\
-\"access_token_in_authorization_header\":true,\
-\"ssl_verify\":false}"
-    UM_PLUGINS="$UM_PLUGINS,$ISSUER_GUARD"
+    UM_PLUGINS="$UM_PLUGINS,\"openid-connect\":{$OIDC_CONF}"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
     UM_PLUGINS="$UM_PLUGINS,\"cors\":{\
@@ -363,22 +434,13 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
   # Same plugin set as the usermgmt routes: openid-connect (bearer validation) + response-rewrite +
   # tracing/cors when enabled — and NOT the catalog `opa` gateway plugin, for the same reason the
   # user-service omits it: this service authorizes itself, with its own tool-gate.
+  #
+  # /mcp is ALWAYS bearer-only (ADR 0035 §6), whatever ENABLE_SPA says: it is an API surface, and a
+  # token-less MCP client must get a 401 — the cue to read the protected-resource document and log in —
+  # never a 302 to a login page it cannot render. The browser-flow posture stays on the other routes.
   MCP_PLUGINS='"response-rewrite":{"headers":{"set":{"X-Upstream-Addr":"$upstream_addr"}}}'
   if [ "${ENABLE_OIDC:-0}" = "1" ]; then
-    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{\
-\"_meta\":{\"priority\":2599},\
-\"client_id\":\"catalog-gateway\",\
-\"client_secret\":\"catalog-gateway-secret\",\
-\"discovery\":\"http://keycloak:8888/realms/catalog-demo/.well-known/openid-configuration\",\
-\"realm\":\"catalog-demo\",\
-\"scope\":\"openid profile email\",\
-\"bearer_only\":$OIDC_BEARER_ONLY,\
-\"use_jwks\":true,\
-\"unauth_action\":\"$OIDC_UNAUTH_ACTION\",\
-\"set_access_token_header\":true,\
-\"access_token_in_authorization_header\":true,\
-\"ssl_verify\":false}"
-    MCP_PLUGINS="$MCP_PLUGINS,$ISSUER_GUARD"
+    MCP_PLUGINS="$MCP_PLUGINS,\"openid-connect\":{$(oidc_conf true deny)}"
   fi
   if [ "${ENABLE_SPA:-0}" = "1" ]; then
     MCP_PLUGINS="$MCP_PLUGINS,\"cors\":{\
@@ -408,12 +470,36 @@ if [ "${ENABLE_MCP:-0}" = "1" ]; then
     exit 1
   fi
   echo "  route 'mcp' (/mcp*) -> mcp-pool  [priority 65; NO catalog opa plugin — the tool-gate is in-app]"
+
+  # The RFC 9728 protected-resource documents (ADR 0035 §6), served by the MCP server itself. An MCP
+  # client reads them BEFORE it holds a token, so the route carries NO auth plugin — and for that reason it
+  # is exactly the two paths, GET only: a POST, or any other /.well-known path, falls to the catch-all and
+  # its bearer check. Priority 66: above /mcp* (65) and the catch-all (0).
+  PR_PLUGINS=""
+  if [ "${ENABLE_TRACING:-1}" = "1" ]; then
+    PR_PLUGINS="\"opentelemetry\":{\"sampler\":{\"name\":\"always_on\"}}"
+  fi
+  pr_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+    -H "X-API-KEY: $API_KEY" -H "Content-Type: application/json" \
+    "$APISIX_ADMIN/apisix/admin/routes/mcp-protected-resource" \
+    -d "{\"name\":\"mcp-protected-resource\",\
+\"uris\":[\"/.well-known/oauth-protected-resource\",\"/.well-known/oauth-protected-resource/mcp\"],\
+\"methods\":[\"GET\"],\
+\"upstream_id\":\"mcp-pool\",\"priority\":66,\"status\":1,\"plugins\":{$PR_PLUGINS}}")
+  pr_code=$(printf '%s' "$pr_resp" | tail -n1)
+  if [ "$pr_code" != "200" ] && [ "$pr_code" != "201" ]; then
+    echo "  ERROR: route 'mcp-protected-resource' PUT failed ($pr_code): $(printf '%s' "$pr_resp" | head -n1)" >&2
+    exit 1
+  fi
+  echo "  route 'mcp-protected-resource' (the two RFC 9728 documents, GET) -> mcp-pool  [priority 66; NO auth plugin]"
 else
   # Flag off: remove the route + upstream a previous ENABLE_MCP deploy left in the reused etcd
   # (routes before the upstream — APISIX refuses to drop an upstream a route still references).
   # deploy.sh mirrors this with `mcp_compose down`; the E6/E7 drills are unaffected — they recreate
   # the mcp CONTAINER via their own compose call, never through a flag-less `deploy.sh up`.
-  curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/mcp"
+  for r in mcp mcp-protected-resource; do
+    curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/routes/$r"
+  done
   curl -s -o /dev/null -X DELETE -H "X-API-KEY: $API_KEY" "$APISIX_ADMIN/apisix/admin/upstreams/mcp-pool"
 fi
 

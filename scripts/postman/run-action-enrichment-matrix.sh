@@ -38,7 +38,7 @@
 # Subjects (realm users): viewer (realm catalog-viewer) bound to a READ-ONLY team role (the honest-false
 # cell); demo (realm catalog-editor) bound to a tag-gated WRITE role (required_tags region ANY_OF [emea]).
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888).
+# Honors the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits).
 
 set -euo pipefail
 

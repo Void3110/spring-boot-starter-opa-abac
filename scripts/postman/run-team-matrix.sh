@@ -23,7 +23,7 @@
 # user-service's internal API — a team whose team-target is that catalog plus the memberships (owner,
 # viewer, a team-scoped custom 'catalog-editor' role). Finally it runs newman with the four tokens.
 #
-# This honours the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps
+# This honours the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits) and keeps
 # runtime-captured ids in the collection variable scope (mx-ecc3ef).
 
 set -euo pipefail

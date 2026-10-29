@@ -37,6 +37,12 @@ services:
       # --- the principal's type-level ceiling (the tool-gate's other input) ----------------------
       EXAMPLE_MCP_AUTHZ_ROLE_SOURCE_BASE_URL: "http://usermgmt:8080"
 
+      # --- RFC 9728 protected-resource discovery (ADR 0035 §6) ------------------------------------
+      # What an MCP host reads before it has a token: the resource it is calling and the issuer to log the
+      # user in with — BOTH at the gateway origin, where the host reaches /mcp and the /realms/* passthrough.
+      EXAMPLE_MCP_OAUTH_PROTECTED_RESOURCE_RESOURCE: "http://localhost:9085/mcp"
+      EXAMPLE_MCP_OAUTH_PROTECTED_RESOURCE_AUTHORIZATION_SERVER: "http://localhost:9085/realms/catalog-demo"
+
       # --- the PDP -------------------------------------------------------------------------------
       OPA_ABAC_ENABLED: "true"
       OPA_ABAC_BASE_URL: "http://opa:8181"
@@ -46,7 +52,7 @@ services:
       OPA_ABAC_SUBJECT_TRUST_FORWARDED_JWT: "true"
 
       # --- the demo agent registry (opa.abac.mcp.agents.profiles[], the opa-abac-mcp YAML default) -----
-      # One profile per demo actor, matching the three realm clients whose protocol mappers mint the
+      # One profile per demo actor, matching the four realm clients whose protocol mappers mint the
       # matching act_chain. Every dimension NARROWS: the tool-gate intersects these with the
       # principal's ceiling in Rego, so nothing here can grant an agent what its principal lacks —
       # which is exactly what `agent-overreach` exists to prove on the live rig.
@@ -77,6 +83,15 @@ services:
       OPA_ABAC_MCP_AGENTS_PROFILES_2_ALLOWED_ACTIONS: ""
       OPA_ABAC_MCP_AGENTS_PROFILES_2_MAX_RISK_TAG: ""
 
+      # agent-host : the MCP host a person logs in with (realm client catalog-mcp-host, ADR 0035 §5) —
+      #              reads only, capped at the low risk tier. Mirrors application.yml: a list bound from
+      #              the environment replaces the YAML list whole, so every profile is restated here.
+      OPA_ABAC_MCP_AGENTS_PROFILES_3_ACTOR_ID: "agent-host"
+      OPA_ABAC_MCP_AGENTS_PROFILES_3_ALLOWED_CATEGORIES: "READ"
+      OPA_ABAC_MCP_AGENTS_PROFILES_3_ALLOWED_TOOLS: "list_catalogs,get_catalog,list_categories,get_product"
+      OPA_ABAC_MCP_AGENTS_PROFILES_3_ALLOWED_ACTIONS: "view,list"
+      OPA_ABAC_MCP_AGENTS_PROFILES_3_MAX_RISK_TAG: "low"
+
       # --- kill-switches, interpolated by deploy.sh for the E6/E7 drills -------------------------
       # Defaults are ON. E7 replays a denied call with the agent gate OFF to show the catalog's own
       # target-gate still denies it — i.e. OFF is not wider than ON.
@@ -84,12 +99,11 @@ services:
       EXAMPLE_MCP_AUTHZ_ROSTER_FILTER_ENABLED: "${MCP_ROSTER_FILTER_ENABLED:-true}"
 
       # --- the agent-clients guard (opa.abac.mcp.identity.agent-clients), interpolated for the E12 drill ---
-      # Defaults leave today's pod unchanged: an EMPTY list (the guard never runs — an empty env value binds
-      # to an empty list, pinned by a binder test) and the one claim application.yml already copies. E12
-      # lists catalog-gateway (the human client — it has NO actor mapper) and copies azp, which the guard
-      # reads and the startup wiring check requires whenever the list is non-empty.
-      OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS: "${MCP_AGENT_CLIENTS:-}"
-      OPA_ABAC_SUBJECT_ATTRIBUTE_CLAIMS: "${MCP_SUBJECT_ATTRIBUTE_CLAIMS:-act_chain}"
+      # Defaults mirror application.yml: the four agent clients, and azp copied beside act_chain (the guard
+      # reads it; the startup wiring check requires it whenever the list is non-empty). E12 EXTENDS the
+      # list with catalog-gateway (the human client — it has NO actor mapper) to prove the guard refuses it.
+      OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS: "${MCP_AGENT_CLIENTS:-catalog-agent-readonly,catalog-agent-overreach,catalog-agent-revoked,catalog-mcp-host}"
+      OPA_ABAC_SUBJECT_ATTRIBUTE_CLAIMS: "${MCP_SUBJECT_ATTRIBUTE_CLAIMS:-act_chain,azp}"
     ports:
       # Published for diagnosis only. The e2e enters through the GATEWAY (localhost:9085/mcp), the
       # way every other matrix in this repo does — the service trusts the forwarded JWT precisely

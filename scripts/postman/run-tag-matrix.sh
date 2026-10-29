@@ -35,7 +35,7 @@
 # first (the placement clauses must be live; --watch is not reliable) — which also resets a live
 # ROOT_READ_TAG_EXEMPTION override to the file default; re-apply it after the run if you had one.
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps the
+# Honors the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits) and keeps the
 # runtime-captured ids in the collection variable scope (mx-ecc3ef).
 
 set -euo pipefail

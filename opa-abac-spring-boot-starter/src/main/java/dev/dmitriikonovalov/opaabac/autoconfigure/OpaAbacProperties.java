@@ -656,7 +656,9 @@ public class OpaAbacProperties {
          * validating gateway that is a total authentication bypass, so the extractor stays <strong>off
          * until this is set {@code true}</strong>. While off, every request is anonymous and all checks
          * deny (fail-closed); a startup warning says so. Providing your own
-         * {@code AbacSubjectExtractor} bean bypasses this toggle entirely.
+         * {@code AbacSubjectExtractor} bean bypasses this toggle entirely. The gateway must verify the
+         * signature, expiry, issuer and audience of every bearer (docs/guides/ABAC-AUTHORIZATION.md,
+         * "Signature-trust posture").
          */
         private boolean trustForwardedJwt = false;
 

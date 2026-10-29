@@ -51,7 +51,28 @@ class ApplicationYamlBindingTest {
         AgentCapabilityProperties agents =
                 binder.bind("opa.abac.mcp.agents", Bindable.of(AgentCapabilityProperties.class)).get();
         assertThat(agents.getProfiles()).extracting(AgentCapabilityProperties.Profile::getActorId)
-                .containsExactly("agent-readonly", "agent-overreach", "agent-revoked");
+                .containsExactly("agent-readonly", "agent-overreach", "agent-revoked", "agent-host");
+    }
+
+    @Test // U7 — the MCP host is an agent: its profile, its client listed, and azp copied for the guard
+    void theHostAgentIsWiredFromTheShippedYaml() {
+        AgentCapabilityProperties.Profile host =
+                binder.bind("opa.abac.mcp.agents", Bindable.of(AgentCapabilityProperties.class)).get()
+                        .getProfiles().stream()
+                        .filter(profile -> "agent-host".equals(profile.getActorId()))
+                        .findFirst().orElseThrow();
+        assertThat(host.getAllowedCategories()).containsExactly("READ");
+        assertThat(host.getAllowedTools())
+                .containsExactly("list_catalogs", "get_catalog", "list_categories", "get_product");
+        assertThat(host.getAllowedActions()).containsExactly("view", "list");
+        assertThat(host.getMaxRiskTag()).isEqualTo("low");
+
+        IdentityProperties identity =
+                binder.bind("opa.abac.mcp.identity", Bindable.of(IdentityProperties.class)).get();
+        assertThat(identity.getAgentClients()).containsExactly(
+                "catalog-agent-readonly", "catalog-agent-overreach", "catalog-agent-revoked", "catalog-mcp-host");
+        assertThat(binder.bind("opa.abac.subject.attribute-claims", Bindable.listOf(String.class)).get())
+                .containsExactly("act_chain", "azp");
     }
 
     @Test // U38 — the authz rename is complete, and the example-owned keys stay where they were

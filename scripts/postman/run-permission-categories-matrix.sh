@@ -33,7 +33,7 @@
 # denied_actions {"*":["delete"]} for the duration of the newman run, reverted on EXIT (trap) — the
 # only reachable construction: a custom level-30 code carries no team:manage capability.
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888).
+# Honors the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits).
 
 set -euo pipefail
 

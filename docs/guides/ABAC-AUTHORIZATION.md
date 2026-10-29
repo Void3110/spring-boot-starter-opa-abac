@@ -231,14 +231,51 @@ configured claims → attributes) to an `AbacContext.Subject`, wrapped in an `Ab
 ### Signature-trust posture (read this)
 
 The extractor performs **no signature verification**. The application **trusts a validating gateway**
-(e.g. APISIX `openid-connect`, which verified the token against the realm JWKS before forwarding it). It
-does structural + `exp` checks only — cheap defense-in-depth, no key material.
+and does structural + `exp` checks only — cheap defense-in-depth, no key material. The trust is explicit:
+`opa.abac.subject.trust-forwarded-jwt=true`; without it the default extractor stays off and every request
+is anonymous.
+
+"A validating gateway" means one that verifies **four** things on every bearer it forwards
+([[0035-audience-bound-gateway-tokens|ADR 0035]]):
+
+| The gateway verifies | Because otherwise |
+|---|---|
+| the **signature**, against the identity provider's JWKS | anyone can mint a token |
+| the **expiry** | a leaked token lives forever |
+| the **issuer** — an allow-list of the exact `iss` values your IdP stamps | a token the IdP signed while reached under a forged `Host` (Keycloak's `iss` follows the request) names an authority you never meant to trust |
+| the **audience** — the token was issued *for this API* | every other token the same IdP signs — a service account's for its admin API, another app's — is accepted here too |
+
+Signature and issuer alone still admit every token the realm signs for anything. The audience is what makes
+a token *this API's* token.
+
+The example's gateway is the reference: APISIX `openid-connect` on every authenticating route
+(`infra/apisix/init-routes.sh`), with one audience stamped per legitimate client by a Keycloak
+`oidc-audience-mapper` (`infra/keycloak/realm-export.json`):
+
+```json
+"openid-connect": {
+  "client_id": "catalog-gateway",
+  "bearer_only": true,
+  "use_jwks": true,
+  "claim_validator": {
+    "issuer":   { "valid_issuers": ["http://keycloak:8888/realms/catalog-demo",
+                                    "http://localhost:9085/realms/catalog-demo",
+                                    "http://localhost:28888/realms/catalog-demo"] },
+    "audience": { "required": true, "match_with_client_id": true }
+  }
+}
+```
+
+A token whose `aud` does not contain `catalog-gateway` answers `403 {"error":"mismatched audience"}` at the
+gateway, and one with no `aud` claim at all `403 {"error":"required audience claim not present"}` — either way
+before any application sees it. On APISIX before 3.12 the plugin validated no issuer at all, so pin the version you rely
+on.
 
 > ⚠️ **This is safe only behind such a gateway.** Deployed gateway-less / internet-exposed, signature
-> trust is a vulnerability. A `verifySignature` mode is **reserved** (a forward-looking property) but
-> deliberately **not implemented** in this slice — re-verifying in the app would duplicate JWKS handling
-> and pull `oauth2-resource-server` into the library, contradicting the lean two-layer design. If you
-> deploy without a validating gateway, do not use this extractor as-is.
+> trust is a vulnerability: the extractor would believe any well-formed token. Re-verifying in the app
+> would duplicate JWKS handling and pull `oauth2-resource-server` into the library, contradicting the
+> lean two-layer design. If you deploy without a validating gateway, do not use this extractor; provide
+> your own `AbacSubjectExtractor`.
 
 The filter takes precedence over an anonymous authentication but never overwrites a real one, so it can
 sit after Spring Security's `AnonymousAuthenticationFilter`.

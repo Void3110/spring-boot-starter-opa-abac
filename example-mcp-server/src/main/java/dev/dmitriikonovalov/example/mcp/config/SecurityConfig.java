@@ -1,10 +1,12 @@
 package dev.dmitriikonovalov.example.mcp.config;
 
+import dev.dmitriikonovalov.example.mcp.oauth.ProtectedResourceMetadataController;
 import dev.dmitriikonovalov.opaabac.security.AbacFilter;
 import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -16,8 +18,11 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
  * token-authenticated API behind a gateway), with the library's {@link AbacFilter} turning the forwarded
  * bearer into an {@code AbacAuthentication}.
  *
- * <p>Only the health endpoint is open. Everything else — the MCP transport endpoints included — requires
- * an authenticated caller, so an anonymous client cannot even enumerate the tool surface. That is a
+ * <p>Only the health endpoint and the two protected-resource metadata documents are open — the documents
+ * because an MCP client reads them <em>before</em> it has a token, to discover where to get one (ADR 0035
+ * §6). Exactly those two paths, {@code GET} only — never the {@code /.well-known/**} prefix. Everything else
+ * — the MCP transport endpoints included — requires an authenticated caller, so an anonymous client cannot
+ * even enumerate the tool surface. That is a
  * coarse, transport-level check and deliberately <em>not</em> the authorization this slice is about: it
  * establishes that there is a principal, and the tool-gate (T4) then decides what that principal, and the
  * agent acting for them, may actually invoke.
@@ -61,12 +66,16 @@ public class SecurityConfig {
             http.authorizeHttpRequests(auth -> auth
                             .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                             .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                            .requestMatchers(HttpMethod.GET, ProtectedResourceMetadataController.ROOT_PATH,
+                                    ProtectedResourceMetadataController.MCP_PATH).permitAll()
                             .anyRequest().authenticated())
                     .addFilterBefore(filter, AuthorizationFilter.class);
         } else {
             http.authorizeHttpRequests(auth -> auth
                     .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                     .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                    .requestMatchers(HttpMethod.GET, ProtectedResourceMetadataController.ROOT_PATH,
+                            ProtectedResourceMetadataController.MCP_PATH).permitAll()
                     .anyRequest().permitAll());
         }
         return http.build();

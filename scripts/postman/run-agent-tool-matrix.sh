@@ -29,10 +29,25 @@
 #           roster AND denies at call time. E11-b adds the other shape in the same pass: the
 #           `agent-revoked` actor, DECLARED with zero capability from the start, so its empty roster is
 #           an authoritative answer rather than the all-false vector a dead PDP produces
-#   E12     the agent-clients guard (MCP-AUTH-LIBRARY): with catalog-gateway listed as an agent client, the
-#           ordinary human token (that client has no actor mapper) is refused `tool-gate-actor-required`,
-#           an actor-carrying agent token on the same pod keeps its normal outcome, and the default pod
-#           answers the human token normally again (E12-restore)
+#   E12     the agent-clients guard (MCP-AUTH-LIBRARY): with catalog-gateway ADDED to the agent clients
+#           (the default lists the four agent clients), the ordinary human token (that client has no actor
+#           mapper) is refused `tool-gate-actor-required`, an actor-carrying agent token on the same pod
+#           keeps its normal outcome, and on the default pod — catalog-gateway no longer listed — the human
+#           token is a human call again (E12-restore)
+#   E13     the RFC 9728 protected-resource documents through the gateway, with no token: both paths
+#           answer the exact configured document, a forged Host / forwarding headers change nothing, and a
+#           POST or a third well-known path falls to the catch-all's bearer 401 (GATEWAY-AUDIENCE-BINDING)
+#   E14     the discovery login: the miner starts from nothing but the MCP URL, walks the documents to the
+#           realm and mints as catalog-mcp-host — aud catalog-gateway, act_chain [agent-host], the gateway
+#           origin as iss
+#   E15     that host token on the tool surface: the roster is exactly the three low-risk reads, and
+#           get_product — LISTED in its profile — is denied at the tool-gate by the risk cap alone, while
+#           the same token reads the same product over REST (200)
+#   E16     the host's refresh token rotates: a refresh answers a NEW refresh token, and replaying the
+#           first is refused `invalid_grant` "Maximum allowed refresh token reuse exceeded"
+#   E17     the transport's own refusals — an Accept without text/event-stream (400), an unknown session
+#           (404) — answer the JSON-RPC error and its message, never the exception's stack trace; and E10's
+#           roster cell reads every tool's read-only hints back (both found by the real-client login, QA E13)
 # E9 (every pre-existing runner still green) is a suite-level acceptance, not a cell here.
 #
 # Prereq: the full rig is up WITH the MCP server (the flag force-enables OIDC + OPA + the user-service):
@@ -43,8 +58,9 @@
 # FOUR CELLS ARE RIG DRILLS, NOT COLLECTION STEPS, and this runner orchestrates them: it stops and
 # restarts the OPA container around the E6 folders, recreates the MCP pod with
 # OPA_ABAC_MCP_AGENT_GATE_ENABLED=false around E7, recreates it with the readonly actor's
-# capability emptied around E11, and recreates it with OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS=catalog-gateway
-# (+ azp copied) around E12, then on its default profile for E12-restore. An EXIT trap restores the rig (OPA up, MCP pod on its default
+# capability emptied around E11, and recreates it with catalog-gateway ADDED to
+# OPA_ABAC_MCP_IDENTITY_AGENT_CLIENTS around E12, then on its default profile for E12-restore (and for
+# E13–E16, which need the shipped pod). An EXIT trap restores the rig (OPA up, MCP pod on its default
 # profile) however the run ends — a failed drill never leaves the rig switched off.
 #
 # Fixture set (registered in scripts/postman/README.md — dedicated, no shared fixtures touched):
@@ -59,7 +75,8 @@
 # mints act_chain with that client's actor id, so the same human can also obtain an ordinary no-actor
 # token through catalog-gateway (E1/E10 need exactly that).
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888).
+# Honors the in-network token caveat: the ROPC mints address keycloak:8888, one of the three issuers the
+# gateway admits; E14's discovery login mints at the gateway origin, another.
 
 set -euo pipefail
 
@@ -94,6 +111,14 @@ DEMO_USER="${DEMO_USER:-demo}";         DEMO_PASS="${DEMO_PASS:-demo}"
 LOWPRIV_USER="${LOWPRIV_USER:-outsider}"; LOWPRIV_PASS="${LOWPRIV_PASS:-outsider}"
 # The identity that seeds the FOREIGN catalog (the only member of its team).
 SEEDER_USER="${SEEDER_USER:-editor}";   SEEDER_PASS="${SEEDER_PASS:-editor}"
+
+# The agent clients the shipped pod lists (infra/compose.mcp.yaml's MCP_AGENT_CLIENTS default, mirrored
+# from application.yml). E12 EXTENDS this list; it never replaces it.
+MCP_DEFAULT_AGENT_CLIENTS="${MCP_DEFAULT_AGENT_CLIENTS:-catalog-agent-readonly,catalog-agent-overreach,catalog-agent-revoked,catalog-mcp-host}"
+# The MCP host's login (E14–E16): the miner in discovery mode, as the public agent client.
+MINER="${MINER:-$SELF_DIR/mint-code-flow-token.py}"
+HOST_CLIENT="${HOST_CLIENT:-catalog-mcp-host}"
+HOST_REDIRECT="${HOST_REDIRECT:-http://localhost:33418/callback}"
 
 AGENT_CATALOG_ID="${AGENT_CATALOG_ID:-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb}"
 FOREIGN_CATALOG_ID="${FOREIGN_CATALOG_ID:-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbc}"
@@ -196,6 +221,7 @@ run_folder() { # folder-name report-suffix
     --env-var "overreach_token=$OVERREACH_TOKEN" \
     --env-var "lowpriv_token=$LOWPRIV_TOKEN" \
     --env-var "revoked_token=$REVOKED_TOKEN" \
+    --env-var "host_token=$HOST_TOKEN" \
     --reporters cli,json \
     --reporter-json-export "$REPORT_DIR/$RUN_ID/agent-tool-matrix-$2.json"
 }
@@ -221,6 +247,7 @@ done
 }
 
 # --- mint tokens -------------------------------------------------------------
+HOST_TOKEN=""   # minted by E14's discovery login, after the drills
 # Four tokens, ONE human principal behind three of them. The actor rides in act_chain, minted by the
 # client's protocol mapper — which is what lets E1/E10 use a no-actor token for the SAME person.
 echo "==> Minting the human + three agent tokens in-network ($NETWORK) ..."
@@ -405,11 +432,11 @@ wait_mcp "the revoked-profile recreate"
 run_folder "E11 — revocation is visible end to end" e11
 
 # --- E12: the agent-clients guard --------------------------------------------------
-# catalog-gateway — the client the HUMAN token comes from, with no actor mapper — is listed as an agent
-# client, and azp is copied into the subject (the startup wiring check requires it). No realm change.
-# (This also restores the readonly profile E11 emptied: its variables are unset here.)
-echo "==> E12 drill: recreating the MCP pod with catalog-gateway listed as an agent client ..."
-MCP_AGENT_CLIENTS=catalog-gateway MCP_SUBJECT_ATTRIBUTE_CLAIMS=act_chain,azp \
+# catalog-gateway — the client the HUMAN token comes from, with no actor mapper — is ADDED to the agent
+# clients the pod already lists (azp is copied by default, as the startup wiring check requires). No realm
+# change. (This also restores the readonly profile E11 emptied: its variables are unset here.)
+echo "==> E12 drill: recreating the MCP pod with catalog-gateway added to the agent clients ..."
+MCP_AGENT_CLIENTS="$MCP_DEFAULT_AGENT_CLIENTS,catalog-gateway" MCP_SUBJECT_ATTRIBUTE_CLAIMS=act_chain,azp \
   mcp_compose up -d --force-recreate mcp >/dev/null
 wait_mcp "the agent-clients recreate"
 run_folder "E12 — the agent-clients guard: a listed client without an actor is refused" e12
@@ -417,6 +444,86 @@ echo "==> E12 drill: recreating the MCP pod on its default profile ..."
 mcp_compose up -d --force-recreate mcp >/dev/null
 wait_mcp "the default-profile recreate"
 run_folder "E12-restore — the default pod answers the human token normally again" e12-restore
+
+# --- E13–E16: the MCP OAuth surface (GATEWAY-AUDIENCE-BINDING, ADR 0035) -------------------------
+# On the shipped pod (E12-restore just recreated it): discovery on, catalog-mcp-host a listed agent client.
+echo "==> newman: E13 — the protected-resource documents through the gateway"
+run_folder "E13 — the protected-resource documents through the gateway, without a token" e13
+# E13's other half, here because curl sends a caller-chosen Host as given: the document is built from the
+# MCP server's configuration, so a forged Host and forwarding headers must not move a single byte of it.
+DOC_PATH="/.well-known/oauth-protected-resource/mcp"
+DOC_PLAIN="$(curl -s "$GATEWAY$DOC_PATH")" || true
+DOC_FORGED="$(curl -s -H 'Host: attacker.invalid' -H 'X-Forwarded-Host: attacker.invalid' \
+  -H 'X-Forwarded-Proto: https' "$GATEWAY$DOC_PATH")" || true
+[ -n "$DOC_PLAIN" ] && [ "$DOC_FORGED" = "$DOC_PLAIN" ] || {
+  echo "ERROR: the protected-resource document changed under a forged Host (E13):" >&2
+  echo "       plain:  $DOC_PLAIN" >&2
+  echo "       forged: $DOC_FORGED" >&2
+  exit 1; }
+echo "  E13: a forged Host / X-Forwarded-* answers the byte-identical document."
+
+echo "==> E14: the discovery login — the host agent's token, minted the way an MCP host does ..."
+HOST_MINT_LOG="$(mktemp -t agent-host-mint.XXXXXX)"
+HOST_PAIR="$("$MINER" --discover "$GATEWAY/mcp" --client "$HOST_CLIENT" --redirect-uri "$HOST_REDIRECT" \
+  --user "$DEMO_USER" --password "$DEMO_PASS" --field access_token,refresh_token 2>"$HOST_MINT_LOG")" || {
+  echo "ERROR: the discovery login failed (E14):" >&2
+  sed 's/^/    /' "$HOST_MINT_LOG" >&2
+  rm -f "$HOST_MINT_LOG"
+  exit 1; }
+grep -E 'metadata' "$HOST_MINT_LOG" | sed 's/^ */  /' || true
+rm -f "$HOST_MINT_LOG"
+HOST_TOKEN="$(printf '%s' "$HOST_PAIR" | sed -n '1p')"
+HOST_REFRESH="$(printf '%s' "$HOST_PAIR" | sed -n '2p')"
+[ -n "$HOST_TOKEN" ] && [ -n "$HOST_REFRESH" ] || {
+  echo "ERROR: the discovery login returned no access/refresh pair (E14)." >&2; exit 1; }
+python3 - "$HOST_TOKEN" "$GATEWAY" "$HOST_CLIENT" <<'PY' || { echo "ERROR: the host token is not an agent token for the gateway (E14)." >&2; exit 1; }
+import base64, json, sys
+payload = sys.argv[1].split(".")[1]
+claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+aud = claims.get("aud")
+expected = {"azp": sys.argv[3], "act_chain": ["agent-host"], "iss": sys.argv[2] + "/realms/catalog-demo"}
+wrong = [f"{k}={claims.get(k)!r}, expected {v!r}" for k, v in expected.items() if claims.get(k) != v]
+if "catalog-gateway" not in (aud if isinstance(aud, list) else [aud]):
+    wrong.append(f"aud={aud!r} does not carry catalog-gateway")
+for line in wrong:
+    print("  " + line, file=sys.stderr)
+if wrong:
+    sys.exit(1)
+print(f"  E14: aud={aud!r} azp={claims['azp']} act_chain={claims['act_chain']} iss={claims['iss']}")
+PY
+
+echo "==> newman: E15 — the MCP host is an agent, narrowed on the real login path"
+run_folder "E15 — the MCP host is an agent: narrowed on the real login path" e15
+
+# E16: rotation, as the host presents it — through the gateway origin, as the public client, the way the
+# miner's discovery login (and so the token's own issuer) reached the realm.
+echo "==> E16: the host's refresh token rotates ..."
+HOST_TOKEN_URL="$GATEWAY/realms/catalog-demo/protocol/openid-connect/token"
+refresh_as_host() { # refresh_token -> "<status> <body>"
+  curl -s -o /dev/stdout -w ' %{http_code}' -X POST "$HOST_TOKEN_URL" \
+    -d grant_type=refresh_token -d "client_id=$HOST_CLIENT" -d "refresh_token=$1"
+}
+ROTATED="$(refresh_as_host "$HOST_REFRESH")" || true
+ROTATED_CODE="${ROTATED##* }"
+ROTATED_REFRESH="$(printf '%s' "${ROTATED% *}" | sed -n 's/.*"refresh_token":"\([^"]*\)".*/\1/p')"
+[ "$ROTATED_CODE" = "200" ] && [ -n "$ROTATED_REFRESH" ] && [ "$ROTATED_REFRESH" != "$HOST_REFRESH" ] || {
+  echo "ERROR: the host's refresh did not answer 200 with a NEW refresh token (E16): $ROTATED_CODE" >&2
+  echo "       $(printf '%s' "${ROTATED% *}" | head -c 300)" >&2
+  exit 1; }
+REPLAYED="$(refresh_as_host "$HOST_REFRESH")" || true
+REPLAYED_CODE="${REPLAYED##* }"
+REPLAYED_BODY="${REPLAYED% *}"
+[ "$REPLAYED_CODE" = "400" ] \
+  && printf '%s' "$REPLAYED_BODY" | grep -q '"error":"invalid_grant"' \
+  && printf '%s' "$REPLAYED_BODY" | grep -q 'Maximum allowed refresh token reuse exceeded' || {
+  echo "ERROR: replaying the spent refresh token was not refused as a reuse (E16): $REPLAYED_CODE" >&2
+  echo "       $REPLAYED_BODY" >&2
+  echo "       Is revokeRefreshToken on in the realm? (re-import it: ./deploy.sh down, then up)" >&2
+  exit 1; }
+echo "  E16: the refresh answered a new refresh token; the replay -> 400 invalid_grant (reuse exceeded)."
+
+echo "==> newman: E17 — the transport's own refusals carry no stack trace"
+run_folder "E17 — the transport's own refusals name the error, never a stack trace" e17
 
 # --- teardown (success only — a failed run keeps its fixtures for debugging) --
 # KEEP_FIXTURES=1 skips it. The DELETEs ride the FK cascades: team -> memberships + custom roles;
@@ -431,4 +538,4 @@ DELETE FROM catalog WHERE id IN ('$AGENT_CATALOG_ID', '$FOREIGN_CATALOG_ID');
 SQL
 fi
 
-echo "==> Agent tool-call authorization matrix: E1-E8, E10, E11 and E12 green through the gateway."
+echo "==> Agent tool-call authorization matrix: E1-E8, E10-E17 green through the gateway."

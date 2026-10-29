@@ -24,7 +24,7 @@
 #   ./deploy.sh build                                 # force new app code into the pods (5.5-B adoption)
 # Restart/redeploy OPA after editing category.rego (--watch doesn't always reload — confirm via /v1/compile).
 #
-# Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888) and keeps the
+# Honors the in-network token caveat (keycloak:8888, one of the three issuers the gateway admits) and keeps the
 # runtime-captured ids in the COLLECTION variable scope.
 
 set -euo pipefail

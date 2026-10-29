@@ -7,15 +7,44 @@ tags:
   - area/deploy
 ---
 
-# GATEWAY-AUDIENCE-BINDING — tokens bound to this gateway, on APISIX 3.18
+# GATEWAY-AUDIENCE-BINDING — tokens bound to this gateway, on APISIX 3.19, and an MCP surface an OAuth client can find
 
-> **Status: 📋 researched, not yet designed.** Opened 2026-09-07 from a maintainer question — *"is
+> **Status: 📐 designed 2026-10-28** — grill-me settled thirteen forks; the design is [[00-DESIGN]]
+> and the contract [[0035-audience-bound-gateway-tokens|ADR 0035]]. **Scope grew on 2026-10-15** (maintainer): the slice
+> also carries MCP OAuth discovery (RFC 9728) for `example-mcp-server`, an MCP host **agent** client and audience binding on
+> `/mcp`; it lands **before the 1.5.0 cut**. Target moved to **APISIX 3.19.0** (released 2026-09-28). Four tickets: T1 the
+> bump · T2 issuer + audience in the plugin · T3 the MCP OAuth surface · T4 docs. **Decomposed 2026-10-28** ([[01-DECOMPOSITION]], [[10-QA-TEST-CASES]], STATUS-01…04; no prompt — collaborative). **Built:** T1–T3 2026-10-28, T4 2026-10-29 (QA E13 — Claude Code logged in for real). **Reviewed** 2026-10-29: four rounds, Opus + Codex ×2, approved with fixes ([[GATEWAY-AUDIENCE-BINDING-REVIEW]]). **Next:** the PR, then the folder moves to `implemented/` and the 1.5.0 cut. The research below is the record it was designed from.
+>
+> **Validated:** 2026-10-28 — mechanical + adversarial clean; 3 delta checks after 3 amendments. The adversarial
+> pass was one full round by four independent reviewers given an identical read-only brief (two Claude models, two
+> Codex models, at the maintainer's request); every finding acted on was re-verified at the source, and the round's
+> one design decision (refresh rotation vs the SPA's concurrent refreshes) went to the maintainer. The loop ended on
+> a delta check with no defect. **Run inputs carried to the build, not open defects:** T4 also corrects
+> [[E2E-TESTING]] §Two rig flavours (its OIDC-only command predates the SPA/directory defaults — the package's rig 3
+> is the right one) and its "several runners re-`up`" sentence (only the supervised-scope matrix does); keep
+> `docker build -t opa-abac-usermgmt:local …` on one line when pasting it; read "the E12 rig step" in 00-DESIGN
+> §Validation as QA E12.
+>
+> *Original status (2026-09-07):* researched, not yet designed. Opened 2026-09-07 from a maintainer question — *"is
 > an audience check something anyone using the example app as a starting point would miss?"* — and
 > answered by measurement: **yes, because the example itself has none.** Two decisions are already
 > taken (below); the grill-me, `00-DESIGN`, **ADR 0035** (0034 was taken by TAG-GATED-CREATE on 2026-09-11) and the decomposition are the next steps.
 > **Build: collaborative** (the [[SPA-CHALLENGE-UX]] shape — mini package, no autonomous prompt).
 > Slice-shaped, not backlog-shaped: it changes the rig's security contract, the gateway version, the
 > realm, the e2e suite and three guides at once.
+
+## The package (2026-10-28)
+
+[[00-DESIGN]] · [[01-DECOMPOSITION]] ·
+[[10-QA-TEST-CASES]] · STATUS-01…04 · the contract
+[[0035-audience-bound-gateway-tokens|ADR 0035]]. No autonomous prompt (collaborative build).
+
+| # | Ticket | Status |
+|---|---|---|
+| T1 | APISIX 3.11.0 → 3.19.0, behavior-preserving (incl. `valid_issuers` — 3.12+ defaults to the discovery issuer) | ✅ 2026-10-28 |
+| T2 | Audience in the plugin (one mapper per client); the Lua guard deleted | ✅ 2026-10-28 |
+| T3 | The MCP OAuth surface: the host agent client, the RFC 9728 document, the miner's `--discover`, refresh rotation | ✅ 2026-10-28 |
+| T4 | Docs, the Claude Code runbook, the backlog | ✅ 2026-10-29 |
 
 ## What the rig does today (measured 2026-09-06, all three claims re-checkable)
 

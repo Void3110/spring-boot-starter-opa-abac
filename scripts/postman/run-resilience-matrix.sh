@@ -18,8 +18,8 @@
 #   ENABLE_OIDC=1 ENABLE_RESILIENCE_STUB=1 ./deploy.sh up --pods 2
 #   ./deploy.sh build          # force the B3 app code into the pods
 # This runner brings the stub up in each mode itself (docker compose), so a single rig serves both passes.
-# No Rego change in this slice -> no OPA restart needed. Honors the in-network token caveat (APISIX
-# validates issuer http://keycloak:8888, so the token is minted IN-NETWORK).
+# No Rego change in this slice -> no OPA restart needed. Honors the in-network token caveat (the token is
+# minted IN-NETWORK, at keycloak:8888 — one of the three issuers the gateway admits).
 #
 # Fixture (dedicated, registered in scripts/postman/README.md):
 #   cccccccc-cccc-cccc-cccc-ccccccccccccc  a Category the resilience matrix GETs (seeded via psql)

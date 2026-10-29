@@ -90,6 +90,21 @@ to the module's prefix: `example.mcp.identity.*` → `opa.abac.mcp.identity.*` a
 → `opa.abac.mcp.agents.profiles[]` (same list shape), and `example.mcp.authz.{agent-gate.enabled, policy-path}`
 → `opa.abac.mcp.{agent-gate.enabled, policy-path}`. The old keys no longer bind.
 
+### Documentation
+
+- **The gateway-trust posture now names what "a validating gateway" must verify** ([ADR 0035](docs/architecture/adr/0035-audience-bound-gateway-tokens.md)):
+  the **signature, expiry, issuer and audience** of every bearer, not the signature alone. A gateway that checks
+  only the signature admits every token the identity provider signs for anything — a service account's token for
+  its admin API included — and `opa.abac.subject.trust-forwarded-jwt=true` would then pass it into the subject.
+  The statement lives in [`ABAC-AUTHORIZATION.md`](docs/guides/ABAC-AUTHORIZATION.md#signature-trust-posture-read-this),
+  with the example's APISIX `claim_validator` configuration as the reference; the `trust-forwarded-jwt` property
+  description, the README and the adopter prompt point to it. No library behavior changed.
+- **The example's MCP server is discoverable by OAuth** (example code, not a module): RFC 9728 protected-resource
+  metadata served from configuration through an unauthenticated route, a public agent client for MCP hosts, and
+  refresh-token rotation. [`AGENT-TOOL-AUTHORIZATION.md`](docs/guides/AGENT-TOOL-AUTHORIZATION.md) §MCP OAuth
+  discovery describes the path and its documented deviation (the forwarded bearer; RFC 8693 exchange is the
+  successor); [`MCP-HOST-LOGIN-RUNBOOK.md`](docs/guides/MCP-HOST-LOGIN-RUNBOOK.md) logs Claude Code in to the rig.
+
 ## [1.4.0] — 2026-10-05
 
 ### "Could not decide" is no longer reported as "no" ([ADR 0037](docs/architecture/adr/0037-indeterminate-decision-distinct-from-deny.md))

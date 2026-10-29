@@ -146,7 +146,9 @@ keychain `JAVA_TOOL_OPTIONS` + `--no-daemon` (`RELEASING.md` §4), or let CI on 
 
 ENABLE_MCP=1 ./deploy.sh up --pods 2       # the tool surface on the rig, behind the gateway at /mcp
                                            # (force-enables ENABLE_OIDC + ENABLE_OPA + ENABLE_USER_SERVICE)
-scripts/postman/run-agent-tool-matrix.sh   # the E1–E12 agent matrix, through the gateway
+scripts/postman/run-agent-tool-matrix.sh   # the E1–E17 agent matrix, through the gateway
+                                           # (E13–E16: RFC 9728 discovery, the host login, rotation;
+                                           #  E17: the transport's refusals carry no stack trace)
 ```
 
 ### Container runtime for tests (important)

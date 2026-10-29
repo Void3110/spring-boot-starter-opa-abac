@@ -57,6 +57,9 @@ CLIENT_ID="${CLIENT_ID:-catalog-gateway}"
 CLIENT_SECRET="${CLIENT_SECRET:-catalog-gateway-secret}"
 AGENT_CLIENT_ID="${AGENT_CLIENT_ID:-catalog-agent-overreach}"
 AGENT_CLIENT_SECRET="${AGENT_CLIENT_SECRET:-catalog-agent-overreach-secret}"
+DIRECTORY_CLIENT_ID="${DIRECTORY_CLIENT_ID:-catalog-directory}"
+DIRECTORY_CLIENT_SECRET="${DIRECTORY_CLIENT_SECRET:-catalog-directory-secret}"
+GATEWAY_AUDIENCE="${GATEWAY_AUDIENCE:-catalog-gateway}"
 USER_SERVICE="${USER_SERVICE:-http://localhost:28090}"
 PG_CONTAINER="${PG_CONTAINER:-opa-abac-postgres}"
 UM_PG_CONTAINER="${UM_PG_CONTAINER:-opa-abac-usermgmt-postgres}"
@@ -130,6 +133,34 @@ payload = sys.argv[1].split('.')[1]
 claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
 value = claims.get(sys.argv[2])
 print('' if value is None else value)" "$1" "$2"
+}
+
+token_aud_has() {  # $1 token $2 audience -> "yes" when `aud` (a string or an array) contains it
+  python3 -c "
+import base64, json, sys
+payload = sys.argv[1].split('.')[1]
+aud = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4))).get('aud')
+values = aud if isinstance(aud, list) else ([] if aud is None else [aud])
+print('yes' if sys.argv[2] in values else 'no')" "$1" "$2"
+}
+
+mint_service_token() {  # client_credentials, in-network. $1 client $2 secret
+  local json
+  json="$("$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s \
+    -X POST "$KEYCLOAK_TOKEN_URL" \
+    -d grant_type=client_credentials -d "client_id=$1" -d "client_secret=$2" || true)"
+  printf '%s' "$json" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
+}
+
+surface_call() {  # $1 bearer $2 surface (catalog|teams|mcp) $3 body file -> the status; the body lands in $3
+  case "$2" in
+    catalog) curl -s -o "$3" -w '%{http_code}' -H "Authorization: Bearer $1" "$GATEWAY/api/v1/catalogs" ;;
+    teams)   curl -s -o "$3" -w '%{http_code}' -H "Authorization: Bearer $1" "$GATEWAY/api/v1/teams" ;;
+    mcp)     curl -s -o "$3" -w '%{http_code}' -X POST "$GATEWAY/mcp" \
+               -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
+               -H 'Accept: application/json, text/event-stream' \
+               -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"step-up-matrix","version":"1.0.0"}}}' ;;
+  esac
 }
 
 post_json() { curl -s -X POST "$1" -H 'Content-Type: application/json' -d "$2"; }
@@ -223,9 +254,10 @@ echo "  from every human one; auth_time absent from both ROPC tokens (structural
 # E9 — the miner's contract, pinned here (the in-ticket check was a throwaway; this preflight is
 # the permanent consumer). Two halves the claims checks above cannot see:
 #   (d) ISSUER PARITY — the miner connects to the HOST port but presents the in-network authority,
-#       so its token must carry the same `iss` every in-network ROPC token does. APISIX validates
-#       the signature, not `iss` (measured), so a DEFAULT_ISSUER or Host-header regression here
-#       would be silent against THIS gateway and only surface against a stricter validator.
+#       so its token must carry the same `iss` every in-network ROPC token does. The gateway checks
+#       `iss` (claim_validator.issuer.valid_issuers, ADR 0035) but admits all three rig authorities,
+#       so a DEFAULT_ISSUER or Host-header regression that moved the miner to another of them would
+#       be silent against THIS gateway and only surface against a stricter validator.
 #   (e) THE GATEWAY ROUND TRIP + THE TAMPER CONTROL — a minted token reaches a 200 through the
 #       gateway, and the same token with a corrupted signature answers 401: the 200 is the token
 #       being accepted, not the gateway waving everything through.
@@ -235,9 +267,9 @@ EXPECTED_ISS="${EXPECTED_ISS:-${KEYCLOAK_TOKEN_URL%/protocol/openid-connect/toke
   echo "       expected '$EXPECTED_ISS' (issuer parity with the in-network mints — E9d)." >&2
   exit 1; }
 gateway_status() {  # $1 bearer [$2 path] [$3 scheme] -> the status code through the gateway
-  # The scheme is a PARAMETER because the issuer guard must match it case-insensitively: the
-  # openid-connect plugin lowercases the scheme, so a guard that only matched `Bearer` would skip
-  # its issuer check on `BEARER` while the request still authenticated (a measured bypass).
+  # The scheme is a PARAMETER: openid-connect lowercases it before authenticating, so every cased
+  # spelling must meet the same issuer check. (Until ADR 0035 a separate Lua guard did that check,
+  # and a case-sensitive match there was a measured bypass; the spellings stay as its regression.)
   curl -s -o /dev/null -w '%{http_code}' \
     -H "Authorization: ${3:-Bearer} $1" "$GATEWAY${2:-/api/v1/catalogs}"
 }
@@ -259,7 +291,8 @@ esac
   exit 1; }
 #   (f) THE ISSUER ALLOWLIST (hardened 2026-08-14) — Keycloak's `iss` follows the request's Host
 #       header, so a mint through the published host port with a FORGED Host yields a realm-signed
-#       token naming an arbitrary authority. The gateway's issuer guard must refuse it (401); only
+#       token naming an arbitrary authority. The gateway's openid-connect issuer allowlist
+#       (claim_validator.issuer.valid_issuers) must refuse it (401); only
 #       the three rig authorities (keycloak:8888 in-network, localhost:9085 the gateway origin
 #       the SPA logs in through, localhost:28888 the published port) pass.
 #       `editor` carries no TOTP factor, so a plain host-port ROPC mint works for this control.
@@ -283,8 +316,8 @@ case "$FOREIGN_ISS_VALUE" in
 esac
 [ "$(gateway_status "$FOREIGN_ISS_TOKEN")" = "401" ] || {
   echo "ERROR: a realm-signed token with the FOREIGN issuer '$FOREIGN_ISS_VALUE' passed the" >&2
-  echo "       gateway — the issuer-allowlist guard is missing from the route (re-run" >&2
-  echo "       init-routes.sh via deploy.sh up) or has been removed." >&2
+  echo "       gateway — claim_validator.issuer.valid_issuers is missing from the route's" >&2
+  echo "       openid-connect block (re-run init-routes.sh via deploy.sh up) or has been removed." >&2
   exit 1; }
 #   (g) THE ALLOWLIST'S *ALLOW* HALF — the SPA's authority. The browser demo runs its whole PKCE
 #       flow against the GATEWAY ORIGIN (the /realms/* passthrough), and Keycloak rewrites its
@@ -313,20 +346,20 @@ GATEWAY_ISS_VALUE="$(token_claim "$GATEWAY_ISS_TOKEN" iss)" || true
   echo "       origin), so the browser demo is broken: add it to init-routes.sh's" >&2
   echo "       ISSUER_ALLOWLIST. Every runner mints in-network, so nothing else here would fail." >&2
   exit 1; }
-#       …and the guard must hold for EVERY cased spelling of the scheme, and on EVERY route it
-#       rides (catalog, usermgmt, MCP) — a guard installed on three routes but probed on one is
-#       two-thirds unproven.
+#       …and the check must hold for EVERY cased spelling of the scheme, and on EVERY route that
+#       authenticates (catalog, usermgmt, MCP) — a check configured on three routes but probed on
+#       one is two-thirds unproven.
 for scheme in Bearer BEARER bEaReR; do
   [ "$(gateway_status "$FOREIGN_ISS_TOKEN" /api/v1/catalogs "$scheme")" = "401" ] || {
     echo "ERROR: the foreign-issuer token passed the gateway under the scheme spelling" >&2
-    echo "       '$scheme' — the issuer guard's scheme match is case-SENSITIVE while" >&2
-    echo "       openid-connect's is not, so the guard is bypassable." >&2
+    echo "       '$scheme' — the issuer check does not cover every spelling the" >&2
+    echo "       authenticator accepts." >&2
     exit 1; }
 done
 for guarded_path in /api/v1/teams /mcp; do
   [ "$(gateway_status "$FOREIGN_ISS_TOKEN" "$guarded_path")" = "401" ] || {
-    echo "ERROR: the foreign-issuer token was not refused on '$guarded_path' — the issuer" >&2
-    echo "       guard is missing from that route (it rides catalog, usermgmt AND mcp)." >&2
+    echo "ERROR: the foreign-issuer token was not refused on '$guarded_path' — that route's" >&2
+    echo "       openid-connect block lacks the issuer allowlist (catalog, usermgmt AND mcp share one)." >&2
     exit 1; }
 done
 #   (h) REFRESH CANNOT LAUNDER THE ELEVATION — QA case I5's keystone, and the reason a short token
@@ -379,6 +412,94 @@ SOURCE_IAT="$(token_claim "$REFRESH_SOURCE_TOKEN" iat)"
   echo "ERROR: the refreshed token's iat ($REFRESHED_IAT) went BACKWARDS from the source's" >&2
   echo "       ($SOURCE_IAT) — the pair is not what it claims to be." >&2
   exit 1; }
+#   (k) THE SPA CLIENT'S REFRESH ROTATES (ADR 0035 §7, QA E11) — the realm rotates refresh tokens for
+#       every client, the public SPA one included: a refresh answers a NEW refresh token, and the spent one
+#       is refused on reuse (Keycloak also detaches the session then, which is why the demo SPA refreshes
+#       single-flight — U8). Minted as `demo` with its OWN cookie jar, never anna's shared one, so this
+#       login cannot disturb the SSO session E3 reuses; refreshed in-network, as E9h does.
+SPA_JAR="$(mktemp -t stepup-spa-jar.XXXXXX)"
+SPA_PAIR="$("$MINER" --user demo --cookie-jar "$SPA_JAR" --field access_token,refresh_token)" || {
+  rm -f "$SPA_JAR"
+  echo "ERROR: could not mint demo's catalog-spa token pair for the E9k check." >&2; exit 1; }
+rm -f "$SPA_JAR"
+SPA_REFRESH="$(printf '%s' "$SPA_PAIR" | sed -n '2p')"
+[ -n "$SPA_REFRESH" ] || { echo "ERROR: the miner returned no refresh token for E9k." >&2; exit 1; }
+spa_refresh() { # refresh_token -> "<body> <status>", in-network as the public SPA client
+  "$RUNTIME" run --rm --network "$NETWORK" curlimages/curl -s -w ' %{http_code}' \
+    -X POST "$KEYCLOAK_TOKEN_URL" \
+    -d grant_type=refresh_token -d "client_id=$MINER_CLIENT" -d "refresh_token=$1"
+}
+SPA_ROTATED="$(spa_refresh "$SPA_REFRESH")" || true
+SPA_ROTATED_REFRESH="$(printf '%s' "${SPA_ROTATED% *}" | sed -n 's/.*"refresh_token":"\([^"]*\)".*/\1/p')"
+[ "${SPA_ROTATED##* }" = "200" ] && [ -n "$SPA_ROTATED_REFRESH" ] && [ "$SPA_ROTATED_REFRESH" != "$SPA_REFRESH" ] || {
+  echo "ERROR: the catalog-spa refresh did not answer 200 with a NEW refresh token (E9k):" >&2
+  echo "       ${SPA_ROTATED##* } $(printf '%s' "${SPA_ROTATED% *}" | head -c 300)" >&2
+  exit 1; }
+SPA_REPLAYED="$(spa_refresh "$SPA_REFRESH")" || true
+[ "${SPA_REPLAYED##* }" = "400" ] \
+  && printf '%s' "${SPA_REPLAYED% *}" | grep -q '"error":"invalid_grant"' \
+  && printf '%s' "${SPA_REPLAYED% *}" | grep -q 'Maximum allowed refresh token reuse exceeded' || {
+  echo "ERROR: replaying the spent catalog-spa refresh token was not refused as a reuse (E9k):" >&2
+  echo "       $SPA_REPLAYED" >&2
+  echo "       Is revokeRefreshToken on in the realm? (re-import it: ./deploy.sh down, then up)" >&2
+  exit 1; }
+echo "  E9k: the catalog-spa refresh rotated; replaying the spent one -> 400 invalid_grant (reuse exceeded)."
+#   (i) THE AUDIENCE REFUSAL, ON EVERY SURFACE (ADR 0035 §1, QA E4) — a token this realm signs
+#       for something other than the gateway is not a gateway token. The directory's service
+#       account (client_credentials, audience realm-management, NO gateway-audience mapper — the
+#       realm's deliberate negative control) is refused by the plugin itself, with ITS body: an
+#       application 403 would be problem+json, so the body is what proves the gateway decided.
+#   (j) THE ALLOW CONTROL PER SURFACE (QA E5) — a catalog-gateway password-grant token on the SAME
+#       three requests answers 200, so a refusal that bit everything could not pass (i).
+#   …and THE PER-CLIENT DRIFT GUARD (QA E6): the audience is stamped by one mapper PER CLIENT, so a
+#       client whose mapper went missing would 403 on every call while its own runners might never
+#       reach this gateway. A token from each of the five legitimate clients carries it; the
+#       directory's does not.
+DIRECTORY_TOKEN="$(mint_service_token "$DIRECTORY_CLIENT_ID" "$DIRECTORY_CLIENT_SECRET")" || true
+[ -n "$DIRECTORY_TOKEN" ] || {
+  echo "ERROR: could not mint the $DIRECTORY_CLIENT_ID service-account token (client_credentials)." >&2
+  exit 1; }
+[ "$(token_aud_has "$DIRECTORY_TOKEN" "$GATEWAY_AUDIENCE")" = "no" ] || {
+  echo "ERROR: the $DIRECTORY_CLIENT_ID token carries aud '$GATEWAY_AUDIENCE' — the negative control" >&2
+  echo "       is gone (a gateway-audience mapper was added to it), so E9i would prove nothing." >&2
+  exit 1; }
+READONLY_AGENT_TOKEN="$(mint_token editor editor catalog-agent-readonly catalog-agent-readonly-secret)"
+REVOKED_AGENT_TOKEN="$(mint_token editor editor catalog-agent-revoked catalog-agent-revoked-secret)"
+for pair in "catalog-gateway:$EDITOR_TOKEN" "catalog-spa:$ANNA_AAL1_TOKEN" \
+            "catalog-agent-readonly:$READONLY_AGENT_TOKEN" "$AGENT_CLIENT_ID:$ANNA_AGENT_TOKEN" \
+            "catalog-agent-revoked:$REVOKED_AGENT_TOKEN"; do
+  client="${pair%%:*}"; tok="${pair#*:}"
+  [ -n "$tok" ] || { echo "ERROR: no token from the $client client (E6)." >&2; exit 1; }
+  [ "$(token_claim "$tok" azp)" = "$client" ] || {
+    echo "ERROR: the token labelled $client was issued to azp='$(token_claim "$tok" azp)' (E6)." >&2
+    exit 1; }
+  [ "$(token_aud_has "$tok" "$GATEWAY_AUDIENCE")" = "yes" ] || {
+    echo "ERROR: a $client token carries aud='$(token_claim "$tok" aud)', without '$GATEWAY_AUDIENCE'" >&2
+    echo "       — that client's gateway-audience mapper is missing, so the gateway refuses every one" >&2
+    echo "       of its calls. Re-import the realm (./deploy.sh down, then up) or restore the mapper." >&2
+    exit 1; }
+done
+SURFACE_BODY="$(mktemp -t stepup-surface.XXXXXX)"
+for surface in catalog teams mcp; do
+  code="$(surface_call "$DIRECTORY_TOKEN" "$surface" "$SURFACE_BODY")" || true
+  body="$(cat "$SURFACE_BODY")" || true
+  [ "$code" = "403" ] && [ "$body" = '{"error":"mismatched audience"}' ] || {
+    rm -f "$SURFACE_BODY"
+    echo "ERROR: the $DIRECTORY_CLIENT_ID token on the $surface surface answered $code '$body'," >&2
+    echo "       expected the gateway's 403 {\"error\":\"mismatched audience\"} (E9i). The route's" >&2
+    echo "       openid-connect block lacks claim_validator.audience, or the realm stamped the audience." >&2
+    exit 1; }
+  code="$(surface_call "$EDITOR_TOKEN" "$surface" "$SURFACE_BODY")" || true
+  [ "$code" = "200" ] || {
+    echo "ERROR: the $CLIENT_ID token was refused ($code) on the $surface surface — the allow control" >&2
+    echo "       (E9j) failed: $(head -c 200 "$SURFACE_BODY")" >&2
+    rm -f "$SURFACE_BODY"
+    exit 1; }
+done
+rm -f "$SURFACE_BODY"
+echo "  E9i/E9j: the $DIRECTORY_CLIENT_ID token -> 403 mismatched audience, and the $CLIENT_ID token -> 200,"
+echo "  on the catalog, user-service and MCP surfaces; aud carries '$GATEWAY_AUDIENCE' on all five"
+echo "  legitimate clients' tokens and not on the directory's (E6)."
 echo "  E9h: the refresh grant preserved auth_time ($REFRESHED_AUTH_TIME) on a genuinely re-issued"
 echo "  token (iat $SOURCE_IAT -> $REFRESHED_IAT) — a refresh cannot launder the elevation (QA I5)."
 echo "  E9: iss parity confirmed ($EXPECTED_ISS); gateway 200 on the minted token; 401 on the"
