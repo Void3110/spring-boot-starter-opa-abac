@@ -32,11 +32,14 @@
 # Subjects (realm users): viewer (realm catalog-viewer) and demo (realm catalog-editor) are both bound
 # to the tag-gated WRITE role (required_tags region ANY_OF [emea]); editor (realm catalog-editor) is
 # bound to a catalog-root READ-ONLY role (no tags — proves inheritance + the narrowing). Fixtures are
-# created through the gateway by demo: on the main catalog via its rr-regional-writer membership, and on
+# created through the gateway by demo: on the main catalog via a SEEDER membership (rr-seeder — the
+# writer's verbs, no tag requirement), rebound in place to rr-regional-writer before newman runs, and on
 # the free catalog via a SECOND membership (free-creator) on the free catalog's own team — Slice B4
-# removed the realm fallback, so every create now needs a resolved role. The E4 subject (editor) is a
-# member of the MAIN team but NOT the free catalog's team, so E4 is denied. Product tags are set via
-# psql (products have no tag-assignment API).
+# removed the realm fallback, so every create now needs a resolved role. The seeder exists because
+# TAG-GATED-CREATE (ADR 0034) denies a tag-requiring role every create this tree needs: the governing
+# root is untagged, the apac fixtures carry region=apac, the nested category carries no tags. The E4
+# subject (editor) is a member of the MAIN team but NOT the free catalog's team, so E4 is denied.
+# Product tags are set via psql (products have no tag-assignment API).
 #
 # Honors the in-network token caveat (APISIX validates issuer http://keycloak:8888).
 
@@ -175,11 +178,17 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 # the inherited grant (E5), and any write is denied with the fallback disabled (E3).
 post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
   "{\"teamId\":\"$TEAM_ID\",\"code\":\"rr-catalog-reader\",\"roleLevel\":10,\"permissions\":{\"catalog\":[\"READ\"]}}" >/dev/null
+# The fixture SEEDER role: the gated writer's verbs with NO tag requirement — ADR 0034 checks a
+# type-level create against the placement parent's tags AND the payload's only for a tag-requiring
+# role, so this one places the whole tree, untagged root included. writer-editor holds it for the
+# fixture creation only; it is rebound to rr-regional-writer before newman, so no cell decides on it.
+post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
+  "{\"teamId\":\"$TEAM_ID\",\"code\":\"rr-seeder\",\"roleLevel\":20,\"permissions\":{\"catalog\":[\"READ\",\"WRITE\",\"TAG\"],\"category\":[\"READ\",\"WRITE\",\"TAG\"],\"product\":[\"READ\",\"WRITE\",\"TAG\"]}}" >/dev/null
 
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$WRITER_VIEWER_UID\",\"roleCode\":\"rr-regional-writer\"}" >/dev/null
-post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$WRITER_EDITOR_UID\",\"roleCode\":\"rr-regional-writer\"}" >/dev/null
+post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$WRITER_EDITOR_UID\",\"roleCode\":\"rr-seeder\"}" >/dev/null
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$READER_EDITOR_UID\",\"roleCode\":\"rr-catalog-reader\"}" >/dev/null
-echo "  team $TEAM_ID governs catalog $RR_CATALOG_ID (two gated writers + one root reader bound)."
+echo "  team $TEAM_ID governs catalog $RR_CATALOG_ID (gated writer + seeder + root reader bound; the seeder is rebound below)."
 
 # Slice B4: the FREE catalog is its OWN governed island. It needs a team + a creator membership so the
 # fixture category there can be created (the realm fallback that used to let a bare editor create is gone).
@@ -191,16 +200,18 @@ post_json "$USER_SERVICE/internal/bootstrap/custom-roles" \
 post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$FREE_TEAM_ID\",\"userId\":\"$WRITER_EDITOR_UID\",\"roleCode\":\"rr-free-creator\"}" >/dev/null
 echo "  team $FREE_TEAM_ID governs catalog $FREE_CATALOG_ID (writer-editor bound as creator; reader-editor is NOT a member -> E4 denied)."
 
-# --- create the fixture tree through the gateway (writer-editor = realm editor) -
+# --- create the fixture tree through the gateway (writer-editor, as rr-seeder) ---
+# `|| true` keeps a failed create (a problem+json body has no id) from aborting under set -e before
+# the per-fixture guard below can name it.
 echo "==> Creating the fixture categories/products through the gateway ..."
-EMEA_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" '{"name":"RR EMEA root","tags":{"region":["emea"]}}')"
-APAC_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" '{"name":"RR APAC root","tags":{"region":["apac"]}}')"
-NESTED_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "{\"name\":\"RR nested\",\"parentId\":\"$EMEA_CATEGORY_ID\"}")"
-EMEA_PRODUCT_ID="$(create_product "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "$EMEA_CATEGORY_ID" '{"name":"RR EMEA widget","sku":"RR-EMEA","priceCents":1500,"currency":"USD"}')"
-APAC_PRODUCT_ID="$(create_product "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "$APAC_CATEGORY_ID" '{"name":"RR APAC widget","sku":"RR-APAC","priceCents":1000,"currency":"USD"}')"
+EMEA_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" '{"name":"RR EMEA root","tags":{"region":["emea"]}}')" || true
+APAC_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" '{"name":"RR APAC root","tags":{"region":["apac"]}}')" || true
+NESTED_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "{\"name\":\"RR nested\",\"parentId\":\"$EMEA_CATEGORY_ID\"}")" || true
+EMEA_PRODUCT_ID="$(create_product "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "$EMEA_CATEGORY_ID" '{"name":"RR EMEA widget","sku":"RR-EMEA","priceCents":1500,"currency":"USD"}')" || true
+APAC_PRODUCT_ID="$(create_product "$WRITER_EDITOR_TOKEN" "$RR_CATALOG_ID" "$APAC_CATEGORY_ID" '{"name":"RR APAC widget","sku":"RR-APAC","priceCents":1000,"currency":"USD"}')" || true
 # Slice B4: created by writer-editor via its rr-free-creator membership on the free catalog's own team
 # (the realm fallback that used to let the reader create here is gone).
-FREE_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$FREE_CATALOG_ID" '{"name":"Free catalog category"}')"
+FREE_CATEGORY_ID="$(create_category "$WRITER_EDITOR_TOKEN" "$FREE_CATALOG_ID" '{"name":"Free catalog category"}')" || true
 echo "  emea=$EMEA_CATEGORY_ID apac=$APAC_CATEGORY_ID nested=$NESTED_CATEGORY_ID"
 echo "  emea-product=$EMEA_PRODUCT_ID apac-product=$APAC_PRODUCT_ID free=$FREE_CATEGORY_ID"
 for pair in "emea:$EMEA_CATEGORY_ID" "apac:$APAC_CATEGORY_ID" "nested:$NESTED_CATEGORY_ID" \
@@ -208,6 +219,15 @@ for pair in "emea:$EMEA_CATEGORY_ID" "apac:$APAC_CATEGORY_ID" "nested:$NESTED_CA
   name="${pair%%:*}"; id="${pair#*:}"
   [ -n "$id" ] && [ "$id" != "None" ] || { echo "ERROR: failed to create the '$name' fixture." >&2; exit 1; }
 done
+
+# --- rebind writer-editor onto the role under test --------------------------------
+# One membership per user per team (uq_team_membership_team_user): the bootstrap endpoint updates the
+# seeder binding in place, so from here on writer-editor decides on rr-regional-writer alone. A rebind
+# that did not land would leave the seeder's untagged grant in force and flip E2/E6a to 200 — the
+# matrix fails, it cannot pass on the wrong role.
+echo "==> Rebinding writer-editor from rr-seeder to rr-regional-writer (the role every cell decides on) ..."
+REBIND_ID="$(post_json "$USER_SERVICE/internal/bootstrap/memberships" "{\"teamId\":\"$TEAM_ID\",\"userId\":\"$WRITER_EDITOR_UID\",\"roleCode\":\"rr-regional-writer\"}" | json_field membershipId)" || true
+[ -n "$REBIND_ID" ] || { echo "ERROR: could not rebind writer-editor to rr-regional-writer." >&2; exit 1; }
 
 # Products have no tag-assignment API (tags ride the secured base) — set them directly so the T5
 # conjunct has something to match (E6).
